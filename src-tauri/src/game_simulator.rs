@@ -146,6 +146,11 @@ fn get_runner_exe_path() -> Result<PathBuf> {
             if bundled_path.exists() {
                 return Ok(bundled_path);
             }
+            // Check in the same directory as the executable (common for bundled resources if flattened)
+            let sibling_path = parent.join("discord-quest-runner.exe");
+            if sibling_path.exists() {
+                return Ok(sibling_path);
+            }
         }
     }
 

@@ -35,3 +35,4 @@ src-runner/target
 !src-tauri/capabilities/*.json
 !package.json
 *.har
+discord-quest-helper-v*.zip
