@@ -377,10 +377,33 @@ fn connect_to_discord_rpc(handle: tauri::AppHandle, activity_json: String, actio
     });
 }
 
+#[tauri::command]
+async fn open_in_explorer(path: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let mut path = path.replace("/", "\\");
+        // Explorer generally doesn't like the \\?\ prefix for opening folders
+        if path.starts_with("\\\\?\\") {
+            path = path[4..].to_string();
+        }
+        println!("Opening explorer at: {}", path);
+        std::process::Command::new("explorer")
+            .arg(path)
+            .spawn()
+            .map_err(|e| format!("Failed to open explorer: {}", e))?;
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+         // Fallback for non-windows if needed, though app is win-focused
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_fs::init())
         .manage(AppState {
             client: Mutex::new(None),
             quest_state: Mutex::new(None),
@@ -397,7 +420,8 @@ pub fn run() {
             stop_simulated_game,
             fetch_detectable_games,
             accept_quest,
-            connect_to_discord_rpc
+            connect_to_discord_rpc,
+            open_in_explorer
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

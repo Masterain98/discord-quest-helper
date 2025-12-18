@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
-import { Clock, Gift, Trophy, MonitorPlay, Gamepad2, Activity } from 'lucide-vue-next'
+import { Clock, Gift, MonitorPlay, Gamepad2, Activity } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
@@ -199,7 +199,7 @@ function formatDate(dateStr: string): string {
         >
           <!-- Video asset (.mp4) -->
           <video 
-            v-if="reward.asset.endsWith('.mp4')"
+            v-if="reward.asset?.endsWith('.mp4')"
             :src="`https://cdn.discordapp.com/${reward.asset}`"
             class="w-14 h-14 object-contain rounded-md flex-shrink-0"
             autoplay
@@ -259,7 +259,7 @@ function formatDate(dateStr: string): string {
       <div class="grid grid-cols-2 gap-4 text-xs text-muted-foreground">
         <div class="flex items-center gap-1">
           <Clock class="w-3 h-3" />
-          Expires: {{ formatDate(quest.config.expires_at) }}
+          Expires: {{ quest.config.expires_at ? formatDate(quest.config.expires_at) : 'N/A' }}
         </div>
          <!-- Target duration handled above -->
       </div>

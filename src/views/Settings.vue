@@ -6,7 +6,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Eye, EyeOff, Loader2, Save } from 'lucide-vue-next'
+import { Eye, EyeOff, Loader2 } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
@@ -20,10 +20,71 @@ async function handleManualLogin() {
     await authStore.loginWithToken(manualToken.value)
   }
 }
+
+// Version management
+const appVersion = ref('Dev')
+const cachePath = ref('')
+
+// External link handling
+import { open } from '@tauri-apps/plugin-shell'
+import { invoke } from '@tauri-apps/api/core'
+import { documentDir } from '@tauri-apps/api/path'
+import { mkdir } from '@tauri-apps/plugin-fs'
+import { FolderOpen } from 'lucide-vue-next'
+
+async function openExternal(url: string) {
+  try {
+    await open(url)
+  } catch (error) {
+    console.error('Failed to open URL:', error)
+  }
+}
+
+async function openCacheDir() {
+  const docDir = await documentDir()
+  const path = `${docDir}\\DiscordQuestGames`
+  
+  try {
+    // Try to create it recursively (will not fail if exists)
+    await mkdir(path, { recursive: true })
+    
+    // Use custom Rust command to ensure explorer opens
+    await invoke('open_in_explorer', { path })
+  } catch (e) {
+    console.error('Failed to open cache dir:', e)
+    // Fallback using same custom command
+    try {
+        await invoke('open_in_explorer', { path: docDir })
+    } catch (e2) {
+        console.error('Fallback failed:', e2)
+    }
+  }
+}
+
+
+import { onMounted } from 'vue'
+
+onMounted(async () => {
+    const docDir = await documentDir()
+    cachePath.value = `${docDir}\\DiscordQuestGames`
+// ... existing onMounted logic ...
+  try {
+    // In dev, this might 404 if not generated, handling gracefully
+    const res = await fetch('/version.txt')
+    if (res.ok) {
+      const text = await res.text()
+      if (text) {
+        appVersion.value = text.trim()
+      }
+    }
+  } catch (e) {
+    // Keep default 'Dev'
+  }
+})
 </script>
 
 <template>
-  <div class="settings-view fade-in space-y-6">
+  <div class="settings-view fade-in space-y-6 select-none">
     <h2 class="text-2xl font-bold tracking-tight">{{ t('settings.title') }}</h2>
     
     <div class="grid gap-6">
@@ -141,6 +202,25 @@ async function handleManualLogin() {
         </CardContent>
       </Card>
       
+      <!-- Cache -->
+      <Card>
+        <CardHeader>
+          <CardTitle>{{ t('settings.cache') }}</CardTitle>
+          <CardDescription>{{ t('settings.cache_desc') }}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div class="space-y-4">
+             <div class="p-3 bg-muted/50 rounded-lg text-xs font-mono break-all" v-if="cachePath">
+               {{ cachePath }}
+             </div>
+             <Button variant="outline" @click="openCacheDir">
+               <FolderOpen class="w-4 h-4 mr-2" />
+               {{ t('settings.open_cache_dir') }}
+             </Button>
+          </div>
+        </CardContent>
+      </Card>
+      
       <!-- About -->
       <div class="grid md:grid-cols-2 gap-6">
          <Card>
@@ -148,8 +228,16 @@ async function handleManualLogin() {
              <CardTitle class="text-lg">{{ t('settings.about') }}</CardTitle>
            </CardHeader>
            <CardContent class="text-sm text-muted-foreground space-y-2">
-             <p>Discord Quest Helper v0.1.0</p>
-             <p>{{ t('settings.about_desc') }}</p>
+             <p>Discord Quest Helper v{{ appVersion }}</p>
+             <p>
+               {{ t('settings.about_desc') }}
+             </p>
+             <p>
+               Project: 
+               <a href="#" @click.prevent="openExternal('https://github.com/Masterain98/discord-quest-helper')" class="text-primary hover:underline">
+                 GitHub
+               </a>
+             </p>
              <p class="text-yellow-500/90 dark:text-yellow-400">
                ⚠️ {{ t('settings.about_warning') }}
              </p>
@@ -164,8 +252,16 @@ async function handleManualLogin() {
               <div>
                 <p class="font-medium text-foreground mb-1">{{ t('settings.credits_desc') }}</p>
                 <ul class="list-disc list-inside">
-                  <li>markterence/discord-quest-completer</li>
-                  <li>power0matin/discord-quest-auto-completer</li>
+                  <li>
+                    <a href="#" @click.prevent="openExternal('https://github.com/markterence/discord-quest-completer')" class="hover:underline">
+                      markterence/discord-quest-completer
+                    </a>
+                  </li>
+                  <li>
+                    <a href="#" @click.prevent="openExternal('https://github.com/power0matin/discord-quest-auto-completer')" class="hover:underline">
+                      power0matin/discord-quest-auto-completer
+                    </a>
+                  </li>
                 </ul>
               </div>
               <div>

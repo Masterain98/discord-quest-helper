@@ -7,13 +7,6 @@ import Settings from './views/Settings.vue'
 import TitleBar from './components/TitleBar.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import { useAuthStore } from '@/stores/auth'
 import type { ExtractedAccount } from '@/api/tauri'
 import { useI18n } from 'vue-i18n'
@@ -107,7 +100,7 @@ function updateTheme() {
 }
 
 // Language Logic
-function setLanguage(lang: 'en' | 'zh') {
+function setLanguage(lang: string) {
   locale.value = lang
   localStorage.setItem('language', lang)
 }
@@ -139,16 +132,16 @@ onMounted(() => {
         <div class="flex items-center gap-3">
           <img src="/icons/logo.png" alt="logo" class="w-10 h-10" />
           <div>
-            <h1 class="text-3xl font-bold tracking-tight text-primary">
+            <h1 class="text-3xl font-bold tracking-tight text-primary select-none">
               {{ t('general.title') }}
             </h1>
-            <p class="text-muted-foreground">
+            <p class="text-muted-foreground select-none">
                {{ t('general.subtitle') }}
             </p>
           </div>
         </div>
         
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2 select-none">
            <UserStatus v-if="authStore.user" />
            
            <!-- Theme Toggle -->
@@ -177,7 +170,7 @@ onMounted(() => {
         </div>
       </header>
       
-      <div class="mb-8 flex gap-2 border-b border-border pb-4">
+      <div class="mb-8 flex gap-2 border-b border-border pb-4 select-none">
         <Button 
           :variant="currentTab === 'home' ? 'secondary' : 'ghost'"
           @click="currentTab = 'home'"

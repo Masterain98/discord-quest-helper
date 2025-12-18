@@ -4,7 +4,7 @@
       <div class="lg:col-span-2 space-y-6">
         <!-- Toolbar -->
         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <h2 class="text-2xl font-bold tracking-tight">{{ t('home.available_quests') }}</h2>
+          <h2 class="text-2xl font-bold tracking-tight select-none">{{ t('home.available_quests') }}</h2>
           <div class="flex gap-2 w-full sm:w-auto">
             <Button 
               variant="outline"
@@ -366,18 +366,6 @@ const activeFilterCount = computed(() => {
   if (filters.value.status.inProgress) count++
   if (filters.value.status.pendingClaim) count++
   if (filters.value.status.completed) count++
-  return count
-})
-
-// Count for advanced filters (reward and quest type only)
-const advancedFilterCount = computed(() => {
-  let count = 0
-  if (filters.value.rewards.orbs) count++
-  if (filters.value.rewards.avatarDecoration) count++
-  if (filters.value.rewards.ingame) count++
-  if (filters.value.questType.play) count++
-  if (filters.value.questType.watch) count++
-  if (filters.value.questType.activity) count++
   return count
 })
 

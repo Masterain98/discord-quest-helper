@@ -21,6 +21,7 @@ export interface Quest {
         messages: {
           name: string
         }
+        asset?: string
       }>
     }
     stream_duration_requirement_minutes?: number
@@ -34,7 +35,12 @@ export interface Quest {
       id: string
       name: string
       link: string
+      icon?: string
     }
+    assets?: {
+      hero?: string
+    }
+    expires_at?: string
   }
   user_status: {
     progress?: Record<string, { value?: number }>

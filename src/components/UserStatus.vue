@@ -15,7 +15,7 @@
           />
           <AvatarFallback>{{ authStore.user.username[0].toUpperCase() }}</AvatarFallback>
         </Avatar>
-        <div class="hidden md:block">
+        <div class="hidden md:block select-none">
           <p class="text-sm font-medium leading-none">{{ authStore.user.global_name || authStore.user.username }}</p>
           <p class="text-xs text-muted-foreground">{{ authStore.user.username }}</p>
         </div>
