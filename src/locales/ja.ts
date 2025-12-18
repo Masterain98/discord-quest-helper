@@ -40,7 +40,8 @@ export default {
         remaining: "残り",
         accept_quest: "クエストを受け入れる",
         stop_quest: "クエストを停止",
-        complete_quest: "クエストを完了"
+        complete_quest: "クエストを完了",
+        search_placeholder: "クエストを検索..."
     },
     quest: {
         progress: "進捗",

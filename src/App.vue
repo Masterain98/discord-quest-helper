@@ -129,10 +129,11 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="min-h-screen bg-background text-foreground font-sans flex flex-col">
+  <div class="h-screen bg-background text-foreground font-sans flex flex-col overflow-hidden">
     <TitleBar />
     
-    <div class="container mx-auto p-6 pt-8 flex-1 flex flex-col">
+    <div class="flex-1 overflow-auto">
+      <div class="container mx-auto p-6 flex flex-col min-h-full">
       <header class="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div class="flex items-center gap-3">
           <img src="/icons/logo.png" alt="logo" class="w-10 h-10" />
@@ -280,6 +281,7 @@ onMounted(() => {
       </main>
 
 
+    </div>
     </div>
   </div>
 </template>

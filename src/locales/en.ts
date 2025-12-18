@@ -40,7 +40,8 @@ export default {
         remaining: "remaining",
         accept_quest: "Accept Quest",
         stop_quest: "Stop Quest",
-        complete_quest: "Complete Quest"
+        complete_quest: "Complete Quest",
+        search_placeholder: "Search quests..."
     },
     quest: {
         progress: "Progress",

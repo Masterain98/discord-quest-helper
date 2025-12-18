@@ -66,83 +66,124 @@
               </Button>
             </div>
           </CardHeader>
-          <CardContent class="grid gap-6 md:grid-cols-2">
-            <!-- Status Filters -->
-            <div class="space-y-3">
-              <h4 class="text-sm font-medium text-muted-foreground">{{ t('filter.status') }}</h4>
-              <div class="flex flex-wrap gap-2">
-                <Button 
-                   v-for="(label, key) in statusFilterOptions"
-                   :key="key"
-                   size="sm"
-                   :variant="filters.status[key] ? 'default' : 'outline'"
-                   @click="filters.status[key] = !filters.status[key]"
-                   class="h-7 text-xs"
-                >
-                  {{ label }}
-                </Button>
-              </div>
+          <CardContent class="space-y-4">
+            <!-- Search Input -->
+            <div class="relative">
+              <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input 
+                v-model="searchQuery" 
+                type="text" 
+                :placeholder="t('home.search_placeholder')" 
+                class="pl-9"
+              />
             </div>
-
-            <!-- Type Filters -->
-            <div class="space-y-3">
-              <h4 class="text-sm font-medium text-muted-foreground">{{ t('filter.type') }}</h4>
-              <div class="flex flex-wrap gap-2">
-                 <Button 
-                   size="sm"
-                   :variant="filters.questType.watch ? 'default' : 'outline'"
-                   @click="filters.questType.watch = !filters.questType.watch"
-                   class="h-7 text-xs"
-                >
-                  🎬 {{ t('filter.watch') }}
-                </Button>
-                 <Button 
-                   size="sm"
-                   :variant="filters.questType.play ? 'default' : 'outline'"
-                   @click="filters.questType.play = !filters.questType.play"
-                   class="h-7 text-xs"
-                >
-                  🎮 {{ t('filter.play') }}
-                </Button>
-                 <Button 
-                   size="sm"
-                   :variant="filters.questType.activity ? 'default' : 'outline'"
-                   @click="filters.questType.activity = !filters.questType.activity"
-                   class="h-7 text-xs"
-                >
-                  🎯 {{ t('filter.activity') }}
-                </Button>
+            
+            <div class="grid gap-6 md:grid-cols-2">
+              <!-- Status Filters -->
+              <div class="space-y-3">
+                <h4 class="text-sm font-medium text-muted-foreground">{{ t('filter.status') }}</h4>
+                <div class="flex flex-wrap gap-2">
+                  <button 
+                    v-for="(label, key) in statusFilterOptions"
+                    :key="key"
+                    @click="filters.status[key] = !filters.status[key]"
+                    :class="cn(
+                      'inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full border transition-colors',
+                      filters.status[key] 
+                        ? 'border-green-600 text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-950/30' 
+                        : 'border-border bg-background hover:bg-accent hover:text-accent-foreground'
+                    )"
+                  >
+                    <Check v-if="filters.status[key]" class="h-3.5 w-3.5" />
+                    {{ label }}
+                  </button>
+                </div>
               </div>
-            </div>
 
-             <!-- Reward Filters -->
-            <div class="space-y-3 md:col-span-2">
-              <h4 class="text-sm font-medium text-muted-foreground">{{ t('filter.reward') }}</h4>
-              <div class="flex flex-wrap gap-2">
-                 <Button 
-                   size="sm"
-                   :variant="filters.rewards.orbs ? 'default' : 'outline'"
-                   @click="filters.rewards.orbs = !filters.rewards.orbs"
-                   class="h-7 text-xs"
-                >
-                  💎 {{ t('filter.orbs') }}
-                </Button>
-                 <Button 
-                   size="sm"
-                   :variant="filters.rewards.avatarDecoration ? 'default' : 'outline'"
-                   @click="filters.rewards.avatarDecoration = !filters.rewards.avatarDecoration"
-                   class="h-7 text-xs"
-                >
-                  🌟 {{ t('filter.decoration') }}
-                </Button>
-                 <Button 
-                   size="sm"
-                   :variant="filters.rewards.ingame ? 'default' : 'outline'"
-                   @click="filters.rewards.ingame = !filters.rewards.ingame"
-                   class="h-7 text-xs"
-                >
-                  🎁 {{ t('filter.in_game') }}
-                </Button>
+              <!-- Type Filters -->
+              <div class="space-y-3">
+                <h4 class="text-sm font-medium text-muted-foreground">{{ t('filter.type') }}</h4>
+                <div class="flex flex-wrap gap-2">
+                  <button 
+                    @click="filters.questType.watch = !filters.questType.watch"
+                    :class="cn(
+                      'inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full border transition-colors',
+                      filters.questType.watch 
+                        ? 'border-green-600 text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-950/30' 
+                        : 'border-border bg-background hover:bg-accent hover:text-accent-foreground'
+                    )"
+                  >
+                    <Check v-if="filters.questType.watch" class="h-3.5 w-3.5" />
+                    🎬 {{ t('filter.watch') }}
+                  </button>
+                  <button 
+                    @click="filters.questType.play = !filters.questType.play"
+                    :class="cn(
+                      'inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full border transition-colors',
+                      filters.questType.play 
+                        ? 'border-green-600 text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-950/30' 
+                        : 'border-border bg-background hover:bg-accent hover:text-accent-foreground'
+                    )"
+                  >
+                    <Check v-if="filters.questType.play" class="h-3.5 w-3.5" />
+                    🎮 {{ t('filter.play') }}
+                  </button>
+                  <button 
+                    @click="filters.questType.activity = !filters.questType.activity"
+                    :class="cn(
+                      'inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full border transition-colors',
+                      filters.questType.activity 
+                        ? 'border-green-600 text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-950/30' 
+                        : 'border-border bg-background hover:bg-accent hover:text-accent-foreground'
+                    )"
+                  >
+                    <Check v-if="filters.questType.activity" class="h-3.5 w-3.5" />
+                    🎯 {{ t('filter.activity') }}
+                  </button>
+                </div>
+              </div>
+
+              <!-- Reward Filters -->
+              <div class="space-y-3 md:col-span-2">
+                <h4 class="text-sm font-medium text-muted-foreground">{{ t('filter.reward') }}</h4>
+                <div class="flex flex-wrap gap-2">
+                  <button 
+                    @click="filters.rewards.orbs = !filters.rewards.orbs"
+                    :class="cn(
+                      'inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full border transition-colors',
+                      filters.rewards.orbs 
+                        ? 'border-green-600 text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-950/30' 
+                        : 'border-border bg-background hover:bg-accent hover:text-accent-foreground'
+                    )"
+                  >
+                    <Check v-if="filters.rewards.orbs" class="h-3.5 w-3.5" />
+                    💎 {{ t('filter.orbs') }}
+                  </button>
+                  <button 
+                    @click="filters.rewards.avatarDecoration = !filters.rewards.avatarDecoration"
+                    :class="cn(
+                      'inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full border transition-colors',
+                      filters.rewards.avatarDecoration 
+                        ? 'border-green-600 text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-950/30' 
+                        : 'border-border bg-background hover:bg-accent hover:text-accent-foreground'
+                    )"
+                  >
+                    <Check v-if="filters.rewards.avatarDecoration" class="h-3.5 w-3.5" />
+                    🌟 {{ t('filter.decoration') }}
+                  </button>
+                  <button 
+                    @click="filters.rewards.ingame = !filters.rewards.ingame"
+                    :class="cn(
+                      'inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full border transition-colors',
+                      filters.rewards.ingame 
+                        ? 'border-green-600 text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-950/30' 
+                        : 'border-border bg-background hover:bg-accent hover:text-accent-foreground'
+                    )"
+                  >
+                    <Check v-if="filters.rewards.ingame" class="h-3.5 w-3.5" />
+                    🎁 {{ t('filter.in_game') }}
+                  </button>
+                </div>
               </div>
             </div>
           </CardContent>
@@ -304,7 +345,8 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { cn } from '@/lib/utils'
-import { RotateCw, Filter, AlertCircle, Loader2, ArrowUpCircle, ExternalLink } from 'lucide-vue-next'
+import { RotateCw, Filter, AlertCircle, Loader2, ArrowUpCircle, ExternalLink, Check, Search } from 'lucide-vue-next'
+import { Input } from '@/components/ui/input'
 import { useI18n } from 'vue-i18n'
 import { open } from '@tauri-apps/plugin-shell'
 
@@ -329,6 +371,9 @@ const statusFilterOptions = computed(() => ({
 
 // Show/hide filter panel
 const showFilters = ref(false)
+
+// Search query for quest keyword search
+const searchQuery = ref('')
 
 // Accepting quest state
 const acceptingQuest = ref<string | null>(null)
@@ -510,6 +555,16 @@ const filteredQuests = computed(() => {
     }
     return true
   })
+  
+  // Apply search filter if search query is provided
+  if (searchQuery.value.trim()) {
+    const query = searchQuery.value.toLowerCase().trim()
+    quests = quests.filter(q => {
+      const questName = q.config.messages?.quest_name?.toLowerCase() || ''
+      const gameTitle = q.config.messages?.game_title?.toLowerCase() || ''
+      return questName.includes(query) || gameTitle.includes(query)
+    })
+  }
 
   // If no filters are active, show all valid quests EXCEPT activity (default hidden)
   if (!hasActiveFilters.value) {

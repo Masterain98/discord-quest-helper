@@ -40,7 +40,8 @@ export default {
         remaining: "restantes",
         accept_quest: "Aceptar misión",
         stop_quest: "Detener misión",
-        complete_quest: "Completar misión"
+        complete_quest: "Completar misión",
+        search_placeholder: "Buscar misiones..."
     },
     quest: {
         progress: "Progreso",

@@ -40,7 +40,8 @@ export default {
         remaining: "осталось",
         accept_quest: "Принять квест",
         stop_quest: "Остановить квест",
-        complete_quest: "Завершить квест"
+        complete_quest: "Завершить квест",
+        search_placeholder: "Поиск квестов..."
     },
     quest: {
         progress: "Прогресс",

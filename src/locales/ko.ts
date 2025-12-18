@@ -40,7 +40,8 @@ export default {
         remaining: "남음",
         accept_quest: "퀘스트 수락",
         stop_quest: "퀘스트 중지",
-        complete_quest: "퀘스트 완료"
+        complete_quest: "퀘스트 완료",
+        search_placeholder: "퀘스트 검색..."
     },
     quest: {
         progress: "진행률",

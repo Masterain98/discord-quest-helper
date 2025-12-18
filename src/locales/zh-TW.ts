@@ -40,7 +40,8 @@ export default {
         remaining: "剩餘",
         accept_quest: "接受任務",
         stop_quest: "停止任務",
-        complete_quest: "完成任務"
+        complete_quest: "完成任務",
+        search_placeholder: "搜尋任務..."
     },
     quest: {
         progress: "進度",
