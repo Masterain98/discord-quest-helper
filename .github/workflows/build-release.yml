@@ -122,26 +122,18 @@ jobs:
       - name: prepare files
         env:
           version: ${{ env.version }}
-          win_build_release_dir: discord-quest-helper-win32-x64-${{ env.version }}
         run: |
-          # Create portable directory structure
-          mkdir -p ./build/${{ env.win_build_release_dir }}/data
+          # Create output directory
+          mkdir -p ./build
           
-          # The artifact preserves the original path structure
-          RELEASE_DIR="tauri-win-release/src-tauri/target/release"
+          # Artifact is downloaded and extracted to tauri-win-release directory
+          # Contents are: bundle/, data/, discord-quest-helper.exe
+          # Zip the contents with the versioned name
+          cd tauri-win-release
+          zip -r ../build/discord-quest-helper-win32-x64-${{ env.version }}.zip .
+          cd ..
           
-          # Copy main executable
-          cp "$RELEASE_DIR/discord-quest-helper.exe" ./build/${{ env.win_build_release_dir }}/
-          
-          # Copy data directory (contains discord-quest-runner.exe)
-          if [ -d "$RELEASE_DIR/data" ]; then
-            cp -r "$RELEASE_DIR/data/"* ./build/${{ env.win_build_release_dir }}/data/
-          fi
-          
-          # Create zip archive
-          cd build
-          zip -r ${{ env.win_build_release_dir }}.zip ${{ env.win_build_release_dir }}
-          echo "win_build_release_dir=${{ env.win_build_release_dir }}" >> $GITHUB_ENV
+          echo "win_build_release_dir=discord-quest-helper-win32-x64-${{ env.version }}" >> $GITHUB_ENV
 
       - name: Create and Upload Release
         id: create_release
