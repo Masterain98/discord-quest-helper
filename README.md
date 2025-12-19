@@ -8,6 +8,22 @@ A Windows desktop application to complete Discord Quests automatically - support
 ![Vue](https://img.shields.io/badge/vue-3.5-green.svg)
 ![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)
 
+## 📸 Screenshots
+
+| Login | Home |
+|:-----:|:----:|
+| ![Login](./screenshots/login.png) | ![Home](./screenshots/home1.png) |
+
+| Multi-Account | Game Simulator |
+|:-------------:|:--------------:|
+| ![Multi-Account](./screenshots/multi-account.png) | ![Game Simulator](./screenshots/game-simulator.png) |
+
+| Quest Progress | Settings |
+|:--------------:|:--------:|
+| ![Quest Progress](./screenshots/home2.png) | ![Settings](./screenshots/settings.png) |
+
+---
+
 > [!WARNING]
 > **This tool is for educational purposes only.** Using this tool may violate Discord's Terms of Service. The authors are not responsible for any consequences resulting from the use of this software. Use at your own risk.
 
