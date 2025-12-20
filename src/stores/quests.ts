@@ -39,10 +39,19 @@ export const useQuestsStore = defineStore('quests', () => {
   const savedSpeed = localStorage.getItem(STORAGE_SPEED_KEY)
   const speedMultiplier = ref(savedSpeed ? parseInt(savedSpeed) : 7)
 
-  // Heartbeat interval (seconds) - read from localStorage, default 3
+  // Heartbeat interval (seconds) - for Video quests API heartbeat requests
+  // Controls how often progress updates are sent to Discord API during video quest simulation
+  // Lower = faster perceived completion, but higher risk of rate limiting
   const STORAGE_INTERVAL_KEY = 'questHelper_heartbeatInterval'
   const savedInterval = localStorage.getItem(STORAGE_INTERVAL_KEY)
   const heartbeatInterval = ref(savedInterval ? parseInt(savedInterval) : 3)
+
+  // Game polling interval (seconds) - for Play/Game quests progress detection
+  // Controls how often we poll Discord API to check game quest completion status
+  // Play quests use Discord RPC for activity reporting, so we just poll for status updates
+  const STORAGE_GAME_POLLING_KEY = 'questHelper_gamePollingInterval'
+  const savedGamePolling = localStorage.getItem(STORAGE_GAME_POLLING_KEY)
+  const gamePollingInterval = ref(savedGamePolling ? parseInt(savedGamePolling) : 30)
 
   // Persist speed changes to localStorage
   watch(speedMultiplier, (newSpeed) => {
@@ -52,6 +61,11 @@ export const useQuestsStore = defineStore('quests', () => {
   // Persist heartbeat interval changes
   watch(heartbeatInterval, (newInterval) => {
     localStorage.setItem(STORAGE_INTERVAL_KEY, String(newInterval))
+  })
+
+  // Persist game polling interval changes
+  watch(gamePollingInterval, (newInterval) => {
+    localStorage.setItem(STORAGE_GAME_POLLING_KEY, String(newInterval))
   })
 
   let progressUnlisten: (() => void) | null = null
@@ -102,10 +116,12 @@ export const useQuestsStore = defineStore('quests', () => {
 
   function startPolling() {
     if (pollingTimer) clearInterval(pollingTimer)
+    // Use user-configurable game polling interval (in seconds, convert to ms)
+    const intervalMs = gamePollingInterval.value * 1000
     pollingTimer = setInterval(async () => {
       await fetchQuests(true)
       checkActiveQuestStatus()
-    }, 60000)
+    }, intervalMs)
   }
 
   function stopPolling() {
@@ -490,6 +506,7 @@ export const useQuestsStore = defineStore('quests', () => {
     activeQuestTargetDuration,
     speedMultiplier,
     heartbeatInterval,
+    gamePollingInterval,
     stopping,
     activeGameExe,
     questQueue, // Export queue

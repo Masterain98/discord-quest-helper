@@ -162,11 +162,11 @@ onMounted(async () => {
         </CardContent>
       </Card>
       
-      <!-- Quest Configuration -->
+      <!-- Video Quest Configuration -->
       <Card>
         <CardHeader>
-          <CardTitle>{{ t('settings.quest_config') }}</CardTitle>
-          <CardDescription>{{ t('settings.quest_config_desc') }}</CardDescription>
+          <CardTitle>{{ t('settings.video_quest_config') }}</CardTitle>
+          <CardDescription>{{ t('settings.video_quest_config_desc') }}</CardDescription>
         </CardHeader>
         <CardContent class="space-y-8">
            <div class="space-y-4">
@@ -201,11 +201,45 @@ onMounted(async () => {
                step="1"
                class="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary"
              />
-             <div class="flex justify-between text-xs text-muted-foreground">
-               <span>1s ({{ t('settings.interval_fast') }})</span>
-               <span>10s ({{ t('settings.interval_slow') }})</span>
-             </div>
-           </div>
+              <div class="flex justify-between text-xs text-muted-foreground">
+                <span>1s ({{ t('settings.interval_fast') }})</span>
+                <span>10s ({{ t('settings.interval_slow') }})</span>
+              </div>
+              <p v-if="questsStore.heartbeatInterval < 3" class="text-xs text-yellow-600 dark:text-yellow-500 mt-2">
+                ⚠️ {{ t('settings.rate_limit_warning') }}
+              </p>
+            </div>
+        </CardContent>
+      </Card>
+      
+      <!-- Game Polling Configuration -->
+      <Card>
+        <CardHeader>
+          <CardTitle>{{ t('settings.game_polling_title') }}</CardTitle>
+          <CardDescription>{{ t('settings.game_polling_desc') }}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div class="space-y-4">
+            <div class="flex justify-between items-center">
+              <Label>{{ t('settings.game_polling_interval') }} ({{ questsStore.gamePollingInterval }}s)</Label>
+              <span class="text-xs text-muted-foreground">{{ t('settings.game_polling_hint') }}</span>
+            </div>
+            <input 
+              type="range"
+              v-model.number="questsStore.gamePollingInterval"
+              min="5"
+              max="180"
+              step="1"
+              class="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary"
+            />
+            <div class="flex justify-between text-xs text-muted-foreground">
+              <span>5s ({{ t('settings.interval_fast') }})</span>
+              <span>180s ({{ t('settings.interval_slow') }})</span>
+            </div>
+            <p v-if="questsStore.gamePollingInterval < 30" class="text-xs text-yellow-600 dark:text-yellow-500 mt-2">
+              ⚠️ {{ t('settings.rate_limit_warning') }}
+            </p>
+          </div>
         </CardContent>
       </Card>
       
