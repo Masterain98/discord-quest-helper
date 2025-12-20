@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- SEO Meta Tags -->
+    <title>Discord Quest Helper - Auto Complete Video, Stream & Game Quests</title>
+    <meta name="description"
+        content="A Windows desktop application to complete Discord Quests automatically - supports video, stream, and game quests. One-click automation for Discord rewards.">
+    <meta name="keywords" content="Discord, Quest, Helper, Automation, Game, Video, Stream, Windows, Desktop, App">
+    <meta name="author" content="DGP-Studio">
+
+    <!-- Open Graph / Social Media -->
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Discord Quest Helper">
+    <meta property="og:description"
+        content="Automate Discord video, stream and game quests with one click. A free, open-source Windows desktop application.">
+    <meta property="og:image" content="images/home1.png">
+    <meta property="og:url" content="https://github.com/Masterain98/discord-quest-helper">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Discord Quest Helper">
+    <meta name="twitter:description" content="Automate Discord video, stream and game quests with one click.">
+    <meta name="twitter:image" content="images/home1.png">
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="images/logo.png">
+
+    <!-- Hreflang for SEO -->
+    <link rel="alternate" hreflang="en" href="./" />
+    <link rel="alternate" hreflang="zh-Hans" href="./chs/" />
+    <link rel="alternate" hreflang="zh-Hant" href="./cht/" />
+    <link rel="alternate" hreflang="ja" href="./ja/" />
+    <link rel="alternate" hreflang="ko" href="./ko/" />
+    <link rel="alternate" hreflang="ru" href="./ru/" />
+    <link rel="alternate" hreflang="es" href="./es/" />
+    <link rel="alternate" hreflang="x-default" href="./" />
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+
+    <!-- Styles -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <!-- Navigation -->
+    <nav class="nav" id="nav">
+        <div class="nav-container">
+            <a href="#" class="nav-logo">
+                <img src="images/logo.png" alt="Logo" class="nav-logo-img">
+                <span>Discord Quest Helper</span>
+            </a>
+            <div class="nav-links">
+                <a href="#features">Features</a>
+                <a href="#screenshots">Screenshots</a>
+                <a href="#quickstart">Quick Start</a>
+                <a href="#usage">Usage</a>
+                <a href="#faq">FAQ</a>
+                <a href="https://github.com/Masterain98/discord-quest-helper" target="_blank" class="nav-github">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                        <path
+                            d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
+                    </svg>
+                    GitHub
+                </a>
+                <div class="lang-switcher" id="lang-switcher">
+                    <button class="lang-btn" aria-label="Select language">
+                        🌐 English
+                        <svg viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
+                        </svg>
+                    </button>
+                    <div class="lang-dropdown">
+                        <a href="./" class="active">English</a>
+                        <a href="./chs/">简体中文</a>
+                        <a href="./cht/">繁體中文</a>
+                        <a href="./ja/">日本語</a>
+                        <a href="./ko/">한국어</a>
+                        <a href="./ru/">Русский</a>
+                        <a href="./es/">Español</a>
+                    </div>
+                </div>
+            </div>
+            <button class="nav-toggle" id="nav-toggle" aria-label="Toggle menu">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
+        </div>
+    </nav>
+
+    <!-- Mobile Menu -->
+    <div class="mobile-menu" id="mobile-menu">
+        <a href="#features">Features</a>
+        <a href="#screenshots">Screenshots</a>
+        <a href="#quickstart">Quick Start</a>
+        <a href="#usage">Usage</a>
+        <a href="#faq">FAQ</a>
+        <a href="https://github.com/Masterain98/discord-quest-helper" target="_blank">GitHub</a>
+    </div>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="hero-bg"></div>
+        <div class="hero-content">
+            <div class="hero-badge">🎮 Open Source & Free</div>
+            <h1 class="hero-title">
+                Discord Quest Helper
+            </h1>
+            <p class="hero-subtitle">
+                Automate your Discord Quests with one click.<br>
+                Complete video, stream, and game quests automatically while you focus on what matters.
+            </p>
+            <div class="hero-buttons">
+                <a href="https://github.com/Masterain98/discord-quest-helper/releases/latest" class="btn btn-primary">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                        <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" />
+                    </svg>
+                    Download Now
+                </a>
+                <a href="#quickstart" class="btn btn-secondary">
+                    Quick Start Guide
+                </a>
+            </div>
+            <div class="hero-stats">
+                <div class="stat">
+                    <span class="stat-icon">⚡</span>
+                    <span class="stat-text">One-Click Login</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-icon">💾</span>
+                    <span class="stat-text">No Game Download</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-icon">👑</span>
+                    <span class="stat-text">Video & Game Quests</span>
+                </div>
+            </div>
+        </div>
+        <div class="hero-image">
+            <img src="images/home3.png" alt="Discord Quest Helper Screenshot">
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section class="features" id="features">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">✨ Features</h2>
+                <p class="section-subtitle">Everything you need to automate Discord quests</p>
+            </div>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">⚡</div>
+                    <h3 class="feature-title">One-Click Login</h3>
+                    <p class="feature-desc">Automatically detects your Discord token - no need to run scripts or perform
+                        any technical steps. Just click and go.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🎮</div>
+                    <h3 class="feature-title">Zero-Download Game Simulation</h3>
+                    <p class="feature-desc">Complete game quests without downloading or installing the actual game. Save
+                        disk space and time.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📺</div>
+                    <h3 class="feature-title">Video & Stream Automation</h3>
+                    <p class="feature-desc">Click once to start, and the app handles video/stream progress
+                        automatically. No actual watching required.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🔍</div>
+                    <h3 class="feature-title">Advanced Quest Filter</h3>
+                    <p class="feature-desc">Filter quests by reward type, completion status, and more to quickly find
+                        the quests you want to complete.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">👥</div>
+                    <h3 class="feature-title">Multi-Account Support</h3>
+                    <p class="feature-desc">Manage and switch between multiple Discord accounts seamlessly.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🌏</div>
+                    <h3 class="feature-title">Multi-Language</h3>
+                    <p class="feature-desc">Available in English, Chinese, Japanese, Korean, Russian, and Spanish.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Screenshots Section -->
+    <section class="screenshots" id="screenshots">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">📸 Screenshots</h2>
+                <p class="section-subtitle">See the app in action</p>
+            </div>
+            <div class="carousel">
+                <div class="carousel-track" id="carousel-track">
+                    <div class="carousel-slide">
+                        <img src="images/login.png" alt="Login Screen">
+                        <div class="carousel-caption">Login Screen</div>
+                    </div>
+                    <div class="carousel-slide">
+                        <img src="images/home1.png" alt="Home Screen">
+                        <div class="carousel-caption">Quest Dashboard</div>
+                    </div>
+                    <div class="carousel-slide">
+                        <img src="images/home2.png" alt="Quest Progress">
+                        <div class="carousel-caption">Quest Progress</div>
+                    </div>
+                    <div class="carousel-slide">
+                        <img src="images/game-simulator.png" alt="Game Simulator">
+                        <div class="carousel-caption">Game Simulator</div>
+                    </div>
+                    <div class="carousel-slide">
+                        <img src="images/multi-account.png" alt="Multi-Account">
+                        <div class="carousel-caption">Multi-Account Management</div>
+                    </div>
+                    <div class="carousel-slide">
+                        <img src="images/settings.png" alt="Settings">
+                        <div class="carousel-caption">Settings</div>
+                    </div>
+                </div>
+                <button class="carousel-btn carousel-btn-prev" id="carousel-prev" aria-label="Previous">
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+                        <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" />
+                    </svg>
+                </button>
+                <button class="carousel-btn carousel-btn-next" id="carousel-next" aria-label="Next">
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+                        <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" />
+                    </svg>
+                </button>
+                <div class="carousel-dots" id="carousel-dots"></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Quick Start Section -->
+    <section class="quickstart" id="quickstart">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">🚀 Quick Start</h2>
+                <p class="section-subtitle">Get started in 4 simple steps</p>
+            </div>
+            <div class="steps">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <h3 class="step-title">Download & Run</h3>
+                        <p class="step-desc">Download the <a
+                                href="https://github.com/Masterain98/discord-quest-helper/releases/latest"
+                                target="_blank">latest release</a>, extract the <code>.zip</code> file, and run
+                            <code>Discord Quest Helper.exe</code>.
+                        </p>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <h3 class="step-title">Login to Discord</h3>
+                        <p class="step-desc">Click <strong>Auto Detect Token</strong> to automatically log in, or use
+                            <strong>Manual Input</strong> if you prefer. Auto-detect requires the Discord client to be
+                            running in the background.
+                        </p>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <div class="step-content">
+                        <h3 class="step-title">Complete Quests</h3>
+                        <p class="step-desc">Browse your quests and click to start. Video quests work directly in the
+                            app. Game quests require Discord client to be online.</p>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-number">4</div>
+                    <div class="step-content">
+                        <h3 class="step-title">Claim Rewards</h3>
+                        <p class="step-desc">After completing a quest, manually claim your reward through the Discord
+                            client. This app automates progress but does not claim rewards.</p>
+                    </div>
+                </div>
+            </div>
+            <div class="warning-box">
+                <div class="warning-icon">⚠️</div>
+                <div class="warning-content">
+                    <strong>Important Notice</strong>
+                    <p>This tool is for educational purposes only. Using this tool may violate Discord's Terms of
+                        Service. The authors are not responsible for any consequences. Use at your own risk.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Usage Guide Section -->
+    <section class="usage" id="usage">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">📖 Usage Guide</h2>
+                <p class="section-subtitle">Learn how to complete different quest types</p>
+            </div>
+            <div class="usage-grid">
+                <div class="usage-card">
+                    <div class="usage-header">
+                        <span class="usage-icon">📺</span>
+                        <h3 class="usage-title">Video & Stream Quests</h3>
+                    </div>
+                    <div class="usage-body">
+                        <ol class="usage-steps">
+                            <li>Find a video or stream quest on the Home tab</li>
+                            <li>Click the <strong>"🎬 Start Watching"</strong> or <strong>"📡 Start Streaming"</strong>
+                                button</li>
+                            <li>The app submits progress to Discord servers automatically</li>
+                            <li>Wait for the quest to complete</li>
+                        </ol>
+                        <div class="usage-tip">
+                            <span class="tip-icon">💡</span>
+                            <span>Progress is handled entirely by this app. No need to watch anything or keep Discord
+                                open. Adjust completion speed (1-10x) in Settings.</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="usage-card">
+                    <div class="usage-header">
+                        <span class="usage-icon">🎮</span>
+                        <h3 class="usage-title">Game Quests</h3>
+                    </div>
+                    <div class="usage-body">
+                        <ol class="usage-steps">
+                            <li>Find a game quest on the Home tab</li>
+                            <li>Click the <strong>"🎮 Start Playing"</strong> button directly on the quest card</li>
+                            <li>The app automatically creates and runs a simulated game process</li>
+                            <li>Discord client detects the process and updates your progress</li>
+                        </ol>
+                        <div class="usage-tip">
+                            <span class="tip-icon">💡</span>
+                            <span>No need to download or install the actual game. Discord client must be running in the
+                                background.</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Game Simulator Section -->
+    <section class="features" id="simulator">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">🕹️ Game Simulator</h2>
+                <p class="section-subtitle">Simulate any Discord-supported game for Rich Presence</p>
+            </div>
+            <div class="usage-grid">
+                <div class="usage-card">
+                    <div class="usage-header">
+                        <span class="usage-icon">⚙️</span>
+                        <h3 class="usage-title">Custom Game Simulation</h3>
+                    </div>
+                    <div class="usage-body">
+                        <p class="step-desc" style="margin-bottom: 16px;">
+                            The Game Simulator allows you to create and run simulated processes for any game that
+                            Discord supports. This is useful for:
+                        </p>
+                        <ul class="usage-steps" style="list-style-type: disc;">
+                            <li>Completing game quests for specific titles</li>
+                            <li>Displaying custom Rich Presence status on Discord</li>
+                            <li>Testing Discord RPC integrations</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="usage-card">
+                    <div class="usage-header">
+                        <span class="usage-icon">🛠️</span>
+                        <h3 class="usage-title">How to Use</h3>
+                    </div>
+                    <div class="usage-body">
+                        <ol class="usage-steps">
+                            <li>Go to the <strong>Game Simulator</strong> tab</li>
+                            <li>Search and select a game from Discord's game database</li>
+                            <li>Choose an executable name and installation path</li>
+                            <li>Click <strong>"Create Game"</strong> to generate the simulated executable</li>
+                            <li>Click <strong>"Run"</strong> to start the process and connect Discord RPC</li>
+                            <li>Click <strong>"Stop"</strong> when finished</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- FAQ Section -->
+    <section class="faq" id="faq">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">FAQ</h2>
+                <p class="section-subtitle">Frequently asked questions</p>
+            </div>
+            <div class="faq-list">
+                <div class="faq-item">
+                    <button class="faq-question" aria-expanded="false">
+                        <span>What is a Discord token and how does auto-detection work?</span>
+                        <svg class="faq-icon" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+                            <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
+                        </svg>
+                    </button>
+                    <div class="faq-answer">
+                        <p>A Discord token is an authentication credential stored locally by the Discord client to
+                            maintain your login session. This application reads the token directly from Discord's local
+                            storage without requiring manual extraction through browser developer tools or console
+                            scripts.</p>
+                    </div>
+                </div>
+                <div class="faq-item">
+                    <button class="faq-question" aria-expanded="false">
+                        <span>How is my token handled securely?</span>
+                        <svg class="faq-icon" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+                            <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
+                        </svg>
+                    </button>
+                    <div class="faq-answer">
+                        <p>The token is stored in memory only during the application session and is never persisted to
+                            disk. All API requests are transmitted over HTTPS exclusively to Discord's official servers.
+                            The application is open source, allowing full code review and verification.</p>
+                    </div>
+                </div>
+                <div class="faq-item">
+                    <button class="faq-question" aria-expanded="false">
+                        <span>Do I need to download or install games for game quests?</span>
+                        <svg class="faq-icon" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+                            <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
+                        </svg>
+                    </button>
+                    <div class="faq-answer">
+                        <p>No. The Game Simulator creates a lightweight process that Discord's Rich Presence system
+                            recognizes as the target game. This eliminates the need to download, install, or own the
+                            actual game, saving both disk space and bandwidth.</p>
+                    </div>
+                </div>
+                <div class="faq-item">
+                    <button class="faq-question" aria-expanded="false">
+                        <span>Why do game quests require Discord client while video quests do not?</span>
+                        <svg class="faq-icon" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+                            <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
+                        </svg>
+                    </button>
+                    <div class="faq-answer">
+                        <p>Video quests utilize Discord's HTTP API, allowing this application to submit watch progress
+                            directly to Discord servers. Game quests rely on Discord's Rich Presence protocol, which
+                            requires the Discord desktop client to detect running game processes and report activity to
+                            the server.</p>
+                    </div>
+                </div>
+                <div class="faq-item">
+                    <button class="faq-question" aria-expanded="false">
+                        <span>What is the Advanced Filter feature?</span>
+                        <svg class="faq-icon" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+                            <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
+                        </svg>
+                    </button>
+                    <div class="faq-answer">
+                        <p>Advanced Filter enables filtering quests by reward type (cosmetics, items, etc.), quest type
+                            (video, game, stream), and completion status. This functionality helps users quickly locate
+                            specific quests matching their criteria.</p>
+                    </div>
+                </div>
+                <div class="faq-item">
+                    <button class="faq-question" aria-expanded="false">
+                        <span>Which Discord client versions are supported?</span>
+                        <svg class="faq-icon" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+                            <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
+                        </svg>
+                    </button>
+                    <div class="faq-answer">
+                        <p>The application supports Discord Stable, Discord Canary, and Discord PTB (Public Test Build).
+                            Auto-detection works with whichever version is installed and running on your system.</p>
+                    </div>
+                </div>
+                <div class="faq-item">
+                    <button class="faq-question" aria-expanded="false">
+                        <span>Is macOS or Linux supported?</span>
+                        <svg class="faq-icon" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+                            <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
+                        </svg>
+                    </button>
+                    <div class="faq-answer">
+                        <p>Currently, the application is Windows-only. Token extraction relies on Windows Data
+                            Protection API (DPAPI) for decryption. Cross-platform support may be considered in future
+                            releases.</p>
+                    </div>
+                </div>
+                <div class="faq-item">
+                    <button class="faq-question" aria-expanded="false">
+                        <span>How do I completely remove the application and its data?</span>
+                        <svg class="faq-icon" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+                            <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
+                        </svg>
+                    </button>
+                    <div class="faq-answer">
+                        <p>To completely remove the application, delete the application folder. Cache files (simulated
+                            game executables) are stored in <code>Documents\DiscordQuestGames</code>. Delete this folder
+                            to remove all cached data. You can access this folder directly from the Settings page within
+                            the app.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-brand">
+                    <img src="images/logo.png" alt="Logo" class="footer-logo">
+                    <span>Discord Quest Helper</span>
+                </div>
+                <div class="footer-links">
+                    <a href="https://github.com/Masterain98/discord-quest-helper" target="_blank">GitHub</a>
+                    <a href="https://github.com/Masterain98/discord-quest-helper/releases/latest"
+                        target="_blank">Download</a>
+                    <a href="https://github.com/Masterain98/discord-quest-helper/blob/main/LICENSE"
+                        target="_blank">License</a>
+                    <a href="https://github.com/Masterain98/discord-quest-helper/blob/main/CONTRIBUTING.md"
+                        target="_blank">Contributing</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>MIT License © 2025 Masterain. Built with ❤️ using Tauri, Vue.js, and Rust.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+
+</html>

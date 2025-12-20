@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- SEO Meta Tags -->
+    <title>Discord Quest Helper - 自动完成视频、直播和游戏任务</title>
+    <meta name="description" content="一款 Windows 桌面应用程序，可自动完成 Discord 任务 - 支持视频、直播和游戏任务。一键自动化获取 Discord 奖励。">
+    <meta name="keywords" content="Discord, 任务, 助手, 自动化, 游戏, 视频, 直播, Windows, 桌面, 应用">
+    <meta name="author" content="DGP-Studio">
+
+    <!-- Open Graph / Social Media -->
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Discord Quest Helper - Discord 任务助手">
+    <meta property="og:description" content="一键自动完成 Discord 视频、直播和游戏任务。免费开源的 Windows 桌面应用。">
+    <meta property="og:image" content="../images/home1.png">
+    <meta property="og:url" content="https://github.com/Masterain98/discord-quest-helper">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Discord Quest Helper">
+    <meta name="twitter:description" content="一键自动完成 Discord 视频、直播和游戏任务。">
+    <meta name="twitter:image" content="../images/home1.png">
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="../images/logo.png">
+
+    <!-- Hreflang for SEO -->
+    <link rel="alternate" hreflang="en" href="../" />
+    <link rel="alternate" hreflang="zh-Hans" href="./" />
+    <link rel="alternate" hreflang="zh-Hant" href="../cht/" />
+    <link rel="alternate" hreflang="ja" href="../ja/" />
+    <link rel="alternate" hreflang="ko" href="../ko/" />
+    <link rel="alternate" hreflang="ru" href="../ru/" />
+    <link rel="alternate" hreflang="es" href="../es/" />
+    <link rel="alternate" hreflang="x-default" href="../" />
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap"
+        rel="stylesheet">
+
+    <!-- Styles -->
+    <link rel="stylesheet" href="../styles.css">
+    <style>
+        body {
+            font-family: 'Noto Sans SC', 'Inter', sans-serif;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Navigation -->
+    <nav class="nav" id="nav">
+        <div class="nav-container">
+            <a href="#" class="nav-logo">
+                <img src="../images/logo.png" alt="Logo" class="nav-logo-img">
+                <span>Discord Quest Helper</span>
+            </a>
+            <div class="nav-links">
+                <a href="#features">功能</a>
+                <a href="#screenshots">截图</a>
+                <a href="#quickstart">快速开始</a>
+                <a href="#usage">使用指南</a>
+                <a href="#faq">常见问题</a>
+                <a href="https://github.com/Masterain98/discord-quest-helper" target="_blank" class="nav-github">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                        <path
+                            d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
+                    </svg>
+                    GitHub
+                </a>
+                <div class="lang-switcher" id="lang-switcher">
+                    <button class="lang-btn" aria-label="选择语言">
+                        🌐 简体中文
+                        <svg viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
+                        </svg>
+                    </button>
+                    <div class="lang-dropdown">
+                        <a href="../">English</a>
+                        <a href="./" class="active">简体中文</a>
+                        <a href="../cht/">繁體中文</a>
+                        <a href="../ja/">日本語</a>
+                        <a href="../ko/">한국어</a>
+                        <a href="../ru/">Русский</a>
+                        <a href="../es/">Español</a>
+                    </div>
+                </div>
+            </div>
+            <button class="nav-toggle" id="nav-toggle" aria-label="切换菜单">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
+        </div>
+    </nav>
+
+    <!-- Mobile Menu -->
+    <div class="mobile-menu" id="mobile-menu">
+        <a href="#features">功能</a>
+        <a href="#screenshots">截图</a>
+        <a href="#quickstart">快速开始</a>
+        <a href="#usage">使用指南</a>
+        <a href="#faq">常见问题</a>
+        <a href="https://github.com/Masterain98/discord-quest-helper" target="_blank">GitHub</a>
+    </div>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="hero-bg"></div>
+        <div class="hero-content">
+            <div class="hero-badge">🎮 开源免费</div>
+            <h1 class="hero-title">
+                Discord Quest Helper
+            </h1>
+            <p class="hero-subtitle">
+                一键自动完成 Discord 任务。<br>
+                自动完成视频、直播和游戏任务，让您专注于更重要的事情。
+            </p>
+            <div class="hero-buttons">
+                <a href="https://github.com/Masterain98/discord-quest-helper/releases/latest" class="btn btn-primary">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                        <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" />
+                    </svg>
+                    立即下载
+                </a>
+                <a href="#quickstart" class="btn btn-secondary">
+                    快速开始指南
+                </a>
+            </div>
+            <div class="hero-stats">
+                <div class="stat">
+                    <span class="stat-icon">⚡</span>
+                    <span class="stat-text">一键登录</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-icon">💾</span>
+                    <span class="stat-text">无需下载游戏</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-icon">👑</span>
+                    <span class="stat-text">视频与游戏任务</span>
+                </div>
+            </div>
+        </div>
+        <div class="hero-image">
+            <img src="../images/home3.png" alt="Discord Quest Helper 截图">
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section class="features" id="features">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">✨ 功能特性</h2>
+                <p class="section-subtitle">自动化 Discord 任务所需的一切</p>
+            </div>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">⚡</div>
+                    <h3 class="feature-title">一键登录</h3>
+                    <p class="feature-desc">自动检测您的 Discord Token，无需运行脚本或执行任何技术步骤。点击即可开始。</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🎮</div>
+                    <h3 class="feature-title">零下载游戏模拟</h3>
+                    <p class="feature-desc">无需下载或安装实际游戏即可完成游戏任务。节省磁盘空间和时间。</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📺</div>
+                    <h3 class="feature-title">视频与直播自动化</h3>
+                    <p class="feature-desc">点击一次即可开始，应用程序自动处理视频/直播进度。无需实际观看。</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🔍</div>
+                    <h3 class="feature-title">高级任务筛选</h3>
+                    <p class="feature-desc">按奖励类型、完成状态等筛选任务，快速找到您想完成的任务。</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">👥</div>
+                    <h3 class="feature-title">多账户支持</h3>
+                    <p class="feature-desc">无缝管理和切换多个 Discord 账户。</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🌏</div>
+                    <h3 class="feature-title">多语言支持</h3>
+                    <p class="feature-desc">支持英语、中文、日语、韩语、俄语和西班牙语。</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Screenshots Section -->
+    <section class="screenshots" id="screenshots">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">📸 截图预览</h2>
+                <p class="section-subtitle">查看应用程序的实际效果</p>
+            </div>
+            <div class="carousel">
+                <div class="carousel-track" id="carousel-track">
+                    <div class="carousel-slide">
+                        <img src="../images/login.png" alt="登录界面">
+                        <div class="carousel-caption">登录界面</div>
+                    </div>
+                    <div class="carousel-slide">
+                        <img src="../images/home1.png" alt="首页">
+                        <div class="carousel-caption">任务面板</div>
+                    </div>
+                    <div class="carousel-slide">
+                        <img src="../images/home2.png" alt="任务进度">
+                        <div class="carousel-caption">任务进度</div>
+                    </div>
+                    <div class="carousel-slide">
+                        <img src="../images/game-simulator.png" alt="游戏模拟器">
+                        <div class="carousel-caption">游戏模拟器</div>
+                    </div>
+                    <div class="carousel-slide">
+                        <img src="../images/multi-account.png" alt="多账户">
+                        <div class="carousel-caption">多账户管理</div>
+                    </div>
+                    <div class="carousel-slide">
+                        <img src="../images/settings.png" alt="设置">
+                        <div class="carousel-caption">设置</div>
+                    </div>
+                </div>
+                <button class="carousel-btn carousel-btn-prev" id="carousel-prev" aria-label="上一张">
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+                        <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" />
+                    </svg>
+                </button>
+                <button class="carousel-btn carousel-btn-next" id="carousel-next" aria-label="下一张">
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+                        <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" />
+                    </svg>
+                </button>
+                <div class="carousel-dots" id="carousel-dots"></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Quick Start Section -->
+    <section class="quickstart" id="quickstart">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">🚀 快速开始</h2>
+                <p class="section-subtitle">只需 4 个简单步骤即可开始</p>
+            </div>
+            <div class="steps">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <h3 class="step-title">下载并运行</h3>
+                        <p class="step-desc">下载<a
+                                href="https://github.com/Masterain98/discord-quest-helper/releases/latest"
+                                target="_blank">最新版本</a>，解压 <code>.zip</code> 文件，然后运行
+                            <code>Discord Quest Helper.exe</code>。
+                        </p>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <h3 class="step-title">登录 Discord</h3>
+                        <p class="step-desc">点击 <strong>Auto Detect Token</strong> 自动登录，或使用
+                            <strong>Manual Input</strong> 手动输入。自动检测需要 Discord 客户端在后台运行。
+                        </p>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <div class="step-content">
+                        <h3 class="step-title">完成任务</h3>
+                        <p class="step-desc">浏览您的任务并点击开始。视频任务直接在应用内完成。游戏任务需要 Discord 客户端在线。</p>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-number">4</div>
+                    <div class="step-content">
+                        <h3 class="step-title">领取奖励</h3>
+                        <p class="step-desc">完成任务后，通过 Discord 客户端手动领取奖励。此应用自动化进度但不会领取奖励。</p>
+                    </div>
+                </div>
+            </div>
+            <div class="warning-box">
+                <div class="warning-icon">⚠️</div>
+                <div class="warning-content">
+                    <strong>重要提示</strong>
+                    <p>此工具仅供学习目的。使用此工具可能违反 Discord 的服务条款。作者不对任何后果负责。使用风险自负。</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Usage Guide Section -->
+    <section class="usage" id="usage">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">📖 使用指南</h2>
+                <p class="section-subtitle">了解如何完成不同类型的任务</p>
+            </div>
+            <div class="usage-grid">
+                <div class="usage-card">
+                    <div class="usage-header">
+                        <span class="usage-icon">📺</span>
+                        <h3 class="usage-title">视频与直播任务</h3>
+                    </div>
+                    <div class="usage-body">
+                        <ol class="usage-steps">
+                            <li>在首页找到视频或直播任务</li>
+                            <li>点击 <strong>"🎬 Start Watching"</strong> 或 <strong>"📡 Start Streaming"</strong> 按钮</li>
+                            <li>应用自动向 Discord 服务器提交进度</li>
+                            <li>等待任务完成</li>
+                        </ol>
+                        <div class="usage-tip">
+                            <span class="tip-icon">💡</span>
+                            <span>进度完全由此应用处理。无需观看任何内容或保持 Discord 在线。可在设置中调整完成速度 (1-10x)。</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="usage-card">
+                    <div class="usage-header">
+                        <span class="usage-icon">🎮</span>
+                        <h3 class="usage-title">游戏任务</h3>
+                    </div>
+                    <div class="usage-body">
+                        <ol class="usage-steps">
+                            <li>在首页找到游戏任务</li>
+                            <li>直接在任务卡片上点击 <strong>"🎮 Start Playing"</strong> 按钮</li>
+                            <li>应用自动创建并运行模拟游戏进程</li>
+                            <li>Discord 客户端检测到进程并更新您的进度</li>
+                        </ol>
+                        <div class="usage-tip">
+                            <span class="tip-icon">💡</span>
+                            <span>无需下载或安装实际游戏。Discord 客户端必须在后台运行。</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Game Simulator Section -->
+    <section class="features" id="simulator">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">🕹️ 游戏模拟器</h2>
+                <p class="section-subtitle">模拟任何 Discord 支持的游戏以显示 Rich Presence</p>
+            </div>
+            <div class="usage-grid">
+                <div class="usage-card">
+                    <div class="usage-header">
+                        <span class="usage-icon">⚙️</span>
+                        <h3 class="usage-title">自定义游戏模拟</h3>
+                    </div>
+                    <div class="usage-body">
+                        <p class="step-desc" style="margin-bottom: 16px;">
+                            游戏模拟器允许您为 Discord 支持的任何游戏创建和运行模拟进程。这对以下情况很有用：
+                        </p>
+                        <ul class="usage-steps" style="list-style-type: disc;">
+                            <li>完成特定游戏的任务</li>
+                            <li>在 Discord 上显示自定义 Rich Presence 状态</li>
+                            <li>测试 Discord RPC 集成</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="usage-card">
+                    <div class="usage-header">
+                        <span class="usage-icon">🛠️</span>
+                        <h3 class="usage-title">使用方法</h3>
+                    </div>
+                    <div class="usage-body">
+                        <ol class="usage-steps">
+                            <li>进入 <strong>Game Simulator</strong> 标签页</li>
+                            <li>从 Discord 游戏数据库中搜索并选择一个游戏</li>
+                            <li>选择可执行文件名和安装路径</li>
+                            <li>点击 <strong>"Create Game"</strong> 生成模拟可执行文件</li>
+                            <li>点击 <strong>"Run"</strong> 启动进程并连接 Discord RPC</li>
+                            <li>完成后点击 <strong>"Stop"</strong></li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- FAQ Section -->
+    <section class="faq" id="faq">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">常见问题</h2>
+                <p class="section-subtitle">常见问题解答</p>
+            </div>
+            <div class="faq-list">
+                <div class="faq-item">
+                    <button class="faq-question" aria-expanded="false">
+                        <span>什么是 Discord Token？自动检测是如何工作的？</span>
+                        <svg class="faq-icon" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+                            <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
+                        </svg>
+                    </button>
+                    <div class="faq-answer">
+                        <p>Discord Token 是 Discord 客户端本地存储的身份验证凭证，用于维护您的登录会话。此应用程序直接从
+                            Discord 的本地存储读取 Token，无需通过浏览器开发者工具或控制台脚本手动提取。</p>
+                    </div>
+                </div>
+                <div class="faq-item">
+                    <button class="faq-question" aria-expanded="false">
+                        <span>我的 Token 是如何被安全处理的？</span>
+                        <svg class="faq-icon" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+                            <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
+                        </svg>
+                    </button>
+                    <div class="faq-answer">
+                        <p>Token 仅在应用程序会话期间存储在内存中，从不持久化到磁盘。所有 API 请求仅通过 HTTPS 传输到 Discord
+                            的官方服务器。应用程序是开源的，允许完整的代码审查和验证。</p>
+                    </div>
+                </div>
+                <div class="faq-item">
+                    <button class="faq-question" aria-expanded="false">
+                        <span>游戏任务需要下载或安装游戏吗？</span>
+                        <svg class="faq-icon" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+                            <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
+                        </svg>
+                    </button>
+                    <div class="faq-answer">
+                        <p>不需要。游戏模拟器创建一个轻量级进程，Discord 的 Rich Presence 系统将其识别为目标游戏。这消除了下载、安装或拥有实际游戏的需要，节省了磁盘空间和带宽。</p>
+                    </div>
+                </div>
+                <div class="faq-item">
+                    <button class="faq-question" aria-expanded="false">
+                        <span>为什么游戏任务需要 Discord 客户端而视频任务不需要？</span>
+                        <svg class="faq-icon" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+                            <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
+                        </svg>
+                    </button>
+                    <div class="faq-answer">
+                        <p>视频任务使用 Discord 的 HTTP API，允许此应用程序直接向 Discord 服务器提交观看进度。游戏任务依赖 Discord
+                            的 Rich Presence 协议，需要 Discord 桌面客户端检测正在运行的游戏进程并向服务器报告活动。</p>
+                    </div>
+                </div>
+                <div class="faq-item">
+                    <button class="faq-question" aria-expanded="false">
+                        <span>什么是高级筛选功能？</span>
+                        <svg class="faq-icon" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+                            <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
+                        </svg>
+                    </button>
+                    <div class="faq-answer">
+                        <p>高级筛选功能可以按奖励类型（装饰品、物品等）、任务类型（视频、游戏、直播）和完成状态筛选任务。此功能帮助用户快速找到符合其条件的特定任务。</p>
+                    </div>
+                </div>
+                <div class="faq-item">
+                    <button class="faq-question" aria-expanded="false">
+                        <span>支持哪些 Discord 客户端版本？</span>
+                        <svg class="faq-icon" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+                            <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
+                        </svg>
+                    </button>
+                    <div class="faq-answer">
+                        <p>应用程序支持 Discord Stable、Discord Canary 和 Discord PTB（公开测试版）。自动检测适用于您系统上安装并运行的任何版本。</p>
+                    </div>
+                </div>
+                <div class="faq-item">
+                    <button class="faq-question" aria-expanded="false">
+                        <span>支持 macOS 或 Linux 吗？</span>
+                        <svg class="faq-icon" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+                            <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
+                        </svg>
+                    </button>
+                    <div class="faq-answer">
+                        <p>目前，应用程序仅支持 Windows。Token 提取依赖 Windows Data Protection API (DPAPI) 进行解密。跨平台支持可能会在未来版本中考虑。</p>
+                    </div>
+                </div>
+                <div class="faq-item">
+                    <button class="faq-question" aria-expanded="false">
+                        <span>如何完全卸载应用程序及其数据？</span>
+                        <svg class="faq-icon" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+                            <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
+                        </svg>
+                    </button>
+                    <div class="faq-answer">
+                        <p>要完全卸载应用程序，请删除应用程序文件夹。缓存文件（模拟游戏可执行文件）存储在
+                            <code>Documents\DiscordQuestGames</code>。删除此文件夹以清除所有缓存数据。您可以直接从应用内的设置页面访问此文件夹。
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-brand">
+                    <img src="../images/logo.png" alt="Logo" class="footer-logo">
+                    <span>Discord Quest Helper</span>
+                </div>
+                <div class="footer-links">
+                    <a href="https://github.com/Masterain98/discord-quest-helper" target="_blank">GitHub</a>
+                    <a href="https://github.com/Masterain98/discord-quest-helper/releases/latest" target="_blank">下载</a>
+                    <a href="https://github.com/Masterain98/discord-quest-helper/blob/main/LICENSE"
+                        target="_blank">许可证</a>
+                    <a href="https://github.com/Masterain98/discord-quest-helper/blob/main/CONTRIBUTING.md"
+                        target="_blank">贡献</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>MIT 许可证 © 2025 Masterain. 使用 Tauri、Vue.js 和 Rust 构建 ❤️</p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+
+</html>

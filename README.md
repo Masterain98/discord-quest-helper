@@ -19,15 +19,15 @@ Complete Discord video, stream, and game quests automatically while you focus on
 
 | Login | Home |
 |:-----:|:----:|
-| ![Login](./screenshots/login.png) | ![Home](./screenshots/home1.png) |
+| ![Login](./Web/images/login.png) | ![Home](./Web/images/home1.png) |
 
 | Multi-Account | Game Simulator |
 |:-------------:|:--------------:|
-| ![Multi-Account](./screenshots/multi-account.png) | ![Game Simulator](./screenshots/game-simulator.png) |
+| ![Multi-Account](./Web/images/multi-account.png) | ![Game Simulator](./Web/images/game-simulator.png) |
 
 | Quest Progress | Settings |
 |:--------------:|:--------:|
-| ![Quest Progress](./screenshots/home2.png) | ![Settings](./screenshots/settings.png) |
+| ![Quest Progress](./Web/images/home2.png) | ![Settings](./Web/images/settings.png) |
 
 ---
 
@@ -59,12 +59,11 @@ Complete Discord video, stream, and game quests automatically while you focus on
 
 ## ✨ Features
 
-- 🔐 **Automatic Token Extraction** — Reads Discord tokens from local storage (Stable, Canary, PTB)
-- 🎮 **Game Quests** — Simulates game processes with Discord RPC integration
-- 📺 **Video Quests** — Automates video watching progress
-- 📡 **Stream Quests** — Sends periodic heartbeat requests
-- 📊 **Real-time Progress** — Live tracking with event-driven updates
-- 👥 **Multi-Account Support** — Manage multiple Discord accounts
+- ⚡ **One-Click Login** — Automatically detects your Discord token, no scripts or technical steps needed
+- 🎮 **Zero-Download Game Simulation** — Complete game quests without downloading or installing the actual game
+- 📺 **Video & Stream Automation** — Click once, progress submits automatically in the background
+- 🔍 **Advanced Quest Filter** — Filter by reward type, completion status, and more
+- 👥 **Multi-Account Support** — Manage multiple Discord accounts seamlessly
 - 🌏 **Multi-language** — English, Chinese, Japanese, Korean, Russian, Spanish
 
 ---
@@ -105,8 +104,6 @@ Complete Discord video, stream, and game quests automatically while you focus on
 
 > [!CAUTION]
 > Using automation tools may violate Discord ToS and result in account suspension.
-
-For more details, see [SECURITY.md](SECURITY.md).
 
 ---
 
