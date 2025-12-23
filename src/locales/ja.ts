@@ -51,7 +51,9 @@ export default {
         discord_rewards: "Discord報酬",
         active_progress: "アクティブなクエスト進捗",
         no_active: "アクティブなクエストなし",
-        up_next: "次のクエスト"
+        up_next: "次のクエスト",
+        submitted: "送信済み",
+        pending: "保留中"
     },
     filter: {
         status: "ステータス",
@@ -90,6 +92,14 @@ export default {
         game_polling_desc: "プレイ/ゲームクエスト用：クエスト進捗のチェック頻度。Discord RPCでアクティビティを報告し、ステータスのみポーリング。",
         game_polling_interval: "ポーリング間隔",
         game_polling_hint: "高い = API呼び出し回数減少",
+        game_quest_mode: "ゲームクエストモード",
+        game_quest_mode_desc: "プレイ/ゲームクエストの完了方法を選択します。直接ハートビートはゲームシミュレーションをスキップします。",
+        game_mode_simulate: '模擬ゲームモード (推奨)',
+        game_mode_simulate_desc: '軽量な模擬ゲームプロセスを起動します。本物のゲームと同じくらい安全です。',
+        game_mode_heartbeat: '直接ハートビートモード (非推奨)',
+        game_mode_heartbeat_desc: '危険で不安定です。研究目的のみに使用してください。推奨されません。',
+        game_mode_warning_title: '警告: 安全ではありません',
+        game_mode_warning_desc: 'このモードは、ゲームを実行せずにハートビートパケットを直接送信します。本質的に危険で不安定です。アカウントのフラグ付けやクエストの失敗につながる可能性があります。何をしているかを正確に理解していない限り、模擬ゲームモードを使用してください。',
         about: "について",
         cache: "キャッシュ",
         cache_desc: "アプリケーションはドキュメントフォルダを使用して、一部のキャッシュファイル（シミュレーションゲームなど）を保存します。",

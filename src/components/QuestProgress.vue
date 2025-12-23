@@ -1,13 +1,28 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useQuestsStore } from '@/stores/quests'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
-import { Progress } from '@/components/ui/progress'
 import { Button } from '@/components/ui/button'
 import { AlertCircle } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
 const questsStore = useQuestsStore()
+
+// Local progress is now managed by the store
+
+function formatTime(seconds: number): string {
+  const m = Math.floor(seconds / 60)
+  const s = Math.floor(seconds % 60)
+  return `${m}:${s.toString().padStart(2, '0')}`
+}
+
+const submittedTimeText = computed(() => {
+  const total = questsStore.activeQuestTargetDuration
+  const progress = questsStore.activeQuestProgress
+  const currentSeconds = (progress / 100) * total
+  return `${formatTime(currentSeconds)} / ${formatTime(total)}`
+})
 
 async function handleStop() {
   await questsStore.stop()
@@ -22,11 +37,41 @@ async function handleStop() {
     <CardContent>
       <div v-if="questsStore.activeQuestId" class="space-y-4">
         <div class="space-y-2">
-          <div class="flex justify-between text-sm">
-             <span class="text-muted-foreground truncate max-w-[150px]" :title="questsStore.activeQuestId">ID: {{ questsStore.activeQuestId.substring(0, 8) }}...</span>
-             <span class="font-medium">{{ Math.round(questsStore.activeQuestProgress) }}%</span>
+          <div class="flex justify-between text-sm items-end">
+             <div class="flex flex-col">
+               <span class="text-muted-foreground truncate max-w-[150px] text-xs" :title="questsStore.activeQuestId">
+                 ID: {{ questsStore.activeQuestId.substring(0, 8) }}...
+               </span>
+               <span class="font-mono text-xs text-muted-foreground">
+                 {{ submittedTimeText }}
+               </span>
+             </div>
+             <span class="font-medium text-lg">{{ Math.floor(questsStore.activeQuestProgress) }}%</span>
           </div>
-          <Progress :model-value="questsStore.activeQuestProgress" class="h-3" />
+          
+          <!-- Dual Layer Progress Bar -->
+          <div class="relative h-3 w-full overflow-hidden rounded-full bg-secondary">
+             <!-- Layer 1: Local Accumulated (Green) -->
+             <div 
+               class="absolute h-full bg-green-500/50 transition-all duration-300 ease-linear"
+               :style="{ width: `${questsStore.localProgress}%` }"
+             ></div>
+             <!-- Layer 2: Submitted (Blue) -->
+             <div 
+               class="absolute h-full bg-primary transition-all duration-300 ease-in-out"
+               :style="{ width: `${questsStore.activeQuestProgress}%` }"
+             ></div>
+          </div>
+          <div class="flex justify-between text-[10px] text-muted-foreground px-1">
+             <div class="flex items-center gap-1">
+               <div class="w-2 h-2 rounded-full bg-primary"></div>
+               <span>{{ t('quest.submitted') }}</span>
+             </div>
+             <div class="flex items-center gap-1">
+               <div class="w-2 h-2 rounded-full bg-green-500/50"></div>
+               <span>{{ t('quest.pending') }}</span>
+             </div>
+          </div>
         </div>
         
         <Button 
@@ -77,4 +122,3 @@ async function handleStop() {
     </CardContent>
   </Card>
 </template>
-

@@ -209,6 +209,57 @@ async fn start_stream_quest(
     Ok(())
 }
 
+/// Start game quest via direct heartbeat (without running simulated game)
+#[tauri::command]
+async fn start_game_heartbeat_quest(
+    quest_id: String,
+    application_id: String,
+    seconds_needed: u32,
+    initial_progress: f64,
+    state: State<'_, AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    // Stop current quest (if any)
+    stop_quest_internal(&state).await;
+
+    let client = {
+        let guard = state.client.lock().unwrap();
+        guard
+            .as_ref()
+            .ok_or_else(|| "Not logged in".to_string())?
+            .clone()
+    };
+
+    // Create cancel channel
+    let (cancel_tx, cancel_rx) = tokio::sync::mpsc::channel::<()>(1);
+
+    // Save quest state
+    *state.quest_state.lock().unwrap() = Some(QuestState {
+        quest_id: quest_id.clone(),
+        cancel_flag: cancel_tx,
+    });
+
+    // Run in background task
+    tokio::spawn(async move {
+        let result = quest_completer::complete_game_quest_via_heartbeat(
+            &client,
+            quest_id,
+            application_id,
+            seconds_needed,
+            initial_progress,
+            app_handle.clone(),
+            cancel_rx,
+        )
+        .await;
+
+        if let Err(e) = result {
+            let _ = app_handle.emit("quest-error", format!("Game heartbeat quest failed: {}", e));
+        }
+    });
+
+    Ok(())
+}
+
 /// Stop current quest
 #[tauri::command]
 async fn stop_quest(state: State<'_, AppState>) -> Result<(), String> {
@@ -414,6 +465,7 @@ pub fn run() {
             get_quests,
             start_video_quest,
             start_stream_quest,
+            start_game_heartbeat_quest,
             stop_quest,
             create_simulated_game,
             run_simulated_game,
@@ -421,8 +473,31 @@ pub fn run() {
             fetch_detectable_games,
             accept_quest,
             connect_to_discord_rpc,
-            open_in_explorer
+            open_in_explorer,
+            force_video_progress
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// Force update video progress (used for ensuring final progress is saved on stop)
+#[tauri::command]
+async fn force_video_progress(
+    quest_id: String,
+    timestamp: f64,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let client = {
+        let guard = state.client.lock().unwrap();
+        guard
+            .as_ref()
+            .ok_or_else(|| "Not logged in".to_string())?
+            .clone()
+    };
+
+    client.update_video_progress(&quest_id, timestamp)
+        .await
+        .map_err(|e| format!("Failed to force video progress: {}", e))?;
+
+    Ok(())
 }

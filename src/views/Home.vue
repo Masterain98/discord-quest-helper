@@ -289,11 +289,21 @@
 
     <!-- Accept All Confirmation Dialog -->
     <AlertDialog :open="showAcceptAllDialog" @update:open="showAcceptAllDialog = $event">
-      <AlertDialogContent>
+      <AlertDialogContent class="max-w-[600px]">
         <AlertDialogHeader>
           <AlertDialogTitle>{{ t('dialog.accept_quests_title') }}</AlertDialogTitle>
           <AlertDialogDescription>
-            {{ t('dialog.accept_quests_desc', { count: pendingAcceptQuests.length }) }}
+            <div class="space-y-4 my-4">
+              <p>{{ t('dialog.accept_quests_desc', { count: pendingAcceptQuests.length }) }}</p>
+              <div class="border rounded-md p-3 bg-secondary/20 max-h-[300px] overflow-y-auto space-y-2 text-xs">
+                <div v-for="quest in pendingAcceptQuests" :key="quest.id" class="flex justify-between items-center gap-4">
+                  <span class="font-medium truncate flex-1">{{ quest.config.messages.quest_name }}</span>
+                  <span class="text-muted-foreground whitespace-nowrap font-mono">
+                    {{ quest.config.expires_at ? new Date(quest.config.expires_at).toLocaleString() : 'No Expiry' }}
+                  </span>
+                </div>
+              </div>
+            </div>
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -305,11 +315,24 @@
 
     <!-- Complete All Confirmation Dialog -->
     <AlertDialog :open="showCompleteAllDialog" @update:open="showCompleteAllDialog = $event">
-      <AlertDialogContent>
+      <AlertDialogContent class="max-w-[600px]">
         <AlertDialogHeader>
           <AlertDialogTitle>{{ t('dialog.complete_quests_title') }}</AlertDialogTitle>
           <AlertDialogDescription>
-            {{ t('dialog.complete_quests_desc', { count: pendingCompleteQuests.length }) }}
+            <div class="space-y-4 my-4">
+              <p>{{ t('dialog.complete_quests_desc', { count: pendingCompleteQuests.length }) }}</p>
+              <div class="border rounded-md p-3 bg-secondary/20 max-h-[300px] overflow-y-auto space-y-2 text-xs">
+                 <div v-for="q in pendingCompleteQuests" :key="q.id" class="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1">
+                    <span class="font-medium truncate text-foreground">{{ q.config.messages.quest_name }}</span>
+                    <span :class="cn('font-mono', getExpiryColor(q.config.expires_at))">
+                      {{ getExpiryText(q.config.expires_at) }}
+                    </span>
+                    <span class="text-xs text-muted-foreground col-span-2 truncate">
+                      {{ q.config.messages.game_title }} • ID: {{ q.id }}
+                    </span>
+                 </div>
+              </div>
+            </div>
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -623,15 +646,28 @@ const unenrolledCount = computed(() => {
 
 const enrolledVideoCount = computed(() => {
   return filteredQuests.value.filter(q => {
-     const isStream = q.config.stream_duration_requirement_minutes && q.config.stream_duration_requirement_minutes > 0
+     // Strict check: Must be a VIDEO quest as determined by task config
+     // Previous check only looked for stream duration, which let "Play" quests through
+     const isVideo = getQuestType(q) === 'video'
      const isEnrolled = !!q.user_status
      const isCompleted = !!q.user_status?.completed_at
-     return isEnrolled && !isCompleted && !isStream
+     return isEnrolled && !isCompleted && isVideo
   }).length
 })
 
 function handleAcceptAll() {
-  const toAccept = filteredQuests.value.filter(q => !q.user_status)
+  const toAccept = filteredQuests.value.filter(q => {
+    // Check if not enrolled
+    if (q.user_status) return false
+    
+    // Check expiration explicitly
+    if (q.config.expires_at) {
+       const expires = new Date(q.config.expires_at)
+       if (expires < new Date()) return false
+    }
+    
+    return true
+  })
   if (toAccept.length === 0) return
   pendingAcceptQuests.value = toAccept
   showAcceptAllDialog.value = true
@@ -645,10 +681,17 @@ async function confirmAcceptAll() {
 
 function handleCompleteAllVideo() {
   const toComplete = filteredQuests.value.filter(q => {
-     const isStream = q.config.stream_duration_requirement_minutes && q.config.stream_duration_requirement_minutes > 0
+     const isVideo = getQuestType(q) === 'video'
      const isEnrolled = !!q.user_status
      const isCompleted = !!q.user_status?.completed_at
-     return isEnrolled && !isCompleted && !isStream
+     
+     // Check expiration explicitly
+     if (q.config.expires_at) {
+       const expires = new Date(q.config.expires_at)
+       if (expires < new Date()) return false
+     }
+     
+     return isEnrolled && !isCompleted && isVideo
   })
   
   if (toComplete.length === 0) return
@@ -662,6 +705,34 @@ function confirmCompleteAll() {
   questsStore.startQueue()
   showCompleteAllDialog.value = false
   pendingCompleteQuests.value = []
+}
+
+function getExpiryColor(dateStr: string | null | undefined): string {
+  if (!dateStr) return 'text-muted-foreground'
+  const expires = new Date(dateStr)
+  const now = new Date()
+  const diff = expires.getTime() - now.getTime()
+  
+  if (diff < 0) return 'text-destructive font-bold' // Expired
+  if (diff < 1000 * 60 * 60 * 24) return 'text-orange-500' // < 24h
+  return 'text-green-600'
+}
+
+function getExpiryText(dateStr: string | null | undefined): string {
+  if (!dateStr) return 'No Expiry'
+  const expires = new Date(dateStr)
+  const now = new Date()
+  const diff = expires.getTime() - now.getTime()
+  
+  const dateText = expires.toLocaleString()
+  
+  if (diff < 0) return `${dateText} (EXPIRED)`
+  
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24))
+  const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
+  
+  if (days > 0) return `${dateText} (${days}d ${hours}h left)`
+  return `${dateText} (${hours}h left)`
 }
 
 function canStartQuest(quest: Quest): boolean {

@@ -117,6 +117,20 @@ export async function stopQuest(): Promise<void> {
   return await invoke('stop_quest')
 }
 
+export async function startGameHeartbeatQuest(
+  questId: string,
+  applicationId: string,
+  secondsNeeded: number,
+  initialProgress: number
+): Promise<void> {
+  return await invoke('start_game_heartbeat_quest', {
+    questId,
+    applicationId,
+    secondsNeeded,
+    initialProgress
+  })
+}
+
 // Game simulator commands
 export async function createSimulatedGame(
   path: string,
@@ -173,4 +187,8 @@ export function onQuestError(callback: (error: string) => void) {
   return listen<string>('quest-error', (event) => {
     callback(event.payload)
   })
+}
+
+export async function forceVideoProgress(questId: string, timestamp: number): Promise<void> {
+  return await invoke('force_video_progress', { questId, timestamp })
 }

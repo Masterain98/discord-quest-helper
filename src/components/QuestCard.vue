@@ -138,6 +138,25 @@ function formatDate(dateStr: string): string {
   const date = new Date(dateStr)
   return date.toLocaleDateString()
 }
+const activeLocalPercent = computed(() => {
+  if (isActiveQuest.value) return Math.min(100, questsStore.localProgress)
+  return 0
+})
+
+const activeTimeText = computed(() => {
+  if (!isActiveQuest.value) return ''
+  const total = targetDuration.value
+  const currentSeconds = (questsStore.activeQuestProgress / 100) * total // Use confirmed progress for text? Or pending?
+  // Let's match QuestProgress.vue: use confirmed for text 1, total for text 2
+  // Format: "MM:ss / MM:ss"
+  
+  const format = (s: number) => {
+     const m = Math.floor(s / 60)
+     const sec = Math.floor(s % 60)
+     return `${m}:${sec.toString().padStart(2, '0')}`
+  }
+  return `${format(currentSeconds)} / ${format(total)}`
+})
 </script>
 
 <template>
@@ -183,10 +202,31 @@ function formatDate(dateStr: string): string {
     <CardContent class="grid gap-4">
       <div class="space-y-2">
         <div class="flex justify-between text-sm">
-          <span class="text-muted-foreground">Progress: {{ Math.round(progress) }}%</span>
+          <span class="text-muted-foreground">
+            Progress: {{ Math.round(progress) }}%
+            <span v-if="isActiveQuest" class="ml-2 font-mono text-xs text-muted-foreground/80">
+               ({{ activeTimeText }})
+            </span>
+          </span>
           <span v-if="targetDuration" class="text-muted-foreground">{{ formatDuration(targetDuration) }} required</span>
         </div>
-        <Progress :model-value="progress" class="h-2" />
+        
+        <!-- Dual Layer Progress Bar for Active Quest -->
+        <div v-if="isActiveQuest" class="relative h-2 w-full overflow-hidden rounded-full bg-secondary">
+           <!-- Layer 1: Local Accumulated (Green) -->
+           <div 
+             class="absolute h-full bg-green-500/50 transition-all duration-300 ease-linear"
+             :style="{ width: `${activeLocalPercent}%` }"
+           ></div>
+           <!-- Layer 2: Submitted (Blue) -->
+           <div 
+             class="absolute h-full bg-primary transition-all duration-300 ease-in-out"
+             :style="{ width: `${progress}%` }"
+           ></div>
+        </div>
+        
+        <!-- Standard Progress Bar for others -->
+        <Progress v-else :model-value="progress" class="h-2" />
       </div>
       
       <!-- In-Game Rewards (with images) -->

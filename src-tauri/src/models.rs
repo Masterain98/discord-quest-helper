@@ -57,6 +57,12 @@ pub struct HeartbeatPayload {
     pub stream_key: String,
 }
 
+#[derive(Debug, Serialize)]
+pub struct GameHeartbeatPayload {
+    pub application_id: String,
+    pub terminal: bool,
+}
+
 // Internal state
 pub struct QuestState {
     #[allow(dead_code)]

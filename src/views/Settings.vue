@@ -8,7 +8,17 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { Eye, EyeOff, Loader2, CheckCircle2, Copy, Check } from 'lucide-vue-next'
+import { Eye, EyeOff, Loader2, CheckCircle2, Copy, Check, AlertTriangle } from 'lucide-vue-next'
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from '@/components/ui/alert-dialog'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
@@ -18,6 +28,19 @@ const versionStore = useVersionStore()
 const manualToken = ref('')
 const showToken = ref(false)
 const copied = ref(false)
+
+// Heartbeat Safety Warning Logic
+const showHeartbeatWarning = ref(false)
+
+function handleHeartbeatClick() {
+  if (questsStore.gameQuestMode === 'heartbeat') return // Already selected
+  showHeartbeatWarning.value = true
+}
+
+function confirmHeartbeatMode() {
+  questsStore.gameQuestMode = 'heartbeat'
+  showHeartbeatWarning.value = false
+}
 
 async function copyPath() {
   if (cachePath.value) {
@@ -242,6 +265,74 @@ onMounted(async () => {
           </div>
         </CardContent>
       </Card>
+      
+      <!-- Game Quest Mode -->
+      <Card>
+        <CardHeader>
+          <CardTitle>{{ t('settings.game_quest_mode') }}</CardTitle>
+          <CardDescription>{{ t('settings.game_quest_mode_desc') }}</CardDescription>
+        </CardHeader>
+        <CardContent class="space-y-6">
+          <!-- Mode Selection -->
+          <div class="space-y-3">
+            <Label>{{ t('settings.game_quest_mode') }}</Label>
+            <div class="grid grid-cols-2 gap-3">
+              <button 
+                @click="questsStore.gameQuestMode = 'simulate'"
+                :class="[
+                  'p-4 rounded-lg border-2 text-left transition-all',
+                  questsStore.gameQuestMode === 'simulate' 
+                    ? 'border-primary bg-primary/5' 
+                    : 'border-border hover:border-primary/50'
+                ]"
+              >
+                <div class="font-medium">{{ t('settings.game_mode_simulate') }}</div>
+                <div class="text-xs text-muted-foreground mt-1">{{ t('settings.game_mode_simulate_desc') }}</div>
+              </button>
+              <button 
+                @click="handleHeartbeatClick"
+                :class="[
+                  'p-4 rounded-lg border-2 text-left transition-all',
+                  questsStore.gameQuestMode === 'heartbeat' 
+                    ? 'border-destructive bg-destructive/5' 
+                    : 'border-border hover:border-destructive/50'
+                ]"
+              >
+                <div class="font-medium flex items-center gap-2">
+                  {{ t('settings.game_mode_heartbeat') }}
+                  <AlertTriangle v-if="questsStore.gameQuestMode === 'heartbeat'" class="w-4 h-4 text-destructive" />
+                </div>
+                <div class="text-xs text-muted-foreground mt-1">{{ t('settings.game_mode_heartbeat_desc') }}</div>
+              </button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <!-- Safety Warning Dialog -->
+      <AlertDialog :open="showHeartbeatWarning" @update:open="showHeartbeatWarning = $event">
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle class="flex items-center gap-2 text-destructive">
+              <AlertTriangle class="w-5 h-5" />
+              {{ t('settings.game_mode_warning_title') }}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {{ t('settings.game_mode_warning_desc') }}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel @click="showHeartbeatWarning = false">Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              class="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+              @click="confirmHeartbeatMode"
+            >
+              I understand, enable unsafe mode
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       
       <!-- Cache -->
       <Card>

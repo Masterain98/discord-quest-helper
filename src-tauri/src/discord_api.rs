@@ -188,6 +188,42 @@ impl DiscordApiClient {
         Ok(())
     }
 
+    /// Send game heartbeat (for PLAY_ON_DESKTOP quests without running actual game)
+    pub async fn send_game_heartbeat(
+        &self,
+        quest_id: &str,
+        application_id: &str,
+        terminal: bool,
+    ) -> Result<bool> {
+        let url = format!("{}/quests/{}/heartbeat", DISCORD_API_BASE, quest_id);
+        
+        let payload = GameHeartbeatPayload {
+            application_id: application_id.to_string(),
+            terminal,
+        };
+
+        println!("Sending game heartbeat: quest_id={}, app_id={}, terminal={}", quest_id, application_id, terminal);
+
+        let response = self.client
+            .post(&url)
+            .json(&payload)
+            .send()
+            .await
+            .context("Failed to send game heartbeat")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            anyhow::bail!("Failed to send game heartbeat: {} - {}", status, body);
+        }
+
+        // Check if quest is completed from response
+        let body: serde_json::Value = response.json().await.unwrap_or_default();
+        let completed = body.get("completed_at").map(|v| !v.is_null()).unwrap_or(false);
+        
+        Ok(completed)
+    }
+
     /// Accept quest (enroll in quest)
     pub async fn accept_quest(&self, quest_id: &str) -> Result<serde_json::Value> {
         let url = format!("{}/quests/{}/enroll", DISCORD_API_BASE, quest_id);
