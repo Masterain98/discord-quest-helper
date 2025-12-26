@@ -106,6 +106,8 @@ export default {
         about: "About",
         about_desc: "A tool to help complete Discord quests automatically.",
         about_warning: "Warning: Using this tool may violate Discord's Terms of Service. Use at your own risk.",
+        feedback: "Report Issue",
+        website: "Website",
         credits: "Credits",
         credits_desc: "Based on work by:",
         tech_stack: "Tech Stack",

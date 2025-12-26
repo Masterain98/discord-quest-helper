@@ -106,6 +106,8 @@ export default {
         about: "정보",
         about_desc: "Discord 퀘스트를 자동으로 완료하는 도구입니다.",
         about_warning: "경고: 이 도구의 사용은 Discord 서비스 약관을 위반할 수 있습니다. 본인의 책임 하에 사용하세요.",
+        feedback: "문제 보고",
+        website: "웹사이트",
         credits: "크레딧",
         credits_desc: "다음 작업을 기반으로 함:",
         tech_stack: "기술 스택",

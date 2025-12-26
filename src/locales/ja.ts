@@ -106,6 +106,8 @@ export default {
         open_cache_dir: "キャッシュディレクトリを開く",
         about_desc: "Discordクエストを自動的に完了するためのツール。",
         about_warning: "警告：このツールの使用はDiscordの利用規約に違反する可能性があります。自己責任でご使用ください。",
+        feedback: "問題を報告",
+        website: "ウェブサイト",
         credits: "クレジット",
         credits_desc: "以下の作品に基づいています：",
         tech_stack: "技術スタック",

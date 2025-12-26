@@ -106,6 +106,8 @@ export default {
         open_cache_dir: "Abrir carpeta de caché",
         about_desc: "Una herramienta para ayudar a completar misiones de Discord automáticamente.",
         about_warning: "Advertencia: El uso de esta herramienta puede violar los Términos de Servicio de Discord. Úsala bajo tu propio riesgo.",
+        feedback: "Reportar problema",
+        website: "Sitio web",
         credits: "Créditos",
         credits_desc: "Basado en el trabajo de:",
         tech_stack: "Stack tecnológico",

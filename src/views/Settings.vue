@@ -382,6 +382,14 @@ onMounted(async () => {
                 <img src="/icons/github-mark-white.svg" alt="GitHub" class="w-5 h-5 hidden dark:block" />
                 <span class="text-primary hover:underline">Masterain98/discord-quest-helper</span>
               </a>
+              <div class="flex flex-wrap gap-2 pt-2">
+                <Button variant="outline" size="sm" @click="openExternal('https://github.com/Masterain98/discord-quest-helper/issues/new/choose')">
+                  {{ t('settings.feedback') }}
+                </Button>
+                <Button variant="outline" size="sm" @click="openExternal('https://discord-quest-helper.dal.ao/')">
+                  {{ t('settings.website') }}
+                </Button>
+              </div>
               <p class="text-yellow-500/90 dark:text-yellow-400">
                 ⚠️ {{ t('settings.about_warning') }}
               </p>

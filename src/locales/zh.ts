@@ -106,6 +106,8 @@ export default {
         about: "关于",
         about_desc: "一个帮助自动完成 Discord 任务的工具。",
         about_warning: "警告：使用此工具可能违反 Discord 的服务条款。请自行承担风险。",
+        feedback: "问题反馈",
+        website: "官方网站",
         credits: "致谢",
         credits_desc: "基于以下项目：",
         tech_stack: "技术栈",

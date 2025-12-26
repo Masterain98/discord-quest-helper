@@ -106,6 +106,8 @@ export default {
         open_cache_dir: "打開快取目錄",
         about_desc: "一個幫助自動完成 Discord 任務的工具。",
         about_warning: "警告：使用此工具可能違反 Discord 服務條款。請自行承擔風險。",
+        feedback: "問題回報",
+        website: "官方網站",
         credits: "致謝",
         credits_desc: "基於以下專案：",
         tech_stack: "技術栈",
