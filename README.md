@@ -19,15 +19,15 @@ Complete Discord video, stream, and game quests automatically while you focus on
 
 | Login | Home |
 |:-----:|:----:|
-| ![Login](./Web/images/login.png) | ![Home](./Web/images/home1.png) |
+| ![Login](https://discord-quest-helper.dal.ao/images/login.png) | ![Home](https://discord-quest-helper.dal.ao/images/home1.png) |
 
 | Multi-Account | Game Simulator |
 |:-------------:|:--------------:|
-| ![Multi-Account](./Web/images/multi-account.png) | ![Game Simulator](./Web/images/game-simulator.png) |
+| ![Multi-Account](https://discord-quest-helper.dal.ao/images/multi-account.png) | ![Game Simulator](https://discord-quest-helper.dal.ao/images/game-simulator.png) |
 
 | Quest Progress | Settings |
 |:--------------:|:--------:|
-| ![Quest Progress](./Web/images/home2.png) | ![Settings](./Web/images/settings.png) |
+| ![Quest Progress](https://discord-quest-helper.dal.ao/images/home2.png) | ![Settings](https://discord-quest-helper.dal.ao/images/settings.png) |
 
 ---
 
