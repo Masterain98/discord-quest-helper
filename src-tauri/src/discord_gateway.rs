@@ -113,7 +113,8 @@ pub async fn get_quests_from_gateway(token: &str) -> Result<Vec<Quest>> {
         let msg = msg.context("WebSocket message read error")?;
 
         match msg {
-            Message::Text(text) => {
+            Message::Text(utf8_text) => {
+                let text: String = utf8_text.to_string();
                 // Parse JSON directly
                 if let Ok(payload) = serde_json::from_str::<GatewayPayload>(&text) {
                     println!("Received Gateway message: op={}, t={:?}", payload.op, payload.t);
@@ -165,7 +166,7 @@ pub async fn get_quests_from_gateway(token: &str) -> Result<Vec<Quest>> {
                             });
 
                             write
-                                .send(Message::Text(identify.to_string()))
+                                .send(Message::Text(identify.to_string().into()))
                                 .await
                                 .context("Failed to send Identify")?;
 
@@ -228,7 +229,7 @@ pub async fn get_quests_from_gateway(token: &str) -> Result<Vec<Quest>> {
                             // HEARTBEAT request from server
                             println!("Server requested heartbeat, sending...");
                             let heartbeat = json!({"op": 1, "d": null});
-                            let _ = write.send(Message::Text(heartbeat.to_string())).await;
+                            let _ = write.send(Message::Text(heartbeat.to_string().into())).await;
                         }
                         9 => {
                             // Invalid Session
