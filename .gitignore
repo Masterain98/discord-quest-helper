@@ -36,3 +36,4 @@ src-runner/target
 !package.json
 *.har
 discord-quest-helper-v*.zip
+*.code-workspace
