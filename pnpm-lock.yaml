@@ -24,8 +24,8 @@ importers:
         specifier: ^2.1.1
         version: 2.1.1
       lucide-vue-next:
-        specifier: ^0.561.0
-        version: 0.561.0(vue@3.5.25(typescript@5.9.3))
+        specifier: ^0.562.0
+        version: 0.562.0(vue@3.5.25(typescript@5.9.3))
       pinia:
         specifier: ^2.1.7
         version: 2.3.1(typescript@5.9.3)(vue@3.5.25(typescript@5.9.3))
@@ -772,8 +772,8 @@ packages:
   lines-and-columns@1.2.4:
     resolution: {integrity: sha512-7ylylesZQ/PV29jhEDl3Ufjo6ZX7gCqJr5F7PKrqc93v7fzSymt1BpwEU8nAUXs8qzzvqhbjhK5QZg6Mt/HkBg==}
 
-  lucide-vue-next@0.561.0:
-    resolution: {integrity: sha512-c5HUckO0qHklVSOf/0vaSR3pEb8fYImRDCRDLde56uqS9js0D/e3RAvq0/YFWjkmyOBKCb0/IdskdoHZQEkT5g==}
+  lucide-vue-next@0.562.0:
+    resolution: {integrity: sha512-LN0BLGKMFulv0lnfK29r14DcngRUhIqdcaL0zXTt2o0oS9odlrjCGaU3/X9hIihOjjN8l8e+Y9G/famcNYaI7Q==}
     peerDependencies:
       vue: '>=3.0.1'
 
@@ -1663,7 +1663,7 @@ snapshots:
 
   lines-and-columns@1.2.4: {}
 
-  lucide-vue-next@0.561.0(vue@3.5.25(typescript@5.9.3)):
+  lucide-vue-next@0.562.0(vue@3.5.25(typescript@5.9.3)):
     dependencies:
       vue: 3.5.25(typescript@5.9.3)
 
