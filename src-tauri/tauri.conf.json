@@ -32,9 +32,6 @@
     "icon": [
       "icons/icon.ico"
     ],
-    "resources": {
-      "../src-runner/target/release/discord-quest-runner.exe": "data/discord-quest-runner.exe"
-    },
     "windows": {
       "certificateThumbprint": null,
       "digestAlgorithm": "sha256",
