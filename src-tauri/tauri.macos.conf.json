@@ -1,0 +1,8 @@
+{
+    "$schema": "https://schema.tauri.app/config/2.0.0",
+    "bundle": {
+        "resources": {
+            "../src-runner/target/release/discord-quest-runner": "data/discord-quest-runner"
+        }
+    }
+}
