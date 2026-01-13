@@ -303,36 +303,6 @@ fn try_extract_from_client(_client: &DiscordClient) -> Result<Vec<String>> {
     anyhow::bail!("Token extraction is only supported on Windows and macOS")
 }
 
-#[cfg(target_os = "windows")]
-fn decrypt_with_dpapi(data: &[u8]) -> Result<Vec<u8>> {
-    use std::ptr;
-
-    unsafe {
-        let mut input_blob = CRYPT_INTEGER_BLOB {
-            cbData: data.len() as u32,
-            pbData: data.as_ptr() as *mut u8,
-        };
-
-        let mut output_blob = CRYPT_INTEGER_BLOB {
-            cbData: 0,
-            pbData: ptr::null_mut(),
-        };
-
-        let result =
-            CryptUnprotectData(&mut input_blob, None, None, None, None, 0, &mut output_blob);
-
-        if result.is_err() {
-            anyhow::bail!("DPAPI decryption failed");
-        }
-
-        // Copy decrypted data
-        let decrypted =
-            std::slice::from_raw_parts(output_blob.pbData, output_blob.cbData as usize).to_vec();
-
-        Ok(decrypted)
-    }
-}
-
 fn find_and_decrypt_tokens(data: &[u8], master_key: &[u8]) -> Vec<String> {
     let mut tokens = Vec::new();
     
