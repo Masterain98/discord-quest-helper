@@ -38,7 +38,7 @@ async fn auto_detect_token(_state: State<'_, AppState>) -> Result<Vec<ExtractedA
             // Validate token
             match client.get_current_user().await {
                 Ok(user) => {
-                    println!("Token {} valid: {}", index, user.username);
+                    println!("Token {} valid", index);
                     valid_accounts.push(ExtractedAccount {
                         token: token.clone(),
                         user,
