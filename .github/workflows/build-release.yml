@@ -79,8 +79,8 @@ jobs:
           cd src-runner
           cargo build --release --verbose
           cd ..
-          mkdir -p src-tauri/resources
-          cp ./src-runner/target/release/discord-quest-runner.exe ./src-tauri/resources/discord-quest-runner.exe
+          mkdir -p src-tauri/data
+          cp ./src-runner/target/release/discord-quest-runner.exe ./src-tauri/data/discord-quest-runner.exe
 
       # Build src-runner for macOS ARM64
       - name: Build src-runner (macOS ARM64)
@@ -107,15 +107,31 @@ jobs:
         with:
           args: ${{ matrix.args }}
       
-      # Upload Windows artifact
-      - name: Upload Windows artifact
+      # Copy runner to release directory for Windows
+      - name: Copy runner to release directory (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: bash
+        run: |
+          mkdir -p src-tauri/target/release/data
+          cp ./src-tauri/data/discord-quest-runner.exe ./src-tauri/target/release/data/
+          
+      # Upload Windows artifact (portable)
+      - name: Upload Windows artifact (portable)
         if: matrix.platform == 'windows-latest'
         uses: actions/upload-artifact@v4
         with:
-          name: tauri-win-release
+          name: tauri-win-portable
           path: |
             src-tauri/target/release/discord-quest-helper.exe
             src-tauri/target/release/data/
+
+      # Upload Windows artifact (MSI installer)
+      - name: Upload Windows artifact (MSI)
+        if: matrix.platform == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tauri-win-msi
+          path: src-tauri/target/release/bundle/msi/*.msi
 
       # Upload macOS artifact
       - name: Upload macOS artifact
@@ -139,11 +155,17 @@ jobs:
           echo "version=$version" >> $GITHUB_ENV
         shell: bash
 
-      - name: Download Windows artifact
+      - name: Download Windows artifact (portable)
         uses: actions/download-artifact@v4
         with:
-          name: tauri-win-release
-          path: tauri-win-release
+          name: tauri-win-portable
+          path: tauri-win-portable
+
+      - name: Download Windows artifact (MSI)
+        uses: actions/download-artifact@v4
+        with:
+          name: tauri-win-msi
+          path: tauri-win-msi
 
       - name: Download macOS artifact
         uses: actions/download-artifact@v4
@@ -158,10 +180,13 @@ jobs:
           # Create output directory
           mkdir -p ./build
           
-          # Package Windows build
-          cd tauri-win-release
-          zip -r ../build/discord-quest-helper-Windows-x64-${{ env.version }}.zip .
+          # Package Windows portable build
+          cd tauri-win-portable
+          zip -r ../build/discord-quest-helper-Windows-x64-${{ env.version }}-portable.zip .
           cd ..
+          
+          # Copy Windows MSI installer
+          cp tauri-win-msi/*.msi ./build/discord-quest-helper-Windows-x64-${{ env.version }}-setup.msi
           
           # Package macOS build (find the .dmg file)
           cd tauri-macos-arm64-release
@@ -172,7 +197,8 @@ jobs:
           fi
           cd ..
           
-          echo "win_build_release_dir=discord-quest-helper-Windows-x64-${{ env.version }}" >> $GITHUB_ENV
+          echo "win_portable=discord-quest-helper-Windows-x64-${{ env.version }}-portable" >> $GITHUB_ENV
+          echo "win_msi=discord-quest-helper-Windows-x64-${{ env.version }}-setup" >> $GITHUB_ENV
           echo "macos_build_release=discord-quest-helper-MacOS-arm64-${{ env.version }}" >> $GITHUB_ENV
 
       - name: Create and Upload Release
@@ -183,7 +209,8 @@ jobs:
           name: ${{ env.version }}
           body_path: ./public/version-desc.txt
           files: |
-            ./build/${{ env.win_build_release_dir }}.zip
+            ./build/${{ env.win_portable }}.zip
+            ./build/${{ env.win_msi }}.msi
             ./build/${{ env.macos_build_release }}.dmg
             ./build/${{ env.macos_build_release }}.zip
           prerelease: false

@@ -2,6 +2,7 @@
 
 - Add MacOS Apple Silicon client support
 - Bump dependencies to latest
+- Fix build issues
 
 ---
 
