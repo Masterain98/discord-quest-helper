@@ -2,6 +2,10 @@
 
 # Discord Quest Helper
 
+<p align="center">
+  <img src="src-tauri/icons/icon.png" alt="Discord Quest Helper Logo" width="150">
+</p>
+
 **🎮 Automate your Discord Quests with one click**
 
 Complete Discord video, stream, and game quests automatically while you focus on what matters.
