@@ -115,7 +115,6 @@ jobs:
           name: tauri-win-release
           path: |
             src-tauri/target/release/discord-quest-helper.exe
-            src-tauri/target/release/bundle/
             src-tauri/target/release/data/
 
       # Upload macOS artifact
