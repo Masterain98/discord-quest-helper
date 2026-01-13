@@ -3,7 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import GameSelector from '@/components/GameSelector.vue'
 import type { DetectableGame } from '@/api/tauri'
 import { createSimulatedGame, runSimulatedGame, stopSimulatedGame, connectToDiscordRpc } from '@/api/tauri'
-import { documentDir } from '@tauri-apps/api/path'
+import { documentDir, sep } from '@tauri-apps/api/path'
 import { emit } from '@tauri-apps/api/event'
 import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -25,7 +25,8 @@ const success = ref<string | null>(null)
 
 onMounted(async () => {
   const docDir = await documentDir()
-  installPath.value = `${docDir}\\DiscordQuestGames`
+  const separator = await sep()
+  installPath.value = `${docDir}${separator}DiscordQuestGames`
 })
 
 const windowsExecutables = computed(() => {

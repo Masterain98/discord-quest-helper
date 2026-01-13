@@ -8,6 +8,9 @@ use std::path::PathBuf;
 #[cfg(target_os = "windows")]
 use windows::Win32::Security::Cryptography::{CryptUnprotectData, CRYPT_INTEGER_BLOB};
 
+// macOS-specific imports
+#[cfg(target_os = "macos")]
+use security_framework::passwords::get_generic_password;
 /// Discord client type
 #[derive(Debug)]
 enum DiscordClient {
@@ -17,11 +20,40 @@ enum DiscordClient {
 }
 
 impl DiscordClient {
+    #[cfg(target_os = "windows")]
     fn path(&self) -> &str {
         match self {
             DiscordClient::Stable => "discord",
             DiscordClient::Canary => "discordcanary",
             DiscordClient::Ptb => "discordptb",
+        }
+    }
+    
+    #[cfg(target_os = "macos")]
+    fn path(&self) -> &str {
+        match self {
+            DiscordClient::Stable => "discord",
+            DiscordClient::Canary => "discordcanary",
+            DiscordClient::Ptb => "discordptb",
+        }
+    }
+    
+    #[cfg(target_os = "macos")]
+    fn safe_storage_name(&self) -> &str {
+        match self {
+            // Note: Discord uses lowercase in Keychain
+            DiscordClient::Stable => "discord Safe Storage",
+            DiscordClient::Canary => "discordcanary Safe Storage",
+            DiscordClient::Ptb => "discordptb Safe Storage",
+        }
+    }
+    
+    #[cfg(target_os = "macos")]
+    fn keychain_account(&self) -> &str {
+        match self {
+            DiscordClient::Stable => "discord Key",
+            DiscordClient::Canary => "discordcanary Key",
+            DiscordClient::Ptb => "discordptb Key",
         }
     }
 }
@@ -147,14 +179,158 @@ fn decrypt_with_dpapi(data: &[u8]) -> Result<Vec<u8>> {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
-fn try_extract_from_client(_client: &DiscordClient) -> Result<String> {
-    anyhow::bail!("Token extraction is only supported on Windows")
+#[cfg(target_os = "macos")]
+fn try_extract_from_client(client: &DiscordClient) -> Result<Vec<String>> {
+    // Get Application Support path
+    let home = std::env::var("HOME").context("Could not get HOME environment variable")?;
+    
+    // Build Discord path
+    let discord_path = PathBuf::from(&home)
+        .join("Library/Application Support")
+        .join(client.path());
+    
+    if !discord_path.exists() {
+        anyhow::bail!("Discord path does not exist: {:?}", discord_path);
+    }
+    
+    println!("Checking Discord path: {:?}", discord_path);
+    
+    // Get the master key from macOS Keychain
+    let master_key = get_master_key_from_keychain(client)?;
+    
+    // Search for tokens in LevelDB
+    let leveldb_path = discord_path.join("Local Storage").join("leveldb");
+    
+    if !leveldb_path.exists() {
+        anyhow::bail!("LevelDB path does not exist");
+    }
+    
+    let mut tokens = Vec::new();
+    
+    // Read all .ldb and .log files
+    for entry in fs::read_dir(&leveldb_path)? {
+        let entry = entry?;
+        let path = entry.path();
+        
+        if let Some(ext) = path.extension() {
+            if ext == "ldb" || ext == "log" {
+                if let Ok(content) = fs::read(&path) {
+                    // Search for all token patterns
+                    let found_tokens = find_and_decrypt_tokens(&content, &master_key);
+                    tokens.extend(found_tokens);
+                }
+            }
+        }
+    }
+    
+    Ok(tokens)
 }
 
-#[cfg(not(target_os = "windows"))]
-fn decrypt_with_dpapi(_data: &[u8]) -> Result<Vec<u8>> {
-    anyhow::bail!("DPAPI decryption is only supported on Windows")
+#[cfg(target_os = "macos")]
+fn get_master_key_from_keychain(client: &DiscordClient) -> Result<Vec<u8>> {
+    use std::process::Command;
+    use pbkdf2::pbkdf2_hmac;
+    use sha1::Sha1;
+    
+    let service_name = client.safe_storage_name();
+    let account_name = client.keychain_account();
+    
+    println!("Looking for Keychain item: service='{}', account='{}'", service_name, account_name);
+    
+    let raw_password: Vec<u8>;
+    
+    // First try using the security-framework crate
+    match get_generic_password(service_name, account_name) {
+        Ok(password) => {
+            println!("Got password from Keychain using security-framework ({} bytes)", password.len());
+            raw_password = password.to_vec();
+        }
+        Err(e) => {
+            println!("security-framework failed: {:?}, trying security command", e);
+            
+            // Fallback: Use the `security` command line tool
+            let output = Command::new("security")
+                .args(["find-generic-password", "-s", service_name, "-a", account_name, "-w"])
+                .output()
+                .context("Failed to execute security command")?;
+            
+            if output.status.success() {
+                let password_str = String::from_utf8_lossy(&output.stdout);
+                let password = password_str.trim();
+                println!("Got password from Keychain using security CLI ({} bytes)", password.len());
+                raw_password = password.as_bytes().to_vec();
+            } else {
+                anyhow::bail!(
+                    "Could not get Discord Safe Storage key from Keychain.\n\
+                    Make sure Discord is installed and you've logged in at least once.\n\
+                    You may need to grant Keychain access when prompted."
+                );
+            }
+        }
+    }
+    
+    // Chromium on macOS uses PBKDF2-HMAC-SHA1 to derive the AES key
+    // Salt: "saltysalt" (literal string)
+    // Iterations: 1003
+    // Key length: 16 bytes (128 bits) for AES-128, then padded to 32 bytes
+    // Reference: https://source.chromium.org/chromium/chromium/src/+/main:components/os_crypt/sync/os_crypt_mac.mm
+    
+    let salt = b"saltysalt";
+    let iterations: u32 = 1003;
+    let mut derived_key = [0u8; 16]; // Chromium uses 128-bit key
+    
+    pbkdf2_hmac::<Sha1>(&raw_password, salt, iterations, &mut derived_key);
+    
+    println!("Derived key using PBKDF2 (16 bytes): {:02x?}", &derived_key[..8]);
+    
+    // For AES-256-GCM we need 32 bytes, but Chromium on macOS uses AES-128-CBC
+    // Let's try with the 16-byte key first by padding it
+    // Actually, if Discord uses v10 prefix, it's AES-256-GCM which needs 32 bytes
+    // We need to extend the key or use a different approach
+    
+    // According to Chromium source, macOS uses AES-128-CBC, not AES-256-GCM
+    // But the encrypted token format is v10 + nonce + ciphertext (GCM format)
+    // Let's pad the key to 32 bytes for AES-256
+    let mut full_key = [0u8; 32];
+    full_key[..16].copy_from_slice(&derived_key);
+    // The second half can stay as zeros, or we can derive more bytes
+    
+    Ok(full_key.to_vec())
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+fn try_extract_from_client(_client: &DiscordClient) -> Result<Vec<String>> {
+    anyhow::bail!("Token extraction is only supported on Windows and macOS")
+}
+
+#[cfg(target_os = "windows")]
+fn decrypt_with_dpapi(data: &[u8]) -> Result<Vec<u8>> {
+    use std::ptr;
+
+    unsafe {
+        let mut input_blob = CRYPT_INTEGER_BLOB {
+            cbData: data.len() as u32,
+            pbData: data.as_ptr() as *mut u8,
+        };
+
+        let mut output_blob = CRYPT_INTEGER_BLOB {
+            cbData: 0,
+            pbData: ptr::null_mut(),
+        };
+
+        let result =
+            CryptUnprotectData(&mut input_blob, None, None, None, None, 0, &mut output_blob);
+
+        if result.is_err() {
+            anyhow::bail!("DPAPI decryption failed");
+        }
+
+        // Copy decrypted data
+        let decrypted =
+            std::slice::from_raw_parts(output_blob.pbData, output_blob.cbData as usize).to_vec();
+
+        Ok(decrypted)
+    }
 }
 
 fn find_and_decrypt_tokens(data: &[u8], master_key: &[u8]) -> Vec<String> {
@@ -185,13 +361,15 @@ fn find_and_decrypt_tokens(data: &[u8], master_key: &[u8]) -> Vec<String> {
     tokens
 }
 
+/// Decrypt token - uses different methods for Windows and macOS
+#[cfg(target_os = "windows")]
 fn decrypt_token(encrypted_data: &[u8], key: &[u8]) -> Result<String> {
     use aes_gcm::{
         aead::{Aead, KeyInit},
         Aes256Gcm, Nonce,
     };
 
-    // AES-256-GCM decryption
+    // AES-256-GCM decryption (Windows)
     // First 3 bytes are version identifier "v10"
     if encrypted_data.len() < 15 {
         anyhow::bail!("Encrypted data is too short");
@@ -216,6 +394,62 @@ fn decrypt_token(encrypted_data: &[u8], key: &[u8]) -> Result<String> {
 
     // Convert to string
     String::from_utf8(decrypted).context("Decrypted data is not valid UTF-8")
+}
+
+/// Decrypt token - macOS uses AES-128-CBC
+#[cfg(target_os = "macos")]
+fn decrypt_token(encrypted_data: &[u8], key: &[u8]) -> Result<String> {
+    use aes::cipher::{BlockDecryptMut, KeyIvInit};
+    use cbc::Decryptor;
+    
+    type Aes128CbcDec = Decryptor<aes::Aes128>;
+    
+    // macOS Chromium format: "v10" + iv(16 bytes) + ciphertext
+    // But we need to check the actual format
+    if encrypted_data.len() < 3 {
+        anyhow::bail!("Encrypted data is too short");
+    }
+    
+    // Check version prefix
+    let version = &encrypted_data[0..3];
+    
+    if version == b"v10" || version == b"v11" {
+        // Chromium encrypted format
+        let data = &encrypted_data[3..];
+        
+        if data.len() < 16 {
+            anyhow::bail!("Encrypted data too short for IV");
+        }
+        
+        // For macOS, Chromium uses a fixed IV of 16 spaces
+        let iv = b"                "; // 16 spaces
+        let ciphertext = data;
+        
+        // Use only the first 16 bytes of the key for AES-128
+        if key.len() < 16 {
+            anyhow::bail!("Key too short");
+        }
+        let key_128 = &key[..16];
+        
+        // Decrypt
+        let mut buf = ciphertext.to_vec();
+        let cipher = Aes128CbcDec::new_from_slices(key_128, iv)
+            .map_err(|e| anyhow::anyhow!("Failed to create cipher: {:?}", e))?;
+        
+        let decrypted = cipher
+            .decrypt_padded_mut::<aes::cipher::block_padding::Pkcs7>(&mut buf)
+            .map_err(|e| anyhow::anyhow!("Decryption failed: {:?}", e))?;
+        
+        String::from_utf8(decrypted.to_vec()).context("Decrypted data is not valid UTF-8")
+    } else {
+        // Might be unencrypted or different format
+        anyhow::bail!("Unknown encryption version: {:?}", version)
+    }
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+fn decrypt_token(_encrypted_data: &[u8], _key: &[u8]) -> Result<String> {
+    anyhow::bail!("Token decryption is only supported on Windows and macOS")
 }
 
 #[cfg(test)]

@@ -18,7 +18,7 @@ import {
   startGameHeartbeatQuest,
   forceVideoProgress
 } from '@/api/tauri'
-import { homeDir } from '@tauri-apps/api/path'
+import { homeDir, sep } from '@tauri-apps/api/path'
 import { emit } from '@tauri-apps/api/event'
 
 
@@ -292,7 +292,8 @@ export const useQuestsStore = defineStore('quests', () => {
 
         // 3. Setup path
         const home = await homeDir()
-        const installPath = `${home}\\Documents\\DiscordQuestGames`
+        const separator = await sep()
+        const installPath = `${home}${separator}Documents${separator}DiscordQuestGames`
 
         // 4. Create simulated game executable
         await createSimulatedGame(installPath, winExe.name, appId)
