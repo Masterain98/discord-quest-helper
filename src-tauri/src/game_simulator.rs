@@ -7,10 +7,15 @@ use std::process::Command;
 ///
 /// Copies the template executable to the specified path with the target game name
 pub fn create_simulated_game(path: &str, executable_name: &str, _app_id: &str) -> Result<()> {
+    println!("create_simulated_game called with path: '{}', exe: '{}'", path, executable_name);
+    
     // Create target directory
     let target_dir = PathBuf::from(path);
+    println!("Target directory: {:?}, exists: {}", target_dir, target_dir.exists());
+    
     if !target_dir.exists() {
-        fs::create_dir_all(&target_dir).context("Could not create target directory")?;
+        println!("Creating directory: {:?}", target_dir);
+        fs::create_dir_all(&target_dir).context(format!("Could not create target directory: {:?}", target_dir))?;
     }
 
     // Target executable path
@@ -73,14 +78,37 @@ pub fn run_simulated_game(name: &str, path: &str, executable_name: &str, _app_id
     Ok(())
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "macos")]
+pub fn run_simulated_game(name: &str, path: &str, executable_name: &str, _app_id: &str) -> Result<()> {
+    let target_exe = PathBuf::from(path).join(executable_name);
+
+    if !target_exe.exists() {
+        anyhow::bail!("Executable does not exist: {:?}", target_exe);
+    }
+
+    // Make the file executable
+    use std::os::unix::fs::PermissionsExt;
+    let mut perms = std::fs::metadata(&target_exe)?.permissions();
+    perms.set_mode(0o755);
+    std::fs::set_permissions(&target_exe, perms)?;
+
+    // Launch the process in background
+    let _ = Command::new(&target_exe)
+        .spawn()
+        .context("Could not start simulated game")?;
+
+    println!("Simulated game {} started", name);
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 pub fn run_simulated_game(
     _name: &str,
     _path: &str,
     _executable_name: &str,
     _app_id: &str,
 ) -> Result<()> {
-    anyhow::bail!("Game simulation is only supported on Windows")
+    anyhow::bail!("Game simulation is only supported on Windows and macOS")
 }
 
 /// Stop the simulated game
@@ -110,23 +138,63 @@ pub fn stop_simulated_game(exec_name: &str) -> Result<()> {
     Ok(())
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "macos")]
+pub fn stop_simulated_game(exec_name: &str) -> Result<()> {
+    // Extract just the filename from the path
+    let file_name = exec_name
+        .split('/')
+        .last()
+        .unwrap_or(exec_name);
+
+    println!("Stopping simulated game: Input='{}' -> Process='{}'", exec_name, file_name);
+
+    // Use pkill to terminate process by name
+    let output = Command::new("pkill")
+        .args([&format!("-f{}", file_name)])
+        .output()
+        .context("Could not execute pkill command")?;
+
+    // pkill returns 0 if processes were killed, 1 if no processes matched
+    if !output.status.success() && output.status.code() != Some(1) {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("Failed to stop game: {}", stderr);
+    }
+
+    println!("Simulated game {} stopped", exec_name);
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 pub fn stop_simulated_game(_exec_name: &str) -> Result<()> {
-    anyhow::bail!("Game simulation is only supported on Windows")
+    anyhow::bail!("Game simulation is only supported on Windows and macOS")
+}
+
+/// Get the platform-specific executable extension
+#[cfg(target_os = "windows")]
+fn get_exe_extension() -> &'static str {
+    ".exe"
+}
+
+#[cfg(not(target_os = "windows"))]
+fn get_exe_extension() -> &'static str {
+    ""
 }
 
 /// Get runner executable path
 fn get_runner_exe_path() -> Result<PathBuf> {
+    let ext = get_exe_extension();
+    let runner_name = format!("discord-quest-runner{}", ext);
+    
     // List of potential paths to check
     let paths = vec![
         // Copied to data folder (preferred)
-        PathBuf::from("data/discord-quest-runner.exe"),
-        PathBuf::from("../src-tauri/data/discord-quest-runner.exe"),
+        PathBuf::from(format!("data/{}", runner_name)),
+        PathBuf::from(format!("../src-tauri/data/{}", runner_name)),
         // Direct build locations
-        PathBuf::from("../src-runner/target/release/discord-quest-runner.exe"),
-        PathBuf::from("src-runner/target/release/discord-quest-runner.exe"),
+        PathBuf::from(format!("../src-runner/target/release/{}", runner_name)),
+        PathBuf::from(format!("src-runner/target/release/{}", runner_name)),
         // Original checks
-        PathBuf::from("../target/release/discord-quest-runner.exe"),
+        PathBuf::from(format!("../target/release/{}", runner_name)),
     ];
 
     for path in paths {
@@ -139,22 +207,36 @@ fn get_runner_exe_path() -> Result<PathBuf> {
         }
     }
 
+    let ext = get_exe_extension();
+    let runner_name = format!("discord-quest-runner{}", ext);
+    
     // Attempt to find via current exe directory (for prod/bundled)
     if let Ok(current_exe) = std::env::current_exe() {
         if let Some(parent) = current_exe.parent() {
-            let bundled_path = parent.join("data/discord-quest-runner.exe");
+            let bundled_path = parent.join(format!("data/{}", runner_name));
             if bundled_path.exists() {
                 return Ok(bundled_path);
             }
             // Check in the same directory as the executable (common for bundled resources if flattened)
-            let sibling_path = parent.join("discord-quest-runner.exe");
+            let sibling_path = parent.join(&runner_name);
             if sibling_path.exists() {
                 return Ok(sibling_path);
+            }
+            
+            // macOS: Check inside the app bundle Resources directory
+            #[cfg(target_os = "macos")]
+            {
+                if let Some(resources) = parent.parent().map(|p| p.join("Resources")) {
+                    let resources_path = resources.join(&runner_name);
+                    if resources_path.exists() {
+                        return Ok(resources_path);
+                    }
+                }
             }
         }
     }
 
-    anyhow::bail!("Runner executable not found.\nPlease ensure src-runner is built and discord-quest-runner.exe exists in the data or target directory.")
+    anyhow::bail!("Runner executable not found.\nPlease ensure src-runner is built and discord-quest-runner{} exists in the data or target directory.", ext)
 }
 
 #[cfg(test)]

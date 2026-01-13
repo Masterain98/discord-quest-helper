@@ -28,6 +28,14 @@ src-tauri/target
 src-runner/target
 *.pdb
 
+# Platform-specific runner executables (only keep .exe for Windows, macOS version is built locally)
+src-tauri/data/discord-quest-runner
+!src-tauri/data/discord-quest-runner.exe
+
+# Generated schemas
+src-tauri/gen/schemas/*
+!src-tauri/gen/schemas/.gitkeep
+
 # Cargo lock files (we want to commit these for reproducible builds)
 # Cargo.lock
 
@@ -36,3 +44,4 @@ src-runner/target
 !package.json
 *.har
 discord-quest-helper-v*.zip
+*.code-workspace

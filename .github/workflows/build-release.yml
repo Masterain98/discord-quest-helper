@@ -24,6 +24,11 @@ jobs:
           - platform: 'windows-latest'
             args: ''
             x-target: 'win32-x64'
+            runner-ext: '.exe'
+          - platform: 'macos-14'  # Apple Silicon M1/M2 runner
+            args: '--target aarch64-apple-darwin'
+            x-target: 'darwin-arm64'
+            runner-ext: ''
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -44,6 +49,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
+          targets: ${{ matrix.platform == 'macos-14' && 'aarch64-apple-darwin' || '' }}
 
       - name: Cache Cargo registry
         uses: actions/cache@v4
@@ -65,8 +71,8 @@ jobs:
           version=$(cat public/version.txt)
           echo "version=$version" >> $GITHUB_ENV
       
-      # Build src-runner
-      - name: Build src-runner project x86_64 binary
+      # Build src-runner for Windows
+      - name: Build src-runner (Windows)
         if: matrix.platform == 'windows-latest'
         shell: bash
         run: | 
@@ -75,6 +81,17 @@ jobs:
           cd ..
           mkdir -p src-tauri/resources
           cp ./src-runner/target/release/discord-quest-runner.exe ./src-tauri/resources/discord-quest-runner.exe
+
+      # Build src-runner for macOS ARM64
+      - name: Build src-runner (macOS ARM64)
+        if: matrix.platform == 'macos-14'
+        shell: bash
+        run: | 
+          cd src-runner
+          cargo build --release --target aarch64-apple-darwin --verbose
+          cd ..
+          mkdir -p src-tauri/data
+          cp ./src-runner/target/aarch64-apple-darwin/release/discord-quest-runner ./src-tauri/data/discord-quest-runner
 
       - name: Rust cache (Tauri App)
         uses: swatinem/rust-cache@v2
@@ -90,8 +107,9 @@ jobs:
         with:
           args: ${{ matrix.args }}
       
-      - name: Create artifact for release
-        id: create_artifact_for_release
+      # Upload Windows artifact
+      - name: Upload Windows artifact
+        if: matrix.platform == 'windows-latest'
         uses: actions/upload-artifact@v4
         with:
           name: tauri-win-release
@@ -99,6 +117,15 @@ jobs:
             src-tauri/target/release/discord-quest-helper.exe
             src-tauri/target/release/bundle/
             src-tauri/target/release/data/
+
+      # Upload macOS artifact
+      - name: Upload macOS artifact
+        if: matrix.platform == 'macos-14'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tauri-macos-arm64-release
+          path: |
+            src-tauri/target/aarch64-apple-darwin/release/bundle/
 
   release:
     needs: build-tauri
@@ -113,11 +140,17 @@ jobs:
           echo "version=$version" >> $GITHUB_ENV
         shell: bash
 
-      - name: Download artifact
+      - name: Download Windows artifact
         uses: actions/download-artifact@v4
         with:
           name: tauri-win-release
           path: tauri-win-release
+
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tauri-macos-arm64-release
+          path: tauri-macos-arm64-release
 
       - name: prepare files
         env:
@@ -126,14 +159,22 @@ jobs:
           # Create output directory
           mkdir -p ./build
           
-          # Artifact is downloaded and extracted to tauri-win-release directory
-          # Contents are: bundle/, data/, discord-quest-helper.exe
-          # Zip the contents with the versioned name
+          # Package Windows build
           cd tauri-win-release
           zip -r ../build/discord-quest-helper-win32-x64-${{ env.version }}.zip .
           cd ..
           
+          # Package macOS build (find the .dmg file)
+          cd tauri-macos-arm64-release
+          if [ -d "dmg" ]; then
+            cp dmg/*.dmg ../build/discord-quest-helper-darwin-arm64-${{ env.version }}.dmg
+          elif [ -d "macos" ]; then
+            zip -r ../build/discord-quest-helper-darwin-arm64-${{ env.version }}.zip macos/
+          fi
+          cd ..
+          
           echo "win_build_release_dir=discord-quest-helper-win32-x64-${{ env.version }}" >> $GITHUB_ENV
+          echo "macos_build_release=discord-quest-helper-darwin-arm64-${{ env.version }}" >> $GITHUB_ENV
 
       - name: Create and Upload Release
         id: create_release
@@ -144,6 +185,8 @@ jobs:
           body_path: ./public/version-desc.txt
           files: |
             ./build/${{ env.win_build_release_dir }}.zip
+            ./build/${{ env.macos_build_release }}.dmg
+            ./build/${{ env.macos_build_release }}.zip
           prerelease: false
           draft: false
         env:

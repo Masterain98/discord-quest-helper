@@ -45,7 +45,7 @@ pub async fn complete_video_quest(
         let timestamp = current_seconds.min(seconds_needed as f64);
         
         // Add some randomness to look more natural
-        let timestamp_with_jitter = timestamp + rand::thread_rng().gen_range(0.0..0.5);
+        let timestamp_with_jitter = timestamp + rand::rng().random_range(0.0..0.5);
         
         // Send progress update
         match client.update_video_progress(&quest_id, timestamp_with_jitter).await {
@@ -208,11 +208,11 @@ pub async fn complete_game_quest_via_heartbeat(
 
 #[allow(dead_code)]
 fn generate_stream_key() -> String {
-    use rand::distributions::Alphanumeric;
     use rand::Rng;
+    use rand::distr::Alphanumeric;
 
-    let random_string: String = rand::thread_rng()
-        .sample_iter(&Alphanumeric)
+    let random_string: String = rand::rng()
+        .sample_iter(Alphanumeric)
         .take(32)
         .map(char::from)
         .collect();
