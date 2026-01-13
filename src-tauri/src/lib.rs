@@ -443,9 +443,17 @@ async fn open_in_explorer(path: String) -> Result<(), String> {
             .spawn()
             .map_err(|e| format!("Failed to open explorer: {}", e))?;
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
     {
-         // Fallback for non-windows if needed, though app is win-focused
+        println!("Opening Finder at: {}", path);
+        std::process::Command::new("open")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("Failed to open Finder: {}", e))?;
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        let _ = path; // Suppress unused variable warning on other platforms
     }
     Ok(())
 }
