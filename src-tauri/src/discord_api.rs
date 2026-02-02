@@ -92,8 +92,10 @@ impl DiscordApiClient {
 
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
+            // Use chars().take() for safe UTF-8 truncation
+            let truncated_body: String = body.chars().take(200).collect();
             log(LogLevel::Error, LogCategory::Api, 
-                &format!("API error for /users/@me: {} - {}", status, &body[..body.len().min(200)]), None);
+                &format!("API error for /users/@me: {} - {}", status, truncated_body), None);
             anyhow::bail!("Failed to get user info: {} - {}", status, body);
         }
 

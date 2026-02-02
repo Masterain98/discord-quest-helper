@@ -39,10 +39,12 @@ async fn auto_detect_token(_state: State<'_, AppState>) -> Result<Vec<ExtractedA
     let mut valid_accounts = Vec::new();
     let mut last_error = String::new();
     
-    println!("Validating {} tokens...", tokens.len());
+    log(LogLevel::Debug, LogCategory::TokenExtraction, 
+        &format!("Validating {} tokens", tokens.len()), None);
 
     for (index, token) in tokens.iter().enumerate() {
-        println!("Validating token {}/{}", index + 1, tokens.len());
+        log(LogLevel::Debug, LogCategory::TokenExtraction, 
+            &format!("Validating token {}/{}", index + 1, tokens.len()), None);
         // Create API client
         if let Ok(client) = DiscordApiClient::new(token.clone()) {
             // Validate token

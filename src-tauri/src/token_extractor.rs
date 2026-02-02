@@ -60,7 +60,7 @@ impl DiscordClient {
 
 /// Auto-detect and extract Discord tokens (returns all unique tokens found)
 pub fn extract_tokens() -> Result<Vec<String>> {
-    use crate::logger::{log, LogLevel, LogCategory};
+    use crate::logger::{log, LogLevel, LogCategory, sanitize_path};
     
     log(LogLevel::Info, LogCategory::TokenExtraction, "Starting token extraction", None);
     let mut tokens = std::collections::HashSet::new();
@@ -82,8 +82,10 @@ pub fn extract_tokens() -> Result<Vec<String>> {
                 }
             }
             Err(e) => {
+                // Sanitize error details to prevent path leakage
+                let sanitized_error = sanitize_path(&e.to_string());
                 log(LogLevel::Debug, LogCategory::TokenExtraction, 
-                    &format!("No tokens from {:?}", client), Some(&e.to_string()));
+                    &format!("No tokens from {:?}", client), Some(&sanitized_error));
             }
         }
     }

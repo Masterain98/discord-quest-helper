@@ -5,6 +5,7 @@
 //! Logs are session-only and automatically cleared on app restart.
 
 use once_cell::sync::Lazy;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::sync::Mutex;
@@ -126,25 +127,23 @@ pub fn sanitize_username(username: &str) -> String {
     format!("{}***", first_char)
 }
 
+// Pre-compiled regex patterns for path sanitization
+static PATH_REGEX_WIN: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)\\Users\\[^\\]+").expect("Invalid Windows path regex")
+});
+static PATH_REGEX_UNIX: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"/(home|Users)/[^/]+").expect("Invalid Unix path regex")
+});
+
 /// Sanitize a file path (replace username with [USER])
 /// Works for both Windows and Unix-style paths
 pub fn sanitize_path(path: &str) -> String {
     // Windows: C:\Users\Username\... -> C:\Users\[USER]\...
-    let re_win = regex::Regex::new(r"(?i)\\Users\\[^\\]+").ok();
-    let result = if let Some(re) = re_win {
-        re.replace_all(path, "\\Users\\[USER]").to_string()
-    } else {
-        path.to_string()
-    };
+    let result = PATH_REGEX_WIN.replace_all(path, "\\Users\\[USER]").to_string();
     
     // Unix: /home/username/... -> /home/[USER]/...
     // Also handles /Users/username/... on macOS
-    let re_unix = regex::Regex::new(r"/(home|Users)/[^/]+").ok();
-    if let Some(re) = re_unix {
-        re.replace_all(&result, "/$1/[USER]").to_string()
-    } else {
-        result
-    }
+    PATH_REGEX_UNIX.replace_all(&result, "/$1/[USER]").to_string()
 }
 
 /// Sanitize an email address (show only domain)
@@ -162,18 +161,44 @@ pub fn sanitize_email(email: &str) -> String {
 // Logging Functions
 // ============================================================================
 
+// Pre-compiled regex patterns for message sanitization
+static TOKEN_REGEX: Lazy<Regex> = Lazy::new(|| {
+    // Match Discord token patterns (base64-like strings of significant length)
+    Regex::new(r"[A-Za-z0-9_-]{24,}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,}").expect("Invalid token regex")
+});
+static USER_ID_REGEX: Lazy<Regex> = Lazy::new(|| {
+    // Match Discord user IDs (17-19 digit numbers)
+    Regex::new(r"\b\d{17,19}\b").expect("Invalid user ID regex")
+});
+
+/// Sanitize a message string by removing/masking sensitive patterns
+fn sanitize_message(message: &str) -> String {
+    // Apply path sanitization
+    let result = sanitize_path(message);
+    
+    // Mask any Discord tokens
+    let result = TOKEN_REGEX.replace_all(&result, "[TOKEN]").to_string();
+    
+    // Mask Discord user IDs
+    USER_ID_REGEX.replace_all(&result, "[USER_ID]").to_string()
+}
+
 /// Log a message with the given level and category
-/// This is the main logging function used throughout the application
+/// Messages and details are automatically sanitized before storage
 pub fn log(level: LogLevel, category: LogCategory, message: &str, details: Option<&str>) {
+    // Sanitize message and details before storing
+    let sanitized_message = sanitize_message(message);
+    let sanitized_details = details.map(|s| sanitize_message(s));
+    
     let entry = LogEntry {
         timestamp: Utc::now().to_rfc3339(),
         level,
         category,
-        message: message.to_string(),
-        details: details.map(|s| s.to_string()),
+        message: sanitized_message,
+        details: sanitized_details,
     };
     
-    // Also print to console for debugging
+    // Also print to console for debugging (already sanitized)
     if let Some(ref detail) = entry.details {
         println!("[{}] [{}] {}: {}", entry.level, entry.category, entry.message, detail);
     } else {
