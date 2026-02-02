@@ -7,6 +7,7 @@ mod game_simulator;
 mod models;
 mod quest_completer;
 mod token_extractor;
+mod logger;
 
 use discord_api::DiscordApiClient;
 use models::*;
@@ -22,9 +23,18 @@ struct AppState {
 /// Auto-detect Discord tokens (returns all valid accounts found)
 #[tauri::command]
 async fn auto_detect_token(_state: State<'_, AppState>) -> Result<Vec<ExtractedAccount>, String> {
+    use crate::logger::{log, LogLevel, LogCategory};
+    
+    log(LogLevel::Info, LogCategory::TokenExtraction, "Starting auto token detection", None);
+    
     // Extract tokens
     let tokens = token_extractor::extract_tokens()
-        .map_err(|e| format!("Token extraction failed: {}", e))?;
+        .map_err(|e| {
+            log(LogLevel::Error, LogCategory::TokenExtraction, "Token extraction failed", Some(&e.to_string()));
+            format!("Token extraction failed: {}", e)
+        })?;
+    
+    log(LogLevel::Info, LogCategory::TokenExtraction, &format!("Extracted {} potential tokens", tokens.len()), None);
 
     let mut valid_accounts = Vec::new();
     let mut last_error = String::new();
@@ -38,14 +48,16 @@ async fn auto_detect_token(_state: State<'_, AppState>) -> Result<Vec<ExtractedA
             // Validate token
             match client.get_current_user().await {
                 Ok(user) => {
-                    println!("Token {} valid", index);
+                    log(LogLevel::Info, LogCategory::TokenExtraction, 
+                        &format!("Token {} validated successfully", index + 1), None);
                     valid_accounts.push(ExtractedAccount {
                         token: token.clone(),
                         user,
                     });
                 }
                 Err(e) => {
-                    println!("Token {} invalid: {}", index, e);
+                    log(LogLevel::Warn, LogCategory::TokenExtraction, 
+                        &format!("Token {} validation failed", index + 1), Some(&e.to_string()));
                     last_error = format!("Token validation failed: {}", e);
                     // Continue to next token
                 }
@@ -53,7 +65,8 @@ async fn auto_detect_token(_state: State<'_, AppState>) -> Result<Vec<ExtractedA
         }
     }
     
-    println!("Found {} valid accounts", valid_accounts.len());
+    log(LogLevel::Info, LogCategory::TokenExtraction, 
+        &format!("Token detection complete: {} valid accounts found", valid_accounts.len()), None);
 
     if valid_accounts.is_empty() {
         return Err(if !last_error.is_empty() { 
@@ -463,6 +476,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(AppState {
             client: Mutex::new(None),
             quest_state: Mutex::new(None),
@@ -482,7 +496,8 @@ pub fn run() {
             accept_quest,
             connect_to_discord_rpc,
             open_in_explorer,
-            force_video_progress
+            force_video_progress,
+            export_logs
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -508,4 +523,10 @@ async fn force_video_progress(
         .map_err(|e| format!("Failed to force video progress: {}", e))?;
 
     Ok(())
+}
+
+/// Export application logs as JSON
+#[tauri::command]
+async fn export_logs() -> Result<String, String> {
+    logger::export_logs().map_err(|e| format!("Failed to export logs: {}", e))
 }

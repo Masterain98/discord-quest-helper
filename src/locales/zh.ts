@@ -112,7 +112,11 @@ export default {
         credits_desc: "基于以下项目：",
         tech_stack: "技术栈",
         version_latest: "最新版本",
-        version_checking: "检查中..."
+        version_checking: "检查中...",
+        diagnostics: "诊断",
+        diagnostics_desc: "导出应用日志以排查问题。",
+        diagnostics_info: "日志已自动脱敏处理，敏感数据（如 Token 和个人信息）已移除。仅包含本次会话的日志。",
+        export_logs: "导出日志"
     },
     version: {
         update_available: "发现新版本！",
