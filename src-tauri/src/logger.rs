@@ -259,19 +259,56 @@ macro_rules! log_error {
 // Export Functions
 // ============================================================================
 
-/// Get OS information string
+/// Get OS information string with version details
 fn get_os_info() -> String {
     #[cfg(target_os = "windows")]
     {
-        format!("Windows {}", std::env::var("OS").unwrap_or_else(|_| "Unknown".to_string()))
+        // Try to get Windows build number from registry or environment
+        // The "OS" env var gives Windows_NT, but we want the actual build
+        if let Ok(output) = std::process::Command::new("cmd")
+            .args(["/C", "ver"])
+            .output()
+        {
+            let version_output = String::from_utf8_lossy(&output.stdout);
+            // Parse "Microsoft Windows [Version 10.0.22631.4751]" format
+            if let Some(start) = version_output.find('[') {
+                if let Some(end) = version_output.find(']') {
+                    let version_part = &version_output[start + 1..end];
+                    return format!("Windows ({})", version_part.trim());
+                }
+            }
+        }
+        "Windows".to_string()
     }
     #[cfg(target_os = "macos")]
     {
+        // Get macOS version using sw_vers command
+        if let Ok(output) = std::process::Command::new("sw_vers")
+            .args(["-productVersion"])
+            .output()
+        {
+            let version = String::from_utf8_lossy(&output.stdout);
+            let version = version.trim();
+            if !version.is_empty() {
+                return format!("macOS {}", version);
+            }
+        }
         "macOS".to_string()
     }
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
-        "Unknown OS".to_string()
+        // Get Linux distribution info if available
+        if let Ok(output) = std::process::Command::new("uname")
+            .args(["-sr"])
+            .output()
+        {
+            let version = String::from_utf8_lossy(&output.stdout);
+            let version = version.trim();
+            if !version.is_empty() {
+                return format!("Linux ({})", version);
+            }
+        }
+        "Linux".to_string()
     }
 }
 

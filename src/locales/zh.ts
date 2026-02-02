@@ -116,7 +116,9 @@ export default {
         diagnostics: "诊断",
         diagnostics_desc: "导出应用日志以排查问题。",
         diagnostics_info: "日志已自动脱敏处理，敏感数据（如 Token 和个人信息）已移除。仅包含本次会话的日志。",
-        export_logs: "导出日志"
+        export_logs: "导出日志",
+        export_success: "日志导出成功",
+        export_error: "日志导出失败"
     },
     version: {
         update_available: "发现新版本！",

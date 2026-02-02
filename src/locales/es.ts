@@ -112,7 +112,13 @@ export default {
         credits_desc: "Basado en el trabajo de:",
         tech_stack: "Stack tecnológico",
         version_latest: "Última versión",
-        version_checking: "Comprobando..."
+        version_checking: "Comprobando...",
+        diagnostics: "Diagnósticos",
+        diagnostics_desc: "Exportar registros de la aplicación para solucionar problemas.",
+        diagnostics_info: "Los registros se desinfectan automáticamente para eliminar datos sensibles como tokens e información personal. Solo se incluyen los registros de esta sesión.",
+        export_logs: "Exportar registros",
+        export_success: "Registros exportados correctamente",
+        export_error: "Error al exportar registros"
     },
     version: {
         update_available: "¡Nueva versión disponible!",

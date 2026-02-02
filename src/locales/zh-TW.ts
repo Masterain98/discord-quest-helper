@@ -112,7 +112,13 @@ export default {
         credits_desc: "基於以下專案：",
         tech_stack: "技術栈",
         version_latest: "最新版本",
-        version_checking: "檢查中..."
+        version_checking: "檢查中...",
+        diagnostics: "診斷",
+        diagnostics_desc: "匯出應用程式日誌以排查問題。",
+        diagnostics_info: "日誌已自動脫敏處理，敏感資料（如 Token 和個人資訊）已移除。僅包含本次工作階段的日誌。",
+        export_logs: "匯出日誌",
+        export_success: "日誌匯出成功",
+        export_error: "日誌匯出失敗"
     },
     version: {
         update_available: "發現新版本！",

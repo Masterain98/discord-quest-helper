@@ -116,7 +116,9 @@ export default {
         diagnostics: "Diagnostics",
         diagnostics_desc: "Export application logs for troubleshooting issues.",
         diagnostics_info: "Logs are automatically sanitized to remove sensitive data like tokens and personal information. Only logs from this session are included.",
-        export_logs: "Export Logs"
+        export_logs: "Export Logs",
+        export_success: "Logs exported successfully",
+        export_error: "Failed to export logs"
     },
     version: {
         update_available: "A new version is available!",

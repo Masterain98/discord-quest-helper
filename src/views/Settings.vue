@@ -130,8 +130,13 @@ onMounted(async () => {
 import { save } from '@tauri-apps/plugin-dialog'
 import { writeTextFile } from '@tauri-apps/plugin-fs'
 
+const exportSuccess = ref(false)
+const exportError = ref(false)
+
 async function exportLogs() {
   exporting.value = true
+  exportSuccess.value = false
+  exportError.value = false
   try {
     const logs = await invoke<string>('export_logs')
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
@@ -139,11 +144,19 @@ async function exportLogs() {
       filters: [{ name: 'JSON', extensions: ['json'] }],
       defaultPath: `dqh-logs-${timestamp}.json`
     })
-    if (path) {
-      await writeTextFile(path, logs)
+    // If the user cancels the dialog, simply return without error
+    if (!path) {
+      return
     }
+    await writeTextFile(path, logs)
+    // Show success feedback
+    exportSuccess.value = true
+    setTimeout(() => { exportSuccess.value = false }, 3000)
   } catch (error) {
     console.error('Failed to export logs:', error)
+    // Show error feedback
+    exportError.value = true
+    setTimeout(() => { exportError.value = false }, 5000)
   } finally {
     exporting.value = false
   }
@@ -405,11 +418,19 @@ async function exportLogs() {
             <p class="text-sm text-muted-foreground">
               {{ t('settings.diagnostics_info') }}
             </p>
-            <Button variant="outline" @click="exportLogs" :disabled="exporting">
-              <Download v-if="!exporting" class="w-4 h-4 mr-2" />
-              <Loader2 v-else class="w-4 h-4 mr-2 animate-spin" />
-              {{ t('settings.export_logs') }}
-            </Button>
+            <div class="flex items-center gap-3">
+              <Button variant="outline" @click="exportLogs" :disabled="exporting">
+                <Download v-if="!exporting" class="w-4 h-4 mr-2" />
+                <Loader2 v-else class="w-4 h-4 mr-2 animate-spin" />
+                {{ t('settings.export_logs') }}
+              </Button>
+              <span v-if="exportSuccess" class="text-sm text-green-500 flex items-center gap-1">
+                <Check class="w-4 h-4" /> {{ t('settings.export_success') }}
+              </span>
+              <span v-if="exportError" class="text-sm text-red-500">
+                {{ t('settings.export_error') }}
+              </span>
+            </div>
           </div>
         </CardContent>
       </Card>

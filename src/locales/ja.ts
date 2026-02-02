@@ -112,7 +112,13 @@ export default {
         credits_desc: "以下の作品に基づいています：",
         tech_stack: "技術スタック",
         version_latest: "最新版",
-        version_checking: "確認中..."
+        version_checking: "確認中...",
+        diagnostics: "診断",
+        diagnostics_desc: "問題のトラブルシューティングのためにアプリケーションログをエクスポートします。",
+        diagnostics_info: "ログは自動的にサニタイズされ、トークンや個人情報などの機密データが削除されます。このセッションのログのみが含まれます。",
+        export_logs: "ログをエクスポート",
+        export_success: "ログのエクスポートに成功しました",
+        export_error: "ログのエクスポートに失敗しました"
     },
     version: {
         update_available: "新しいバージョンが利用可能です！",

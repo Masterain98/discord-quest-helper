@@ -112,7 +112,13 @@ export default {
         credits_desc: "다음 작업을 기반으로 함:",
         tech_stack: "기술 스택",
         version_latest: "최신 버전",
-        version_checking: "확인 중..."
+        version_checking: "확인 중...",
+        diagnostics: "진단",
+        diagnostics_desc: "문제 해결을 위해 응용 프로그램 로그를 내보냅니다.",
+        diagnostics_info: "로그는 자동으로 정리되어 토큰 및 개인 정보와 같은 민감한 데이터가 제거됩니다. 이 세션의 로그만 포함됩니다.",
+        export_logs: "로그 내보내기",
+        export_success: "로그 내보내기 성공",
+        export_error: "로그 내보내기 실패"
     },
     version: {
         update_available: "새 버전이 있습니다!",
