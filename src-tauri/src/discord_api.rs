@@ -71,17 +71,31 @@ impl DiscordApiClient {
 
     /// Get current user info
     pub async fn get_current_user(&self) -> Result<DiscordUser> {
+        use crate::logger::{log, LogLevel, LogCategory};
+        
         let url = format!("{}/users/@me", DISCORD_API_BASE);
+        log(LogLevel::Debug, LogCategory::Api, "Requesting current user info", Some(&url));
         
         let response = self.client
             .get(&url)
             .send()
             .await
-            .context("Request for current user info failed")?;
+            .map_err(|e| {
+                log(LogLevel::Error, LogCategory::Api, 
+                    "Network request failed for /users/@me", Some(&e.to_string()));
+                anyhow::anyhow!("Request for current user info failed: {}", e)
+            })?;
 
-        if !response.status().is_success() {
-            let status = response.status();
+        let status = response.status();
+        log(LogLevel::Debug, LogCategory::Api, 
+            &format!("Response status for /users/@me: {}", status), None);
+
+        if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
+            // Use chars().take() for safe UTF-8 truncation
+            let truncated_body: String = body.chars().take(200).collect();
+            log(LogLevel::Error, LogCategory::Api, 
+                &format!("API error for /users/@me: {} - {}", status, truncated_body), None);
             anyhow::bail!("Failed to get user info: {} - {}", status, body);
         }
 
@@ -89,6 +103,9 @@ impl DiscordApiClient {
             .json()
             .await
             .context("Failed to parse user info")?;
+        
+        log(LogLevel::Debug, LogCategory::Api, 
+            "Successfully retrieved user info", None);
 
         Ok(user)
     }

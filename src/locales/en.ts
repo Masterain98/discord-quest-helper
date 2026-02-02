@@ -112,7 +112,13 @@ export default {
         credits_desc: "Based on work by:",
         tech_stack: "Tech Stack",
         version_latest: "Latest",
-        version_checking: "Checking..."
+        version_checking: "Checking...",
+        diagnostics: "Diagnostics",
+        diagnostics_desc: "Export application logs for troubleshooting issues.",
+        diagnostics_info: "Logs are automatically sanitized to remove sensitive data like tokens and personal information. Only logs from this session are included.",
+        export_logs: "Export Logs",
+        export_success: "Logs exported successfully",
+        export_error: "Failed to export logs"
     },
     version: {
         update_available: "A new version is available!",

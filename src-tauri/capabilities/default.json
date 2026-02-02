@@ -18,6 +18,10 @@
         "shell:allow-open",
         "fs:allow-exists",
         "fs:allow-mkdir",
-        "fs:scope-document-recursive"
+        "fs:allow-write-text-file",
+        "fs:scope-document-recursive",
+        "fs:scope-desktop-recursive",
+        "fs:scope-download-recursive",
+        "dialog:allow-save"
     ]
 }

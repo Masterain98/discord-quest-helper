@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { Eye, EyeOff, Loader2, CheckCircle2, Copy, Check, AlertTriangle } from 'lucide-vue-next'
+import { Eye, EyeOff, Loader2, CheckCircle2, Copy, Check, AlertTriangle, Download } from 'lucide-vue-next'
 import {
   AlertDialog,
   AlertDialogContent,
@@ -28,6 +28,7 @@ const versionStore = useVersionStore()
 const manualToken = ref('')
 const showToken = ref(false)
 const copied = ref(false)
+const exporting = ref(false)
 
 // Emit for tab navigation
 const emit = defineEmits<{
@@ -124,6 +125,42 @@ onMounted(async () => {
   const normalizedDocDir = docDir.replace(/[\\/]+$/, '')
   cachePath.value = `${normalizedDocDir}\\DiscordQuestGames`
 })
+
+// Log export functionality
+import { save } from '@tauri-apps/plugin-dialog'
+import { writeTextFile } from '@tauri-apps/plugin-fs'
+
+const exportSuccess = ref(false)
+const exportError = ref(false)
+
+async function exportLogs() {
+  exporting.value = true
+  exportSuccess.value = false
+  exportError.value = false
+  try {
+    const logs = await invoke<string>('export_logs')
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+    const path = await save({
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+      defaultPath: `dqh-logs-${timestamp}.json`
+    })
+    // If the user cancels the dialog, simply return without error
+    if (!path) {
+      return
+    }
+    await writeTextFile(path, logs)
+    // Show success feedback
+    exportSuccess.value = true
+    setTimeout(() => { exportSuccess.value = false }, 3000)
+  } catch (error) {
+    console.error('Failed to export logs:', error)
+    // Show error feedback
+    exportError.value = true
+    setTimeout(() => { exportError.value = false }, 5000)
+  } finally {
+    exporting.value = false
+  }
+}
 </script>
 
 <template>
@@ -366,6 +403,34 @@ onMounted(async () => {
                <FolderOpen class="w-4 h-4 mr-2" />
                {{ t('settings.open_cache_dir') }}
              </Button>
+          </div>
+        </CardContent>
+      </Card>
+      
+      <!-- Diagnostics -->
+      <Card>
+        <CardHeader>
+          <CardTitle>{{ t('settings.diagnostics') }}</CardTitle>
+          <CardDescription>{{ t('settings.diagnostics_desc') }}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div class="space-y-4">
+            <p class="text-sm text-muted-foreground">
+              {{ t('settings.diagnostics_info') }}
+            </p>
+            <div class="flex items-center gap-3">
+              <Button variant="outline" @click="exportLogs" :disabled="exporting">
+                <Download v-if="!exporting" class="w-4 h-4 mr-2" />
+                <Loader2 v-else class="w-4 h-4 mr-2 animate-spin" />
+                {{ t('settings.export_logs') }}
+              </Button>
+              <span v-if="exportSuccess" class="text-sm text-green-500 flex items-center gap-1">
+                <Check class="w-4 h-4" /> {{ t('settings.export_success') }}
+              </span>
+              <span v-if="exportError" class="text-sm text-red-500">
+                {{ t('settings.export_error') }}
+              </span>
+            </div>
           </div>
         </CardContent>
       </Card>
