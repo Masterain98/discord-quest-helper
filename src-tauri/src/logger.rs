@@ -186,6 +186,10 @@ fn sanitize_message(message: &str) -> String {
 /// Log a message with the given level and category
 /// Messages and details are automatically sanitized before storage
 pub fn log(level: LogLevel, category: LogCategory, message: &str, details: Option<&str>) {
+    // Force SESSION_START initialization on first log call
+    // This ensures session_start reflects app startup, not export time
+    let _ = *SESSION_START;
+    
     // Sanitize message and details before storing
     let sanitized_message = sanitize_message(message);
     let sanitized_details = details.map(|s| sanitize_message(s));
