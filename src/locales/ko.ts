@@ -68,9 +68,9 @@ export default {
         play: "플레이",
         activity: "활동",
         stream_play: "스트림/플레이",
-        orbs: "오브",
-        decoration: "장식",
-        in_game: "게임 내"
+        orbs: "Discord Orbs",
+        decoration: "Discord 아바타 장식",
+        in_game: "게임 내 보상"
     },
     settings: {
         title: "설정",
@@ -118,7 +118,9 @@ export default {
         diagnostics_info: "로그는 자동으로 정리되어 토큰 및 개인 정보와 같은 민감한 데이터가 제거됩니다. 이 세션의 로그만 포함됩니다.",
         export_logs: "로그 내보내기",
         export_success: "로그 내보내기 성공",
-        export_error: "로그 내보내기 실패"
+        export_error: "로그 내보내기 실패",
+        copy_token: "토큰 복사",
+        token_copied: "복사됨!"
     },
     version: {
         update_available: "새 버전이 있습니다!",

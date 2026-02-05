@@ -68,9 +68,9 @@ export default {
         play: "Играть",
         activity: "Активность",
         stream_play: "Стрим/Игра",
-        orbs: "Орбы",
-        decoration: "Украшение",
-        in_game: "Внутриигровое"
+        orbs: "Discord Orbs",
+        decoration: "Декорация аватара Discord",
+        in_game: "Внутриигровая награда"
     },
     settings: {
         title: "Настройки",
@@ -118,7 +118,9 @@ export default {
         diagnostics_info: "Логи автоматически очищаются от конфиденциальных данных, таких как токены и личная информация. Включаются только логи текущего сеанса.",
         export_logs: "Экспорт логов",
         export_success: "Логи успешно экспортированы",
-        export_error: "Не удалось экспортировать логи"
+        export_error: "Не удалось экспортировать логи",
+        copy_token: "Скопировать токен",
+        token_copied: "Скопировано!"
     },
     version: {
         update_available: "Доступна новая версия!",

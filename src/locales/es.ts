@@ -68,9 +68,9 @@ export default {
         play: "Jugar",
         activity: "Actividad",
         stream_play: "Stream/Jugar",
-        orbs: "Orbes",
-        decoration: "Decoración",
-        in_game: "En el juego"
+        orbs: "Discord Orbs",
+        decoration: "Decoración de Avatar Discord",
+        in_game: "Recompensa del Juego"
     },
     settings: {
         title: "Configuración",
@@ -118,7 +118,9 @@ export default {
         diagnostics_info: "Los registros se desinfectan automáticamente para eliminar datos sensibles como tokens e información personal. Solo se incluyen los registros de esta sesión.",
         export_logs: "Exportar registros",
         export_success: "Registros exportados correctamente",
-        export_error: "Error al exportar registros"
+        export_error: "Error al exportar registros",
+        copy_token: "Copiar Token",
+        token_copied: "¡Copiado!"
     },
     version: {
         update_available: "¡Nueva versión disponible!",

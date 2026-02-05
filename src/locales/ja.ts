@@ -68,9 +68,9 @@ export default {
         play: "プレイ",
         activity: "アクティビティ",
         stream_play: "配信/プレイ",
-        orbs: "オーブ",
-        decoration: "デコレーション",
-        in_game: "ゲーム内"
+        orbs: "Discord Orbs",
+        decoration: "Discord アバターデコレーション",
+        in_game: "ゲーム内報酬"
     },
     settings: {
         title: "設定",
@@ -118,7 +118,9 @@ export default {
         diagnostics_info: "ログは自動的にサニタイズされ、トークンや個人情報などの機密データが削除されます。このセッションのログのみが含まれます。",
         export_logs: "ログをエクスポート",
         export_success: "ログのエクスポートに成功しました",
-        export_error: "ログのエクスポートに失敗しました"
+        export_error: "ログのエクスポートに失敗しました",
+        copy_token: "トークンをコピー",
+        token_copied: "コピーしました!"
     },
     version: {
         update_available: "新しいバージョンが利用可能です！",

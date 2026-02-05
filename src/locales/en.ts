@@ -68,9 +68,9 @@ export default {
         play: "Play",
         activity: "Activity",
         stream_play: "Stream/Play",
-        orbs: "Orbs",
-        decoration: "Decoration",
-        in_game: "In-Game"
+        orbs: "Discord Orbs",
+        decoration: "Discord Avatar Decoration",
+        in_game: "In-Game Reward"
     },
     settings: {
         title: "Settings",
@@ -118,7 +118,9 @@ export default {
         diagnostics_info: "Logs are automatically sanitized to remove sensitive data like tokens and personal information. Only logs from this session are included.",
         export_logs: "Export Logs",
         export_success: "Logs exported successfully",
-        export_error: "Failed to export logs"
+        export_error: "Failed to export logs",
+        copy_token: "Copy Token",
+        token_copied: "Token Copied!"
     },
     version: {
         update_available: "A new version is available!",
