@@ -68,9 +68,9 @@ export default {
         play: "遊玩",
         activity: "活動",
         stream_play: "直播/遊玩",
-        orbs: "寶珠",
-        decoration: "裝飾",
-        in_game: "遊戲內"
+        orbs: "Discord Orbs",
+        decoration: "Discord 頭像裝飾",
+        in_game: "遊戲內獎勵"
     },
     settings: {
         title: "設定",
@@ -118,7 +118,9 @@ export default {
         diagnostics_info: "日誌已自動脫敏處理，敏感資料（如 Token 和個人資訊）已移除。僅包含本次工作階段的日誌。",
         export_logs: "匯出日誌",
         export_success: "日誌匯出成功",
-        export_error: "日誌匯出失敗"
+        export_error: "日誌匯出失敗",
+        copy_token: "複製 Token",
+        token_copied: "已複製!"
     },
     version: {
         update_available: "發現新版本！",

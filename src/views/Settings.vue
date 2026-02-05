@@ -28,6 +28,7 @@ const versionStore = useVersionStore()
 const manualToken = ref('')
 const showToken = ref(false)
 const copied = ref(false)
+const tokenCopied = ref(false)
 const exporting = ref(false)
 
 // Emit for tab navigation
@@ -53,6 +54,14 @@ async function copyPath() {
     await navigator.clipboard.writeText(cachePath.value)
     copied.value = true
     setTimeout(() => { copied.value = false }, 2000)
+  }
+}
+
+async function copyToken() {
+  if (authStore.token) {
+    await navigator.clipboard.writeText(authStore.token)
+    tokenCopied.value = true
+    setTimeout(() => { tokenCopied.value = false }, 2000)
   }
 }
 
@@ -177,9 +186,20 @@ async function exportLogs() {
           </CardDescription>
         </CardHeader>
         <CardContent class="space-y-4">
-          <div v-if="authStore.user" class="p-3 bg-green-500/10 border border-green-500/20 rounded-md text-green-500 flex items-center gap-2">
-            <span class="h-2 w-2 rounded-full bg-green-500"></span>
-            {{ t('auth.authenticated_as') }} <span class="font-bold">{{ authStore.user.username }}</span>
+          <div v-if="authStore.user" class="space-y-3">
+            <div class="p-3 bg-green-500/10 border border-green-500/20 rounded-md text-green-500 flex items-center gap-2">
+              <span class="h-2 w-2 rounded-full bg-green-500"></span>
+              {{ t('auth.authenticated_as') }} <span class="font-bold">{{ authStore.user.username }}</span>
+            </div>
+            <Button 
+              variant="outline" 
+              size="sm"
+              @click="copyToken"
+            >
+              <Check v-if="tokenCopied" class="w-4 h-4 mr-2 text-green-500" />
+              <Copy v-else class="w-4 h-4 mr-2" />
+              {{ tokenCopied ? t('settings.token_copied') : t('settings.copy_token') }}
+            </Button>
           </div>
           
           <div v-else class="space-y-4">
@@ -270,13 +290,13 @@ async function exportLogs() {
                type="range"
                v-model.number="questsStore.heartbeatInterval"
                min="1"
-               max="10"
+               max="30"
                step="1"
                class="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary"
              />
               <div class="flex justify-between text-xs text-muted-foreground">
                 <span>1s ({{ t('settings.interval_fast') }})</span>
-                <span>10s ({{ t('settings.interval_slow') }})</span>
+                <span>30s ({{ t('settings.interval_slow') }})</span>
               </div>
               <p v-if="questsStore.heartbeatInterval < 3" class="text-xs text-yellow-600 dark:text-yellow-500 mt-2">
                 ⚠️ {{ t('settings.rate_limit_warning') }}
