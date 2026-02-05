@@ -12,7 +12,8 @@ fn main() {
         .and_then(|path| path.file_stem().map(|s| s.to_string_lossy().to_string()))
         .unwrap_or_else(|| "Discord Quest Runner".to_string());
     
-    let title = format!("{} - Discord Quest Simulator (Do not close)", exe_name);
+    // Use generic title to avoid detection (no Discord Quest Helper references)
+    let title = format!("{} - Background Service", exe_name);
 
     let event_loop = EventLoop::new().unwrap();
     let window = WindowBuilder::new()

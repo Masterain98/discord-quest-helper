@@ -126,25 +126,10 @@ fn create_normal_simulated_game(path: &str, executable_name: &str, _app_id: &str
 /// Run the simulated game
 #[cfg(target_os = "windows")]
 pub fn run_simulated_game(name: &str, path: &str, executable_name: &str, _app_id: &str) -> Result<()> {
-    // Prefer stealth runner if in stealth mode
-    let exe_to_run = if stealth::is_stealth_mode() {
-        if let Ok(guard) = CURRENT_STEALTH_RUNNER.lock() {
-            if let Some(ref stealth_path) = *guard {
-                if stealth_path.exists() {
-                    println!("[Stealth] Running stealth runner: {:?}", stealth_path);
-                    stealth_path.clone()
-                } else {
-                    PathBuf::from(path).join(executable_name)
-                }
-            } else {
-                PathBuf::from(path).join(executable_name)
-            }
-        } else {
-            PathBuf::from(path).join(executable_name)
-        }
-    } else {
-        PathBuf::from(path).join(executable_name)
-    };
+    // Always use the game executable with the correct name for Discord detection
+    // In stealth mode, create_stealth_simulated_game already copies the runner
+    // to the target location with the proper game name
+    let exe_to_run = PathBuf::from(path).join(executable_name);
 
     if !exe_to_run.exists() {
         anyhow::bail!("Executable does not exist: {:?}", exe_to_run);
@@ -161,24 +146,10 @@ pub fn run_simulated_game(name: &str, path: &str, executable_name: &str, _app_id
 
 #[cfg(target_os = "macos")]
 pub fn run_simulated_game(name: &str, path: &str, executable_name: &str, _app_id: &str) -> Result<()> {
-    // Prefer stealth runner if in stealth mode
-    let exe_to_run = if stealth::is_stealth_mode() {
-        if let Ok(guard) = CURRENT_STEALTH_RUNNER.lock() {
-            if let Some(ref stealth_path) = *guard {
-                if stealth_path.exists() {
-                    stealth_path.clone()
-                } else {
-                    PathBuf::from(path).join(executable_name)
-                }
-            } else {
-                PathBuf::from(path).join(executable_name)
-            }
-        } else {
-            PathBuf::from(path).join(executable_name)
-        }
-    } else {
-        PathBuf::from(path).join(executable_name)
-    };
+    // Always use the game executable with the correct name for Discord detection
+    // In stealth mode, create_stealth_simulated_game already copies the runner
+    // to the target location with the proper game name
+    let exe_to_run = PathBuf::from(path).join(executable_name);
 
     if !exe_to_run.exists() {
         anyhow::bail!("Executable does not exist: {:?}", exe_to_run);

@@ -133,7 +133,13 @@ export default {
         cdp_shortcut_desc: "建立一個帶有除錯參數的 Discord 捷徑。",
         cdp_create_shortcut: "建立除錯捷徑",
         cdp_shortcut_success: "捷徑已建立到桌面",
-        cdp_fetch_success: "客戶端資料取得成功"
+        cdp_fetch_success: "客戶端資料取得成功",
+        super_props_mode: "X-Super-Properties 模式",
+        remote_js: "遠端",
+        default_mode: "預設",
+        mode_cdp_desc: "來自 Discord 客戶端的資料（最準確）",
+        mode_remote_desc: "來自 Discord 網站的資料（可能略有延遲）",
+        mode_default_desc: "使用內建預設值。建議使用除錯模式啟動 Discord 以獲得更好效果。"
     },
     version: {
         update_available: "發現新版本！",

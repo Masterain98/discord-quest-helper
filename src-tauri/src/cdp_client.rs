@@ -16,7 +16,8 @@ pub const DEFAULT_CDP_PORT: u16 = 9223;
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CdpTarget {
-
+    #[allow(dead_code)]
+    pub id: String,
     #[serde(rename = "type")]
     pub target_type: String,
     pub title: String,

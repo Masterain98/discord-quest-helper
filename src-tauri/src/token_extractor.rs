@@ -639,10 +639,10 @@ mod tests {
 
     #[test]
     #[ignore] // Only run when Discord is installed
-    fn test_extract_token() {
-        let result = extract_token();
+    fn test_extract_tokens() {
+        let result = extract_tokens();
         match result {
-            Ok(token) => println!("Extracted token: {}", token),
+            Ok(tokens) => println!("Extracted {} tokens", tokens.len()),
             Err(e) => println!("Error: {}", e),
         }
     }

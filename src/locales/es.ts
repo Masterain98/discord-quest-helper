@@ -133,7 +133,13 @@ export default {
         cdp_shortcut_desc: "Crear un acceso directo para iniciar Discord con el flag de depuración.",
         cdp_create_shortcut: "Crear acceso directo de depuración",
         cdp_shortcut_success: "Acceso directo creado en el escritorio",
-        cdp_fetch_success: "Datos del cliente obtenidos correctamente"
+        cdp_fetch_success: "Datos del cliente obtenidos correctamente",
+        super_props_mode: "Modo X-Super-Properties",
+        remote_js: "Remoto",
+        default_mode: "Predeterminado",
+        mode_cdp_desc: "Datos del cliente Discord (más precisos)",
+        mode_remote_desc: "Datos del sitio web de Discord (puede tener ligero retraso)",
+        mode_default_desc: "Usa valores predeterminados. Inicia Discord con flag de depuración para mejores resultados."
     },
     version: {
         update_available: "¡Nueva versión disponible!",

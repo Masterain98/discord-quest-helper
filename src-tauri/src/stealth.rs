@@ -3,7 +3,6 @@
 //! Implements runtime random process name to evade Discord detection.
 //! Both the main program and game runner use randomly generated filenames.
 
-use once_cell::sync::Lazy;
 use std::env;
 use std::fs;
 use std::io;
@@ -20,9 +19,6 @@ pub const RUNNER_PREFIX: &str = "runner_";
 /// Flag indicating if current process is running in stealth mode
 static IS_STEALTH_MODE: AtomicBool = AtomicBool::new(false);
 
-/// Current stealth name (for logging)
-static CURRENT_STEALTH_NAME: Lazy<std::sync::Mutex<Option<String>>> =
-    Lazy::new(|| std::sync::Mutex::new(None));
 
 /// Generate random hexadecimal string
 fn generate_random_suffix(length: usize) -> String {
@@ -49,10 +45,6 @@ pub fn is_stealth_mode() -> bool {
     IS_STEALTH_MODE.load(Ordering::Relaxed)
 }
 
-/// Get current stealth process name (if any)
-pub fn get_stealth_name() -> Option<String> {
-    CURRENT_STEALTH_NAME.lock().ok()?.clone()
-}
 
 /// Generate a random window title that looks like a system process
 pub fn generate_stealth_window_title() -> String {
@@ -124,10 +116,6 @@ fn ensure_stealth_mode_impl() -> bool {
     // If already running with random name, mark and continue
     if file_name.starts_with(MAIN_APP_PREFIX) {
         IS_STEALTH_MODE.store(true, Ordering::Relaxed);
-        if let Ok(mut guard) = CURRENT_STEALTH_NAME.lock() {
-            *guard = Some(file_name.to_string());
-        }
-
         println!("[Stealth] Running in stealth mode as: {}", file_name);
 
         // Clean up old temp files

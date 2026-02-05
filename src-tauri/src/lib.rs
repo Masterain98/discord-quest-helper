@@ -527,18 +527,25 @@ pub fn ensure_stealth_and_run() {
     // Try to enter stealth mode
     stealth::ensure_stealth_mode();
 
-    // Set up cleanup hook for panics
+    // Set up cleanup hook for panics with recursion guard
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static CLEANUP_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
+
     let original_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic_info| {
-        stealth::cleanup_on_exit();
+        if !CLEANUP_IN_PROGRESS.swap(true, Ordering::SeqCst) {
+            stealth::cleanup_on_exit();
+        }
         original_hook(panic_info);
     }));
 
     // Register Ctrl+C handler
-    let _ = ctrlc::set_handler(move || {
+    if let Err(e) = ctrlc::set_handler(move || {
         stealth::cleanup_on_exit();
         std::process::exit(0);
-    });
+    }) {
+        eprintln!("Warning: Failed to register Ctrl+C handler: {}", e);
+    }
 
     // Run main application
     run();

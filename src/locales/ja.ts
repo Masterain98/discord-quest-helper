@@ -133,7 +133,13 @@ export default {
         cdp_shortcut_desc: "デバッグフラグ付きのDiscordショートカットを作成。",
         cdp_create_shortcut: "デバッグショートカットを作成",
         cdp_shortcut_success: "ショートカットをデスクトップに作成しました",
-        cdp_fetch_success: "クライアントデータの取得に成功しました"
+        cdp_fetch_success: "クライアントデータの取得に成功しました",
+        super_props_mode: "X-Super-Properties モード",
+        remote_js: "リモート",
+        default_mode: "デフォルト",
+        mode_cdp_desc: "Discordクライアントからのデータ（最も正確）",
+        mode_remote_desc: "Discordウェブサイトからのデータ（若干遅延する可能性あり）",
+        mode_default_desc: "内蔵のデフォルト値を使用。より良い結果のためにデバッグモードでDiscordを起動してください。"
     },
     version: {
         update_available: "新しいバージョンが利用可能です！",

@@ -133,7 +133,13 @@ export default {
         cdp_shortcut_desc: "디버그 플래그가 포함된 Discord 바로가기를 생성합니다.",
         cdp_create_shortcut: "디버그 바로가기 생성",
         cdp_shortcut_success: "바로가기가 바탕화면에 생성되었습니다",
-        cdp_fetch_success: "클라이언트 데이터를 성공적으로 가져왔습니다"
+        cdp_fetch_success: "클라이언트 데이터를 성공적으로 가져왔습니다",
+        super_props_mode: "X-Super-Properties 모드",
+        remote_js: "원격",
+        default_mode: "기본값",
+        mode_cdp_desc: "Discord 클라이언트에서 가져온 데이터 (가장 정확)",
+        mode_remote_desc: "Discord 웹사이트에서 가져온 데이터 (약간 지연될 수 있음)",
+        mode_default_desc: "내장 기본값 사용. 더 나은 결과를 위해 디버그 모드로 Discord를 시작하세요."
     },
     version: {
         update_available: "새 버전이 있습니다!",

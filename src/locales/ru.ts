@@ -133,7 +133,13 @@ export default {
         cdp_shortcut_desc: "Создать ярлык для запуска Discord с флагом отладки.",
         cdp_create_shortcut: "Создать ярлык отладки",
         cdp_shortcut_success: "Ярлык создан на рабочем столе",
-        cdp_fetch_success: "Данные клиента получены успешно"
+        cdp_fetch_success: "Данные клиента получены успешно",
+        super_props_mode: "Режим X-Super-Properties",
+        remote_js: "Удалённый",
+        default_mode: "По умолчанию",
+        mode_cdp_desc: "Данные из клиента Discord (наиболее точные)",
+        mode_remote_desc: "Данные с сайта Discord (могут слегка отставать)",
+        mode_default_desc: "Используются встроенные значения. Запустите Discord с флагом отладки для лучших результатов."
     },
     version: {
         update_available: "Доступна новая версия!",

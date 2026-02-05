@@ -64,7 +64,9 @@ impl DiscordApiClient {
     /// Get the current X-Super-Properties value (dynamically obtained to ensure latest data)
     fn get_super_properties_header(&self) -> HeaderValue {
         let super_props = {
-            let manager = crate::SUPER_PROPERTIES_MANAGER.lock().unwrap();
+            let manager = crate::SUPER_PROPERTIES_MANAGER
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             manager.get_super_properties_base64()
         };
         HeaderValue::from_str(&super_props).unwrap_or_else(|_| HeaderValue::from_static(""))
