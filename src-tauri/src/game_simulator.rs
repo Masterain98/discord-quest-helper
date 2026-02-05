@@ -1,12 +1,76 @@
 use anyhow::{Context, Result};
+use once_cell::sync::Lazy;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::Mutex;
+
+use crate::stealth;
+
+/// Store current stealth runner path
+static CURRENT_STEALTH_RUNNER: Lazy<Mutex<Option<PathBuf>>> = Lazy::new(|| Mutex::new(None));
 
 /// Create a simulated game executable
 ///
 /// Copies the template executable to the specified path with the target game name
 pub fn create_simulated_game(path: &str, executable_name: &str, _app_id: &str) -> Result<()> {
+    println!(
+        "create_simulated_game called with path: '{}', exe: '{}'",
+        path, executable_name
+    );
+
+    // If in stealth mode, use random-named runner
+    if stealth::is_stealth_mode() {
+        return create_stealth_simulated_game(path, executable_name, _app_id);
+    }
+
+    // Original logic (non-stealth mode)
+    create_normal_simulated_game(path, executable_name, _app_id)
+}
+
+/// Stealth mode: create game simulator with random name
+fn create_stealth_simulated_game(path: &str, executable_name: &str, _app_id: &str) -> Result<()> {
+    // Get original runner path
+    let runner_path = get_runner_exe_path()?;
+
+    // Use temp directory for stealth runner
+    let temp_dir = std::env::temp_dir();
+
+    // Create random-named runner
+    let stealth_runner = stealth::create_stealth_runner(&runner_path, &temp_dir)
+        .context("Failed to create stealth runner")?;
+
+    // Store current runner path
+    if let Ok(mut guard) = CURRENT_STEALTH_RUNNER.lock() {
+        *guard = Some(stealth_runner.clone());
+    }
+
+    // Also create a copy in user-specified directory (with original game name)
+    // This is necessary for Discord to detect the game installation
+    let target_dir = PathBuf::from(path);
+    if !target_dir.exists() {
+        fs::create_dir_all(&target_dir).context("Could not create target directory")?;
+    }
+
+    let target_exe = target_dir.join(executable_name);
+    if let Some(parent) = target_exe.parent() {
+        if !parent.exists() {
+            fs::create_dir_all(parent).context("Could not create target subdirectory")?;
+        }
+    }
+
+    // Copy stealth runner to target location (using original game name)
+    fs::copy(&stealth_runner, &target_exe).context("Could not copy runner")?;
+
+    println!("[Stealth] Created game simulation:");
+    println!("  - Stealth runner: {:?}", stealth_runner);
+    println!("  - Game executable: {:?}", target_exe);
+
+    Ok(())
+}
+
+/// Original non-stealth mode creation logic
+fn create_normal_simulated_game(path: &str, executable_name: &str, _app_id: &str) -> Result<()> {
     println!("create_simulated_game called with path: '{}', exe: '{}'", path, executable_name);
     
     // Create target directory
@@ -62,42 +126,76 @@ pub fn create_simulated_game(path: &str, executable_name: &str, _app_id: &str) -
 /// Run the simulated game
 #[cfg(target_os = "windows")]
 pub fn run_simulated_game(name: &str, path: &str, executable_name: &str, _app_id: &str) -> Result<()> {
-    let target_exe = PathBuf::from(path).join(executable_name);
+    // Prefer stealth runner if in stealth mode
+    let exe_to_run = if stealth::is_stealth_mode() {
+        if let Ok(guard) = CURRENT_STEALTH_RUNNER.lock() {
+            if let Some(ref stealth_path) = *guard {
+                if stealth_path.exists() {
+                    println!("[Stealth] Running stealth runner: {:?}", stealth_path);
+                    stealth_path.clone()
+                } else {
+                    PathBuf::from(path).join(executable_name)
+                }
+            } else {
+                PathBuf::from(path).join(executable_name)
+            }
+        } else {
+            PathBuf::from(path).join(executable_name)
+        }
+    } else {
+        PathBuf::from(path).join(executable_name)
+    };
 
-    if !target_exe.exists() {
-        anyhow::bail!("Executable does not exist: {:?}", target_exe);
+    if !exe_to_run.exists() {
+        anyhow::bail!("Executable does not exist: {:?}", exe_to_run);
     }
 
-    // Use Windows start command to launch the process
     let _ = Command::new("cmd")
-        .args(&["/C", "start", "", target_exe.to_str().unwrap()])
+        .args(["/C", "start", "", exe_to_run.to_str().unwrap()])
         .spawn()
         .context("Could not start simulated game")?;
 
-    println!("Simulated game {} started", name);
+    println!("Simulated game {} started from {:?}", name, exe_to_run);
     Ok(())
 }
 
 #[cfg(target_os = "macos")]
 pub fn run_simulated_game(name: &str, path: &str, executable_name: &str, _app_id: &str) -> Result<()> {
-    let target_exe = PathBuf::from(path).join(executable_name);
+    // Prefer stealth runner if in stealth mode
+    let exe_to_run = if stealth::is_stealth_mode() {
+        if let Ok(guard) = CURRENT_STEALTH_RUNNER.lock() {
+            if let Some(ref stealth_path) = *guard {
+                if stealth_path.exists() {
+                    stealth_path.clone()
+                } else {
+                    PathBuf::from(path).join(executable_name)
+                }
+            } else {
+                PathBuf::from(path).join(executable_name)
+            }
+        } else {
+            PathBuf::from(path).join(executable_name)
+        }
+    } else {
+        PathBuf::from(path).join(executable_name)
+    };
 
-    if !target_exe.exists() {
-        anyhow::bail!("Executable does not exist: {:?}", target_exe);
+    if !exe_to_run.exists() {
+        anyhow::bail!("Executable does not exist: {:?}", exe_to_run);
     }
 
     // Make the file executable
     use std::os::unix::fs::PermissionsExt;
-    let mut perms = std::fs::metadata(&target_exe)?.permissions();
+    let mut perms = std::fs::metadata(&exe_to_run)?.permissions();
     perms.set_mode(0o755);
-    std::fs::set_permissions(&target_exe, perms)?;
+    std::fs::set_permissions(&exe_to_run, perms)?;
 
     // Launch the process in background
-    let _ = Command::new(&target_exe)
+    let _ = Command::new(&exe_to_run)
         .spawn()
         .context("Could not start simulated game")?;
 
-    println!("Simulated game {} started", name);
+    println!("Simulated game {} started from {:?}", name, exe_to_run);
     Ok(())
 }
 
@@ -114,24 +212,44 @@ pub fn run_simulated_game(
 /// Stop the simulated game
 #[cfg(target_os = "windows")]
 pub fn stop_simulated_game(exec_name: &str) -> Result<()> {
+    // If in stealth mode, also stop random-named runners
+    if stealth::is_stealth_mode() {
+        stealth::stop_stealth_runners();
+    }
+
     // taskkill /IM needs image name (filename), not path.
-    // robustly handle both / and \ separators
+    // robustly handle both / and \\ separators
     let file_name = exec_name
         .split(|c| c == '/' || c == '\\')
         .last()
         .unwrap_or(exec_name);
 
-    println!("Stopping simulated game: Input='{}' -> Image='{}'", exec_name, file_name);
+    println!(
+        "Stopping simulated game: Input='{}' -> Image='{}'",
+        exec_name, file_name
+    );
 
     // Use taskkill command to terminate process
     let output = Command::new("taskkill")
-        .args(&["/F", "/IM", file_name])
+        .args(["/F", "/IM", file_name])
         .output()
         .context("Could not execute taskkill command")?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("Failed to stop game: {}", stderr);
+        // Don't error out, process may not exist
+        println!(
+            "taskkill returned non-zero, process may not exist: {}",
+            stderr
+        );
+    }
+
+    // Clean up stored stealth runner path
+    if let Ok(mut guard) = CURRENT_STEALTH_RUNNER.lock() {
+        if let Some(ref path) = *guard {
+            let _ = fs::remove_file(path);
+        }
+        *guard = None;
     }
 
     println!("Simulated game {} stopped", exec_name);
@@ -140,13 +258,18 @@ pub fn stop_simulated_game(exec_name: &str) -> Result<()> {
 
 #[cfg(target_os = "macos")]
 pub fn stop_simulated_game(exec_name: &str) -> Result<()> {
-    // Extract just the filename from the path
-    let file_name = exec_name
-        .split('/')
-        .last()
-        .unwrap_or(exec_name);
+    // If in stealth mode, also stop random-named runners
+    if stealth::is_stealth_mode() {
+        stealth::stop_stealth_runners();
+    }
 
-    println!("Stopping simulated game: Input='{}' -> Process='{}'", exec_name, file_name);
+    // Extract just the filename from the path
+    let file_name = exec_name.split('/').last().unwrap_or(exec_name);
+
+    println!(
+        "Stopping simulated game: Input='{}' -> Process='{}'",
+        exec_name, file_name
+    );
 
     // Use pkill to terminate process by name
     let output = Command::new("pkill")
@@ -157,7 +280,15 @@ pub fn stop_simulated_game(exec_name: &str) -> Result<()> {
     // pkill returns 0 if processes were killed, 1 if no processes matched
     if !output.status.success() && output.status.code() != Some(1) {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("Failed to stop game: {}", stderr);
+        println!("pkill returned non-zero: {}", stderr);
+    }
+
+    // Clean up stored stealth runner path
+    if let Ok(mut guard) = CURRENT_STEALTH_RUNNER.lock() {
+        if let Some(ref path) = *guard {
+            let _ = fs::remove_file(path);
+        }
+        *guard = None;
     }
 
     println!("Simulated game {} stopped", exec_name);

@@ -27,7 +27,8 @@ export default {
     nav: {
         home: "首頁",
         game_simulator: "遊戲模擬",
-        settings: "設定"
+        settings: "設定",
+        debug: "偵錯"
     },
     home: {
         welcome: "歡迎回來，{name}",
@@ -120,7 +121,19 @@ export default {
         export_success: "日誌匯出成功",
         export_error: "日誌匯出失敗",
         copy_token: "複製 Token",
-        token_copied: "已複製!"
+        token_copied: "已複製!",
+        cdp_title: "Discord 客戶端整合",
+        cdp_desc: "連接到 Discord 客戶端以取得準確的資訊。需要使用除錯參數啟動 Discord。",
+        cdp_checking: "檢查中...",
+        cdp_connected: "已連接",
+        cdp_disconnected: "未連接 - 請使用除錯參數啟動 Discord",
+        cdp_port: "除錯連接埠",
+        cdp_port_hint: "預設：9223",
+        cdp_fetch: "取得客戶端資料",
+        cdp_shortcut_desc: "建立一個帶有除錯參數的 Discord 捷徑。",
+        cdp_create_shortcut: "建立除錯捷徑",
+        cdp_shortcut_success: "捷徑已建立到桌面",
+        cdp_fetch_success: "客戶端資料取得成功"
     },
     version: {
         update_available: "發現新版本！",
@@ -165,5 +178,17 @@ export default {
         cancel: "取消",
         accept: "接受",
         start: "開始"
+    },
+    debug: {
+        title: "偵錯資訊",
+        description: "查看程式參數和設定值",
+        refresh: "重新整理",
+        token: "Token",
+        token_desc: "您的 Discord 驗證 Token",
+        session_ids: "會話 ID",
+        session_ids_desc: "每次應用程式啟動時產生一次",
+        super_properties_desc: "傳送至 Discord API 的請求標頭屬性",
+        copy: "複製",
+        no_data: "暫無偵錯資料"
     }
 }

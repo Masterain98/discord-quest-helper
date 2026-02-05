@@ -27,7 +27,8 @@ export default {
     nav: {
         home: "홈",
         game_simulator: "게임 시뮬레이터",
-        settings: "설정"
+        settings: "설정",
+        debug: "디버그"
     },
     home: {
         welcome: "다시 오셨군요, {name}",
@@ -120,7 +121,19 @@ export default {
         export_success: "로그 내보내기 성공",
         export_error: "로그 내보내기 실패",
         copy_token: "토큰 복사",
-        token_copied: "복사됨!"
+        token_copied: "복사됨!",
+        cdp_title: "Discord 클라이언트 연동",
+        cdp_desc: "Discord 클라이언트에 연결하여 정확한 정보를 가져옵니다. 디버그 플래그로 Discord 실행 필요.",
+        cdp_checking: "확인 중...",
+        cdp_connected: "연결됨",
+        cdp_disconnected: "연결 안됨 - 디버그 플래그로 Discord를 시작하세요",
+        cdp_port: "디버그 포트",
+        cdp_port_hint: "기본값: 9223",
+        cdp_fetch: "클라이언트 데이터 가져오기",
+        cdp_shortcut_desc: "디버그 플래그가 포함된 Discord 바로가기를 생성합니다.",
+        cdp_create_shortcut: "디버그 바로가기 생성",
+        cdp_shortcut_success: "바로가기가 바탕화면에 생성되었습니다",
+        cdp_fetch_success: "클라이언트 데이터를 성공적으로 가져왔습니다"
     },
     version: {
         update_available: "새 버전이 있습니다!",
@@ -165,5 +178,17 @@ export default {
         cancel: "취소",
         accept: "수락",
         start: "시작"
+    },
+    debug: {
+        title: "디버그 정보",
+        description: "프로그램 매개변수 및 설정 값 보기",
+        refresh: "새로고침",
+        token: "토큰",
+        token_desc: "Discord 인증 토큰",
+        session_ids: "세션 ID",
+        session_ids_desc: "앱 실행 시 한 번 생성",
+        super_properties_desc: "Discord API로 전송되는 요청 헤더 속성",
+        copy: "복사",
+        no_data: "디버그 데이터 없음"
     }
 }

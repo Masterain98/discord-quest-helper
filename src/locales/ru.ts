@@ -27,7 +27,8 @@ export default {
     nav: {
         home: "Главная",
         game_simulator: "Симулятор игр",
-        settings: "Настройки"
+        settings: "Настройки",
+        debug: "Отладка"
     },
     home: {
         welcome: "С возвращением, {name}",
@@ -120,7 +121,19 @@ export default {
         export_success: "Логи успешно экспортированы",
         export_error: "Не удалось экспортировать логи",
         copy_token: "Скопировать токен",
-        token_copied: "Скопировано!"
+        token_copied: "Скопировано!",
+        cdp_title: "Интеграция с Discord",
+        cdp_desc: "Подключение к клиенту Discord для получения точной информации. Требуется запуск Discord с флагом отладки.",
+        cdp_checking: "Проверка...",
+        cdp_connected: "Подключено",
+        cdp_disconnected: "Не подключено - Запустите Discord с флагом отладки",
+        cdp_port: "Порт отладки",
+        cdp_port_hint: "По умолчанию: 9223",
+        cdp_fetch: "Получить данные клиента",
+        cdp_shortcut_desc: "Создать ярлык для запуска Discord с флагом отладки.",
+        cdp_create_shortcut: "Создать ярлык отладки",
+        cdp_shortcut_success: "Ярлык создан на рабочем столе",
+        cdp_fetch_success: "Данные клиента получены успешно"
     },
     version: {
         update_available: "Доступна новая версия!",
@@ -165,5 +178,17 @@ export default {
         cancel: "Отмена",
         accept: "Принять",
         start: "Начать"
+    },
+    debug: {
+        title: "Отладочная информация",
+        description: "Просмотр параметров и значений конфигурации программы",
+        refresh: "Обновить",
+        token: "Токен",
+        token_desc: "Ваш токен авторизации Discord",
+        session_ids: "ID сессии",
+        session_ids_desc: "Генерируется один раз при запуске приложения",
+        super_properties_desc: "Свойства заголовка запроса, отправляемые в Discord API",
+        copy: "Копировать",
+        no_data: "Нет отладочных данных"
     }
 }

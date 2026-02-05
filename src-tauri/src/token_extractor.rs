@@ -102,6 +102,7 @@ pub fn extract_tokens() -> Result<Vec<String>> {
     Ok(tokens.into_iter().collect())
 }
 
+
 #[cfg(target_os = "windows")]
 fn try_extract_from_client(client: &DiscordClient) -> Result<Vec<String>> {
     use crate::logger::{log, LogLevel, LogCategory, sanitize_path};
@@ -445,6 +446,191 @@ fn decrypt_token(encrypted_data: &[u8], key: &[u8]) -> Result<String> {
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
 fn decrypt_token(_encrypted_data: &[u8], _key: &[u8]) -> Result<String> {
     anyhow::bail!("Token decryption is only supported on Windows and macOS")
+}
+
+/// Get the latest client_build_number from Discord JavaScript files
+/// 
+/// This function will:
+/// 1. Request the Discord login page
+/// 2. Parse HTML to find JavaScript resource files
+/// 3. Request JS files and search for buildNumber
+/// 
+/// Reference: https://docs.discord.food/reference#client-properties-structure
+pub async fn fetch_build_number_from_discord() -> Result<u64> {
+    use crate::logger::{log, LogLevel, LogCategory};
+    
+    log(LogLevel::Info, LogCategory::TokenExtraction, "Fetching build number from Discord", None);
+    
+    let client = reqwest::Client::builder()
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .build()
+        .context("Failed to create HTTP client")?;
+    
+    // Request Discord login page
+    let login_page = client
+        .get("https://discord.com/login")
+        .send()
+        .await
+        .context("Failed to fetch Discord login page")?
+        .text()
+        .await
+        .context("Failed to read login page response")?;
+    
+    // Parse script tag to find JS file
+    // Discord JS filename format: /assets/[name].[hash].js (e.g. web.ce2887aa135af11c.js)
+    let script_re = Regex::new(r#"/assets/[a-z0-9-]+\.[a-f0-9]+\.js"#)?;
+    let script_urls: Vec<String> = script_re
+        .find_iter(&login_page)
+        .map(|m| format!("https://discord.com{}", m.as_str()))
+        .collect();
+    
+    log(LogLevel::Debug, LogCategory::TokenExtraction, 
+        &format!("Found {} JavaScript files", script_urls.len()), None);
+    
+    if script_urls.is_empty() {
+        // Try alternative URL patterns (handling potential quoted cases)
+        let alt_script_re = Regex::new(r#"src="(/assets/[a-z0-9-]+\.[a-f0-9]+\.js)""#)?;
+        let alt_urls: Vec<String> = alt_script_re
+            .captures_iter(&login_page)
+            .filter_map(|cap| cap.get(1).map(|m| format!("https://discord.com{}", m.as_str())))
+            .collect();
+        
+        if alt_urls.is_empty() {
+            anyhow::bail!("Could not find any JavaScript files in Discord login page");
+        }
+        
+        return fetch_build_number_from_scripts(&client, &alt_urls).await;
+    }
+    
+    fetch_build_number_from_scripts(&client, &script_urls).await
+}
+
+async fn fetch_build_number_from_scripts(client: &reqwest::Client, script_urls: &[String]) -> Result<u64> {
+    use crate::logger::{log, LogLevel, LogCategory};
+    
+    // Multiple possible buildNumber patterns
+    let patterns = [
+        r#"buildNumber["\s:]+(\d{5,})"#,
+        r#"build_number["\s:]+(\d{5,})"#,
+        r#"buildNumber:\s*"?(\d{5,})"?"#,
+        r#""buildNumber"\s*:\s*(\d+)"#,
+    ];
+    
+    // Only check the last few JS files (build info is usually in the larger main bundle)
+    let urls_to_check: Vec<&String> = script_urls.iter().rev().take(5).collect();
+    
+    for url in urls_to_check {
+        log(LogLevel::Debug, LogCategory::TokenExtraction, 
+            &format!("Checking JS file: {}", url), None);
+        
+        match client.get(url).send().await {
+            Ok(response) => {
+                if let Ok(js_content) = response.text().await {
+                    // Try all patterns
+                    for pattern in &patterns {
+                        if let Ok(re) = Regex::new(pattern) {
+                            if let Some(caps) = re.captures(&js_content) {
+                                if let Some(num_match) = caps.get(1) {
+                                    if let Ok(build_num) = num_match.as_str().parse::<u64>() {
+                                        // Verify it is a reasonable build number (usually 6 digits)
+                                        if build_num > 100000 && build_num < 999999 {
+                                            log(LogLevel::Info, LogCategory::TokenExtraction, 
+                                                &format!("Found build number: {}", build_num), None);
+                                            return Ok(build_num);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                log(LogLevel::Debug, LogCategory::TokenExtraction, 
+                    &format!("Failed to fetch JS file: {}", e), None);
+            }
+        }
+    }
+    
+    anyhow::bail!("Could not find build number in any JavaScript file")
+}
+
+/// Discord Client Info (from update manifest)
+#[derive(Debug, Clone)]
+pub struct DiscordClientInfo {
+    pub host_version: [u32; 3],  // e.g., [1, 0, 9219]
+    pub native_build_number: u64,
+}
+
+impl DiscordClientInfo {
+    /// Get formatted client_version string (e.g. "1.0.9219")
+    pub fn client_version(&self) -> String {
+        format!("{}.{}.{}", self.host_version[0], self.host_version[1], self.host_version[2])
+    }
+}
+
+/// Get client info from Discord Update API
+/// 
+/// API: https://updates.discord.com/distributions/app/manifests/latest
+/// 
+/// Reference: https://docs.discord.food/topics/client-distribution
+pub async fn fetch_discord_client_info() -> Result<DiscordClientInfo> {
+    use crate::logger::{log, LogLevel, LogCategory};
+    
+    log(LogLevel::Info, LogCategory::TokenExtraction, "Fetching Discord client info from update API", None);
+
+    let client = reqwest::Client::builder()
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+        .build()
+        .context("Failed to create HTTP client")?;
+    
+    // Request Discord update manifest
+    let url = "https://updates.discord.com/distributions/app/manifests/latest?channel=stable&platform=win&arch=x64";
+
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .context("Failed to fetch Discord update manifest")?;
+    
+    if !response.status().is_success() {
+        anyhow::bail!("Discord update API returned error: {}", response.status());
+    }
+    
+    let manifest: serde_json::Value = response
+        .json::<serde_json::Value>()
+        .await
+        .context("Failed to parse update manifest JSON")?;
+    
+    // Parse host_version array
+    let host_version = manifest["host_version"]
+        .as_array()
+        .context("Missing host_version in manifest")?;
+    
+    if host_version.len() < 3 {
+        anyhow::bail!("Invalid host_version format");
+    }
+    
+    let version: [u32; 3] = [
+        host_version[0].as_u64().unwrap_or(1) as u32,
+        host_version[1].as_u64().unwrap_or(0) as u32,
+        host_version[2].as_u64().unwrap_or(9219) as u32,
+    ];
+    
+    // native_build_number is usually the third number in host_version
+    // but may also be a separate field in the manifest
+    let native_build: u64 = manifest.get("native_module_version")
+        .and_then(|v: &serde_json::Value| v.as_u64())
+        .unwrap_or(version[2] as u64);
+    
+    log(LogLevel::Info, LogCategory::TokenExtraction, 
+        &format!("Got Discord client info: version={}.{}.{}, native_build={}", 
+            version[0], version[1], version[2], native_build), None);
+    
+    Ok(DiscordClientInfo {
+        host_version: version,
+        native_build_number: native_build,
+    })
 }
 
 #[cfg(test)]

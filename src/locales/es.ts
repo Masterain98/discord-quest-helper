@@ -27,7 +27,8 @@ export default {
     nav: {
         home: "Inicio",
         game_simulator: "Simulador de juegos",
-        settings: "Configuración"
+        settings: "Configuración",
+        debug: "Depurar"
     },
     home: {
         welcome: "Bienvenido de nuevo, {name}",
@@ -120,7 +121,19 @@ export default {
         export_success: "Registros exportados correctamente",
         export_error: "Error al exportar registros",
         copy_token: "Copiar Token",
-        token_copied: "¡Copiado!"
+        token_copied: "¡Copiado!",
+        cdp_title: "Integración con Discord",
+        cdp_desc: "Conectar al cliente Discord para obtener información precisa. Requiere iniciar Discord con flag de depuración.",
+        cdp_checking: "Verificando...",
+        cdp_connected: "Conectado",
+        cdp_disconnected: "No conectado - Inicia Discord con flag de depuración",
+        cdp_port: "Puerto de depuración",
+        cdp_port_hint: "Por defecto: 9223",
+        cdp_fetch: "Obtener datos del cliente",
+        cdp_shortcut_desc: "Crear un acceso directo para iniciar Discord con el flag de depuración.",
+        cdp_create_shortcut: "Crear acceso directo de depuración",
+        cdp_shortcut_success: "Acceso directo creado en el escritorio",
+        cdp_fetch_success: "Datos del cliente obtenidos correctamente"
     },
     version: {
         update_available: "¡Nueva versión disponible!",
@@ -165,5 +178,17 @@ export default {
         cancel: "Cancelar",
         accept: "Aceptar",
         start: "Iniciar"
+    },
+    debug: {
+        title: "Información de depuración",
+        description: "Ver parámetros del programa y valores de configuración",
+        refresh: "Actualizar",
+        token: "Token",
+        token_desc: "Tu token de autenticación de Discord",
+        session_ids: "IDs de sesión",
+        session_ids_desc: "Generado una vez al iniciar la aplicación",
+        super_properties_desc: "Propiedades del encabezado de solicitud enviadas a la API de Discord",
+        copy: "Copiar",
+        no_data: "Sin datos de depuración"
     }
 }
