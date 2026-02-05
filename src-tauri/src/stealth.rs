@@ -232,7 +232,12 @@ fn cleanup_old_temp_files(prefix: &str) {
                     // Try to delete old file
                     match fs::remove_file(&path) {
                         Ok(_) => println!("[Stealth] Cleaned up: {}", name),
-                        Err(_) => {} // File might be in use, ignore
+                        Err(e) => {
+                            if cfg!(debug_assertions) {
+                                eprintln!("[Stealth] Failed to clean up {}: {}", name, e);
+                            }
+                            // File might be in use, ignore in release builds
+                        }
                     }
                 }
             }
@@ -264,7 +269,7 @@ fn schedule_self_deletion(exe_path: &PathBuf) {
     // Use batch script for delayed deletion
     let bat_content = format!(
         "@echo off\n\
-         timeout /t 2 /nobreak >nul\n\
+         timeout /t 5 /nobreak >nul\n\
          del /f /q \"{}\"\n\
          del /f /q \"%~f0\"\n",
         exe_path.display()

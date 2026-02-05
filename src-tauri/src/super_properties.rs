@@ -87,6 +87,10 @@ impl Default for SuperProperties {
             browser_user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) discord/1.0.9219 Chrome/138.0.7204.251 Electron/37.6.0 Safari/537.36".to_string(),
             browser_version: "37.6.0".to_string(),
             os_sdk_version: Some("19045".to_string()),
+            // FALLBACK BUILD NUMBER: Captured ~Jan 2026. This hardcoded value is used when
+            // CDP extraction and remote JS fetch both fail. May need periodic updates as
+            // Discord releases new versions. The actual build number is fetched dynamically
+            // from Discord when possible.
             client_build_number: 493063,
             native_build_number: Some(73211),
             client_event_source: None,

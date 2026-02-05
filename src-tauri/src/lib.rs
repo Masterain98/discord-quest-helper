@@ -532,7 +532,17 @@ pub fn ensure_stealth_and_run() {
     let original_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic_info| {
         if !CLEANUP_IN_PROGRESS.swap(true, Ordering::SeqCst) {
-            stealth::cleanup_on_exit();
+            // Use catch_unwind to safely run cleanup
+            let cleanup_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                stealth::cleanup_on_exit();
+            }));
+            
+            if cleanup_result.is_err() {
+                eprintln!("[Stealth] Error: panic occurred during cleanup in panic hook");
+            }
+            
+            // Reset flag to allow future cleanup attempts
+            CLEANUP_IN_PROGRESS.store(false, Ordering::SeqCst);
         }
         original_hook(panic_info);
     }));
@@ -565,7 +575,9 @@ pub fn run() {
                 if let Some(window) = app.get_webview_window("main") {
                     let stealth_title = stealth::generate_stealth_window_title();
                     println!("[Stealth] Setting window title to: {}", stealth_title);
-                    let _ = window.set_title(&stealth_title);
+                    if let Err(err) = window.set_title(&stealth_title) {
+                        eprintln!("[Stealth] Failed to set window title to '{}': {}", stealth_title, err);
+                    }
                 }
             }
             Ok(())
@@ -770,18 +782,22 @@ async fn create_discord_shortcut_internal(port: u16) -> Result<String, String> {
     
     let shortcut_path = desktop.join("Discord (Debug Mode).lnk");
     
-    // Create shortcut using PowerShell
+    // Create shortcut using PowerShell with single-quoted strings for safety
+    // Escape embedded single quotes by doubling them
+    let shortcut_path_ps = shortcut_path.to_string_lossy().replace('\'', "''");
+    let discord_exe_ps = discord_exe.to_string_lossy().replace('\'', "''");
+    
     let ps_script = format!(
         r#"
 $WshShell = New-Object -comObject WScript.Shell
-$Shortcut = $WshShell.CreateShortcut("{}")
-$Shortcut.TargetPath = "{}"
+$Shortcut = $WshShell.CreateShortcut('{}')
+$Shortcut.TargetPath = '{}'
 $Shortcut.Arguments = "--remote-debugging-port={} --remote-allow-origins=*"
 $Shortcut.Description = "Discord with DevTools Protocol enabled for Quest Helper"
 $Shortcut.Save()
 "#,
-        shortcut_path.to_string_lossy().replace("\\", "\\\\"),
-        discord_exe.to_string_lossy().replace("\\", "\\\\"),
+        shortcut_path_ps,
+        discord_exe_ps,
         port
     );
     
@@ -825,8 +841,21 @@ fn find_discord_executable() -> Option<std::path::PathBuf> {
                         .starts_with("app-")
                 })
                 .collect();
-            
-            app_dirs.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
+            // Sort by version number (extract numeric parts for proper ordering)
+            // e.g., "app-1.0.9219" -> parse version numerically
+            app_dirs.sort_by(|a, b| {
+                let extract_version = |name: &std::ffi::OsStr| -> Vec<u32> {
+                    name.to_string_lossy()
+                        .strip_prefix("app-")
+                        .unwrap_or("")
+                        .split('.')
+                        .filter_map(|s| s.parse().ok())
+                        .collect()
+                };
+                let va = extract_version(&a.file_name());
+                let vb = extract_version(&b.file_name());
+                vb.cmp(&va) // Descending order (latest first)
+            });
             
             if let Some(latest) = app_dirs.first() {
                 let exe_path = latest.path().join(exe_name);
