@@ -610,7 +610,6 @@ pub fn run() {
         .on_window_event(|_window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
                 // Clean up on window close
-                stealth::stop_stealth_runners();
                 stealth::cleanup_on_exit();
             }
         })

@@ -1,7 +1,8 @@
 //! Stealth Mode Module
 //!
-//! Implements runtime random process name to evade Discord detection.
-//! Both the main program and game runner use randomly generated filenames.
+//! Implements runtime random process name for the main application
+//! to evade Discord detection. The main program uses a randomly
+//! generated filename when running.
 
 use std::env;
 use std::fs;
@@ -12,9 +13,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Main app random name prefix
 const MAIN_APP_PREFIX: &str = "svc_";
-
-/// Game runner random name prefix
-pub const RUNNER_PREFIX: &str = "runner_";
 
 /// Flag indicating if current process is running in stealth mode
 static IS_STEALTH_MODE: AtomicBool = AtomicBool::new(false);
@@ -253,9 +251,6 @@ pub fn cleanup_on_exit() {
         return;
     }
 
-    // Clean up game runner temp files
-    cleanup_old_temp_files(RUNNER_PREFIX);
-
     // Self-destruct current temp file
     if let Ok(current_exe) = env::current_exe() {
         schedule_self_deletion(&current_exe);
@@ -291,96 +286,4 @@ fn schedule_self_deletion(exe_path: &PathBuf) {
 fn schedule_self_deletion(exe_path: &PathBuf) {
     // Unix systems can directly delete running files (just removes inode reference)
     let _ = fs::remove_file(exe_path);
-}
-
-// ============================================================================
-// Game Runner Random Name Support
-// ============================================================================
-
-/// Create random-named copy of game runner
-///
-/// Parameters:
-/// - `source_runner`: Original runner executable path
-/// - `target_dir`: Target directory
-///
-/// Returns: Path to random-named runner
-pub fn create_stealth_runner(source_runner: &PathBuf, target_dir: &PathBuf) -> io::Result<PathBuf> {
-    let random_suffix = generate_random_suffix(8);
-    let ext = get_exe_extension();
-    let stealth_name = format!("{}{}{}", RUNNER_PREFIX, random_suffix, ext);
-
-    let stealth_path = target_dir.join(&stealth_name);
-
-    // Copy runner to target directory
-    fs::copy(source_runner, &stealth_path)?;
-
-    // Set executable permission (Unix)
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        if let Ok(metadata) = fs::metadata(&stealth_path) {
-            let mut perms = metadata.permissions();
-            perms.set_mode(0o755);
-            let _ = fs::set_permissions(&stealth_path, perms);
-        }
-    }
-
-    println!("[Stealth] Created stealth runner: {:?}", stealth_path);
-
-    Ok(stealth_path)
-}
-
-/// Stop and clean up random-named runners
-///
-/// Attempts to terminate all processes starting with RUNNER_PREFIX
-#[cfg(target_os = "windows")]
-pub fn stop_stealth_runners() {
-    let temp_dir = env::temp_dir();
-    let ext = get_exe_extension();
-
-    if let Ok(entries) = fs::read_dir(&temp_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-
-            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if name.starts_with(RUNNER_PREFIX) && name.ends_with(ext) {
-                    // Try to terminate process
-                    let _ = Command::new("taskkill")
-                        .args(["/F", "/IM", name])
-                        .output();
-
-                    // Try to delete file
-                    std::thread::sleep(std::time::Duration::from_millis(100));
-                    let _ = fs::remove_file(&path);
-                }
-            }
-        }
-    }
-}
-
-#[cfg(target_os = "macos")]
-pub fn stop_stealth_runners() {
-    let temp_dir = env::temp_dir();
-
-    if let Ok(entries) = fs::read_dir(&temp_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-
-            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if name.starts_with(RUNNER_PREFIX) {
-                    // Try to terminate process
-                    let _ = Command::new("pkill").args(["-f", name]).output();
-
-                    // Try to delete file
-                    std::thread::sleep(std::time::Duration::from_millis(100));
-                    let _ = fs::remove_file(&path);
-                }
-            }
-        }
-    }
-}
-
-#[cfg(not(any(target_os = "windows", target_os = "macos")))]
-pub fn stop_stealth_runners() {
-    // Other platforms not supported
 }

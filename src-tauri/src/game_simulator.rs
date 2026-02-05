@@ -1,85 +1,31 @@
 use anyhow::{Context, Result};
-use once_cell::sync::Lazy;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
-use std::sync::Mutex;
-
-use crate::stealth;
-
-/// Store current stealth runner path
-static CURRENT_STEALTH_RUNNER: Lazy<Mutex<Option<PathBuf>>> = Lazy::new(|| Mutex::new(None));
 
 /// Create a simulated game executable
 ///
-/// Copies the template executable to the specified path with the target game name
+/// Copies the runner executable to the specified path with the target game name.
+/// Discord detects games by process name, so renaming the runner to match the
+/// target game's executable name allows us to simulate running that game.
 pub fn create_simulated_game(path: &str, executable_name: &str, _app_id: &str) -> Result<()> {
     println!(
         "create_simulated_game called with path: '{}', exe: '{}'",
         path, executable_name
     );
 
-    // If in stealth mode, use random-named runner
-    if stealth::is_stealth_mode() {
-        return create_stealth_simulated_game(path, executable_name, _app_id);
-    }
-
-    // Original logic (non-stealth mode)
-    create_normal_simulated_game(path, executable_name, _app_id)
-}
-
-/// Stealth mode: create game simulator with random name
-fn create_stealth_simulated_game(path: &str, executable_name: &str, _app_id: &str) -> Result<()> {
-    // Get original runner path
-    let runner_path = get_runner_exe_path()?;
-
-    // Use temp directory for stealth runner
-    let temp_dir = std::env::temp_dir();
-
-    // Create random-named runner
-    let stealth_runner = stealth::create_stealth_runner(&runner_path, &temp_dir)
-        .context("Failed to create stealth runner")?;
-
-    // Store current runner path
-    if let Ok(mut guard) = CURRENT_STEALTH_RUNNER.lock() {
-        *guard = Some(stealth_runner.clone());
-    }
-
-    // Also create a copy in user-specified directory (with original game name)
-    // This is necessary for Discord to detect the game installation
-    let target_dir = PathBuf::from(path);
-    if !target_dir.exists() {
-        fs::create_dir_all(&target_dir).context("Could not create target directory")?;
-    }
-
-    let target_exe = target_dir.join(executable_name);
-    if let Some(parent) = target_exe.parent() {
-        if !parent.exists() {
-            fs::create_dir_all(parent).context("Could not create target subdirectory")?;
-        }
-    }
-
-    // Copy stealth runner to target location (using original game name)
-    fs::copy(&stealth_runner, &target_exe).context("Could not copy runner")?;
-
-    println!("[Stealth] Created game simulation:");
-    println!("  - Stealth runner: {:?}", stealth_runner);
-    println!("  - Game executable: {:?}", target_exe);
-
-    Ok(())
-}
-
-/// Original non-stealth mode creation logic
-fn create_normal_simulated_game(path: &str, executable_name: &str, _app_id: &str) -> Result<()> {
-    println!("create_simulated_game called with path: '{}', exe: '{}'", path, executable_name);
-    
     // Create target directory
     let target_dir = PathBuf::from(path);
-    println!("Target directory: {:?}, exists: {}", target_dir, target_dir.exists());
-    
+    println!(
+        "Target directory: {:?}, exists: {}",
+        target_dir,
+        target_dir.exists()
+    );
+
     if !target_dir.exists() {
         println!("Creating directory: {:?}", target_dir);
-        fs::create_dir_all(&target_dir).context(format!("Could not create target directory: {:?}", target_dir))?;
+        fs::create_dir_all(&target_dir)
+            .context(format!("Could not create target directory: {:?}", target_dir))?;
     }
 
     // Target executable path
@@ -92,31 +38,37 @@ fn create_normal_simulated_game(path: &str, executable_name: &str, _app_id: &str
         }
     }
 
-
     // If file exists, try to delete it first
     if target_exe.exists() {
         if let Err(e) = fs::remove_file(&target_exe) {
-            println!("Target file exists and remove failed ({}), trying to kill process...", e);
+            println!(
+                "Target file exists and remove failed ({}), trying to kill process...",
+                e
+            );
             // Process might be running, try to stop it
             let _ = stop_simulated_game(executable_name);
             // Wait for process to release the lock
             std::thread::sleep(std::time::Duration::from_millis(500));
             // Try to delete again
             if let Err(e) = fs::remove_file(&target_exe) {
-               println!("Still cannot remove file: {}", e);
-               // Continue to copy, see if it overwrites or fails
+                println!("Still cannot remove file: {}", e);
+                // Continue to copy, see if it overwrites or fails
             }
         }
     }
 
-    // Get runner executable path (assumed to be in resources directory)
-    // In actual deployment, this should be obtained from Tauri resources
+    // Get runner executable path
     let runner_path = get_runner_exe_path()?;
 
-    // Copy file
+    // Copy runner to target location with game's name
     println!("Copying runner from {:?} to {:?}", runner_path, target_exe);
     fs::copy(&runner_path, &target_exe).map_err(|e| {
-        anyhow::anyhow!("Could not copy executable from {:?} to {:?}: {}", runner_path, target_exe, e)
+        anyhow::anyhow!(
+            "Could not copy executable from {:?} to {:?}: {}",
+            runner_path,
+            target_exe,
+            e
+        )
     })?;
 
     println!("Simulated game created: {:?}", target_exe);
@@ -126,9 +78,6 @@ fn create_normal_simulated_game(path: &str, executable_name: &str, _app_id: &str
 /// Run the simulated game
 #[cfg(target_os = "windows")]
 pub fn run_simulated_game(name: &str, path: &str, executable_name: &str, _app_id: &str) -> Result<()> {
-    // Always use the game executable with the correct name for Discord detection
-    // In stealth mode, create_stealth_simulated_game already copies the runner
-    // to the target location with the proper game name
     let exe_to_run = PathBuf::from(path).join(executable_name);
 
     if !exe_to_run.exists() {
@@ -146,9 +95,6 @@ pub fn run_simulated_game(name: &str, path: &str, executable_name: &str, _app_id
 
 #[cfg(target_os = "macos")]
 pub fn run_simulated_game(name: &str, path: &str, executable_name: &str, _app_id: &str) -> Result<()> {
-    // Always use the game executable with the correct name for Discord detection
-    // In stealth mode, create_stealth_simulated_game already copies the runner
-    // to the target location with the proper game name
     let exe_to_run = PathBuf::from(path).join(executable_name);
 
     if !exe_to_run.exists() {
@@ -183,13 +129,8 @@ pub fn run_simulated_game(
 /// Stop the simulated game
 #[cfg(target_os = "windows")]
 pub fn stop_simulated_game(exec_name: &str) -> Result<()> {
-    // If in stealth mode, also stop random-named runners
-    if stealth::is_stealth_mode() {
-        stealth::stop_stealth_runners();
-    }
-
     // taskkill /IM needs image name (filename), not path.
-    // robustly handle both / and \\ separators
+    // Robustly handle both / and \\ separators
     let file_name = exec_name
         .split(|c| c == '/' || c == '\\')
         .last()
@@ -215,25 +156,12 @@ pub fn stop_simulated_game(exec_name: &str) -> Result<()> {
         );
     }
 
-    // Clean up stored stealth runner path
-    if let Ok(mut guard) = CURRENT_STEALTH_RUNNER.lock() {
-        if let Some(ref path) = *guard {
-            let _ = fs::remove_file(path);
-        }
-        *guard = None;
-    }
-
     println!("Simulated game {} stopped", exec_name);
     Ok(())
 }
 
 #[cfg(target_os = "macos")]
 pub fn stop_simulated_game(exec_name: &str) -> Result<()> {
-    // If in stealth mode, also stop random-named runners
-    if stealth::is_stealth_mode() {
-        stealth::stop_stealth_runners();
-    }
-
     // Extract just the filename from the path
     let file_name = exec_name.split('/').last().unwrap_or(exec_name);
 
@@ -252,14 +180,6 @@ pub fn stop_simulated_game(exec_name: &str) -> Result<()> {
     if !output.status.success() && output.status.code() != Some(1) {
         let stderr = String::from_utf8_lossy(&output.stderr);
         println!("pkill returned non-zero: {}", stderr);
-    }
-
-    // Clean up stored stealth runner path
-    if let Ok(mut guard) = CURRENT_STEALTH_RUNNER.lock() {
-        if let Some(ref path) = *guard {
-            let _ = fs::remove_file(path);
-        }
-        *guard = None;
     }
 
     println!("Simulated game {} stopped", exec_name);
@@ -286,7 +206,7 @@ fn get_exe_extension() -> &'static str {
 fn get_runner_exe_path() -> Result<PathBuf> {
     let ext = get_exe_extension();
     let runner_name = format!("discord-quest-runner{}", ext);
-    
+
     // List of potential paths to check
     let paths = vec![
         // Copied to data folder (preferred)
@@ -311,7 +231,7 @@ fn get_runner_exe_path() -> Result<PathBuf> {
 
     let ext = get_exe_extension();
     let runner_name = format!("discord-quest-runner{}", ext);
-    
+
     // Attempt to find via current exe directory (for prod/bundled)
     if let Ok(current_exe) = std::env::current_exe() {
         if let Some(parent) = current_exe.parent() {
@@ -319,12 +239,12 @@ fn get_runner_exe_path() -> Result<PathBuf> {
             if bundled_path.exists() {
                 return Ok(bundled_path);
             }
-            // Check in the same directory as the executable (common for bundled resources if flattened)
+            // Check in the same directory as the executable
             let sibling_path = parent.join(&runner_name);
             if sibling_path.exists() {
                 return Ok(sibling_path);
             }
-            
+
             // macOS: Check inside the app bundle Resources directory
             #[cfg(target_os = "macos")]
             {
@@ -338,7 +258,10 @@ fn get_runner_exe_path() -> Result<PathBuf> {
         }
     }
 
-    anyhow::bail!("Runner executable not found.\nPlease ensure src-runner is built and discord-quest-runner{} exists in the data or target directory.", ext)
+    anyhow::bail!(
+        "Runner executable not found.\nPlease ensure src-runner is built and discord-quest-runner{} exists in the data or target directory.",
+        ext
+    )
 }
 
 #[cfg(test)]
