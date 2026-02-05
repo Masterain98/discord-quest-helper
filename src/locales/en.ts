@@ -131,6 +131,7 @@ export default {
         cdp_port: "Debug Port",
         cdp_port_hint: "Default: 9223",
         cdp_fetch: "Fetch Client Data",
+        cdp_shortcut_warning: "You must close Discord completely before using this shortcut.",
         cdp_shortcut_desc: "Create a shortcut to launch Discord with the required debug flag.",
         cdp_create_shortcut: "Create Debug Shortcut",
         cdp_shortcut_success: "Shortcut created on Desktop",
@@ -140,7 +141,8 @@ export default {
         default_mode: "Default",
         mode_cdp_desc: "Data from Discord client (most accurate)",
         mode_remote_desc: "Data from Discord website (may be slightly delayed)",
-        mode_default_desc: "Using built-in defaults. Start Discord with debug flag for better results."
+        mode_default_desc: "Using built-in defaults. Start Discord with debug flag for better results.",
+        debug_unlock_hint: "You are {steps} steps away from being a developer."
     },
     version: {
         update_available: "A new version is available!",

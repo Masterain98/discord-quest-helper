@@ -130,6 +130,7 @@ export default {
         cdp_port: "디버그 포트",
         cdp_port_hint: "기본값: 9223",
         cdp_fetch: "클라이언트 데이터 가져오기",
+        cdp_shortcut_warning: "이 바로가기를 사용하기 전에 Discord를 완전히 종료해야 합니다.",
         cdp_shortcut_desc: "디버그 플래그가 포함된 Discord 바로가기를 생성합니다.",
         cdp_create_shortcut: "디버그 바로가기 생성",
         cdp_shortcut_success: "바로가기가 바탕화면에 생성되었습니다",
@@ -139,7 +140,8 @@ export default {
         default_mode: "기본값",
         mode_cdp_desc: "Discord 클라이언트에서 가져온 데이터 (가장 정확)",
         mode_remote_desc: "Discord 웹사이트에서 가져온 데이터 (약간 지연될 수 있음)",
-        mode_default_desc: "내장 기본값 사용. 더 나은 결과를 위해 디버그 모드로 Discord를 시작하세요."
+        mode_default_desc: "내장 기본값 사용. 더 나은 결과를 위해 디버그 모드로 Discord를 시작하세요.",
+        debug_unlock_hint: "{steps}번 더 탭하면 개발자가 됩니다."
     },
     version: {
         update_available: "새 버전이 있습니다!",

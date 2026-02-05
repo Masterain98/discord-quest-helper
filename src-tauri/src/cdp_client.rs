@@ -43,6 +43,19 @@ pub struct CdpStatus {
 }
 
 /// JavaScript code: Get SuperProperties
+///
+/// FRAGILE: This code relies on Discord's internal webpack module structure.
+/// The webpackChunkdiscord_app.push trick is used to access Discord's module system.
+/// 
+/// This approach may break if Discord:
+/// - Changes their webpack chunking mechanism
+/// - Renames the global variable
+/// - Modifies the module structure
+/// - Updates their bundler
+///
+/// Fallback behavior: If extraction fails, the app falls back to:
+/// 1. Remote JS (fetching from Discord's website)
+/// 2. Built-in defaults
 const JS_GET_SUPER_PROPERTIES: &str = r#"
 (() => {
     try {

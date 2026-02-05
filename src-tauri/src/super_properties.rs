@@ -229,16 +229,24 @@ impl XSuperPropertiesManager {
                         props.launch_signature = Some(self.launch_signature.clone());
                         props.client_launch_id = Some(self.client_launch_id.clone());
                         props.client_heartbeat_session_id = Some(self.client_heartbeat_session_id.clone());
-                        let json = serde_json::to_string(&props).unwrap_or_default();
-                        return BASE64.encode(json);
+                        match serde_json::to_string(&props) {
+                            Ok(json) => return BASE64.encode(json),
+                            Err(e) => eprintln!("Failed to serialize updated SuperProperties: {}", e),
+                        }
                     }
                 }
             }
         }
         // Fallback to auto-generation
         let props = self.build_properties();
-        let json = serde_json::to_string(&props).unwrap_or_default();
-        BASE64.encode(json)
+        match serde_json::to_string(&props) {
+            Ok(json) => BASE64.encode(json),
+            Err(e) => {
+                eprintln!("Failed to serialize fallback SuperProperties: {}", e);
+                // Last-resort non-empty value to avoid sending empty header
+                BASE64.encode("{}")
+            }
+        }
     }
 
 

@@ -130,6 +130,7 @@ export default {
         cdp_port: "Порт отладки",
         cdp_port_hint: "По умолчанию: 9223",
         cdp_fetch: "Получить данные клиента",
+        cdp_shortcut_warning: "Перед использованием этого ярлыка необходимо полностью закрыть Discord.",
         cdp_shortcut_desc: "Создать ярлык для запуска Discord с флагом отладки.",
         cdp_create_shortcut: "Создать ярлык отладки",
         cdp_shortcut_success: "Ярлык создан на рабочем столе",
@@ -139,7 +140,8 @@ export default {
         default_mode: "По умолчанию",
         mode_cdp_desc: "Данные из клиента Discord (наиболее точные)",
         mode_remote_desc: "Данные с сайта Discord (могут слегка отставать)",
-        mode_default_desc: "Используются встроенные значения. Запустите Discord с флагом отладки для лучших результатов."
+        mode_default_desc: "Используются встроенные значения. Запустите Discord с флагом отладки для лучших результатов.",
+        debug_unlock_hint: "Ещё {steps} нажатий до статуса разработчика."
     },
     version: {
         update_available: "Доступна новая версия!",

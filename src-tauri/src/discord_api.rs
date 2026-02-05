@@ -69,7 +69,11 @@ impl DiscordApiClient {
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
             manager.get_super_properties_base64()
         };
-        HeaderValue::from_str(&super_props).unwrap_or_else(|_| HeaderValue::from_static(""))
+        HeaderValue::from_str(&super_props).unwrap_or_else(|e| {
+            eprintln!("Failed to create X-Super-Properties header: {}", e);
+            // Fallback to minimal valid base64 JSON
+            HeaderValue::from_static("e30=") // base64("{}")
+        })
     }
 
     #[allow(dead_code)]

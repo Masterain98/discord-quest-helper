@@ -599,6 +599,7 @@ async function exportLogs() {
 
           <!-- Create Shortcut Section -->
           <div class="pt-2 border-t space-y-2">
+            <p class="text-sm text-amber-500">⚠️ {{ t('settings.cdp_shortcut_warning') }}</p>
             <p class="text-sm text-muted-foreground">{{ t('settings.cdp_shortcut_desc') }}</p>
             <div class="flex items-center gap-2">
               <Button variant="outline" @click="createShortcut" :disabled="shortcutCreating">

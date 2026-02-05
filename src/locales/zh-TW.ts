@@ -130,6 +130,7 @@ export default {
         cdp_port: "除錯連接埠",
         cdp_port_hint: "預設：9223",
         cdp_fetch: "取得客戶端資料",
+        cdp_shortcut_warning: "使用此捷徑前，必須完全關閉 Discord。",
         cdp_shortcut_desc: "建立一個帶有除錯參數的 Discord 捷徑。",
         cdp_create_shortcut: "建立除錯捷徑",
         cdp_shortcut_success: "捷徑已建立到桌面",
@@ -139,7 +140,8 @@ export default {
         default_mode: "預設",
         mode_cdp_desc: "來自 Discord 客戶端的資料（最準確）",
         mode_remote_desc: "來自 Discord 網站的資料（可能略有延遲）",
-        mode_default_desc: "使用內建預設值。建議使用除錯模式啟動 Discord 以獲得更好效果。"
+        mode_default_desc: "使用內建預設值。建議使用除錯模式啟動 Discord 以獲得更好效果。",
+        debug_unlock_hint: "再點擊 {steps} 次即可成為開發者。"
     },
     version: {
         update_available: "發現新版本！",

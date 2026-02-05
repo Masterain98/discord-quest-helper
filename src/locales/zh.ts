@@ -131,6 +131,7 @@ export default {
         cdp_port: "调试端口",
         cdp_port_hint: "默认：9223",
         cdp_fetch: "获取客户端数据",
+        cdp_shortcut_warning: "使用此快捷方式前，必须完全关闭 Discord。",
         cdp_shortcut_desc: "创建一个带有调试参数的 Discord 快捷方式。",
         cdp_create_shortcut: "创建调试快捷方式",
         cdp_shortcut_success: "快捷方式已创建到桌面",
@@ -140,7 +141,8 @@ export default {
         default_mode: "默认",
         mode_cdp_desc: "来自 Discord 客户端的数据（最准确）",
         mode_remote_desc: "来自 Discord 网站的数据（可能略有延迟）",
-        mode_default_desc: "使用内置默认值。建议使用调试模式启动 Discord 以获得更好效果。"
+        mode_default_desc: "使用内置默认值。建议使用调试模式启动 Discord 以获得更好效果。",
+        debug_unlock_hint: "再点击 {steps} 次即可成为开发者。"
     },
     version: {
         update_available: "发现新版本！",

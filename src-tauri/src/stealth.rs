@@ -270,12 +270,15 @@ fn schedule_self_deletion(exe_path: &PathBuf) {
         exe_path.display()
     );
 
-    let bat_path = env::temp_dir().join("cleanup_dqh.bat");
+    let bat_filename = format!("cleanup_{}.bat", generate_random_suffix(8));
+    let bat_path = env::temp_dir().join(bat_filename);
 
     if fs::write(&bat_path, bat_content).is_ok() {
-        let _ = Command::new("cmd")
-            .args(["/C", "start", "/min", "", bat_path.to_str().unwrap()])
-            .spawn();
+        if let Some(bat_str) = bat_path.to_str() {
+            let _ = Command::new("cmd")
+                .args(["/C", "start", "/min", "", bat_str])
+                .spawn();
+        }
     }
 }
 

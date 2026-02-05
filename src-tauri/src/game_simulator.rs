@@ -244,7 +244,7 @@ pub fn stop_simulated_game(exec_name: &str) -> Result<()> {
 
     // Use pkill to terminate process by name
     let output = Command::new("pkill")
-        .args([&format!("-f{}", file_name)])
+        .args(["-f", file_name])
         .output()
         .context("Could not execute pkill command")?;
 

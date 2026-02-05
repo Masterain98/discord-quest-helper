@@ -98,7 +98,7 @@ onMounted(() => {
             <span 
               :class="[
                 'px-3 py-1 text-xs font-medium rounded-full',
-                debugInfo.source === 'Auto-Generated' 
+                debugInfo.source === 'Default' 
                   ? 'bg-blue-500/10 text-blue-500' 
                   : 'bg-green-500/10 text-green-500'
               ]"

@@ -532,8 +532,8 @@ async fn fetch_build_number_from_scripts(client: &reqwest::Client, script_urls: 
                             if let Some(caps) = re.captures(&js_content) {
                                 if let Some(num_match) = caps.get(1) {
                                     if let Ok(build_num) = num_match.as_str().parse::<u64>() {
-                                        // Verify it is a reasonable build number (usually 6 digits)
-                                        if build_num > 100000 && build_num < 999999 {
+                                        // Verify it is a reasonable build number (usually 6+ digits)
+                                        if build_num >= 100000 && build_num <= 9_999_999 {
                                             log(LogLevel::Info, LogCategory::TokenExtraction, 
                                                 &format!("Found build number: {}", build_num), None);
                                             return Ok(build_num);

@@ -112,39 +112,37 @@ async fn set_token(token: String, state: State<'_, AppState>) -> Result<DiscordU
     // Save client
     *state.client.lock().unwrap() = Some(client);
     
-    // Asynchronously fetch latest build_number and client info (non-blocking for login flow)
-    tokio::spawn(async move {
-        // Get build_number
-        match token_extractor::fetch_build_number_from_discord().await {
-            Ok(build_number) => {
-                log(LogLevel::Info, LogCategory::TokenExtraction, 
-                    &format!("Successfully fetched build number: {}", build_number), None);
-                if let Ok(mut manager) = SUPER_PROPERTIES_MANAGER.lock() {
-                    manager.set_build_number(build_number);
-                }
-            }
-            Err(e) => {
-                log(LogLevel::Warn, LogCategory::TokenExtraction, 
-                    &format!("Failed to fetch build number: {}", e), None);
+    // Fetch latest build_number and client info before returning (so frontend await can rely on completion)
+    // Get build_number
+    match token_extractor::fetch_build_number_from_discord().await {
+        Ok(build_number) => {
+            log(LogLevel::Info, LogCategory::TokenExtraction, 
+                &format!("Successfully fetched build number: {}", build_number), None);
+            if let Ok(mut manager) = SUPER_PROPERTIES_MANAGER.lock() {
+                manager.set_build_number(build_number);
             }
         }
-        
-        // Get client info (native_build_number and version)
-        match token_extractor::fetch_discord_client_info().await {
-            Ok(info) => {
-                log(LogLevel::Info, LogCategory::TokenExtraction, 
-                    &format!("Successfully fetched client info: version={}, native_build={}", 
-                        info.client_version(), info.native_build_number), None);
-                if let Ok(mut manager) = SUPER_PROPERTIES_MANAGER.lock() {
-                    manager.set_client_info(info.client_version(), info.native_build_number);
-                }
-            }
-            Err(e) => {
-                log(LogLevel::Warn, LogCategory::TokenExtraction, 
-                    &format!("Failed to fetch client info: {}", e), None);
+        Err(e) => {
+            log(LogLevel::Warn, LogCategory::TokenExtraction, 
+                &format!("Failed to fetch build number: {}", e), None);
+        }
+    }
+    
+    // Get client info (native_build_number and version)
+    match token_extractor::fetch_discord_client_info().await {
+        Ok(info) => {
+            log(LogLevel::Info, LogCategory::TokenExtraction, 
+                &format!("Successfully fetched client info: version={}, native_build={}", 
+                    info.client_version(), info.native_build_number), None);
+            if let Ok(mut manager) = SUPER_PROPERTIES_MANAGER.lock() {
+                manager.set_client_info(info.client_version(), info.native_build_number);
             }
         }
-    });
+        Err(e) => {
+            log(LogLevel::Warn, LogCategory::TokenExtraction, 
+                &format!("Failed to fetch client info: {}", e), None);
+        }
+    }
 
     Ok(user)
 }
@@ -669,7 +667,9 @@ async fn fetch_super_properties_cdp(port: Option<u16>) -> Result<cdp_client::Cdp
 /// Get current SuperProperties source mode and build number
 #[tauri::command]
 fn get_super_properties_mode() -> serde_json::Value {
-    let manager = SUPER_PROPERTIES_MANAGER.lock().unwrap();
+    let manager = SUPER_PROPERTIES_MANAGER
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     serde_json::json!({
         "mode": manager.get_mode().as_str(),
         "mode_display": manager.get_mode().display_name(),
@@ -805,9 +805,14 @@ fn find_discord_executable() -> Option<std::path::PathBuf> {
     let local_appdata = std::env::var("LOCALAPPDATA").ok()?;
     let base = PathBuf::from(local_appdata);
     
-    let channels = ["Discord", "DiscordPTB", "DiscordCanary"];
+    // Map channel folder to executable name
+    let channels = [
+        ("Discord", "Discord.exe"),
+        ("DiscordPTB", "DiscordPTB.exe"),
+        ("DiscordCanary", "DiscordCanary.exe"),
+    ];
     
-    for channel in channels {
+    for (channel, exe_name) in channels {
         let channel_path = base.join(channel);
         
         // Find latest app-* directory
@@ -824,7 +829,7 @@ fn find_discord_executable() -> Option<std::path::PathBuf> {
             app_dirs.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
             
             if let Some(latest) = app_dirs.first() {
-                let exe_path = latest.path().join("Discord.exe");
+                let exe_path = latest.path().join(exe_name);
                 if exe_path.exists() {
                     return Some(exe_path);
                 }
@@ -832,7 +837,7 @@ fn find_discord_executable() -> Option<std::path::PathBuf> {
         }
         
         // Check root directory directly
-        let direct_exe = channel_path.join("Discord.exe");
+        let direct_exe = channel_path.join(exe_name);
         if direct_exe.exists() {
             return Some(direct_exe);
         }

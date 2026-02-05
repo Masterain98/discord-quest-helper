@@ -130,6 +130,7 @@ export default {
         cdp_port: "デバッグポート",
         cdp_port_hint: "デフォルト: 9223",
         cdp_fetch: "クライアントデータを取得",
+        cdp_shortcut_warning: "このショートカットを使用する前に、Discordを完全に終了してください。",
         cdp_shortcut_desc: "デバッグフラグ付きのDiscordショートカットを作成。",
         cdp_create_shortcut: "デバッグショートカットを作成",
         cdp_shortcut_success: "ショートカットをデスクトップに作成しました",
@@ -139,7 +140,8 @@ export default {
         default_mode: "デフォルト",
         mode_cdp_desc: "Discordクライアントからのデータ（最も正確）",
         mode_remote_desc: "Discordウェブサイトからのデータ（若干遅延する可能性あり）",
-        mode_default_desc: "内蔵のデフォルト値を使用。より良い結果のためにデバッグモードでDiscordを起動してください。"
+        mode_default_desc: "内蔵のデフォルト値を使用。より良い結果のためにデバッグモードでDiscordを起動してください。",
+        debug_unlock_hint: "あと {steps} 回タップで開発者になれます。"
     },
     version: {
         update_available: "新しいバージョンが利用可能です！",
