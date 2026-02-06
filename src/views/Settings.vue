@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useQuestsStore } from '@/stores/quests'
 import { useVersionStore } from '@/stores/version'
@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { Eye, EyeOff, Loader2, CheckCircle2, Copy, Check, AlertTriangle, Download } from 'lucide-vue-next'
+import { Eye, EyeOff, Loader2, CheckCircle2, Copy, Check, AlertTriangle, Download, Link2, Wifi, WifiOff, RotateCw } from 'lucide-vue-next'
 import {
   AlertDialog,
   AlertDialogContent,
@@ -20,6 +20,7 @@ import {
   AlertDialogCancel,
 } from '@/components/ui/alert-dialog'
 import { useI18n } from 'vue-i18n'
+import { checkCdpStatus, fetchSuperPropertiesCdp, createDiscordDebugShortcut, getSuperPropertiesMode, retrySuperProperties, type CdpStatus, type SuperPropertiesModeInfo } from '@/api/tauri'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
@@ -28,13 +29,130 @@ const versionStore = useVersionStore()
 const manualToken = ref('')
 const showToken = ref(false)
 const copied = ref(false)
-const tokenCopied = ref(false)
+
 const exporting = ref(false)
 
-// Emit for tab navigation
+// CDP state
+const cdpStatus = ref<CdpStatus | null>(null)
+const cdpChecking = ref(false)
+const cdpFetching = ref(false)
+const cdpFetchSuccess = ref(false)
+const cdpFetchError = ref('')
+const shortcutCreating = ref(false)
+const shortcutSuccess = ref(false)
+const shortcutError = ref('')
+
+// SuperProperties Mode state
+const superPropsMode = ref<SuperPropertiesModeInfo | null>(null)
+const retryingMode = ref(false)
+
+// Debug mode unlock (tap version 7 times like Android developer options)
+const debugModeEnabled = ref(false)
+const versionTapCount = ref(0)
+const lastTapTime = ref(0)
+const showDebugUnlockHint = ref(false)
+
+function handleVersionTap() {
+  const now = Date.now()
+  // Reset counter if more than 2 seconds since last tap
+  if (now - lastTapTime.value > 2000) {
+    versionTapCount.value = 0
+  }
+  lastTapTime.value = now
+  versionTapCount.value++
+  
+  // Show hint when getting close
+  if (versionTapCount.value >= 4 && versionTapCount.value < 7) {
+    showDebugUnlockHint.value = true
+  }
+  
+  if (versionTapCount.value >= 7) {
+    debugModeEnabled.value = true
+    localStorage.setItem('debugMode', 'true')
+    versionTapCount.value = 0
+    showDebugUnlockHint.value = false
+    // Emit event to notify App.vue
+    emit('debug-unlocked')
+  }
+}
+
 const emit = defineEmits<{
-  (e: 'navigate-to-home'): void
+  'navigate-to-home': []
+  'debug-unlocked': []
 }>()
+
+async function loadSuperPropsMode() {
+  try {
+    superPropsMode.value = await getSuperPropertiesMode()
+  } catch (e) {
+    console.error('Failed to get SuperProperties mode:', e)
+  }
+}
+
+async function retrySuperProps() {
+  retryingMode.value = true
+  try {
+    await retrySuperProperties(questsStore.cdpPort)
+    await loadSuperPropsMode()
+    await checkCdp()
+  } catch (e) {
+    console.error('Retry failed:', e)
+  } finally {
+    retryingMode.value = false
+  }
+}
+
+async function checkCdp() {
+  cdpChecking.value = true
+  try {
+    cdpStatus.value = await checkCdpStatus(questsStore.cdpPort)
+    // Also refresh SuperProperties mode after checking CDP status (fix race condition)
+    await loadSuperPropsMode()
+  } catch (e) {
+    console.error('CDP check failed:', e)
+    cdpStatus.value = { available: false, connected: false, target_title: null, error: String(e) }
+  } finally {
+    cdpChecking.value = false
+  }
+}
+
+async function fetchCdpSuperProperties() {
+  cdpFetching.value = true
+  cdpFetchSuccess.value = false
+  cdpFetchError.value = ''
+  try {
+    const result = await fetchSuperPropertiesCdp(questsStore.cdpPort)
+    console.log('CDP SuperProperties fetched:', result)
+    cdpFetchSuccess.value = true
+    setTimeout(() => { cdpFetchSuccess.value = false }, 5000)
+    await checkCdp() // Refresh status
+    await loadSuperPropsMode() // Refresh mode display
+  } catch (e) {
+    console.error('CDP fetch failed:', e)
+    cdpFetchError.value = String(e)
+    setTimeout(() => { cdpFetchError.value = '' }, 5000)
+  } finally {
+    cdpFetching.value = false
+  }
+}
+
+async function createShortcut() {
+  shortcutCreating.value = true
+  shortcutSuccess.value = false
+  shortcutError.value = ''
+  try {
+    await createDiscordDebugShortcut(questsStore.cdpPort)
+    shortcutSuccess.value = true
+    setTimeout(() => { shortcutSuccess.value = false }, 3000)
+  } catch (e) {
+    shortcutError.value = String(e)
+    setTimeout(() => { shortcutError.value = '' }, 5000)
+  } finally {
+    shortcutCreating.value = false
+  }
+}
+
+// Emit for tab navigation (consolidated above)
 
 // Heartbeat Safety Warning Logic
 const showHeartbeatWarning = ref(false)
@@ -57,13 +175,7 @@ async function copyPath() {
   }
 }
 
-async function copyToken() {
-  if (authStore.token) {
-    await navigator.clipboard.writeText(authStore.token)
-    tokenCopied.value = true
-    setTimeout(() => { tokenCopied.value = false }, 2000)
-  }
-}
+
 
 async function handleAutoDetect() {
   await authStore.tryAutoDetect()
@@ -126,13 +238,14 @@ async function openCacheDir() {
 }
 
 
-import { onMounted } from 'vue'
-
 onMounted(async () => {
   const docDir = await documentDir()
   // Remove trailing backslash if present, then append subdirectory
   const normalizedDocDir = docDir.replace(/[\\/]+$/, '')
   cachePath.value = `${normalizedDocDir}\\DiscordQuestGames`
+  
+  // Check CDP status (will also load SuperProperties mode after check completes)
+  checkCdp()
 })
 
 // Log export functionality
@@ -191,15 +304,6 @@ async function exportLogs() {
               <span class="h-2 w-2 rounded-full bg-green-500"></span>
               {{ t('auth.authenticated_as') }} <span class="font-bold">{{ authStore.user.username }}</span>
             </div>
-            <Button 
-              variant="outline" 
-              size="sm"
-              @click="copyToken"
-            >
-              <Check v-if="tokenCopied" class="w-4 h-4 mr-2 text-green-500" />
-              <Copy v-else class="w-4 h-4 mr-2" />
-              {{ tokenCopied ? t('settings.token_copied') : t('settings.copy_token') }}
-            </Button>
           </div>
           
           <div v-else class="space-y-4">
@@ -404,6 +508,113 @@ async function exportLogs() {
       </AlertDialog>
 
       
+      <!-- Discord CDP Integration -->
+      <Card>
+        <CardHeader>
+          <CardTitle>{{ t('settings.cdp_title') }}</CardTitle>
+          <CardDescription>{{ t('settings.cdp_desc') }}</CardDescription>
+        </CardHeader>
+        <CardContent class="space-y-4">
+          <!-- CDP Status -->
+          <div class="flex items-center justify-between p-3 rounded-lg border" 
+               :class="cdpStatus?.connected ? 'bg-green-500/10 border-green-500/30' : 'bg-muted/50 border-border'">
+            <div class="flex items-center gap-2">
+              <Wifi v-if="cdpStatus?.connected" class="w-4 h-4 text-green-500" />
+              <WifiOff v-else class="w-4 h-4 text-muted-foreground" />
+              <span class="text-sm">
+                <template v-if="cdpChecking">{{ t('settings.cdp_checking') }}</template>
+                <template v-else-if="cdpStatus?.connected">
+                  {{ t('settings.cdp_connected') }}
+                  <span v-if="cdpStatus.target_title" class="text-muted-foreground ml-1">({{ cdpStatus.target_title }})</span>
+                </template>
+                <template v-else>{{ t('settings.cdp_disconnected') }}</template>
+              </span>
+            </div>
+            <Button variant="ghost" size="sm" @click="checkCdp" :disabled="cdpChecking">
+              <Loader2 v-if="cdpChecking" class="w-4 h-4 animate-spin" />
+              <template v-else>{{ t('general.refresh') }}</template>
+            </Button>
+          </div>
+
+          <!-- CDP Port Setting -->
+          <div class="space-y-2">
+            <Label>{{ t('settings.cdp_port') }}</Label>
+            <div class="flex gap-2 items-center">
+              <Input 
+                type="number" 
+                v-model.number="questsStore.cdpPort" 
+                min="1024" 
+                max="65535" 
+                class="w-32"
+              />
+              <span class="text-xs text-muted-foreground">{{ t('settings.cdp_port_hint') }}</span>
+            </div>
+          </div>
+
+          <!-- Fetch SuperProperties Button -->
+          <div v-if="cdpStatus?.connected" class="space-y-2">
+            <div class="flex items-center gap-3">
+              <Button variant="secondary" @click="fetchCdpSuperProperties" :disabled="cdpFetching">
+                <Loader2 v-if="cdpFetching" class="w-4 h-4 mr-2 animate-spin" />
+                <Link2 v-else class="w-4 h-4 mr-2" />
+                {{ t('settings.cdp_fetch') }}
+              </Button>
+              <span v-if="cdpFetchSuccess" class="text-sm text-green-500 flex items-center gap-1">
+                <Check class="w-4 h-4" /> {{ t('settings.cdp_fetch_success') }}
+              </span>
+              <span v-if="cdpFetchError" class="text-sm text-red-500">{{ cdpFetchError }}</span>
+            </div>
+          </div>
+
+          <!-- Current SuperProperties Mode Display -->
+          <div class="p-3 rounded-lg border bg-muted/30 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-sm font-medium">{{ t('settings.super_props_mode') }}</span>
+              <div class="flex items-center gap-2">
+                <Badge 
+                  :variant="superPropsMode?.mode === 'cdp' ? 'default' : (superPropsMode?.mode === 'remote_js' ? 'secondary' : 'outline')"
+                  :class="[
+                    superPropsMode?.mode === 'cdp' && 'bg-green-500 text-white',
+                    superPropsMode?.mode === 'remote_js' && 'bg-yellow-500 text-black',
+                    superPropsMode?.mode === 'default' && 'bg-red-500/20 text-red-500 border-red-500/50'
+                  ]"
+                >
+                  {{ superPropsMode?.mode === 'cdp' ? 'CDP' : (superPropsMode?.mode === 'remote_js' ? t('settings.remote_js') : t('settings.default_mode')) }}
+                </Badge>
+                <Button variant="ghost" size="sm" @click="retrySuperProps" :disabled="retryingMode" class="h-7 px-2">
+                  <Loader2 v-if="retryingMode" class="w-3 h-3 animate-spin" />
+                  <RotateCw v-else class="w-3 h-3" />
+                </Button>
+              </div>
+            </div>
+            <div v-if="superPropsMode?.build_number" class="text-xs text-muted-foreground">
+              Build: <span class="font-mono">{{ superPropsMode.build_number }}</span>
+            </div>
+            <p class="text-xs text-muted-foreground">
+              <template v-if="superPropsMode?.mode === 'cdp'">✓ {{ t('settings.mode_cdp_desc') }}</template>
+              <template v-else-if="superPropsMode?.mode === 'remote_js'">⚠ {{ t('settings.mode_remote_desc') }}</template>
+              <template v-else>⚠ {{ t('settings.mode_default_desc') }}</template>
+            </p>
+          </div>
+
+          <!-- Create Shortcut Section -->
+          <div class="pt-2 border-t space-y-2">
+            <p class="text-sm text-amber-500">⚠️ {{ t('settings.cdp_shortcut_warning') }}</p>
+            <p class="text-sm text-muted-foreground">{{ t('settings.cdp_shortcut_desc') }}</p>
+            <div class="flex items-center gap-2">
+              <Button variant="outline" @click="createShortcut" :disabled="shortcutCreating">
+                <Loader2 v-if="shortcutCreating" class="w-4 h-4 mr-2 animate-spin" />
+                {{ t('settings.cdp_create_shortcut') }}
+              </Button>
+              <span v-if="shortcutSuccess" class="text-sm text-green-500 flex items-center gap-1">
+                <Check class="w-4 h-4" /> {{ t('settings.cdp_shortcut_success') }}
+              </span>
+              <span v-if="shortcutError" class="text-sm text-red-500">{{ shortcutError }}</span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       <!-- Cache -->
       <Card>
         <CardHeader>
@@ -462,14 +673,25 @@ async function exportLogs() {
              <CardTitle class="text-lg">{{ t('settings.about') }}</CardTitle>
            </CardHeader>
            <CardContent class="text-sm text-muted-foreground space-y-2">
-              <p class="flex items-center gap-2">
-                <span>Discord Quest Helper v{{ versionStore.currentVersion }}</span>
+              <p class="flex items-center flex-wrap gap-2">
+                <span 
+                  class="select-none cursor-pointer active:scale-95 transition-transform" 
+                  @click="handleVersionTap"
+                  title="Version Info"
+                >
+                  Discord Quest Helper v{{ versionStore.currentVersion }}
+                </span>
                 <Badge v-if="versionStore.isLatest" variant="outline" class="gap-1 text-green-600 border-green-600/50">
                   <CheckCircle2 class="w-3 h-3" />
                   {{ t('settings.version_latest') }}
                 </Badge>
                 <span v-else-if="versionStore.isChecking" class="text-xs text-muted-foreground">
                   {{ t('settings.version_checking') }}
+                </span>
+                
+                <!-- Debug Unlock Hint -->
+                <span v-if="showDebugUnlockHint" class="text-xs text-primary font-medium animate-pulse ml-2">
+                  You are {{ 7 - versionTapCount }} steps away from being a developer.
                 </span>
               </p>
              <p>

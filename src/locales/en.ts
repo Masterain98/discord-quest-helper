@@ -27,7 +27,8 @@ export default {
     nav: {
         home: "Home",
         game_simulator: "Game Simulator",
-        settings: "Settings"
+        settings: "Settings",
+        debug: "Debug"
     },
     home: {
         welcome: "Welcome back, {name}",
@@ -120,7 +121,28 @@ export default {
         export_success: "Logs exported successfully",
         export_error: "Failed to export logs",
         copy_token: "Copy Token",
-        token_copied: "Token Copied!"
+        token_copied: "Token Copied!",
+        // CDP settings
+        cdp_title: "Discord Client Integration",
+        cdp_desc: "Connect to Discord client to get accurate client information. Requires Discord to run with debug flag.",
+        cdp_checking: "Checking...",
+        cdp_connected: "Connected",
+        cdp_disconnected: "Not connected - Start Discord with debug flag",
+        cdp_port: "Debug Port",
+        cdp_port_hint: "Default: 9223",
+        cdp_fetch: "Fetch Client Data",
+        cdp_shortcut_warning: "You must close Discord completely before using this shortcut.",
+        cdp_shortcut_desc: "Create a shortcut to launch Discord with the required debug flag.",
+        cdp_create_shortcut: "Create Debug Shortcut",
+        cdp_shortcut_success: "Shortcut created on Desktop",
+        cdp_fetch_success: "Client data fetched successfully",
+        super_props_mode: "X-Super-Properties Mode",
+        remote_js: "Remote",
+        default_mode: "Default",
+        mode_cdp_desc: "Data from Discord client (most accurate)",
+        mode_remote_desc: "Data from Discord website (may be slightly delayed)",
+        mode_default_desc: "Using built-in defaults. Start Discord with debug flag for better results.",
+        debug_unlock_hint: "You are {steps} steps away from being a developer."
     },
     version: {
         update_available: "A new version is available!",
@@ -165,5 +187,17 @@ export default {
         cancel: "Cancel",
         accept: "Accept",
         start: "Start"
+    },
+    debug: {
+        title: "Debug Information",
+        description: "View program parameters and configuration values",
+        refresh: "Refresh",
+        token: "Token",
+        token_desc: "Your Discord authentication token",
+        session_ids: "Session IDs",
+        session_ids_desc: "Generated once per application launch",
+        super_properties_desc: "Request header properties sent to Discord API",
+        copy: "Copy",
+        no_data: "No debug data available"
     }
 }

@@ -192,3 +192,91 @@ export function onQuestError(callback: (error: string) => void) {
 export async function forceVideoProgress(questId: string, timestamp: number): Promise<void> {
   return await invoke('force_video_progress', { questId, timestamp })
 }
+
+// Debug info types
+export interface SuperProperties {
+  os: string
+  browser: string
+  release_channel: string
+  client_version?: string
+  os_version: string
+  os_arch?: string
+  app_arch?: string
+  system_locale: string
+  has_client_mods: boolean
+  browser_user_agent: string
+  browser_version: string
+  os_sdk_version?: string
+  client_build_number: number
+  native_build_number?: number
+  client_event_source: string | null
+  launch_signature?: string
+  client_launch_id?: string
+  client_heartbeat_session_id?: string
+  client_app_state?: string
+}
+
+export interface DebugInfo {
+  x_super_properties_base64: string
+  super_properties: SuperProperties
+  client_launch_id: string
+  client_heartbeat_session_id: string
+  launch_signature: string
+  source: string  // "Auto-Generated" or "Discord Client (Extracted)"
+}
+
+export async function getDebugInfo(): Promise<DebugInfo> {
+  return await invoke('get_debug_info')
+}
+
+// CDP (Chrome DevTools Protocol) types and commands
+export interface CdpStatus {
+  available: boolean
+  connected: boolean
+  target_title: string | null
+  error: string | null
+}
+
+export interface CdpSuperProperties {
+  base64: string
+  decoded: SuperProperties
+}
+
+export async function checkCdpStatus(port?: number): Promise<CdpStatus> {
+  return await invoke('check_cdp_status', { port })
+}
+
+export async function fetchSuperPropertiesCdp(port?: number): Promise<CdpSuperProperties> {
+  return await invoke('fetch_super_properties_cdp', { port })
+}
+
+export async function createDiscordDebugShortcut(port?: number): Promise<string> {
+  return await invoke('create_discord_debug_shortcut', { port })
+}
+
+// SuperProperties Mode types and commands
+export type SuperPropertiesMode = 'cdp' | 'remote_js' | 'default'
+
+export interface SuperPropertiesModeInfo {
+  mode: SuperPropertiesMode
+  mode_display: string
+  build_number: number | null
+}
+
+export interface AutoFetchResult {
+  success: boolean
+  mode: SuperPropertiesMode
+  build_number: number | null
+}
+
+export async function getSuperPropertiesMode(): Promise<SuperPropertiesModeInfo> {
+  return await invoke('get_super_properties_mode')
+}
+
+export async function autoFetchSuperProperties(cdpPort?: number): Promise<AutoFetchResult> {
+  return await invoke('auto_fetch_super_properties', { cdpPort })
+}
+
+export async function retrySuperProperties(cdpPort?: number): Promise<AutoFetchResult> {
+  return await invoke('retry_super_properties', { cdpPort })
+}
