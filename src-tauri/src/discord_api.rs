@@ -2,6 +2,7 @@ use crate::models::*;
 use anyhow::{Context, Result};
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE, USER_AGENT};
 use reqwest::{Method, RequestBuilder};
+use base64::Engine;
 use std::sync::Arc;
 
 const DISCORD_API_BASE: &str = "https://discord.com/api/v9";
