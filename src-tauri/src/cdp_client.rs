@@ -59,6 +59,10 @@ pub struct CdpStatus {
 const JS_GET_SUPER_PROPERTIES: &str = r#"
 (() => {
     try {
+        if (typeof window !== "undefined" && !window.webpackChunkdiscord_app) {
+            return JSON.stringify({ error: "Discord webpackChunkdiscord_app not found; the Discord client structure may have changed." });
+        }
+
         let wpRequire = webpackChunkdiscord_app.push([[Symbol()], {}, r => r]);
         webpackChunkdiscord_app.pop();
         
@@ -97,7 +101,13 @@ const JS_GET_SUPER_PROPERTIES: &str = r#"
         
         return JSON.stringify({ base64, decoded });
     } catch (e) {
-        return JSON.stringify({ error: e.toString() });
+        let message = (e && e.message) ? e.message : String(e);
+        try {
+            if (typeof window !== "undefined" && !window.webpackChunkdiscord_app) {
+                message = "Discord webpackChunkdiscord_app not found; variable missing during execution. Original error: " + message;
+            }
+        } catch (_) {}
+        return JSON.stringify({ error: message });
     }
 })()
 "#;

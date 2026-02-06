@@ -109,9 +109,6 @@ async fn set_token(token: String, state: State<'_, AppState>) -> Result<DiscordU
         .await
         .map_err(|e| format!("Failed to validate token: {}", e))?;
 
-    // Save client
-    *state.client.lock().unwrap() = Some(client);
-    
     // Fetch latest build_number and client info before returning (so frontend await can rely on completion)
     // Get build_number
     match token_extractor::fetch_build_number_from_discord().await {
@@ -143,6 +140,10 @@ async fn set_token(token: String, state: State<'_, AppState>) -> Result<DiscordU
                 &format!("Failed to fetch client info: {}", e), None);
         }
     }
+
+    // Save client AFTER initializing SuperProperties to avoid race conditions
+    // where other commands might use the client with stale properties
+    *state.client.lock().unwrap() = Some(client);
 
     Ok(user)
 }
@@ -541,8 +542,8 @@ pub fn ensure_stealth_and_run() {
                 eprintln!("[Stealth] Error: panic occurred during cleanup in panic hook");
             }
             
-            // Reset flag to allow future cleanup attempts
-            CLEANUP_IN_PROGRESS.store(false, Ordering::SeqCst);
+            // Do NOT reset flag - if we panicked, we don't want to try cleaning up again
+            // CLEANUP_IN_PROGRESS.store(false, Ordering::SeqCst);
         }
         // Wrap original_hook call in catch_unwind to prevent nested panics
         let hook_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -812,10 +813,21 @@ $Shortcut.Save()
         port
     );
     
+    // Use a temporary file for the script to avoid issues with special characters in arguments
+    let temp_dir = std::env::temp_dir();
+    let script_path = temp_dir.join(format!("discord_shortcut_{}.ps1", uuid::Uuid::new_v4()));
+    
+    std::fs::write(&script_path, &ps_script)
+        .map_err(|e| format!("Failed to write temporary PowerShell script: {}", e))?;
+        
     let output = Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", &ps_script])
-        .output()
-        .map_err(|e| format!("Failed to run PowerShell: {}", e))?;
+        .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", &script_path.to_string_lossy()])
+        .output();
+        
+    // Clean up temporary script
+    let _ = std::fs::remove_file(&script_path);
+
+    let output = output.map_err(|e| format!("Failed to execute PowerShell: {}", e))?;
     
     if output.status.success() {
         Ok(shortcut_path.to_string_lossy().to_string())

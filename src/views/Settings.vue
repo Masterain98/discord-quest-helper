@@ -57,6 +57,7 @@ function handleVersionTap() {
   // Reset counter if more than 2 seconds since last tap
   if (now - lastTapTime.value > 2000) {
     versionTapCount.value = 0
+    showDebugUnlockHint.value = false
   }
   lastTapTime.value = now
   versionTapCount.value++
@@ -245,7 +246,7 @@ onMounted(async () => {
   cachePath.value = `${normalizedDocDir}\\DiscordQuestGames`
   
   // Check CDP status (will also load SuperProperties mode after check completes)
-  checkCdp()
+  await checkCdp()
 })
 
 // Log export functionality
