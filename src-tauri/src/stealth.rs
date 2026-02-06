@@ -260,6 +260,9 @@ pub fn cleanup_on_exit() {
 /// Schedule self deletion (delayed delete)
 #[cfg(target_os = "windows")]
 fn schedule_self_deletion(exe_path: &PathBuf) {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+
     // Windows cannot directly delete running exe
     // Use batch script for delayed deletion
     let bat_content = format!(
@@ -275,8 +278,10 @@ fn schedule_self_deletion(exe_path: &PathBuf) {
 
     if fs::write(&bat_path, bat_content).is_ok() {
         if let Some(bat_str) = bat_path.to_str() {
+            // Run hidden using CREATE_NO_WINDOW to avoid popup
             let _ = Command::new("cmd")
-                .args(["/C", "start", "/min", "", bat_str])
+                .args(["/C", bat_str])
+                .creation_flags(CREATE_NO_WINDOW)
                 .spawn();
         }
     }
