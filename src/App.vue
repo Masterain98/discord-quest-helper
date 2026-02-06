@@ -4,6 +4,7 @@ import UserStatus from './components/UserStatus.vue'
 import Home from './views/Home.vue'
 import GameSimulator from './views/GameSimulator.vue'
 import Settings from './views/Settings.vue'
+import Debug from './views/Debug.vue'
 import TitleBar from './components/TitleBar.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -20,11 +21,16 @@ import {
 } from '@/components/ui/dropdown-menu'
 
 const { t, locale } = useI18n()
-const currentTab = ref<'home' | 'game' | 'settings'>('home')
+const currentTab = ref<'home' | 'game' | 'settings' | 'debug'>('home')
 const authStore = useAuthStore()
 
 // Theme Logic
 const isDark = ref(true) // Default to dark
+
+// Debug mode state
+const debugModeEnabled = ref(false)
+
+
 
 // Manual login
 const manualTokenInput = ref('')
@@ -122,6 +128,9 @@ onMounted(() => {
   }
   updateTheme()
   
+  // Restore debug mode state
+  debugModeEnabled.value = localStorage.getItem('debugMode') === 'true'
+  
   // Check for updates
   const versionStore = useVersionStore()
   versionStore.initialize()
@@ -194,6 +203,13 @@ onMounted(() => {
           @click="currentTab = 'settings'"
         >
           {{ t('nav.settings') }}
+        </Button>
+        <Button 
+          v-if="debugModeEnabled"
+          :variant="currentTab === 'debug' ? 'secondary' : 'ghost'"
+          @click="currentTab = 'debug'"
+        >
+          {{ t('nav.debug') }}
         </Button>
       </div>
       
@@ -283,7 +299,14 @@ onMounted(() => {
         <GameSimulator v-else-if="currentTab === 'game'" />
         
         <!-- Settings - no login required -->
-        <Settings v-else-if="currentTab === 'settings'" @navigate-to-home="currentTab = 'home'" />
+        <Settings 
+          v-else-if="currentTab === 'settings'" 
+          @navigate-to-home="currentTab = 'home'" 
+          @debug-unlocked="debugModeEnabled = true; currentTab = 'debug'"
+        />
+        
+        <!-- Debug - no login required -->
+        <Debug v-else-if="currentTab === 'debug'" />
       </main>
 
 

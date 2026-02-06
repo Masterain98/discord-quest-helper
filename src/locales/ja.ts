@@ -27,7 +27,8 @@ export default {
     nav: {
         home: "ホーム",
         game_simulator: "ゲームシミュレーター",
-        settings: "設定"
+        settings: "設定",
+        debug: "デバッグ"
     },
     home: {
         welcome: "おかえりなさい、{name}",
@@ -68,9 +69,9 @@ export default {
         play: "プレイ",
         activity: "アクティビティ",
         stream_play: "配信/プレイ",
-        orbs: "オーブ",
-        decoration: "デコレーション",
-        in_game: "ゲーム内"
+        orbs: "Discord Orbs",
+        decoration: "Discord アバターデコレーション",
+        in_game: "ゲーム内報酬"
     },
     settings: {
         title: "設定",
@@ -118,7 +119,29 @@ export default {
         diagnostics_info: "ログは自動的にサニタイズされ、トークンや個人情報などの機密データが削除されます。このセッションのログのみが含まれます。",
         export_logs: "ログをエクスポート",
         export_success: "ログのエクスポートに成功しました",
-        export_error: "ログのエクスポートに失敗しました"
+        export_error: "ログのエクスポートに失敗しました",
+        copy_token: "トークンをコピー",
+        token_copied: "コピーしました!",
+        cdp_title: "Discord クライアント連携",
+        cdp_desc: "Discord クライアントに接続して正確な情報を取得。デバッグフラグでのDiscord起動が必要。",
+        cdp_checking: "確認中...",
+        cdp_connected: "接続済み",
+        cdp_disconnected: "未接続 - デバッグフラグでDiscordを起動してください",
+        cdp_port: "デバッグポート",
+        cdp_port_hint: "デフォルト: 9223",
+        cdp_fetch: "クライアントデータを取得",
+        cdp_shortcut_warning: "このショートカットを使用する前に、Discordを完全に終了してください。",
+        cdp_shortcut_desc: "デバッグフラグ付きのDiscordショートカットを作成。",
+        cdp_create_shortcut: "デバッグショートカットを作成",
+        cdp_shortcut_success: "ショートカットをデスクトップに作成しました",
+        cdp_fetch_success: "クライアントデータの取得に成功しました",
+        super_props_mode: "X-Super-Properties モード",
+        remote_js: "リモート",
+        default_mode: "デフォルト",
+        mode_cdp_desc: "Discordクライアントからのデータ（最も正確）",
+        mode_remote_desc: "Discordウェブサイトからのデータ（若干遅延する可能性あり）",
+        mode_default_desc: "内蔵のデフォルト値を使用。より良い結果のためにデバッグモードでDiscordを起動してください。",
+        debug_unlock_hint: "あと {steps} 回タップで開発者になれます。"
     },
     version: {
         update_available: "新しいバージョンが利用可能です！",
@@ -163,5 +186,17 @@ export default {
         cancel: "キャンセル",
         accept: "受け入れる",
         start: "開始"
+    },
+    debug: {
+        title: "デバッグ情報",
+        description: "プログラムのパラメータと設定値を表示",
+        refresh: "更新",
+        token: "トークン",
+        token_desc: "Discord認証トークン",
+        session_ids: "セッション ID",
+        session_ids_desc: "アプリケーション起動時に一度生成",
+        super_properties_desc: "Discord API に送信されるリクエストヘッダーのプロパティ",
+        copy: "コピー",
+        no_data: "デバッグデータがありません"
     }
 }

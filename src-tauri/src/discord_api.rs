@@ -31,11 +31,8 @@ impl DiscordApiClient {
             USER_AGENT,
             HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) discord/1.0.9219 Chrome/138.0.7204.251 Electron/37.6.0 Safari/537.36"),
         );
-        // X-Super-Properties from HAR capture (client_build_number: 481287)
-        headers.insert(
-            "x-super-properties",
-            HeaderValue::from_static("eyJvcyI6IldpbmRvd3MiLCJicm93c2VyIjoiRGlzY29yZCBDbGllbnQiLCJyZWxlYXNlX2NoYW5uZWwiOiJzdGFibGUiLCJjbGllbnRfdmVyc2lvbiI6IjEuMC45MjE5Iiwib3NfdmVyc2lvbiI6IjEwLjAuMTkwNDUiLCJvc19hcmNoIjoieDY0IiwiYXBwX2FyY2giOiJ4NjQiLCJzeXN0ZW1fbG9jYWxlIjoiZW4tVVMiLCJoYXNfY2xpZW50X21vZHMiOmZhbHNlLCJicm93c2VyX3VzZXJfYWdlbnQiOiJNb3ppbGxhLzUuMCAoV2luZG93cyBOVCAxMC4wOyBXaW42NDsgeDY0KSBBcHBsZVdlYktpdC81MzcuMzYgKEtIVE1MLCBsaWtlIEdlY2tvKSBkaXNjb3JkLzEuMC45MjE5IENocm9tZS8xMzguMC43MjA0LjI1MSBFbGVjdHJvbi8zNy42LjAgU2FmYXJpLzUzNy4zNiIsImJyb3dzZXJfdmVyc2lvbiI6IjM3LjYuMCIsIm9zX3Nka192ZXJzaW9uIjoiMTkwNDUiLCJjbGllbnRfYnVpbGRfbnVtYmVyIjo0ODEyODcsIm5hdGl2ZV9idWlsZF9udW1iZXIiOjczMjExLCJjbGllbnRfZXZlbnRfc291cmNlIjpudWxsfQ=="),
-        );
+        // Note: X-Super-Properties is no longer set here, but dynamically obtained on each request
+        // This ensures the latest validation parameters (including data obtained from CDP) are used
         headers.insert(
             "x-discord-timezone",
             HeaderValue::from_static("America/Los_Angeles"),
@@ -64,6 +61,21 @@ impl DiscordApiClient {
         })
     }
 
+    /// Get the current X-Super-Properties value (dynamically obtained to ensure latest data)
+    fn get_super_properties_header(&self) -> HeaderValue {
+        let super_props = {
+            let manager = crate::SUPER_PROPERTIES_MANAGER
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            manager.get_super_properties_base64()
+        };
+        HeaderValue::from_str(&super_props).unwrap_or_else(|e| {
+            eprintln!("Failed to create X-Super-Properties header: {}", e);
+            // Fallback to minimal valid base64 JSON
+            HeaderValue::from_static("e30=") // base64("{}")
+        })
+    }
+
     #[allow(dead_code)]
     pub fn get_token(&self) -> &str {
         &self.token
@@ -78,6 +90,7 @@ impl DiscordApiClient {
         
         let response = self.client
             .get(&url)
+            .header("x-super-properties", self.get_super_properties_header())
             .send()
             .await
             .map_err(|e| {
@@ -118,6 +131,7 @@ impl DiscordApiClient {
         
         let response = self.client
             .get(&url)
+            .header("x-super-properties", self.get_super_properties_header())
             .send()
             .await
             .context("Request for quest list failed")?;
@@ -159,6 +173,7 @@ impl DiscordApiClient {
 
         let response = self.client
             .post(&url)
+            .header("x-super-properties", self.get_super_properties_header())
             .json(&payload)
             .send()
             .await
@@ -191,6 +206,7 @@ impl DiscordApiClient {
 
         let response = self.client
             .post(&url)
+            .header("x-super-properties", self.get_super_properties_header())
             .json(&payload)
             .send()
             .await
@@ -223,6 +239,7 @@ impl DiscordApiClient {
 
         let response = self.client
             .post(&url)
+            .header("x-super-properties", self.get_super_properties_header())
             .json(&payload)
             .send()
             .await
@@ -256,6 +273,7 @@ impl DiscordApiClient {
 
         let response = self.client
             .post(&url)
+            .header("x-super-properties", self.get_super_properties_header())
             .json(&payload)
             .send()
             .await
@@ -279,6 +297,7 @@ impl DiscordApiClient {
         
         let response = self.client
             .get(&url)
+            .header("x-super-properties", self.get_super_properties_header())
             .send()
             .await
             .context("Failed to request detectable games list")?;

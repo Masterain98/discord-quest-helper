@@ -5,17 +5,27 @@ use std::process::Command;
 
 /// Create a simulated game executable
 ///
-/// Copies the template executable to the specified path with the target game name
+/// Copies the runner executable to the specified path with the target game name.
+/// Discord detects games by process name, so renaming the runner to match the
+/// target game's executable name allows us to simulate running that game.
 pub fn create_simulated_game(path: &str, executable_name: &str, _app_id: &str) -> Result<()> {
-    println!("create_simulated_game called with path: '{}', exe: '{}'", path, executable_name);
-    
+    println!(
+        "create_simulated_game called with path: '{}', exe: '{}'",
+        path, executable_name
+    );
+
     // Create target directory
     let target_dir = PathBuf::from(path);
-    println!("Target directory: {:?}, exists: {}", target_dir, target_dir.exists());
-    
+    println!(
+        "Target directory: {:?}, exists: {}",
+        target_dir,
+        target_dir.exists()
+    );
+
     if !target_dir.exists() {
         println!("Creating directory: {:?}", target_dir);
-        fs::create_dir_all(&target_dir).context(format!("Could not create target directory: {:?}", target_dir))?;
+        fs::create_dir_all(&target_dir)
+            .context(format!("Could not create target directory: {:?}", target_dir))?;
     }
 
     // Target executable path
@@ -28,31 +38,37 @@ pub fn create_simulated_game(path: &str, executable_name: &str, _app_id: &str) -
         }
     }
 
-
     // If file exists, try to delete it first
     if target_exe.exists() {
         if let Err(e) = fs::remove_file(&target_exe) {
-            println!("Target file exists and remove failed ({}), trying to kill process...", e);
+            println!(
+                "Target file exists and remove failed ({}), trying to kill process...",
+                e
+            );
             // Process might be running, try to stop it
             let _ = stop_simulated_game(executable_name);
             // Wait for process to release the lock
             std::thread::sleep(std::time::Duration::from_millis(500));
             // Try to delete again
             if let Err(e) = fs::remove_file(&target_exe) {
-               println!("Still cannot remove file: {}", e);
-               // Continue to copy, see if it overwrites or fails
+                println!("Still cannot remove file: {}", e);
+                // Continue to copy, see if it overwrites or fails
             }
         }
     }
 
-    // Get runner executable path (assumed to be in resources directory)
-    // In actual deployment, this should be obtained from Tauri resources
+    // Get runner executable path
     let runner_path = get_runner_exe_path()?;
 
-    // Copy file
+    // Copy runner to target location with game's name
     println!("Copying runner from {:?} to {:?}", runner_path, target_exe);
     fs::copy(&runner_path, &target_exe).map_err(|e| {
-        anyhow::anyhow!("Could not copy executable from {:?} to {:?}: {}", runner_path, target_exe, e)
+        anyhow::anyhow!(
+            "Could not copy executable from {:?} to {:?}: {}",
+            runner_path,
+            target_exe,
+            e
+        )
     })?;
 
     println!("Simulated game created: {:?}", target_exe);
@@ -62,42 +78,41 @@ pub fn create_simulated_game(path: &str, executable_name: &str, _app_id: &str) -
 /// Run the simulated game
 #[cfg(target_os = "windows")]
 pub fn run_simulated_game(name: &str, path: &str, executable_name: &str, _app_id: &str) -> Result<()> {
-    let target_exe = PathBuf::from(path).join(executable_name);
+    let exe_to_run = PathBuf::from(path).join(executable_name);
 
-    if !target_exe.exists() {
-        anyhow::bail!("Executable does not exist: {:?}", target_exe);
+    if !exe_to_run.exists() {
+        anyhow::bail!("Executable does not exist: {:?}", exe_to_run);
     }
 
-    // Use Windows start command to launch the process
     let _ = Command::new("cmd")
-        .args(&["/C", "start", "", target_exe.to_str().unwrap()])
+        .args(["/C", "start", "", exe_to_run.to_str().unwrap()])
         .spawn()
         .context("Could not start simulated game")?;
 
-    println!("Simulated game {} started", name);
+    println!("Simulated game {} started from {:?}", name, exe_to_run);
     Ok(())
 }
 
 #[cfg(target_os = "macos")]
 pub fn run_simulated_game(name: &str, path: &str, executable_name: &str, _app_id: &str) -> Result<()> {
-    let target_exe = PathBuf::from(path).join(executable_name);
+    let exe_to_run = PathBuf::from(path).join(executable_name);
 
-    if !target_exe.exists() {
-        anyhow::bail!("Executable does not exist: {:?}", target_exe);
+    if !exe_to_run.exists() {
+        anyhow::bail!("Executable does not exist: {:?}", exe_to_run);
     }
 
     // Make the file executable
     use std::os::unix::fs::PermissionsExt;
-    let mut perms = std::fs::metadata(&target_exe)?.permissions();
+    let mut perms = std::fs::metadata(&exe_to_run)?.permissions();
     perms.set_mode(0o755);
-    std::fs::set_permissions(&target_exe, perms)?;
+    std::fs::set_permissions(&exe_to_run, perms)?;
 
     // Launch the process in background
-    let _ = Command::new(&target_exe)
+    let _ = Command::new(&exe_to_run)
         .spawn()
         .context("Could not start simulated game")?;
 
-    println!("Simulated game {} started", name);
+    println!("Simulated game {} started from {:?}", name, exe_to_run);
     Ok(())
 }
 
@@ -115,23 +130,30 @@ pub fn run_simulated_game(
 #[cfg(target_os = "windows")]
 pub fn stop_simulated_game(exec_name: &str) -> Result<()> {
     // taskkill /IM needs image name (filename), not path.
-    // robustly handle both / and \ separators
+    // Robustly handle both / and \\ separators
     let file_name = exec_name
         .split(|c| c == '/' || c == '\\')
         .last()
         .unwrap_or(exec_name);
 
-    println!("Stopping simulated game: Input='{}' -> Image='{}'", exec_name, file_name);
+    println!(
+        "Stopping simulated game: Input='{}' -> Image='{}'",
+        exec_name, file_name
+    );
 
     // Use taskkill command to terminate process
     let output = Command::new("taskkill")
-        .args(&["/F", "/IM", file_name])
+        .args(["/F", "/IM", file_name])
         .output()
         .context("Could not execute taskkill command")?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("Failed to stop game: {}", stderr);
+        // Don't error out, process may not exist
+        println!(
+            "taskkill returned non-zero, process may not exist: {}",
+            stderr
+        );
     }
 
     println!("Simulated game {} stopped", exec_name);
@@ -141,23 +163,23 @@ pub fn stop_simulated_game(exec_name: &str) -> Result<()> {
 #[cfg(target_os = "macos")]
 pub fn stop_simulated_game(exec_name: &str) -> Result<()> {
     // Extract just the filename from the path
-    let file_name = exec_name
-        .split('/')
-        .last()
-        .unwrap_or(exec_name);
+    let file_name = exec_name.split('/').last().unwrap_or(exec_name);
 
-    println!("Stopping simulated game: Input='{}' -> Process='{}'", exec_name, file_name);
+    println!(
+        "Stopping simulated game: Input='{}' -> Process='{}'",
+        exec_name, file_name
+    );
 
     // Use pkill to terminate process by name
     let output = Command::new("pkill")
-        .args([&format!("-f{}", file_name)])
+        .args(["-f", file_name])
         .output()
         .context("Could not execute pkill command")?;
 
     // pkill returns 0 if processes were killed, 1 if no processes matched
     if !output.status.success() && output.status.code() != Some(1) {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("Failed to stop game: {}", stderr);
+        println!("pkill returned non-zero: {}", stderr);
     }
 
     println!("Simulated game {} stopped", exec_name);
@@ -184,7 +206,7 @@ fn get_exe_extension() -> &'static str {
 fn get_runner_exe_path() -> Result<PathBuf> {
     let ext = get_exe_extension();
     let runner_name = format!("discord-quest-runner{}", ext);
-    
+
     // List of potential paths to check
     let paths = vec![
         // Copied to data folder (preferred)
@@ -209,7 +231,7 @@ fn get_runner_exe_path() -> Result<PathBuf> {
 
     let ext = get_exe_extension();
     let runner_name = format!("discord-quest-runner{}", ext);
-    
+
     // Attempt to find via current exe directory (for prod/bundled)
     if let Ok(current_exe) = std::env::current_exe() {
         if let Some(parent) = current_exe.parent() {
@@ -217,12 +239,12 @@ fn get_runner_exe_path() -> Result<PathBuf> {
             if bundled_path.exists() {
                 return Ok(bundled_path);
             }
-            // Check in the same directory as the executable (common for bundled resources if flattened)
+            // Check in the same directory as the executable
             let sibling_path = parent.join(&runner_name);
             if sibling_path.exists() {
                 return Ok(sibling_path);
             }
-            
+
             // macOS: Check inside the app bundle Resources directory
             #[cfg(target_os = "macos")]
             {
@@ -236,7 +258,10 @@ fn get_runner_exe_path() -> Result<PathBuf> {
         }
     }
 
-    anyhow::bail!("Runner executable not found.\nPlease ensure src-runner is built and discord-quest-runner{} exists in the data or target directory.", ext)
+    anyhow::bail!(
+        "Runner executable not found.\nPlease ensure src-runner is built and discord-quest-runner{} exists in the data or target directory.",
+        ext
+    )
 }
 
 #[cfg(test)]

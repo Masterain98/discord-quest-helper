@@ -27,7 +27,8 @@ export default {
     nav: {
         home: "Главная",
         game_simulator: "Симулятор игр",
-        settings: "Настройки"
+        settings: "Настройки",
+        debug: "Отладка"
     },
     home: {
         welcome: "С возвращением, {name}",
@@ -68,9 +69,9 @@ export default {
         play: "Играть",
         activity: "Активность",
         stream_play: "Стрим/Игра",
-        orbs: "Орбы",
-        decoration: "Украшение",
-        in_game: "Внутриигровое"
+        orbs: "Discord Orbs",
+        decoration: "Декорация аватара Discord",
+        in_game: "Внутриигровая награда"
     },
     settings: {
         title: "Настройки",
@@ -118,7 +119,29 @@ export default {
         diagnostics_info: "Логи автоматически очищаются от конфиденциальных данных, таких как токены и личная информация. Включаются только логи текущего сеанса.",
         export_logs: "Экспорт логов",
         export_success: "Логи успешно экспортированы",
-        export_error: "Не удалось экспортировать логи"
+        export_error: "Не удалось экспортировать логи",
+        copy_token: "Скопировать токен",
+        token_copied: "Скопировано!",
+        cdp_title: "Интеграция с Discord",
+        cdp_desc: "Подключение к клиенту Discord для получения точной информации. Требуется запуск Discord с флагом отладки.",
+        cdp_checking: "Проверка...",
+        cdp_connected: "Подключено",
+        cdp_disconnected: "Не подключено - Запустите Discord с флагом отладки",
+        cdp_port: "Порт отладки",
+        cdp_port_hint: "По умолчанию: 9223",
+        cdp_fetch: "Получить данные клиента",
+        cdp_shortcut_warning: "Перед использованием этого ярлыка необходимо полностью закрыть Discord.",
+        cdp_shortcut_desc: "Создать ярлык для запуска Discord с флагом отладки.",
+        cdp_create_shortcut: "Создать ярлык отладки",
+        cdp_shortcut_success: "Ярлык создан на рабочем столе",
+        cdp_fetch_success: "Данные клиента получены успешно",
+        super_props_mode: "Режим X-Super-Properties",
+        remote_js: "Удалённый",
+        default_mode: "По умолчанию",
+        mode_cdp_desc: "Данные из клиента Discord (наиболее точные)",
+        mode_remote_desc: "Данные с сайта Discord (могут слегка отставать)",
+        mode_default_desc: "Используются встроенные значения. Запустите Discord с флагом отладки для лучших результатов.",
+        debug_unlock_hint: "Ещё {steps} нажатий до статуса разработчика."
     },
     version: {
         update_available: "Доступна новая версия!",
@@ -163,5 +186,17 @@ export default {
         cancel: "Отмена",
         accept: "Принять",
         start: "Начать"
+    },
+    debug: {
+        title: "Отладочная информация",
+        description: "Просмотр параметров и значений конфигурации программы",
+        refresh: "Обновить",
+        token: "Токен",
+        token_desc: "Ваш токен авторизации Discord",
+        session_ids: "ID сессии",
+        session_ids_desc: "Генерируется один раз при запуске приложения",
+        super_properties_desc: "Свойства заголовка запроса, отправляемые в Discord API",
+        copy: "Копировать",
+        no_data: "Нет отладочных данных"
     }
 }

@@ -27,7 +27,8 @@ export default {
     nav: {
         home: "首页",
         game_simulator: "游戏模拟",
-        settings: "设置"
+        settings: "设置",
+        debug: "调试"
     },
     home: {
         welcome: "欢迎回来, {name}",
@@ -68,9 +69,9 @@ export default {
         play: "游玩",
         activity: "活动",
         stream_play: "直播/游玩",
-        orbs: "宝珠",
-        decoration: "装饰",
-        in_game: "游戏内"
+        orbs: "Discord Orbs",
+        decoration: "Discord 头像装饰",
+        in_game: "游戏内奖励"
     },
     settings: {
         title: "设置",
@@ -118,7 +119,30 @@ export default {
         diagnostics_info: "日志已自动脱敏处理，敏感数据（如 Token 和个人信息）已移除。仅包含本次会话的日志。",
         export_logs: "导出日志",
         export_success: "日志导出成功",
-        export_error: "日志导出失败"
+        export_error: "日志导出失败",
+        copy_token: "复制 Token",
+        token_copied: "已复制!",
+        // CDP 设置
+        cdp_title: "Discord 客户端集成",
+        cdp_desc: "连接到 Discord 客户端以获取准确的客户端信息。需要 Discord 使用调试参数启动。",
+        cdp_checking: "检查中...",
+        cdp_connected: "已连接",
+        cdp_disconnected: "未连接 - 请使用调试参数启动 Discord",
+        cdp_port: "调试端口",
+        cdp_port_hint: "默认：9223",
+        cdp_fetch: "获取客户端数据",
+        cdp_shortcut_warning: "使用此快捷方式前，必须完全关闭 Discord。",
+        cdp_shortcut_desc: "创建一个带有调试参数的 Discord 快捷方式。",
+        cdp_create_shortcut: "创建调试快捷方式",
+        cdp_shortcut_success: "快捷方式已创建到桌面",
+        cdp_fetch_success: "客户端数据获取成功",
+        super_props_mode: "X-Super-Properties 模式",
+        remote_js: "远程",
+        default_mode: "默认",
+        mode_cdp_desc: "来自 Discord 客户端的数据（最准确）",
+        mode_remote_desc: "来自 Discord 网站的数据（可能略有延迟）",
+        mode_default_desc: "使用内置默认值。建议使用调试模式启动 Discord 以获得更好效果。",
+        debug_unlock_hint: "再点击 {steps} 次即可成为开发者。"
     },
     version: {
         update_available: "发现新版本！",
@@ -163,5 +187,17 @@ export default {
         cancel: "取消",
         accept: "接受",
         start: "开始"
+    },
+    debug: {
+        title: "调试信息",
+        description: "查看程序参数和配置项值",
+        refresh: "刷新",
+        token: "Token",
+        token_desc: "您的 Discord 认证 Token",
+        session_ids: "会话 ID",
+        session_ids_desc: "每次应用启动时生成一次",
+        super_properties_desc: "发送到 Discord API 的请求头属性",
+        copy: "复制",
+        no_data: "暂无调试数据"
     }
 }

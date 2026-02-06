@@ -1,7 +1,8 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { DiscordUser, ExtractedAccount } from '@/api/tauri'
-import { autoDetectToken, setToken } from '@/api/tauri'
+import { autoDetectToken, setToken, autoFetchSuperProperties } from '@/api/tauri'
+import { useQuestsStore } from './quests'
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref<DiscordUser | null>(null)
@@ -45,6 +46,17 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       user.value = await setToken(tokenValue)
       token.value = tokenValue
+
+      // After successful login, wait for SuperProperties fetch to complete
+      // This ensures all data is ready before ending the loading state
+      try {
+        const questsStore = useQuestsStore()
+        await autoFetchSuperProperties(questsStore.cdpPort)
+      } catch (e) {
+        // SuperProperties fetch failure should not block login
+        console.warn('Failed to fetch SuperProperties:', e)
+      }
+
       return true
     } catch (e) {
       error.value = e as string

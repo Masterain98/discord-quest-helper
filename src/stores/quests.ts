@@ -40,24 +40,29 @@ export const useQuestsStore = defineStore('quests', () => {
   const localProgress = ref(0)
   const activeGameExe = ref<string | null>(null)
 
-  // Speed multiplier - read from localStorage, default 7
+  // Speed multiplier - read from localStorage, default 1
   const savedSpeed = localStorage.getItem(STORAGE_SPEED_KEY)
-  const speedMultiplier = ref(savedSpeed ? parseInt(savedSpeed) : 7)
+  const speedMultiplier = ref(savedSpeed ? parseInt(savedSpeed) : 1)
 
   // Heartbeat interval (seconds) - for Video quests API heartbeat requests
   const STORAGE_INTERVAL_KEY = 'questHelper_heartbeatInterval'
   const savedInterval = localStorage.getItem(STORAGE_INTERVAL_KEY)
-  const heartbeatInterval = ref(savedInterval ? parseInt(savedInterval) : 3)
+  const heartbeatInterval = ref(savedInterval ? parseInt(savedInterval) : 10)
 
   // Game polling interval (seconds) - for Play/Game quests progress detection
   const STORAGE_GAME_POLLING_KEY = 'questHelper_gamePollingInterval'
   const savedGamePolling = localStorage.getItem(STORAGE_GAME_POLLING_KEY)
-  const gamePollingInterval = ref(savedGamePolling ? parseInt(savedGamePolling) : 30)
+  const gamePollingInterval = ref(savedGamePolling ? parseInt(savedGamePolling) : 60)
 
   // Game Quest Mode - 'simulate' runs a fake game exe, 'heartbeat' sends direct API heartbeats
   const STORAGE_GAME_QUEST_MODE_KEY = 'questHelper_gameQuestMode'
   const savedGameQuestMode = localStorage.getItem(STORAGE_GAME_QUEST_MODE_KEY)
   const gameQuestMode = ref<'simulate' | 'heartbeat'>(savedGameQuestMode === 'heartbeat' ? 'heartbeat' : 'simulate')
+
+  // CDP Port - default 9223, user configurable
+  const STORAGE_CDP_PORT_KEY = 'questHelper_cdpPort'
+  const savedCdpPort = localStorage.getItem(STORAGE_CDP_PORT_KEY)
+  const cdpPort = ref(savedCdpPort ? parseInt(savedCdpPort) : 9223)
 
   // Persist speed changes to localStorage
   watch(speedMultiplier, (newSpeed) => {
@@ -77,6 +82,11 @@ export const useQuestsStore = defineStore('quests', () => {
   // Persist game quest mode changes
   watch(gameQuestMode, (newMode) => {
     localStorage.setItem(STORAGE_GAME_QUEST_MODE_KEY, newMode)
+  })
+
+  // Persist CDP port changes
+  watch(cdpPort, (newPort) => {
+    localStorage.setItem(STORAGE_CDP_PORT_KEY, String(newPort))
   })
 
   let progressUnlisten: (() => void) | null = null
@@ -638,6 +648,7 @@ export const useQuestsStore = defineStore('quests', () => {
     heartbeatInterval,
     gamePollingInterval,
     gameQuestMode,
+    cdpPort,
     stopping,
     activeGameExe,
     questQueue, // Export queue
