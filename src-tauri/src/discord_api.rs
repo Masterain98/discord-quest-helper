@@ -1,6 +1,8 @@
 use crate::models::*;
 use anyhow::{Context, Result};
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE, USER_AGENT};
+use reqwest::{Method, RequestBuilder};
+use base64::Engine;
 use std::sync::Arc;
 
 const DISCORD_API_BASE: &str = "https://discord.com/api/v9";
@@ -69,11 +71,33 @@ impl DiscordApiClient {
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
             manager.get_super_properties_base64()
         };
+        
+        // Log the generated properties for audit purposes
+        #[cfg(debug_assertions)]
+        {
+           use crate::logger::{log, LogLevel, LogCategory};
+           // Decode to verify content
+           if let Ok(decoded) = base64::engine::general_purpose::STANDARD.decode(&super_props) {
+               if let Ok(s) = String::from_utf8(decoded) {
+                   // Truncate for logging if too long, but show enough to verify structure
+                   let preview = if s.len() > 100 { format!("{}...", &s[..100]) } else { s };
+                   log(LogLevel::Debug, LogCategory::Api, &format!("Injecting X-Super-Properties: {}", preview), None);
+               }
+           }
+        }
+
         HeaderValue::from_str(&super_props).unwrap_or_else(|e| {
             eprintln!("Failed to create X-Super-Properties header: {}", e);
             // Fallback to minimal valid base64 JSON
             HeaderValue::from_static("e30=") // base64("{}")
         })
+    }
+
+    /// Centralized request builder to enforce security headers
+    fn request(&self, method: Method, url: &str) -> RequestBuilder {
+        self.client
+            .request(method, url)
+            .header("x-super-properties", self.get_super_properties_header())
     }
 
     #[allow(dead_code)]
@@ -88,9 +112,8 @@ impl DiscordApiClient {
         let url = format!("{}/users/@me", DISCORD_API_BASE);
         log(LogLevel::Debug, LogCategory::Api, "Requesting current user info", Some(&url));
         
-        let response = self.client
-            .get(&url)
-            .header("x-super-properties", self.get_super_properties_header())
+        
+        let response = self.request(Method::GET, &url)
             .send()
             .await
             .map_err(|e| {
@@ -129,9 +152,7 @@ impl DiscordApiClient {
         
         println!("Requesting quest list: {}", url);
         
-        let response = self.client
-            .get(&url)
-            .header("x-super-properties", self.get_super_properties_header())
+        let response = self.request(Method::GET, &url)
             .send()
             .await
             .context("Request for quest list failed")?;
@@ -171,9 +192,7 @@ impl DiscordApiClient {
 
         println!("Sending video progress: quest_id={}, timestamp={:.1}", quest_id, timestamp);
 
-        let response = self.client
-            .post(&url)
-            .header("x-super-properties", self.get_super_properties_header())
+        let response = self.request(Method::POST, &url)
             .json(&payload)
             .send()
             .await
@@ -204,9 +223,7 @@ impl DiscordApiClient {
             stream_key: stream_key.to_string(),
         };
 
-        let response = self.client
-            .post(&url)
-            .header("x-super-properties", self.get_super_properties_header())
+        let response = self.request(Method::POST, &url)
             .json(&payload)
             .send()
             .await
@@ -237,9 +254,7 @@ impl DiscordApiClient {
 
         println!("Sending game heartbeat: quest_id={}, app_id={}, terminal={}", quest_id, application_id, terminal);
 
-        let response = self.client
-            .post(&url)
-            .header("x-super-properties", self.get_super_properties_header())
+        let response = self.request(Method::POST, &url)
             .json(&payload)
             .send()
             .await
@@ -271,9 +286,7 @@ impl DiscordApiClient {
             "metadata_raw": null
         });
 
-        let response = self.client
-            .post(&url)
-            .header("x-super-properties", self.get_super_properties_header())
+        let response = self.request(Method::POST, &url)
             .json(&payload)
             .send()
             .await
@@ -302,9 +315,7 @@ impl DiscordApiClient {
         // Helper to fetch a single URL
         let fetch_list = |url: String| async move {
             println!("Requesting: {}", url);
-            let response = self.client
-                .get(&url)
-                .header("x-super-properties", self.get_super_properties_header())
+            let response = self.request(Method::GET, &url)
                 .send()
                 .await
                 .context(format!("Failed to request {}", url))?;
