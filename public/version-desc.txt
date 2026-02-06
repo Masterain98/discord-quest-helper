@@ -1,22 +1,9 @@
-# What's New
+## What's New 
 
-- Add MacOS Apple Silicon client support
-- Bump dependencies to latest
-- Fix build issues
-
----
-
-# Quick Start
-
-## Windows
-1. Extract the archive
-2. Run `discord-quest-helper.exe` while Discord is running in the background
-3. Click `Auto Detect Token` to detect your Discord accounts
-4. Filter quests and click `Start` to finish the quest
-
-## MacOS
-1. Download the latest `.dmg` Filter
-2. Open the `.dmg` file and drag the app to your Applications folder
-3. Run `Discord Quest Helper` from Applications
-
-⭐ **If you find this helpful, please give it a star!** ⭐
+- Updated runner window style
+- Major architectural updates and fixes for security (Resolve #38)
+- Added functionality to copy tokens
+- Adjusted default quest polling intervals for security
+- Integrated Rust logger and updated Tauri dependencies
+- Routine dependency updates
+- Support for Pre-release (RC) version detection in release workflow
