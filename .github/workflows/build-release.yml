@@ -153,6 +153,11 @@ jobs:
         run: |
           version=$(cat public/version.txt)
           echo "version=$version" >> $GITHUB_ENV
+          if [[ "$version" == *"rc"* ]]; then
+            echo "PRERELEASE=true" >> $GITHUB_ENV
+          else
+            echo "PRERELEASE=false" >> $GITHUB_ENV
+          fi
         shell: bash
 
       - name: Download Windows artifact (portable)
@@ -213,7 +218,7 @@ jobs:
             ./build/${{ env.win_msi }}.msi
             ./build/${{ env.macos_build_release }}.dmg
             ./build/${{ env.macos_build_release }}.zip
-          prerelease: false
+          prerelease: ${{ env.PRERELEASE }}
           draft: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
