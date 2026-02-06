@@ -9,8 +9,9 @@
     "build": "vue-tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:dev": "npm run build:runner && tauri dev",
+    "tauri:build": "npm run build:runner && tauri build",
+    "build:runner": "node scripts/build-runner.js"
   },
   "dependencies": {
     "@tauri-apps/plugin-fs": "^2.4.5",

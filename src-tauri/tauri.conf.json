@@ -30,7 +30,7 @@
     "active": true,
     "targets": "all",
     "resources": {
-      "data/*": "./"
+      "data/*": "data/"
     },
     "icon": [
       "icons/icon.ico"

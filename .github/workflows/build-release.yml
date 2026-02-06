@@ -71,27 +71,7 @@ jobs:
           version=$(cat public/version.txt)
           echo "version=$version" >> $GITHUB_ENV
       
-      # Build src-runner for Windows
-      - name: Build src-runner (Windows)
-        if: matrix.platform == 'windows-latest'
-        shell: bash
-        run: | 
-          cd src-runner
-          cargo build --release --verbose
-          cd ..
-          mkdir -p src-tauri/data
-          cp ./src-runner/target/release/discord-quest-runner.exe ./src-tauri/data/discord-quest-runner.exe
 
-      # Build src-runner for macOS ARM64
-      - name: Build src-runner (macOS ARM64)
-        if: matrix.platform == 'macos-14'
-        shell: bash
-        run: | 
-          cd src-runner
-          cargo build --release --target aarch64-apple-darwin --verbose
-          cd ..
-          mkdir -p src-tauri/data
-          cp ./src-runner/target/aarch64-apple-darwin/release/discord-quest-runner ./src-tauri/data/discord-quest-runner
 
       - name: Rust cache (Tauri App)
         uses: swatinem/rust-cache@v2

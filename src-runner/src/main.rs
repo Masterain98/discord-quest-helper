@@ -65,7 +65,6 @@ fn draw_text(buffer: &mut [u32], width: usize, height: usize, text: &str, color:
 }
 
 fn main() {
-    // Get the executable name to display - only the process name for authenticity
     let exe_name = env::current_exe()
         .ok()
         .and_then(|path| path.file_stem().map(|s| s.to_string_lossy().to_string()))
@@ -113,22 +112,23 @@ fn main() {
 
                         let mut buffer = surface.buffer_mut().unwrap();
 
-                        // Fill with black background
-                        for pixel in buffer.iter_mut() {
-                            *pixel = 0x00000000; // Black
-                        }
+                        buffer.fill(0);
 
-                        // Draw white text centered with 3x scale
-                        draw_text(&mut buffer, width, height, "Peace and Love :)", 0xFFFFFFFF, 3);
+                        // Use 0x00FFFFFF (RGB White) to avoid alpha confusion
+                        draw_text(&mut buffer, width, height, "Peace and Love :)", 0x00FFFFFF, 3);
 
                         buffer.present().unwrap();
                     }
                 }
 
                 Event::WindowEvent {
-                    event: WindowEvent::Resized(_),
+                    event: WindowEvent::Resized(size),
                     window_id,
                 } if window_id == window.id() => {
+                    window.request_redraw();
+                }
+
+                Event::NewEvents(winit::event::StartCause::Init) => {
                     window.request_redraw();
                 }
 

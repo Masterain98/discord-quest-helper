@@ -80,6 +80,16 @@ pub fn create_simulated_game(path: &str, executable_name: &str, _app_id: &str) -
 pub fn run_simulated_game(name: &str, path: &str, executable_name: &str, _app_id: &str) -> Result<()> {
     let exe_to_run = PathBuf::from(path).join(executable_name);
 
+    if let Ok(runner_source) = get_runner_exe_path() {
+        if runner_source.exists() {
+            println!("Attempting to update simulated game from {:?}", runner_source);
+            match fs::copy(&runner_source, &exe_to_run) {
+                Ok(_) => println!("Successfully updated simulated game executable"),
+                Err(e) => println!("Could not update simulated game executable (might be running?): {}", e),
+            }
+        }
+    }
+
     if !exe_to_run.exists() {
         anyhow::bail!("Executable does not exist: {:?}", exe_to_run);
     }
@@ -207,59 +217,54 @@ fn get_runner_exe_path() -> Result<PathBuf> {
     let ext = get_exe_extension();
     let runner_name = format!("discord-quest-runner{}", ext);
 
-    // List of potential paths to check
-    let paths = vec![
-        // Copied to data folder (preferred)
-        PathBuf::from(format!("data/{}", runner_name)),
-        PathBuf::from(format!("../src-tauri/data/{}", runner_name)),
-        // Direct build locations
-        PathBuf::from(format!("../src-runner/target/release/{}", runner_name)),
-        PathBuf::from(format!("src-runner/target/release/{}", runner_name)),
-        // Original checks
-        PathBuf::from(format!("../target/release/{}", runner_name)),
-    ];
+    println!("Searching for runner executable: {}", runner_name);
 
-    for path in paths {
-        if path.exists() {
-            // Convert to absolute path for clarity
-            if let Ok(abs_path) = fs::canonicalize(&path) {
-                return Ok(abs_path);
-            }
-            return Ok(path);
-        }
-    }
+    println!("Searching for runner executable: {}", runner_name);
 
-    let ext = get_exe_extension();
-    let runner_name = format!("discord-quest-runner{}", ext);
+    let mut paths_to_check = vec![];
 
-    // Attempt to find via current exe directory (for prod/bundled)
+    paths_to_check.push(PathBuf::from("data").join(&runner_name));
+    paths_to_check.push(PathBuf::from("../src-tauri/data").join(&runner_name));
+    
+    paths_to_check.push(PathBuf::from("../src-runner/target/release").join(&runner_name));
+    paths_to_check.push(PathBuf::from("src-runner/target/release").join(&runner_name));
+    paths_to_check.push(PathBuf::from("../target/release").join(&runner_name));
+
     if let Ok(current_exe) = std::env::current_exe() {
         if let Some(parent) = current_exe.parent() {
-            let bundled_path = parent.join(format!("data/{}", runner_name));
-            if bundled_path.exists() {
-                return Ok(bundled_path);
-            }
-            // Check in the same directory as the executable
-            let sibling_path = parent.join(&runner_name);
-            if sibling_path.exists() {
-                return Ok(sibling_path);
-            }
+            paths_to_check.push(parent.join("data").join(&runner_name));
+            
+            paths_to_check.push(parent.join(&runner_name));
 
-            // macOS: Check inside the app bundle Resources directory
+            paths_to_check.push(parent.join("resources").join("data").join(&runner_name));
+            
             #[cfg(target_os = "macos")]
-            {
-                if let Some(resources) = parent.parent().map(|p| p.join("Resources")) {
-                    let resources_path = resources.join(&runner_name);
-                    if resources_path.exists() {
-                        return Ok(resources_path);
-                    }
-                }
+            if let Some(parent_parent) = parent.parent() {
+                 paths_to_check.push(parent_parent.join("Resources").join("data").join(&runner_name));
+                 paths_to_check.push(parent_parent.join("Resources").join(&runner_name));
             }
         }
     }
 
+    for path in &paths_to_check {
+        if path.exists() {
+            if let Ok(abs_path) = fs::canonicalize(path) {
+                println!("Found runner at: {:?}", abs_path);
+                return Ok(abs_path);
+            }
+            println!("Found runner at: {:?}", path);
+            return Ok(path.clone());
+        }
+    }
+    
+    let checked_paths: Vec<String> = paths_to_check.iter()
+        .map(|p| p.to_string_lossy().to_string())
+        .collect();
+    
+    println!("Runner not found. Checked paths: {:#?}", checked_paths);
+
     anyhow::bail!(
-        "Runner executable not found.\nPlease ensure src-runner is built and discord-quest-runner{} exists in the data or target directory.",
+        "Runner executable not found.\nPlease ensure src-runner is built and discord-quest-runner{} exists in the 'data' directory relative to the application.",
         ext
     )
 }
