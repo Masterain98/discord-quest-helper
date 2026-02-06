@@ -1,9 +1,15 @@
-## What's New 
+## What's New
 
-- Updated runner window style
-- Major architectural updates and fixes for security (Resolve #38)
-- Added functionality to copy tokens
-- Adjusted default quest polling intervals for security
-- Integrated Rust logger and updated Tauri dependencies
-- Routine dependency updates
-- Support for Pre-release (RC) version detection in release workflow
+### 🛡️ Security & Stealth
+- **Enhanced Stealth**: Runner processes now better mimic real games with improved window and invisible cleanup.
+- **Security Improvements**: Hardened PowerShell execution and added network timeouts for better stability.
+- **CDP Mode**: Allow the helper to connect to Discord client via CDP to get client latest metadata. Add shortcut to create Discord with Debug Mode at the desktop.
+
+### ⚡ Reliability
+- **Improved Stability**: Enhanced robustness for Discord interaction and metadata fetching.
+- **Auto-Updates**: Simulated games now automatically update to the latest runner version.
+
+### 🔧 Fixes & Infrastructure.
+- Automated runner builds to ensure consistent deployment across updates.
+- Fixed specific UI glitches in Settings page.
+- Add Debug page for troubleshooting, click version number 7 times at bottom of settings page to enable it.
