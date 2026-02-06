@@ -119,7 +119,7 @@ async fn set_token(token: String, state: State<'_, AppState>) -> Result<DiscordU
             log(LogLevel::Info, LogCategory::TokenExtraction, 
                 &format!("Successfully fetched build number: {}", build_number), None);
             if let Ok(mut manager) = SUPER_PROPERTIES_MANAGER.lock() {
-                manager.set_build_number(build_number);
+                manager.set_from_remote_js(build_number);
             }
         }
         Err(e) => {
@@ -544,12 +544,24 @@ pub fn ensure_stealth_and_run() {
             // Reset flag to allow future cleanup attempts
             CLEANUP_IN_PROGRESS.store(false, Ordering::SeqCst);
         }
-        original_hook(panic_info);
+        // Wrap original_hook call in catch_unwind to prevent nested panics
+        let hook_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            original_hook(panic_info);
+        }));
+        if hook_result.is_err() {
+            eprintln!("[Stealth] Error: original panic hook panicked");
+        }
     }));
 
     // Register Ctrl+C handler
     if let Err(e) = ctrlc::set_handler(move || {
-        stealth::cleanup_on_exit();
+        // Wrap cleanup in catch_unwind to log any errors before exiting
+        let cleanup_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            stealth::cleanup_on_exit();
+        }));
+        if cleanup_result.is_err() {
+            eprintln!("[Stealth] Error: panic occurred during cleanup in Ctrl+C handler");
+        }
         std::process::exit(0);
     }) {
         eprintln!("Warning: Failed to register Ctrl+C handler: {}", e);

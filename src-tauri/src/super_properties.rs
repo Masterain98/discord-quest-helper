@@ -327,12 +327,6 @@ impl XSuperPropertiesManager {
         props
     }
 
-    /// Updates client_build_number
-    pub fn set_build_number(&mut self, build_number: u64) {
-        self.cached_build_number = Some(build_number);
-        self.cached_super_properties = None; // Clear cache to trigger regeneration
-    }
-
 
 }
 
