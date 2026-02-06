@@ -80,6 +80,7 @@ export default {
         video_quest_config: "Настройки видео квестов",
         video_quest_config_desc: "Настройте поведение автоматического завершения видео квестов.",
         completion_speed: "Скорость завершения",
+        speed_slow: "Медленно",
         speed_normal: "Обычная",
         speed_fast: "Быстрая",
         speed_hint: "1 сек реального = 1 сек видео",

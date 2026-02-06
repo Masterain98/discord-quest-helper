@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
-import type { Quest } from '@/api/tauri'
+import type { Quest, DetectableGame } from '@/api/tauri'
 import {
   getQuests,
   startVideoQuest,
@@ -27,6 +27,7 @@ const STORAGE_SPEED_KEY = 'questHelper_speedMultiplier'
 
 export const useQuestsStore = defineStore('quests', () => {
   const quests = ref<Quest[]>([])
+  const lastQuestsFetchTime = ref(0)
   const loading = ref(false)
   const stopping = ref(false)
   const error = ref<string | null>(null)
@@ -40,19 +41,34 @@ export const useQuestsStore = defineStore('quests', () => {
   const localProgress = ref(0)
   const activeGameExe = ref<string | null>(null)
 
-  // Speed multiplier - read from localStorage, default 1
+  // Speed multiplier - read from localStorage, default 1, range 0.1 - 2.0
   const savedSpeed = localStorage.getItem(STORAGE_SPEED_KEY)
-  const speedMultiplier = ref(savedSpeed ? parseInt(savedSpeed) : 1)
+  let initialSpeed = savedSpeed ? parseFloat(savedSpeed) : 1.0
+  // Validate range (0.1 to 2.0)
+  if (isNaN(initialSpeed) || initialSpeed < 0.1 || initialSpeed > 2.0) {
+    initialSpeed = 1.0
+  }
+  const speedMultiplier = ref(initialSpeed)
 
   // Heartbeat interval (seconds) - for Video quests API heartbeat requests
   const STORAGE_INTERVAL_KEY = 'questHelper_heartbeatInterval'
   const savedInterval = localStorage.getItem(STORAGE_INTERVAL_KEY)
-  const heartbeatInterval = ref(savedInterval ? parseInt(savedInterval) : 10)
+  let initialInterval = savedInterval ? parseInt(savedInterval) : 15
+  // Validate range (10 to 30)
+  if (isNaN(initialInterval) || initialInterval < 10 || initialInterval > 30) {
+    initialInterval = 15
+  }
+  const heartbeatInterval = ref(initialInterval)
 
   // Game polling interval (seconds) - for Play/Game quests progress detection
   const STORAGE_GAME_POLLING_KEY = 'questHelper_gamePollingInterval'
   const savedGamePolling = localStorage.getItem(STORAGE_GAME_POLLING_KEY)
-  const gamePollingInterval = ref(savedGamePolling ? parseInt(savedGamePolling) : 60)
+  let initialGamePolling = savedGamePolling ? parseInt(savedGamePolling) : 120
+  // Validate range (30 to 300)
+  if (isNaN(initialGamePolling) || initialGamePolling < 30 || initialGamePolling > 300) {
+    initialGamePolling = 120
+  }
+  const gamePollingInterval = ref(initialGamePolling)
 
   // Game Quest Mode - 'simulate' runs a fake game exe, 'heartbeat' sends direct API heartbeats
   const STORAGE_GAME_QUEST_MODE_KEY = 'questHelper_gameQuestMode'
@@ -99,11 +115,22 @@ export const useQuestsStore = defineStore('quests', () => {
   let simLastTime = 0
   let simCurrentSpeed = 1.0
 
-  async function fetchQuests(silent = false) {
+  async function fetchQuests(silent = false, force = false) {
+    if (!force && quests.value.length > 0) {
+      const now = Date.now()
+      // 30 minutes cache
+      if (now - lastQuestsFetchTime.value < 30 * 60 * 1000) {
+        console.log('Using cached quests list')
+        return
+      }
+    }
+
     if (!silent) loading.value = true
     error.value = null
     try {
+      console.log('Fetching quests from API...')
       quests.value = await getQuests()
+      lastQuestsFetchTime.value = Date.now()
     } catch (e) {
       error.value = e as string
     } finally {
@@ -143,7 +170,7 @@ export const useQuestsStore = defineStore('quests', () => {
     // Use user-configurable game polling interval (in seconds, convert to ms)
     const intervalMs = gamePollingInterval.value * 1000
     pollingTimer = setInterval(async () => {
-      await fetchQuests(true)
+      await fetchQuests(true, true)
       checkActiveQuestStatus()
     }, intervalMs)
   }
@@ -291,8 +318,9 @@ export const useQuestsStore = defineStore('quests', () => {
       } else {
         // Simulate mode - original behavior
         // 2. Fetch detectable games to find executable name
-        const detectableGames = await fetchDetectableGames()
-        const game = detectableGames.find(g => g.id === appId)
+        // Use cached list if available
+        const gamesList = await getDetectableGames()
+        const game = gamesList.find(g => g.id === appId)
         if (!game) throw new Error(`Game not found in Discord's detectable list (AppID: ${appId})`)
 
         const winExe = game.executables.find(e => e.os === 'win32')
@@ -430,7 +458,7 @@ export const useQuestsStore = defineStore('quests', () => {
       cleanupListeners()
 
       // Refresh quests to get latest status
-      await fetchQuests(true)
+      await fetchQuests(true, true)
 
     } finally {
       stopping.value = false
@@ -473,7 +501,7 @@ export const useQuestsStore = defineStore('quests', () => {
         stopProgressSimulation()
 
         // Refresh quests to update status in UI
-        fetchQuests(true)
+        fetchQuests(true, true)
 
         // Trigger next item
         setTimeout(() => {
@@ -494,7 +522,7 @@ export const useQuestsStore = defineStore('quests', () => {
         localProgress.value = 0
         stopProgressSimulation()
 
-        fetchQuests()
+        fetchQuests(true, true)
         cleanupListeners()
       }
     }).then((unlisten) => {
@@ -635,6 +663,38 @@ export const useQuestsStore = defineStore('quests', () => {
   // We need to modify `onQuestComplete` to trigger next in queue.
   // See `setupListeners`.
 
+  // --- Detectable Games Caching ---
+  const detectableGames = ref<DetectableGame[]>([])
+  const fetchingGames = ref(false)
+
+  async function getDetectableGames(force = false): Promise<DetectableGame[]> {
+    if (!force && detectableGames.value.length > 0) {
+      console.log('Returning cached detectable games')
+      return detectableGames.value
+    }
+
+    if (fetchingGames.value) {
+      // If already fetching, wait for it (simple poll)
+      while (fetchingGames.value) {
+        await new Promise(r => setTimeout(r, 100))
+      }
+      return detectableGames.value
+    }
+
+    fetchingGames.value = true
+    try {
+      console.log('Fetching detectable games from API...')
+      detectableGames.value = await fetchDetectableGames()
+      console.log(`Fetched ${detectableGames.value.length} detectable games successfully.`)
+      return detectableGames.value
+    } catch (e) {
+      console.error('Failed to fetch detectable games:', e)
+      throw e
+    } finally {
+      fetchingGames.value = false
+    }
+  }
+
   return {
     quests,
     loading,
@@ -673,6 +733,9 @@ export const useQuestsStore = defineStore('quests', () => {
       questQueue.value = []
       isQueueRunning.value = false
       stop()
-    }
+    },
+    // Game Process Caching
+    detectableGames,
+    getDetectableGames
   }
 })

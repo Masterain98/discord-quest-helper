@@ -93,6 +93,7 @@ Complete Discord video, stream, and game quests automatically while you focus on
 ├────────────────────────┴────────────────────────────────────────┤
 │  Rust Backend (Tauri 2.0)                                        │
 │  ├─ token_extractor.rs   - LevelDB + DPAPI + AES-GCM             │
+│  ├─ cdp_client.rs        - Chrome DevTools Protocol integration  │
 │  ├─ discord_api.rs       - HTTP client & endpoints               │
 │  ├─ quest_completer.rs   - Video/stream automation               │
 │  └─ game_simulator.rs    - Process creation & management         │
@@ -129,9 +130,11 @@ MIT License — see [LICENSE](LICENSE) file.
 
 ## 🙏 Credits
 
-**Inspiration**
+**Inspiration & Resources**
 - [markterence/discord-quest-completer](https://github.com/markterence/discord-quest-completer)
 - [power0matin/discord-quest-auto-completer](https://github.com/power0matin/discord-quest-auto-completer)
+- [taisrisk/Discord-Quest-Helper](https://github.com/taisrisk/Discord-Quest-Helper)
+- [docs.discord.food](https://docs.discord.food/)
 
 **Technologies**
 - [Tauri](https://tauri.app/) • [Vue.js](https://vuejs.org/) • [shadcn-vue](https://www.shadcn-vue.com/) • [TailwindCSS](https://tailwindcss.com/)

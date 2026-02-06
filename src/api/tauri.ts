@@ -57,6 +57,8 @@ export interface DetectableGame {
     name: string
     os: string
   }>
+  icon?: string
+  type_name?: string
 }
 
 // Auth commands

@@ -110,18 +110,40 @@ async fn set_token(token: String, state: State<'_, AppState>) -> Result<DiscordU
         .map_err(|e| format!("Failed to validate token: {}", e))?;
 
     // Fetch latest build_number and client info before returning (so frontend await can rely on completion)
-    // Get build_number
-    match token_extractor::fetch_build_number_from_discord().await {
-        Ok(build_number) => {
-            log(LogLevel::Info, LogCategory::TokenExtraction, 
-                &format!("Successfully fetched build number: {}", build_number), None);
-            if let Ok(mut manager) = SUPER_PROPERTIES_MANAGER.lock() {
-                manager.set_from_remote_js(build_number);
-            }
+    
+    // Priority 1: Try CDP
+    let mut cdp_success = false;
+    let cdp_port = cdp_client::DEFAULT_CDP_PORT;
+
+    log(LogLevel::Info, LogCategory::TokenExtraction, 
+        &format!("Attempting to fetch SuperProperties via CDP on port {}", cdp_port), None);
+
+    if let Ok(cdp_result) = cdp_client::fetch_super_properties_via_cdp(cdp_port).await {
+        log(LogLevel::Info, LogCategory::TokenExtraction, 
+            &format!("Successfully fetched SuperProperties via CDP. Build: {}", cdp_result.decoded.get("client_build_number").and_then(|v| v.as_u64()).unwrap_or(0)), None);
+        if let Ok(mut manager) = SUPER_PROPERTIES_MANAGER.lock() {
+            manager.set_from_cdp(&cdp_result.base64, &cdp_result.decoded);
         }
-        Err(e) => {
-            log(LogLevel::Warn, LogCategory::TokenExtraction, 
-                &format!("Failed to fetch build number: {}", e), None);
+        cdp_success = true;
+    } else {
+        log(LogLevel::Debug, LogCategory::TokenExtraction, "CDP fetch failed, falling back to JS scraping", None);
+    }
+
+    // Priority 2: Remote JS (Fallback)
+    if !cdp_success {
+        // Get build_number
+        match token_extractor::fetch_build_number_from_discord().await {
+            Ok(build_number) => {
+                log(LogLevel::Info, LogCategory::TokenExtraction, 
+                    &format!("Successfully fetched build number from JS: {}", build_number), None);
+                if let Ok(mut manager) = SUPER_PROPERTIES_MANAGER.lock() {
+                    manager.set_from_remote_js(build_number);
+                }
+            }
+            Err(e) => {
+                log(LogLevel::Warn, LogCategory::TokenExtraction, 
+                    &format!("Failed to fetch build number from JS: {}", e), None);
+            }
         }
     }
     

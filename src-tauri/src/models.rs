@@ -32,6 +32,9 @@ pub struct DetectableGame {
     pub id: String,
     pub name: String,
     pub executables: Vec<GameExecutable>,
+    #[serde(alias = "icon_hash")]
+    pub icon: Option<String>,
+    pub type_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

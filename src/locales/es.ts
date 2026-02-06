@@ -80,6 +80,7 @@ export default {
         video_quest_config: "Configuración de misiones de video",
         video_quest_config_desc: "Ajusta el comportamiento de la automatización de completado de misiones de video.",
         completion_speed: "Velocidad de completado",
+        speed_slow: "Lento",
         speed_normal: "Normal",
         speed_fast: "Rápido",
         speed_hint: "1 seg real = 1 seg de video",

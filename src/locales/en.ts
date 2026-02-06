@@ -80,6 +80,7 @@ export default {
         video_quest_config: "Video Quest Configuration",
         video_quest_config_desc: "Adjust how the video quest completion automation behaves.",
         completion_speed: "Completion Speed",
+        speed_slow: "Slow",
         speed_normal: "Normal",
         speed_fast: "Fast",
         speed_hint: "1 sec real = 1 sec video",

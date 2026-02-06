@@ -80,6 +80,7 @@ export default {
         video_quest_config: "비디오 퀘스트 구성",
         video_quest_config_desc: "비디오 퀘스트 자동 완료 동작을 조정합니다.",
         completion_speed: "완료 속도",
+        speed_slow: "느림",
         speed_normal: "일반",
         speed_fast: "빠름",
         speed_hint: "실제 1초 = 비디오 1초",

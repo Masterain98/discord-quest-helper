@@ -498,7 +498,7 @@ watch(() => authStore.user, (newUser) => {
 
 
 async function refreshQuests() {
-  await questsStore.fetchQuests()
+  await questsStore.fetchQuests(false, true)
 }
 
 // Determine quest type based on task_config

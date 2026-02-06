@@ -375,14 +375,14 @@ async function exportLogs() {
              <input 
                type="range"
                v-model.number="questsStore.speedMultiplier"
-               min="1"
-               max="10"
-               step="1"
+               min="0.1"
+               max="2.0"
+               step="0.1"
                class="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary"
              />
              <div class="flex justify-between text-xs text-muted-foreground">
-               <span>1x ({{ t('settings.speed_normal') }})</span>
-               <span>10x ({{ t('settings.speed_fast') }})</span>
+               <span>0.1x ({{ t('settings.speed_slow') }})</span>
+               <span>2.0x ({{ t('settings.speed_fast') }})</span>
              </div>
            </div>
 
@@ -394,18 +394,15 @@ async function exportLogs() {
              <input 
                type="range"
                v-model.number="questsStore.heartbeatInterval"
-               min="1"
+               min="10"
                max="30"
                step="1"
                class="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary"
              />
               <div class="flex justify-between text-xs text-muted-foreground">
-                <span>1s ({{ t('settings.interval_fast') }})</span>
+                <span>10s ({{ t('settings.interval_fast') }})</span>
                 <span>30s ({{ t('settings.interval_slow') }})</span>
               </div>
-              <p v-if="questsStore.heartbeatInterval < 3" class="text-xs text-yellow-600 dark:text-yellow-500 mt-2">
-                ⚠️ {{ t('settings.rate_limit_warning') }}
-              </p>
             </div>
         </CardContent>
       </Card>
@@ -425,18 +422,15 @@ async function exportLogs() {
             <input 
               type="range"
               v-model.number="questsStore.gamePollingInterval"
-              min="5"
-              max="180"
+              min="30"
+              max="300"
               step="1"
               class="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary"
             />
             <div class="flex justify-between text-xs text-muted-foreground">
-              <span>5s ({{ t('settings.interval_fast') }})</span>
-              <span>180s ({{ t('settings.interval_slow') }})</span>
+              <span>30s ({{ t('settings.interval_fast') }})</span>
+              <span>300s ({{ t('settings.interval_slow') }})</span>
             </div>
-            <p v-if="questsStore.gamePollingInterval < 30" class="text-xs text-yellow-600 dark:text-yellow-500 mt-2">
-              ⚠️ {{ t('settings.rate_limit_warning') }}
-            </p>
           </div>
         </CardContent>
       </Card>
@@ -737,6 +731,19 @@ async function exportLogs() {
                        <img src="/icons/github-mark.svg" alt="GitHub" class="w-4 h-4 dark:hidden" />
                        <img src="/icons/github-mark-white.svg" alt="GitHub" class="w-4 h-4 hidden dark:block" />
                        <span class="hover:underline">power0matin/discord-quest-auto-completer</span>
+                     </a>
+                   </li>
+                   <li>
+                     <a href="#" @click.prevent="openExternal('https://github.com/taisrisk/Discord-Quest-Helper')" class="inline-flex items-center gap-2 hover:opacity-80 transition-opacity">
+                       <img src="/icons/github-mark.svg" alt="GitHub" class="w-4 h-4 dark:hidden" />
+                       <img src="/icons/github-mark-white.svg" alt="GitHub" class="w-4 h-4 hidden dark:block" />
+                       <span class="hover:underline">taisrisk/Discord-Quest-Helper</span>
+                     </a>
+                   </li>
+                   <li>
+                     <a href="#" @click.prevent="openExternal('https://docs.discord.food/')" class="inline-flex items-center gap-2 hover:opacity-80 transition-opacity">
+                       <Link2 class="w-4 h-4" />
+                       <span class="hover:underline">docs.discord.food</span>
                      </a>
                    </li>
                  </ul>

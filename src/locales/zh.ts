@@ -80,6 +80,7 @@ export default {
         video_quest_config: "视频任务配置",
         video_quest_config_desc: "调整视频任务自动完成的行为方式。",
         completion_speed: "完成速度",
+        speed_slow: "慢速",
         speed_normal: "正常",
         speed_fast: "快速",
         speed_hint: "1秒真实时间 = 1秒视频时间",

@@ -52,6 +52,12 @@ export const useAuthStore = defineStore('auth', () => {
       try {
         const questsStore = useQuestsStore()
         await autoFetchSuperProperties(questsStore.cdpPort)
+
+        // Pre-fetch game list in background to avoid waiting later
+        // do not await - let it run async
+        questsStore.getDetectableGames().catch(err => {
+          console.warn('Background game list fetch failed:', err)
+        })
       } catch (e) {
         // SuperProperties fetch failure should not block login
         console.warn('Failed to fetch SuperProperties:', e)

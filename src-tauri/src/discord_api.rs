@@ -292,28 +292,73 @@ impl DiscordApiClient {
     }
 
     /// Get detectable games list
+    /// Get detectable games list (merges games and non-games)
     pub async fn fetch_detectable_games(&self) -> Result<Vec<DetectableGame>> {
-        let url = format!("{}/applications/detectable", DISCORD_API_BASE);
+        let games_url = format!("{}/applications/detectable", DISCORD_API_BASE);
+        let apps_url = format!("{}/applications/non-games/detectable", DISCORD_API_BASE);
         
-        let response = self.client
-            .get(&url)
-            .header("x-super-properties", self.get_super_properties_header())
-            .send()
-            .await
-            .context("Failed to request detectable games list")?;
+        println!("Requesting detectable games and apps lists...");
 
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            anyhow::bail!("Failed to get detectable games list: {} - {}", status, body);
+        // Helper to fetch a single URL
+        let fetch_list = |url: String| async move {
+            println!("Requesting: {}", url);
+            let response = self.client
+                .get(&url)
+                .header("x-super-properties", self.get_super_properties_header())
+                .send()
+                .await
+                .context(format!("Failed to request {}", url))?;
+
+            if !response.status().is_success() {
+                let status = response.status();
+                let body = response.text().await.unwrap_or_default();
+                // Don't fail the whole process if one list fails, just return empty?
+                // For now, let's log error and return empty vector to be robust
+                println!("Failed to fetch list from {}: {} - {}", url, status, body);
+                return Ok(Vec::<DetectableGame>::new());
+            }
+
+            let list: Vec<DetectableGame> = response
+                .json()
+                .await
+                .context(format!("Failed to parse list from {}", url))?;
+            
+            Ok::<Vec<DetectableGame>, anyhow::Error>(list)
+        };
+
+        // Fetch both concurrently
+        let (games_res, apps_res) = tokio::join!(
+            fetch_list(games_url),
+            fetch_list(apps_url)
+        );
+
+        let mut all_items = Vec::new();
+
+        match games_res {
+            Ok(mut games) => {
+                println!("Retrieved {} games", games.len());
+                for game in &mut games {
+                    game.type_name = Some("Game".to_string());
+                }
+                all_items.extend(games);
+            },
+            Err(e) => println!("Error fetching games: {}", e),
         }
 
-        let games: Vec<DetectableGame> = response
-            .json()
-            .await
-            .context("Failed to parse games list")?;
+        match apps_res {
+            Ok(mut apps) => {
+                println!("Retrieved {} non-game apps", apps.len());
+                for app in &mut apps {
+                     app.type_name = Some("App".to_string());
+                }
+                all_items.extend(apps);
+            },
+            Err(e) => println!("Error fetching apps: {}", e),
+        }
 
-        Ok(games)
+        println!("Total detectable items merged: {}", all_items.len());
+
+        Ok(all_items)
     }
 }
 

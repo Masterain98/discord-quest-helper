@@ -4,6 +4,8 @@
 //! to evade Discord detection. The main program uses a randomly
 //! generated filename when running.
 
+#![cfg_attr(debug_assertions, allow(dead_code))]
+
 use std::env;
 use std::fs;
 use std::io;
