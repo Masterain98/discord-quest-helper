@@ -8,7 +8,7 @@ use std::process::Command;
 /// Copies the runner executable to the specified path with the target game name.
 /// Discord detects games by process name, so renaming the runner to match the
 /// target game's executable name allows us to simulate running that game.
-pub fn create_simulated_game(path: &str, executable_name: &str, _app_id: &str, app_handle: &tauri::AppHandle) -> Result<()> {
+pub fn create_simulated_game(path: &str, executable_name: &str, _app_id: &str, resource_dir: Option<PathBuf>) -> Result<()> {
     println!(
         "create_simulated_game called with path: '{}', exe: '{}'",
         path, executable_name
@@ -58,7 +58,7 @@ pub fn create_simulated_game(path: &str, executable_name: &str, _app_id: &str, a
     }
 
     // Get runner executable path
-    let runner_path = get_runner_exe_path(app_handle)?;
+    let runner_path = get_runner_exe_path(resource_dir)?;
 
     // Copy runner to target location with game's name
     println!("Copying runner from {:?} to {:?}", runner_path, target_exe);
@@ -77,10 +77,10 @@ pub fn create_simulated_game(path: &str, executable_name: &str, _app_id: &str, a
 
 /// Run the simulated game
 #[cfg(target_os = "windows")]
-pub fn run_simulated_game(name: &str, path: &str, executable_name: &str, _app_id: &str, app_handle: &tauri::AppHandle) -> Result<()> {
+pub fn run_simulated_game(name: &str, path: &str, executable_name: &str, _app_id: &str, resource_dir: Option<PathBuf>) -> Result<()> {
     let exe_to_run = PathBuf::from(path).join(executable_name);
 
-    if let Ok(runner_source) = get_runner_exe_path(app_handle) {
+    if let Ok(runner_source) = get_runner_exe_path(resource_dir) {
         if runner_source.exists() {
             println!("Attempting to update simulated game from {:?}", runner_source);
             match fs::copy(&runner_source, &exe_to_run) {
@@ -104,7 +104,7 @@ pub fn run_simulated_game(name: &str, path: &str, executable_name: &str, _app_id
 }
 
 #[cfg(target_os = "macos")]
-pub fn run_simulated_game(name: &str, path: &str, executable_name: &str, _app_id: &str, _app_handle: &tauri::AppHandle) -> Result<()> {
+pub fn run_simulated_game(name: &str, path: &str, executable_name: &str, _app_id: &str, _resource_dir: Option<PathBuf>) -> Result<()> {
     let exe_to_run = PathBuf::from(path).join(executable_name);
 
     if !exe_to_run.exists() {
@@ -132,7 +132,7 @@ pub fn run_simulated_game(
     _path: &str,
     _executable_name: &str,
     _app_id: &str,
-    _app_handle: &tauri::AppHandle,
+    _resource_dir: Option<PathBuf>,
 ) -> Result<()> {
     anyhow::bail!("Game simulation is only supported on Windows and macOS")
 }
@@ -214,8 +214,7 @@ fn get_exe_extension() -> &'static str {
 }
 
 /// Get runner executable path
-fn get_runner_exe_path(app_handle: &tauri::AppHandle) -> Result<PathBuf> {
-    use tauri::Manager;
+fn get_runner_exe_path(resource_dir: Option<PathBuf>) -> Result<PathBuf> {
     let ext = get_exe_extension();
     let runner_name = format!("discord-quest-runner{}", ext);
 
@@ -224,9 +223,9 @@ fn get_runner_exe_path(app_handle: &tauri::AppHandle) -> Result<PathBuf> {
     let mut paths_to_check = vec![];
 
     // Priority 1: Tauri Resource Directory (Production)
-    if let Ok(resource_dir) = app_handle.path().resource_dir() {
+    if let Some(resource_dir) = resource_dir {
         // In built app, resources are flattened or in specific structure
-        // Check `data/runner` first
+        // Check `data/<runner_name>` first
         paths_to_check.push(resource_dir.join("data").join(&runner_name));
         // Check root resource dir
         paths_to_check.push(resource_dir.join(&runner_name));
@@ -288,7 +287,7 @@ mod tests {
     #[ignore] // Requires actual file system operations
     fn test_create_simulated_game() {
         let temp_dir = env::temp_dir().join("discord-quest-test");
-        let result = create_simulated_game(temp_dir.to_str().unwrap(), "test-game.exe", "123456");
+        let result = create_simulated_game(temp_dir.to_str().unwrap(), "test-game.exe", "123456", None);
 
         match result {
             Ok(_) => {

@@ -370,7 +370,9 @@ async fn create_simulated_game(
     executable_name: String,
     app_id: String,
 ) -> Result<(), String> {
-    game_simulator::create_simulated_game(&path, &executable_name, &app_id, &app)
+    use tauri::Manager;
+    let resource_dir = app.path().resource_dir().ok();
+    game_simulator::create_simulated_game(&path, &executable_name, &app_id, resource_dir)
         .map_err(|e| format!("Failed to create simulated game: {}", e))
 }
 
@@ -383,7 +385,9 @@ async fn run_simulated_game(
     executable_name: String,
     app_id: String,
 ) -> Result<(), String> {
-    game_simulator::run_simulated_game(&name, &path, &executable_name, &app_id, &app)
+    use tauri::Manager;
+    let resource_dir = app.path().resource_dir().ok();
+    game_simulator::run_simulated_game(&name, &path, &executable_name, &app_id, resource_dir)
         .map_err(|e| format!("Failed to run simulated game: {}", e))
 }
 
