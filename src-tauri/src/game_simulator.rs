@@ -1,14 +1,40 @@
 use anyhow::{Context, Result};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+
+// Embed the runner binary at compile time
+#[cfg(target_os = "windows")]
+const RUNNER_BYTES: &[u8] = include_bytes!("../../src-runner/target/release/discord-quest-runner.exe");
+
+#[cfg(target_os = "macos")]
+const RUNNER_BYTES: &[u8] = include_bytes!("../../src-runner/target/release/discord-quest-runner");
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+const RUNNER_BYTES: &[u8] = &[];
+
+/// Write the embedded runner binary to the target path
+fn ensure_runner_bytes(target_path: &Path) -> Result<()> {
+    if RUNNER_BYTES.is_empty() {
+        anyhow::bail!("Runner binary not available for this platform");
+    }
+    fs::write(target_path, RUNNER_BYTES)
+        .context("Failed to write embedded runner binary")?;
+    // On macOS/Linux, set executable permission
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(target_path, fs::Permissions::from_mode(0o755))?;
+    }
+    Ok(())
+}
 
 /// Create a simulated game executable
 ///
 /// Copies the runner executable to the specified path with the target game name.
 /// Discord detects games by process name, so renaming the runner to match the
 /// target game's executable name allows us to simulate running that game.
-pub fn create_simulated_game(path: &str, executable_name: &str, _app_id: &str, resource_dir: Option<PathBuf>) -> Result<()> {
+pub fn create_simulated_game(path: &str, executable_name: &str, _app_id: &str) -> Result<()> {
     println!(
         "create_simulated_game called with path: '{}', exe: '{}'",
         path, executable_name
@@ -57,15 +83,11 @@ pub fn create_simulated_game(path: &str, executable_name: &str, _app_id: &str, r
         }
     }
 
-    // Get runner executable path
-    let runner_path = get_runner_exe_path(resource_dir)?;
-
-    // Copy runner to target location with game's name
-    println!("Copying runner from {:?} to {:?}", runner_path, target_exe);
-    fs::copy(&runner_path, &target_exe).map_err(|e| {
+    // Write embedded runner binary to target location with game's name
+    println!("Writing embedded runner to {:?}", target_exe);
+    ensure_runner_bytes(&target_exe).map_err(|e| {
         anyhow::anyhow!(
-            "Could not copy executable from {:?} to {:?}: {}",
-            runner_path,
+            "Could not write runner executable to {:?}: {}",
             target_exe,
             e
         )
@@ -77,17 +99,14 @@ pub fn create_simulated_game(path: &str, executable_name: &str, _app_id: &str, r
 
 /// Run the simulated game
 #[cfg(target_os = "windows")]
-pub fn run_simulated_game(name: &str, path: &str, executable_name: &str, _app_id: &str, resource_dir: Option<PathBuf>) -> Result<()> {
+pub fn run_simulated_game(name: &str, path: &str, executable_name: &str, _app_id: &str) -> Result<()> {
     let exe_to_run = PathBuf::from(path).join(executable_name);
 
-    if let Ok(runner_source) = get_runner_exe_path(resource_dir) {
-        if runner_source.exists() {
-            println!("Attempting to update simulated game from {:?}", runner_source);
-            match fs::copy(&runner_source, &exe_to_run) {
-                Ok(_) => println!("Successfully updated simulated game executable"),
-                Err(e) => println!("Could not update simulated game executable (might be running?): {}", e),
-            }
-        }
+    // Always try to update the runner binary from the embedded bytes
+    println!("Attempting to update simulated game at {:?}", exe_to_run);
+    match ensure_runner_bytes(&exe_to_run) {
+        Ok(_) => println!("Successfully updated simulated game executable"),
+        Err(e) => println!("Could not update simulated game executable (might be running?): {}", e),
     }
 
     if !exe_to_run.exists() {
@@ -104,7 +123,7 @@ pub fn run_simulated_game(name: &str, path: &str, executable_name: &str, _app_id
 }
 
 #[cfg(target_os = "macos")]
-pub fn run_simulated_game(name: &str, path: &str, executable_name: &str, _app_id: &str, _resource_dir: Option<PathBuf>) -> Result<()> {
+pub fn run_simulated_game(name: &str, path: &str, executable_name: &str, _app_id: &str) -> Result<()> {
     let exe_to_run = PathBuf::from(path).join(executable_name);
 
     if !exe_to_run.exists() {
@@ -132,7 +151,6 @@ pub fn run_simulated_game(
     _path: &str,
     _executable_name: &str,
     _app_id: &str,
-    _resource_dir: Option<PathBuf>,
 ) -> Result<()> {
     anyhow::bail!("Game simulation is only supported on Windows and macOS")
 }
@@ -202,82 +220,6 @@ pub fn stop_simulated_game(_exec_name: &str) -> Result<()> {
     anyhow::bail!("Game simulation is only supported on Windows and macOS")
 }
 
-/// Get the platform-specific executable extension
-#[cfg(target_os = "windows")]
-fn get_exe_extension() -> &'static str {
-    ".exe"
-}
-
-#[cfg(not(target_os = "windows"))]
-fn get_exe_extension() -> &'static str {
-    ""
-}
-
-/// Get runner executable path
-fn get_runner_exe_path(resource_dir: Option<PathBuf>) -> Result<PathBuf> {
-    let ext = get_exe_extension();
-    let runner_name = format!("discord-quest-runner{}", ext);
-
-    println!("Searching for runner executable: {}", runner_name);
-
-    let mut paths_to_check = vec![];
-
-    // Priority 1: Tauri Resource Directory (Production)
-    if let Some(resource_dir) = resource_dir {
-        // In built app, resources are flattened or in specific structure
-        // Check `data/<runner_name>` first
-        paths_to_check.push(resource_dir.join("data").join(&runner_name));
-        // Check root resource dir
-        paths_to_check.push(resource_dir.join(&runner_name));
-    }
-
-    // Priority 2: Dev environment paths
-    paths_to_check.push(PathBuf::from("data").join(&runner_name));
-    paths_to_check.push(PathBuf::from("../src-tauri/data").join(&runner_name));
-    
-    paths_to_check.push(PathBuf::from("../src-runner/target/release").join(&runner_name));
-    paths_to_check.push(PathBuf::from("src-runner/target/release").join(&runner_name));
-    paths_to_check.push(PathBuf::from("../target/release").join(&runner_name));
-
-    if let Ok(current_exe) = std::env::current_exe() {
-        if let Some(parent) = current_exe.parent() {
-            paths_to_check.push(parent.join("data").join(&runner_name));
-            
-            paths_to_check.push(parent.join(&runner_name));
-
-            paths_to_check.push(parent.join("resources").join("data").join(&runner_name));
-            
-            #[cfg(target_os = "macos")]
-            if let Some(parent_parent) = parent.parent() {
-                 paths_to_check.push(parent_parent.join("Resources").join("data").join(&runner_name));
-                 paths_to_check.push(parent_parent.join("Resources").join(&runner_name));
-            }
-        }
-    }
-
-    for path in &paths_to_check {
-        if path.exists() {
-            if let Ok(abs_path) = fs::canonicalize(path) {
-                println!("Found runner at: {:?}", abs_path);
-                return Ok(abs_path);
-            }
-            println!("Found runner at: {:?}", path);
-            return Ok(path.clone());
-        }
-    }
-    
-    let checked_paths: Vec<String> = paths_to_check.iter()
-        .map(|p| p.to_string_lossy().to_string())
-        .collect();
-    
-    println!("Runner not found. Checked paths: {:#?}", checked_paths);
-
-    anyhow::bail!(
-        "Runner executable not found.\nPlease ensure src-runner is built and discord-quest-runner{} exists in the 'data' directory relative to the application.",
-        ext
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -287,7 +229,7 @@ mod tests {
     #[ignore] // Requires actual file system operations
     fn test_create_simulated_game() {
         let temp_dir = env::temp_dir().join("discord-quest-test");
-        let result = create_simulated_game(temp_dir.to_str().unwrap(), "test-game.exe", "123456", None);
+        let result = create_simulated_game(temp_dir.to_str().unwrap(), "test-game.exe", "123456");
 
         match result {
             Ok(_) => {

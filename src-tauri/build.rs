@@ -17,5 +17,8 @@ fn main() {
         );
     }
 
+    // Tell Cargo to re-run build script if runner changes
+    println!("cargo:rerun-if-changed={}", runner_path);
+
     tauri_build::build()
 }
