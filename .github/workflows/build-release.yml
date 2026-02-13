@@ -90,15 +90,8 @@ jobs:
         with:
           args: ${{ matrix.args }}
       
-      # Copy runner to release directory for Windows
-      - name: Copy runner to release directory (Windows)
-        if: matrix.platform == 'windows-latest'
-        shell: bash
-        run: |
-          mkdir -p src-tauri/target/release/data
-          cp ./src-tauri/data/discord-quest-runner.exe ./src-tauri/target/release/data/
-          
       # Upload Windows artifact (portable)
+      # Runner binary is embedded in the main executable via include_bytes!
       - name: Upload Windows artifact (portable)
         if: matrix.platform == 'windows-latest'
         uses: actions/upload-artifact@v4
@@ -106,7 +99,6 @@ jobs:
           name: tauri-win-portable
           path: |
             src-tauri/target/release/discord-quest-helper.exe
-            src-tauri/target/release/data/
 
       # Upload Windows artifact (MSI installer)
       - name: Upload Windows artifact (MSI)

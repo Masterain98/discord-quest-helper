@@ -75,11 +75,9 @@ if (Test-Path $TempDir) {
 # Create directory structure
 $PackageDir = Join-Path $TempDir "discord-quest-helper"
 New-Item -ItemType Directory -Force -Path $PackageDir | Out-Null
-New-Item -ItemType Directory -Force -Path (Join-Path $PackageDir "data") | Out-Null
 
-# Copy files
+# Copy files (runner is embedded in the main executable via include_bytes!)
 $MainExe = Join-Path $ReleaseDir "discord-quest-helper.exe"
-$DataDir = Join-Path $ReleaseDir "data"
 
 if (-not (Test-Path $MainExe)) {
     throw "Main executable not found: $MainExe"
@@ -87,11 +85,6 @@ if (-not (Test-Path $MainExe)) {
 
 Write-Host "  Copying discord-quest-helper.exe..." -ForegroundColor DarkGray
 Copy-Item $MainExe -Destination $PackageDir
-
-if (Test-Path $DataDir) {
-    Write-Host "  Copying data directory..." -ForegroundColor DarkGray
-    Copy-Item -Path (Join-Path $DataDir "*") -Destination (Join-Path $PackageDir "data") -Recurse
-}
 
 Write-Host "  Package structure prepared." -ForegroundColor Green
 
