@@ -635,6 +635,7 @@ pub fn run() {
             force_video_progress,
             export_logs,
             get_debug_info,
+            get_runner_info,
             check_cdp_status,
             fetch_super_properties_cdp,
             create_discord_debug_shortcut,
@@ -685,6 +686,12 @@ async fn export_logs() -> Result<String, String> {
 async fn get_debug_info() -> Result<super_properties::DebugInfo, String> {
     let manager = SUPER_PROPERTIES_MANAGER.lock().map_err(|e| e.to_string())?;
     Ok(manager.get_debug_info())
+}
+
+/// Get embedded runner version information
+#[tauri::command]
+async fn get_runner_info() -> game_simulator::RunnerInfo {
+    game_simulator::get_runner_info()
 }
 
 /// Check CDP status

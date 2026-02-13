@@ -198,6 +198,13 @@ export default {
         session_ids_desc: "每次應用程式啟動時產生一次",
         super_properties_desc: "傳送至 Discord API 的請求標頭屬性",
         copy: "複製",
-        no_data: "暫無偵錯資料"
+        no_data: "暫無偵錯資料",
+        runner_title: "內建 Runner",
+        runner_desc: "應用程式內嵌的遊戲模擬執行檔",
+        runner_ready: "就緒",
+        runner_not_built: "未建置",
+        runner_commit: "提交",
+        runner_build_time: "建置時間",
+        runner_size: "大小"
     }
 }

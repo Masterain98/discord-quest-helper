@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -14,6 +15,34 @@ const RUNNER_BYTES: &[u8] = include_bytes!("../data/discord-quest-runner");
 
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
 const RUNNER_BYTES: &[u8] = &[];
+
+/// Embedded runner version info (commit hash + build timestamp).
+/// Written by build-runner.js, placeholder created by build.rs if not built yet.
+const RUNNER_VERSION_INFO: &str = include_str!("../data/runner-version.txt");
+
+/// Runner version information exposed to the frontend
+#[derive(Debug, Clone, Serialize)]
+pub struct RunnerInfo {
+    pub embedded: bool,
+    pub commit_hash: String,
+    pub build_time: String,
+    pub size_bytes: usize,
+}
+
+/// Get information about the embedded runner binary
+pub fn get_runner_info() -> RunnerInfo {
+    let lines: Vec<&str> = RUNNER_VERSION_INFO.lines().collect();
+    let commit_hash = lines.first().unwrap_or(&"unknown").to_string();
+    let build_time = lines.get(1).unwrap_or(&"").to_string();
+    let embedded = !RUNNER_BYTES.is_empty() && commit_hash != "not-built";
+
+    RunnerInfo {
+        embedded,
+        commit_hash: if embedded { commit_hash } else { String::new() },
+        build_time: if embedded { build_time } else { String::new() },
+        size_bytes: RUNNER_BYTES.len(),
+    }
+}
 
 /// Write the embedded runner binary to the target path
 fn ensure_runner_bytes(target_path: &Path) -> Result<()> {

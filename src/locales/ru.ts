@@ -198,6 +198,13 @@ export default {
         session_ids_desc: "Генерируется один раз при запуске приложения",
         super_properties_desc: "Свойства заголовка запроса, отправляемые в Discord API",
         copy: "Копировать",
-        no_data: "Нет отладочных данных"
+        no_data: "Нет отладочных данных",
+        runner_title: "Встроенный Runner",
+        runner_desc: "Исполняемый файл симуляции игры, встроенный в приложение",
+        runner_ready: "Готов",
+        runner_not_built: "Не собран",
+        runner_commit: "Коммит",
+        runner_build_time: "Время сборки",
+        runner_size: "Размер"
     }
 }

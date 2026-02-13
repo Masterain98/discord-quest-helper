@@ -31,8 +31,15 @@ fn main() {
         fs::write(&data_runner_path, b"").expect("Failed to create runner placeholder");
     }
 
+    // Ensure runner-version.txt exists (placeholder if not built yet)
+    let version_info_path = data_dir.join("runner-version.txt");
+    if !version_info_path.exists() {
+        fs::write(&version_info_path, "not-built\n\n").expect("Failed to create runner-version.txt placeholder");
+    }
+
     // Tell Cargo to re-run build script if the data copy changes
     println!("cargo:rerun-if-changed=data/{}", runner_exe_name);
+    println!("cargo:rerun-if-changed=data/runner-version.txt");
 
     tauri_build::build()
 }

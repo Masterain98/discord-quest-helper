@@ -199,6 +199,13 @@ export default {
         session_ids_desc: "Generated once per application launch",
         super_properties_desc: "Request header properties sent to Discord API",
         copy: "Copy",
-        no_data: "No debug data available"
+        no_data: "No debug data available",
+        runner_title: "Embedded Runner",
+        runner_desc: "Game simulation runner binary embedded in the application",
+        runner_ready: "Ready",
+        runner_not_built: "Not Built",
+        runner_commit: "Commit",
+        runner_build_time: "Built",
+        runner_size: "Size"
     }
 }

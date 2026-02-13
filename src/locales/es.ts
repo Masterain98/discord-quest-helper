@@ -198,6 +198,13 @@ export default {
         session_ids_desc: "Generado una vez al iniciar la aplicación",
         super_properties_desc: "Propiedades del encabezado de solicitud enviadas a la API de Discord",
         copy: "Copiar",
-        no_data: "Sin datos de depuración"
+        no_data: "Sin datos de depuración",
+        runner_title: "Runner Integrado",
+        runner_desc: "Ejecutable de simulación de juego integrado en la aplicación",
+        runner_ready: "Listo",
+        runner_not_built: "No compilado",
+        runner_commit: "Commit",
+        runner_build_time: "Compilación",
+        runner_size: "Tamaño"
     }
 }
