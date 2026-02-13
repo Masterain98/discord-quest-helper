@@ -3,12 +3,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-// Embed the runner binary at compile time
+// Embed the runner binary at compile time from the data/ directory.
+// build.rs ensures an empty placeholder exists if the runner hasn't been built yet,
+// so this never causes a hard compile-time failure on a fresh clone or `cargo check`.
 #[cfg(target_os = "windows")]
-const RUNNER_BYTES: &[u8] = include_bytes!("../../src-runner/target/release/discord-quest-runner.exe");
+const RUNNER_BYTES: &[u8] = include_bytes!("../data/discord-quest-runner.exe");
 
 #[cfg(target_os = "macos")]
-const RUNNER_BYTES: &[u8] = include_bytes!("../../src-runner/target/release/discord-quest-runner");
+const RUNNER_BYTES: &[u8] = include_bytes!("../data/discord-quest-runner");
 
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
 const RUNNER_BYTES: &[u8] = &[];
@@ -31,7 +33,7 @@ fn ensure_runner_bytes(target_path: &Path) -> Result<()> {
 
 /// Create a simulated game executable
 ///
-/// Copies the runner executable to the specified path with the target game name.
+/// Writes the embedded runner executable to the specified path with the target game name.
 /// Discord detects games by process name, so renaming the runner to match the
 /// target game's executable name allows us to simulate running that game.
 pub fn create_simulated_game(path: &str, executable_name: &str, _app_id: &str) -> Result<()> {
