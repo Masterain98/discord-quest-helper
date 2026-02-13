@@ -14,5 +14,5 @@ fn main() {
     };
 
     println!("cargo:rustc-env=RUNNER_COMMIT_HASH={}", commit_hash);
-    println!("cargo:rerun-if-changed=.git/HEAD");
+    // No rerun-if-changed: build script runs every time to ensure commit hash is always current
 }

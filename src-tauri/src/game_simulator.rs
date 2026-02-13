@@ -34,11 +34,11 @@ pub fn get_runner_info() -> RunnerInfo {
     let lines: Vec<&str> = RUNNER_VERSION_INFO.lines().collect();
     let commit_hash = lines.first().unwrap_or(&"unknown").to_string();
     let build_time = lines.get(1).unwrap_or(&"").to_string();
-    let embedded = !RUNNER_BYTES.is_empty() && commit_hash != "not-built";
+    let embedded = !RUNNER_BYTES.is_empty();
 
     RunnerInfo {
         embedded,
-        commit_hash: if embedded { commit_hash } else { String::new() },
+        commit_hash: if commit_hash != "not-built" { commit_hash } else { "unknown".to_string() },
         build_time: if embedded { build_time } else { String::new() },
         size_bytes: RUNNER_BYTES.len(),
     }
@@ -47,7 +47,11 @@ pub fn get_runner_info() -> RunnerInfo {
 /// Write the embedded runner binary to the target path
 fn ensure_runner_bytes(target_path: &Path) -> Result<()> {
     if RUNNER_BYTES.is_empty() {
-        anyhow::bail!("Runner binary not available for this platform");
+        if cfg!(any(target_os = "windows", target_os = "macos")) {
+            anyhow::bail!("Runner binary not embedded (run `npm run build:runner`)");
+        } else {
+            anyhow::bail!("Runner binary not available for this platform");
+        }
     }
     fs::write(target_path, RUNNER_BYTES)
         .context("Failed to write embedded runner binary")?;
