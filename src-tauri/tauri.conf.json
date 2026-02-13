@@ -29,9 +29,6 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "resources": {
-      "data/*": "data/"
-    },
     "icon": [
       "icons/icon.ico"
     ],

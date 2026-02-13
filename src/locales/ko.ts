@@ -198,6 +198,13 @@ export default {
         session_ids_desc: "앱 실행 시 한 번 생성",
         super_properties_desc: "Discord API로 전송되는 요청 헤더 속성",
         copy: "복사",
-        no_data: "디버그 데이터 없음"
+        no_data: "디버그 데이터 없음",
+        runner_title: "내장 러너",
+        runner_desc: "앱에 내장된 게임 시뮬레이션 실행 파일",
+        runner_ready: "준비 완료",
+        runner_not_built: "빌드 안 됨",
+        runner_commit: "커밋",
+        runner_build_time: "빌드 시간",
+        runner_size: "크기"
     }
 }

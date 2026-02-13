@@ -1,16 +1,17 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { getDebugInfo, type DebugInfo } from '@/api/tauri'
+import { getDebugInfo, getRunnerInfo, type DebugInfo, type RunnerInfo } from '@/api/tauri'
 import { useAuthStore } from '@/stores/auth'
 import { useI18n } from 'vue-i18n'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { RefreshCw, Copy, Check, Key } from 'lucide-vue-next'
+import { RefreshCw, Copy, Check, Key, Package } from 'lucide-vue-next'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
 
 const debugInfo = ref<DebugInfo | null>(null)
+const runnerInfo = ref<RunnerInfo | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
 const copied = ref<string | null>(null)
@@ -19,7 +20,9 @@ async function loadDebugInfo() {
   loading.value = true
   error.value = null
   try {
-    debugInfo.value = await getDebugInfo()
+    const [debug, runner] = await Promise.all([getDebugInfo(), getRunnerInfo()])
+    debugInfo.value = debug
+    runnerInfo.value = runner
   } catch (e) {
     error.value = String(e)
   } finally {
@@ -62,6 +65,47 @@ onMounted(() => {
     </div>
 
     <div v-if="debugInfo" class="grid gap-4">
+      <!-- Runner Info -->
+      <Card>
+        <CardHeader>
+          <div class="flex items-center justify-between">
+            <div>
+              <CardTitle class="flex items-center gap-2">
+                <Package class="w-5 h-5" />
+                {{ t('debug.runner_title') }}
+              </CardTitle>
+              <CardDescription>{{ t('debug.runner_desc') }}</CardDescription>
+            </div>
+            <span 
+              :class="[
+                'px-3 py-1 text-xs font-medium rounded-full',
+                runnerInfo?.embedded 
+                  ? 'bg-green-500/10 text-green-500' 
+                  : 'bg-yellow-500/10 text-yellow-500'
+              ]"
+            >
+              {{ runnerInfo?.embedded ? t('debug.runner_ready') : t('debug.runner_not_built') }}
+            </span>
+          </div>
+        </CardHeader>
+        <CardContent v-if="runnerInfo">
+          <div class="grid grid-cols-2 gap-3 text-sm">
+            <div class="p-2 bg-muted rounded">
+              <span class="text-muted-foreground">{{ t('debug.runner_commit') }}:</span>
+              <span class="font-mono ml-1">{{ runnerInfo.commit_hash || 'N/A' }}</span>
+            </div>
+            <div class="p-2 bg-muted rounded">
+              <span class="text-muted-foreground">{{ t('debug.runner_build_time') }}:</span>
+              <span class="font-mono ml-1">{{ runnerInfo.build_time || 'N/A' }}</span>
+            </div>
+            <div class="p-2 bg-muted rounded col-span-2">
+              <span class="text-muted-foreground">{{ t('debug.runner_size') }}:</span>
+              <span class="font-mono ml-1">{{ runnerInfo.size_bytes > 0 ? (runnerInfo.size_bytes / 1024).toFixed(1) + ' KB' : 'N/A' }}</span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       <!-- Token Copy (Developer Only) -->
       <Card v-if="authStore.token">
         <CardHeader>

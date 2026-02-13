@@ -1,21 +1,45 @@
+use std::fs;
 use std::path::Path;
 
 fn main() {
-    // Check if runner executable exists for the current platform
-    let runner_path = if cfg!(target_os = "windows") {
-        "../src-runner/target/release/discord-quest-runner.exe"
+    // Ensure the data/ directory exists
+    let data_dir = Path::new("data");
+    if !data_dir.exists() {
+        fs::create_dir_all(data_dir).expect("Failed to create data directory");
+    }
+
+    // Determine the runner binary name for the current platform
+    let runner_exe_name = if cfg!(target_os = "windows") {
+        "discord-quest-runner.exe"
     } else {
-        "../src-runner/target/release/discord-quest-runner"
+        "discord-quest-runner"
     };
 
-    // Only warn if the runner doesn't exist - don't fail the build
-    // This allows `cargo check` and IDE features to work without building runner first
-    if !Path::new(runner_path).exists() {
+    let data_runner_path = data_dir.join(runner_exe_name);
+
+    // If the runner binary hasn't been copied to data/ yet, create an empty
+    // placeholder so that include_bytes! in game_simulator.rs always compiles.
+    // This allows `cargo check`, rust-analyzer, and fresh-clone builds to
+    // succeed. The empty bytes are handled gracefully at runtime.
+    if !data_runner_path.exists() {
         println!(
-            "cargo:warning=Runner executable not found at {}. Build src-runner first with: cd src-runner && cargo build --release",
-            runner_path
+            "cargo:warning=Runner executable not found at data/{}. \
+             Build src-runner first with: cd src-runner && cargo build --release, \
+             then run the build-runner script to copy it to src-tauri/data/.",
+            runner_exe_name
         );
+        fs::write(&data_runner_path, b"").expect("Failed to create runner placeholder");
     }
+
+    // Ensure runner-version.txt exists (placeholder if not built yet)
+    let version_info_path = data_dir.join("runner-version.txt");
+    if !version_info_path.exists() {
+        fs::write(&version_info_path, "not-built\n\n").expect("Failed to create runner-version.txt placeholder");
+    }
+
+    // Tell Cargo to re-run build script if the data copy changes
+    println!("cargo:rerun-if-changed=data/{}", runner_exe_name);
+    println!("cargo:rerun-if-changed=data/runner-version.txt");
 
     tauri_build::build()
 }

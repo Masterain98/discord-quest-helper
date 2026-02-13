@@ -198,6 +198,13 @@ export default {
         session_ids_desc: "アプリケーション起動時に一度生成",
         super_properties_desc: "Discord API に送信されるリクエストヘッダーのプロパティ",
         copy: "コピー",
-        no_data: "デバッグデータがありません"
+        no_data: "デバッグデータがありません",
+        runner_title: "内蔵ランナー",
+        runner_desc: "アプリケーションに埋め込まれたゲームシミュレーション実行ファイル",
+        runner_ready: "準備完了",
+        runner_not_built: "未ビルド",
+        runner_commit: "コミット",
+        runner_build_time: "ビルド日時",
+        runner_size: "サイズ"
     }
 }

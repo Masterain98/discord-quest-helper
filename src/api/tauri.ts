@@ -231,6 +231,18 @@ export async function getDebugInfo(): Promise<DebugInfo> {
   return await invoke('get_debug_info')
 }
 
+// Runner information
+export interface RunnerInfo {
+  embedded: boolean
+  commit_hash: string
+  build_time: string
+  size_bytes: number
+}
+
+export async function getRunnerInfo(): Promise<RunnerInfo> {
+  return await invoke('get_runner_info')
+}
+
 // CDP (Chrome DevTools Protocol) types and commands
 export interface CdpStatus {
   available: boolean

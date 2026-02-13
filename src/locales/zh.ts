@@ -199,6 +199,13 @@ export default {
         session_ids_desc: "每次应用启动时生成一次",
         super_properties_desc: "发送到 Discord API 的请求头属性",
         copy: "复制",
-        no_data: "暂无调试数据"
+        no_data: "暂无调试数据",
+        runner_title: "内置 Runner",
+        runner_desc: "应用内嵌的游戏模拟运行程序",
+        runner_ready: "就绪",
+        runner_not_built: "未构建",
+        runner_commit: "提交",
+        runner_build_time: "构建时间",
+        runner_size: "大小"
     }
 }
