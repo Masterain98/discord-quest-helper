@@ -1,7 +1,9 @@
+# ⚠ Please Read This 0.6.0 Release Notes
 ## What's New
 
 ### 🏗 Performance & Architecture
 - **Embedded Runner Binary**: Runner is now compiled directly into the application, eliminating runtime path resolution failures and improving startup reliability.
+    - **If you were a Windows portable version user, you are now free to delete data folder where old runner program was saved.**
 - **Enhanced Runner Visibility**: Runner build metadata (commit hash, build time, size) is now exposed and displayed in the Debug UI for better transparency.
 - **Centralized Request Builder**: Unified HTTP request handling for more consistent and maintainable API interactions.
 
@@ -12,3 +14,36 @@
 ### 🎨 User Experience
 - **UX Optimization**: Refined user interface interactions and improved overall responsiveness.
 - **Better Debug Information**: Runner information panel in Debug view shows embedded status, version, and build details.
+
+### Misc
+- Add non-game detectable list into Game Simulator, so now you can simulate `discord-quest-helper.exe` in Discord Quest Helper.
+![](https://github.com/user-attachments/assets/7ef5378c-5c4c-486a-9ebb-058cbe632e82)
+
+## 🔐 Security & Anti-Detection Enhancements
+
+Thanks to [community feedback](https://github.com/Masterain98/discord-quest-helper/issues/38), I learned that Discord has identified this tool's processes. While no user reports of account issues have been received, I've significantly enhanced the tool's stealth capabilities since v0.5.0 to reduce detection risks:
+
+### Key Security Improvements
+
+1. **Randomized Process Names**: The main application now uses fully randomized process names to avoid detection of `discord-quest-helper.exe`.
+
+2. **Stealth Runner Binary**: The game runner has been stripped of all distinguishing characteristics and now mimics genuine game process signatures as closely as possible.
+
+3. **Embedded Runner Integration**: The runner is now compiled directly into the main executable, reducing the footprint of detectable artifacts.
+
+4. **Chrome DevTools Protocol (CDP) Integration**: When Discord is launched with CDP enabled, this tool establishes communication with the Discord client to extract authentic client metadata.
+   - You can create a CDP-enabled Discord shortcut directly from the Settings page
+   - ⚠️ **Warning**: Other applications can also access your Discord client via CDP. Ensure your system is in a secure environment.
+
+5. **Multi-Source Client Metadata**: The application now fetches Discord's Build Number from multiple sources to better mimic legitimate client behavior:
+   - Discord CDP (if available)
+   - Discord web configuration files
+   - Built-in fallback version (updated with each release, but not pushed as standalone updates)
+
+6. **Removed High-Speed Task Completion**: The dangerous high-speed completion multiplier setting has been removed from the UI. Advanced users who need this feature can modify the Tauri source code directly.
+
+### Disclaimer
+
+These measures enhance security but cannot guarantee complete undetectability. If you have suggestions or improvements, feel free to open an issue or submit a pull request.
+
+I'm currently on vacation without any macOS device, so I haven't been able to test the tool recently on MacOS.
