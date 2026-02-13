@@ -14,7 +14,7 @@ Complete Discord video, stream, and game quests automatically while you focus on
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows%20|%20macOS-blue.svg)
-![Tauri](https://img.shields.io/badge/tauri-2.0-blue.svg)
+![Tauri](https://img.shields.io/badge/tauri-2-blue.svg)
 ![Vue](https://img.shields.io/badge/vue-3.5-green.svg)
 ![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)
 ![GitHub Release](https://img.shields.io/github/v/release/Masterain98/discord-quest-helper?label=latest%20release&color=41b883)
@@ -29,11 +29,11 @@ Complete Discord video, stream, and game quests automatically while you focus on
 ### Download & Run
 
 **Windows:**
-1. Go to [GitHub Releases](https://github.com/Masterain98/discord-quest-helper/releases) and download the latest `.zip` file
-2. Extract the archive to any folder
-3. Run `Discord Quest Helper.exe`
+1. Go to [GitHub Releases](https://github.com/Masterain98/discord-quest-helper/releases) and download:
+   - **Portable**: `.zip` file — extract to any folder and run `discord-quest-helper.exe`
+   - **Installer**: `.msi` file — double-click to install
 
-**macOS:**
+**macOS (Apple Silicon):**
 1. Go to [GitHub Releases](https://github.com/Masterain98/discord-quest-helper/releases) and download the latest `.dmg` file
 2. Open the `.dmg` file and drag the app to your Applications folder
 3. Run the following command in Terminal to remove the quarantine attribute:
@@ -62,7 +62,7 @@ Complete Discord video, stream, and game quests automatically while you focus on
 - 📺 **Video & Stream Automation** — Click once, progress submits automatically in the background
 - 🔍 **Advanced Quest Filter** — Filter by reward type, completion status, and more
 - 👥 **Multi-Account Support** — Manage multiple Discord accounts seamlessly
-- 🌏 **Multi-language** — English, Chinese, Japanese, Korean, Russian, Spanish
+- 🌏 **Multi-language** — English, Chinese (Simplified & Traditional), Japanese, Korean, Russian, Spanish
 
 ## 📸 Screenshots
 
@@ -85,18 +85,23 @@ Complete Discord video, stream, and game quests automatically while you focus on
 │                      Discord Quest Helper                        │
 ├─────────────────────────────────────────────────────────────────┤
 │  Vue.js Frontend (Vite dev server :1420)                         │
-│  ├─ Views: Home, GameSimulator, Settings                        │
-│  ├─ Stores: auth.ts, quests.ts (Pinia)                          │
+│  ├─ Views: Home, GameSimulator, Settings, Debug                 │
+│  ├─ Stores: auth.ts, quests.ts, version.ts (Pinia)              │
 │  └─ API: tauri.ts (IPC bridge)                                   │
 ├────────────────────────┬────────────────────────────────────────┤
 │     Tauri IPC          │                                         │
 ├────────────────────────┴────────────────────────────────────────┤
-│  Rust Backend (Tauri 2.0)                                        │
+│  Rust Backend (Tauri 2)                                          │
 │  ├─ token_extractor.rs   - LevelDB + DPAPI + AES-GCM             │
 │  ├─ cdp_client.rs        - Chrome DevTools Protocol integration  │
 │  ├─ discord_api.rs       - HTTP client & endpoints               │
+│  ├─ discord_gateway.rs   - WebSocket gateway connection          │
 │  ├─ quest_completer.rs   - Video/stream automation               │
-│  └─ game_simulator.rs    - Process creation & management         │
+│  ├─ game_simulator.rs    - Process creation & management         │
+│  ├─ super_properties.rs  - Discord client fingerprinting         │
+│  ├─ stealth.rs           - Stealth mode for anti-detection       │
+│  ├─ logger.rs            - Structured logging                    │
+│  └─ runner.rs            - Game runner management                │
 ├─────────────────────────────────────────────────────────────────┤
 │  Game Runner (src-runner) - Minimal Windows exe (~140KB)         │
 └─────────────────────────────────────────────────────────────────┘
