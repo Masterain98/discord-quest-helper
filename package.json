@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@tauri-apps/plugin-fs": "^2.4.5",
-    "@tauri-apps/plugin-shell": "^2.3.4",
+    "@tauri-apps/plugin-shell": "^2.3.5",
     "@tauri-apps/plugin-dialog": "^2",
     "@vueuse/core": "^14.1.0",
     "class-variance-authority": "^0.7.1",
@@ -27,12 +27,12 @@
     "tailwindcss-animate": "^1.0.7",
     "vue": "^3.5.26",
     "vue-i18n": "^11.2.8",
-    "vue-router": "^4.2.5"
+    "vue-router": "^5.0.2"
   },
   "devDependencies": {
-    "@tauri-apps/api": "^2.0.0",
-    "@tauri-apps/cli": "^2.0.0",
-    "@vitejs/plugin-vue": "^6.0.3",
+    "@tauri-apps/api": "^2.10.1",
+    "@tauri-apps/cli": "^2.10.0",
+    "@vitejs/plugin-vue": "^6.0.4",
     "autoprefixer": "^10.4.16",
     "postcss": "^8.4.32",
     "tailwindcss": "^3.4.0",
