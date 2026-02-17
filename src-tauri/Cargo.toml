@@ -23,9 +23,9 @@ reqwest = { version = "0.13", default-features = false, features = ["native-tls"
 regex = "1"
 base64 = "0.22"
 aes-gcm = "0.10"
-rand = "0.9"
+rand = "0.10"
 anyhow = "1"
-ctrlc = "3.4"
+ctrlc = "3.5"
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 tokio-tungstenite = { version = "0.28", features = ["native-tls"] }

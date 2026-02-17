@@ -3,6 +3,8 @@ name: 'publish'
 on:
   workflow_dispatch:
   push:
+    branches:
+      - main
     paths:
       - 'public/version.txt'
 
