@@ -172,6 +172,7 @@ export default {
         stop: "停止",
         stopping: "停止中...",
         exe_count: "{count} 個執行檔",
+        no_exe_warning: "此應用程式沒有已知的執行檔，無法進行模擬。",
         showing_top: "顯示前 {count} 個遊戲。搜尋以查找更多。"
     },
     account: {

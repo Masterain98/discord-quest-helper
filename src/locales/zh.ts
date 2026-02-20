@@ -173,6 +173,7 @@ export default {
         stop: "停止",
         stopping: "停止中...",
         exe_count: "{count} 个可执行文件",
+        no_exe_warning: "此应用没有已知的可执行文件，无法进行模拟。",
         showing_top: "显示前 {count} 个游戏。搜索以查找更多。"
     },
     account: {

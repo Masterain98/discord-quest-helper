@@ -127,7 +127,7 @@ onMounted(async () => {
                  {{ game.type_name || 'Game' }}
                </Badge>
             </div>
-            <div class="text-xs text-muted-foreground font-normal">
+            <div class="text-xs font-normal" :class="game.executables.filter(e => e.os === 'win32').length === 0 ? 'text-yellow-500' : 'text-muted-foreground'">
               {{ t('game_sim.exe_count', { count: game.executables.filter(e => e.os === 'win32').length }) }}
             </div>
           </div>

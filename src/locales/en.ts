@@ -173,6 +173,7 @@ export default {
         stop: "Stop",
         stopping: "Stopping...",
         exe_count: "{count} executables",
+        no_exe_warning: "This application has no known executables and cannot be simulated.",
         showing_top: "Showing top {count} games. Search to find more."
     },
     account: {

@@ -1,6 +1,6 @@
 use crate::discord_api::DiscordApiClient;
 use anyhow::Result;
-use rand::Rng;
+use rand::RngExt;
 use std::time::Duration;
 use tauri::Emitter;
 use tokio::time::sleep;
@@ -208,7 +208,7 @@ pub async fn complete_game_quest_via_heartbeat(
 
 #[allow(dead_code)]
 fn generate_stream_key() -> String {
-    use rand::Rng;
+    use rand::RngExt;
     use rand::distr::Alphanumeric;
 
     let random_string: String = rand::rng()

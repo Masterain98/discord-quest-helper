@@ -172,6 +172,7 @@ export default {
         stop: "중지",
         stopping: "중지 중...",
         exe_count: "{count}개의 실행 파일",
+        no_exe_warning: "이 애플리케이션에는 알려진 실행 파일이 없어 시뮬레이션할 수 없습니다.",
         showing_top: "상위 {count}개 게임 표시 중. 검색하여 더 찾기."
     },
     account: {

@@ -22,7 +22,7 @@ static IS_STEALTH_MODE: AtomicBool = AtomicBool::new(false);
 
 /// Generate random hexadecimal string
 fn generate_random_suffix(length: usize) -> String {
-    use rand::Rng;
+    use rand::RngExt;
     let mut rng = rand::rng();
     (0..length)
         .map(|_| format!("{:x}", rng.random::<u8>() % 16))
@@ -48,7 +48,7 @@ pub fn is_stealth_mode() -> bool {
 
 /// Generate a random window title that looks like a system process
 pub fn generate_stealth_window_title() -> String {
-    use rand::Rng;
+    use rand::RngExt;
     
     // Pool of system-like window title patterns
     let patterns = [

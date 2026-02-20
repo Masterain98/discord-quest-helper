@@ -172,6 +172,7 @@ export default {
         stop: "Detener",
         stopping: "Deteniendo...",
         exe_count: "{count} ejecutables",
+        no_exe_warning: "Esta aplicación no tiene ejecutables conocidos y no se puede simular.",
         showing_top: "Mostrando los {count} mejores juegos. Busca para encontrar más."
     },
     account: {

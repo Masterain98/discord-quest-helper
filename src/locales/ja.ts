@@ -172,6 +172,7 @@ export default {
         stop: "停止",
         stopping: "停止中...",
         exe_count: "{count}個の実行ファイル",
+        no_exe_warning: "このアプリケーションには既知の実行ファイルがないため、シミュレーションできません。",
         showing_top: "上位{count}ゲームを表示中。検索でさらに見つけられます。"
     },
     account: {
