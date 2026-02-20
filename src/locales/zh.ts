@@ -19,9 +19,9 @@ export default {
     },
     auth: {
         auto_detect: "自动检测 Token",
-        paste_token: "粘贴 Discord Token",
         login: "登录",
-        or: "或",
+        or_manually: "或手动输入",
+        enter_token: "输入您的 Discord Token",
         authenticated_as: "已登录为"
     },
     nav: {

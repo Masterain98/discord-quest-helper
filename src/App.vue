@@ -270,7 +270,7 @@ onMounted(() => {
                 <span class="w-full border-t" />
               </div>
               <div class="relative flex justify-center text-xs uppercase">
-                <span class="bg-background px-2 text-muted-foreground">or</span>
+                <span class="bg-background px-2 text-muted-foreground">{{ t('auth.or_manually') }}</span>
               </div>
             </div>
             
@@ -278,14 +278,14 @@ onMounted(() => {
               <Input 
                 v-model="manualTokenInput" 
                 type="password" 
-                :placeholder="t('auth.paste_token') || 'Paste Discord Token'"
+                :placeholder="t('auth.enter_token')"
                 class="flex-1"
               />
               <Button 
                 @click="handleManualLogin" 
                 :disabled="!manualTokenInput || authStore.loading"
               >
-                Login
+                {{ t('auth.login') }}
               </Button>
             </div>
             

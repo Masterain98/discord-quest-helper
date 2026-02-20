@@ -19,9 +19,9 @@ export default {
     },
     auth: {
         auto_detect: "토큰 자동 감지",
-        paste_token: "Discord 토큰 붙여넣기",
         login: "로그인",
-        or: "또는",
+        or_manually: "또는 수동으로 입력",
+        enter_token: "Discord 토큰을 입력하세요",
         authenticated_as: "인증됨:"
     },
     nav: {

@@ -311,11 +311,11 @@ async function exportLogs() {
              <Button 
                @click="handleAutoDetect" 
                :disabled="authStore.loading"
-               variant="secondary"
-               class="w-full sm:w-auto"
+               size="lg"
+               class="w-full gap-2"
              >
                <Loader2 v-if="authStore.loading" class="w-4 h-4 mr-2 animate-spin" />
-               Auto Detect Token
+               {{ t('auth.auto_detect') }}
              </Button>
 
              <div class="relative">
@@ -323,19 +323,18 @@ async function exportLogs() {
                  <span class="w-full border-t" />
                </div>
                <div class="relative flex justify-center text-xs uppercase">
-                 <span class="bg-card px-2 text-muted-foreground">Or manually</span>
+                 <span class="bg-card px-2 text-muted-foreground">{{ t('auth.or_manually') }}</span>
                </div>
              </div>
              
              <div class="space-y-2">
-               <Label for="token">Token</Label>
                <div class="flex gap-2">
                  <div class="relative flex-1">
                    <Input 
                      id="token"
                      v-model="manualToken"
                      :type="showToken ? 'text' : 'password'"
-                     placeholder="Enter your token"
+                     :placeholder="t('auth.enter_token')"
                    />
                    <Button
                      type="button"
@@ -349,7 +348,7 @@ async function exportLogs() {
                    </Button>
                  </div>
                  <Button @click="handleManualLogin" :disabled="authStore.loading || !manualToken">
-                   Login
+                   {{ t('auth.login') }}
                  </Button>
                </div>
                <p v-if="authStore.error" class="text-xs text-destructive">

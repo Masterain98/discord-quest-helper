@@ -19,9 +19,9 @@ export default {
     },
     auth: {
         auto_detect: "Auto Detect Token",
-        paste_token: "Paste Discord Token",
         login: "Login",
-        or: "or",
+        or_manually: "Or Manually",
+        enter_token: "Enter your Discord Token",
         authenticated_as: "Authenticated as"
     },
     nav: {

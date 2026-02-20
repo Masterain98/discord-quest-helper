@@ -19,9 +19,9 @@ export default {
     },
     auth: {
         auto_detect: "Автоопределение токена",
-        paste_token: "Вставить Discord токен",
         login: "Войти",
-        or: "или",
+        or_manually: "Или вручную",
+        enter_token: "Введите Discord токен",
         authenticated_as: "Авторизован как"
     },
     nav: {

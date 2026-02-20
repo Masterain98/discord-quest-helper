@@ -19,9 +19,9 @@ export default {
     },
     auth: {
         auto_detect: "トークン自動検出",
-        paste_token: "Discordトークンを貼り付け",
         login: "ログイン",
-        or: "または",
+        or_manually: "または手動で入力",
+        enter_token: "Discord トークンを入力",
         authenticated_as: "認証済み："
     },
     nav: {
