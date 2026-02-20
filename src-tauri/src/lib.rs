@@ -392,23 +392,60 @@ async fn stop_simulated_game(exec_name: String) -> Result<(), String> {
         .map_err(|e| format!("Failed to stop simulated game: {}", e))
 }
 
-/// Get detectable games list
+/// Get detectable games list (works with or without login)
 #[tauri::command]
 async fn fetch_detectable_games(state: State<'_, AppState>) -> Result<Vec<DetectableGame>, String> {
-    let client = {
+    // Use the authenticated client when available (carries auth headers + super-properties).
+    // When not logged in, fall back to a plain public HTTP request — the detectable-games
+    // endpoints require no authentication.
+    let auth_client = {
         let guard = state.client.lock().unwrap();
-        guard
-            .as_ref()
-            .ok_or_else(|| "Not logged in".to_string())?
-            .clone()
+        guard.as_ref().cloned()
     };
 
-    let games = client
-        .fetch_detectable_games()
-        .await
-        .map_err(|e| format!("Failed to get games list: {}", e))?;
+    if let Some(client) = auth_client {
+        return client
+            .fetch_detectable_games()
+            .await
+            .map_err(|e| format!("Failed to get games list: {}", e));
+    }
 
-    Ok(games)
+    // ── Unauthenticated fallback ──────────────────────────────────────────
+    let http = reqwest::Client::builder()
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) discord/1.0.9219 Chrome/138.0.7204.251 Electron/37.6.0 Safari/537.36")
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+
+    const API_BASE: &str = "https://discord.com/api/v9";
+    let games_url = format!("{}/applications/detectable", API_BASE);
+    let apps_url  = format!("{}/applications/non-games/detectable", API_BASE);
+
+    let (games_res, apps_res) = tokio::join!(
+        http.get(&games_url).send(),
+        http.get(&apps_url).send()
+    );
+
+    let mut all_items: Vec<DetectableGame> = Vec::new();
+
+    if let Ok(resp) = games_res {
+        if resp.status().is_success() {
+            if let Ok(mut list) = resp.json::<Vec<DetectableGame>>().await {
+                for g in &mut list { g.type_name = Some("Game".to_string()); }
+                all_items.extend(list);
+            }
+        }
+    }
+
+    if let Ok(resp) = apps_res {
+        if resp.status().is_success() {
+            if let Ok(mut list) = resp.json::<Vec<DetectableGame>>().await {
+                for a in &mut list { a.type_name = Some("App".to_string()); }
+                all_items.extend(list);
+            }
+        }
+    }
+
+    Ok(all_items)
 }
 
 /// Accept quest
