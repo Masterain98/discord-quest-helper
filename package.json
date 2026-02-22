@@ -23,7 +23,7 @@
     "lucide-vue-next": "^0.564.0",
     "pinia": "^3.0.4",
     "radix-vue": "^1.9.17",
-    "tailwind-merge": "^3.4.1",
+    "tailwind-merge": "^3.5.0",
     "tailwindcss-animate": "^1.0.7",
     "vue": "^3.5.28",
     "vue-i18n": "^11.2.8",
