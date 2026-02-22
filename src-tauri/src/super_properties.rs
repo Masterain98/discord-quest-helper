@@ -91,7 +91,7 @@ impl Default for SuperProperties {
             // CDP extraction and remote JS fetch both fail. May need periodic updates as
             // Discord releases new versions. The actual build number is fetched dynamically
             // from Discord when possible.
-            client_build_number: 499123,
+            client_build_number: 500334,
             native_build_number: Some(73211),
             client_event_source: None,
             launch_signature: None,
