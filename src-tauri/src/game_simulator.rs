@@ -1,8 +1,17 @@
 use anyhow::{Context, Result};
 use serde::Serialize;
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Mutex;
+
+use once_cell::sync::Lazy;
+
+/// Global set that tracks image names of running simulated game processes.
+/// Entries are added in `run_simulated_game` and removed in `stop_simulated_game`.
+/// Used by `cleanup_all_simulated_games` to kill orphaned children on app exit.
+static RUNNING_GAMES: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| Mutex::new(HashSet::new()));
 
 // Embed the runner binary at compile time from the data/ directory.
 // build.rs ensures an empty placeholder exists if the runner hasn't been built yet,
@@ -153,6 +162,9 @@ pub fn run_simulated_game(name: &str, path: &str, executable_name: &str, _app_id
         .spawn()
         .context("Could not start simulated game")?;
 
+    // Track the running process so we can clean it up on app exit
+    track_running_game(executable_name);
+
     println!("Simulated game {} started from {:?}", name, exe_to_run);
     Ok(())
 }
@@ -175,6 +187,9 @@ pub fn run_simulated_game(name: &str, path: &str, executable_name: &str, _app_id
     let _ = Command::new(&exe_to_run)
         .spawn()
         .context("Could not start simulated game")?;
+
+    // Track the running process so we can clean it up on app exit
+    track_running_game(executable_name);
 
     println!("Simulated game {} started from {:?}", name, exe_to_run);
     Ok(())
@@ -220,6 +235,9 @@ pub fn stop_simulated_game(exec_name: &str) -> Result<()> {
         );
     }
 
+    // Remove from tracking set
+    untrack_running_game(exec_name);
+
     println!("Simulated game {} stopped", exec_name);
     Ok(())
 }
@@ -246,6 +264,9 @@ pub fn stop_simulated_game(exec_name: &str) -> Result<()> {
         println!("pkill returned non-zero: {}", stderr);
     }
 
+    // Remove from tracking set
+    untrack_running_game(exec_name);
+
     println!("Simulated game {} stopped", exec_name);
     Ok(())
 }
@@ -253,6 +274,62 @@ pub fn stop_simulated_game(exec_name: &str) -> Result<()> {
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
 pub fn stop_simulated_game(_exec_name: &str) -> Result<()> {
     anyhow::bail!("Game simulation is only supported on Windows and macOS")
+}
+
+/// Track a newly started simulated game process.
+fn track_running_game(executable_name: &str) {
+    let file_name = executable_name
+        .split(|c: char| c == '/' || c == '\\')
+        .last()
+        .unwrap_or(executable_name)
+        .to_string();
+    if let Ok(mut set) = RUNNING_GAMES.lock() {
+        set.insert(file_name.clone());
+        println!("Tracked running game: {} (total: {})", file_name, set.len());
+    }
+}
+
+/// Remove a game from the tracking set (called after explicit stop).
+fn untrack_running_game(executable_name: &str) {
+    let file_name = executable_name
+        .split(|c: char| c == '/' || c == '\\')
+        .last()
+        .unwrap_or(executable_name)
+        .to_string();
+    if let Ok(mut set) = RUNNING_GAMES.lock() {
+        set.remove(&file_name);
+        println!("Untracked running game: {} (remaining: {})", file_name, set.len());
+    }
+}
+
+/// Stop **all** tracked simulated game processes.
+///
+/// Called on application exit to ensure no orphaned child processes are left
+/// running after the main app (and its RPC connection) closes.
+pub fn cleanup_all_simulated_games() {
+    let games: Vec<String> = {
+        match RUNNING_GAMES.lock() {
+            Ok(mut set) => {
+                let list: Vec<String> = set.drain().collect();
+                list
+            }
+            Err(poisoned) => {
+                let mut set = poisoned.into_inner();
+                let list: Vec<String> = set.drain().collect();
+                list
+            }
+        }
+    };
+
+    if games.is_empty() {
+        return;
+    }
+
+    println!("Cleaning up {} simulated game process(es) on exit...", games.len());
+    for name in &games {
+        println!("  Stopping: {}", name);
+        let _ = stop_simulated_game(name);
+    }
 }
 
 #[cfg(test)]

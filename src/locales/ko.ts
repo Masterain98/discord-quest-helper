@@ -42,7 +42,11 @@ export default {
         accept_quest: "퀘스트 수락",
         stop_quest: "퀘스트 중지",
         complete_quest: "퀘스트 완료",
-        search_placeholder: "퀘스트 검색..."
+        search_placeholder: "퀘스트 검색...",
+        exe_select_title: "실행 파일 선택",
+        exe_select_desc: "{game}에 여러 실행 파일이 있습니다. 시뮬레이션할 파일을 선택하세요:",
+        custom_exe_title: "프로세스 이름 입력",
+        custom_exe_desc: "{game}에는 Discord 데이터베이스에 알려진 실행 파일이 없습니다. 사용자 지정 프로세스 이름을 입력하세요."
     },
     quest: {
         progress: "진행률",
@@ -173,6 +177,8 @@ export default {
         stopping: "중지 중...",
         exe_count: "{count}개의 실행 파일",
         no_exe_warning: "이 애플리케이션에는 알려진 실행 파일이 없어 시뮬레이션할 수 없습니다.",
+        no_exe_hint: "이 게임에는 Discord 데이터베이스에 알려진 실행 파일이 없습니다. 사용자 지정 프로세스 이름을 입력하여 시뮬레이션할 수 있습니다.",
+        no_exe_custom_warning: "잘못된 프로세스 이름은 Discord에서 감지되지 않을 수 있습니다.",
         mode_from_list: "목록에서 선택",
         mode_custom: "커스텀 프로세스",
         custom_config_desc: "임의의 실행 파일 이름을 입력하여 커스텀 프로세스를 시뮬레이션합니다.",
@@ -201,7 +207,8 @@ export default {
         complete_quests_desc: "{count}개의 비디오 퀘스트를 대기열에 추가하시겠습니까? 순서대로 처리됩니다.",
         cancel: "취소",
         accept: "수락",
-        start: "시작"
+        start: "시작",
+        confirm: "확인"
     },
     debug: {
         title: "디버그 정보",

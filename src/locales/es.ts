@@ -42,7 +42,11 @@ export default {
         accept_quest: "Aceptar misión",
         stop_quest: "Detener misión",
         complete_quest: "Completar misión",
-        search_placeholder: "Buscar misiones..."
+        search_placeholder: "Buscar misiones...",
+        exe_select_title: "Seleccionar ejecutable",
+        exe_select_desc: "{game} tiene múltiples ejecutables. Selecciona cuál simular:",
+        custom_exe_title: "Introducir nombre del proceso",
+        custom_exe_desc: "{game} no tiene ejecutables conocidos en la base de datos de Discord. Introduce un nombre de proceso personalizado para simular."
     },
     quest: {
         progress: "Progreso",
@@ -173,6 +177,8 @@ export default {
         stopping: "Deteniendo...",
         exe_count: "{count} ejecutables",
         no_exe_warning: "Esta aplicación no tiene ejecutables conocidos y no se puede simular.",
+        no_exe_hint: "Este juego no tiene ejecutables conocidos en la base de datos de Discord. Puedes introducir un nombre de proceso personalizado para simular.",
+        no_exe_custom_warning: "Un nombre de proceso incorrecto podría no ser detectado por Discord.",
         mode_from_list: "Seleccionar de la lista",
         mode_custom: "Proceso personalizado",
         custom_config_desc: "Ingresa cualquier nombre de ejecutable para simular un proceso personalizado.",
@@ -201,7 +207,8 @@ export default {
         complete_quests_desc: "¿Agregar {count} misiones de video a la cola de completado? Se procesarán una por una.",
         cancel: "Cancelar",
         accept: "Aceptar",
-        start: "Iniciar"
+        start: "Iniciar",
+        confirm: "Confirmar"
     },
     debug: {
         title: "Información de depuración",

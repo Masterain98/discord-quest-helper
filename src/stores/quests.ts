@@ -284,7 +284,7 @@ export const useQuestsStore = defineStore('quests', () => {
     }
   }
 
-  async function startPlay(quest: Quest, secondsNeeded: number, initialProgress: number) {
+  async function startPlay(quest: Quest, secondsNeeded: number, initialProgress: number, selectedExeName?: string) {
     loading.value = true
     error.value = null
     try {
@@ -323,10 +323,17 @@ export const useQuestsStore = defineStore('quests', () => {
         const game = gamesList.find(g => g.id === appId)
         if (!game) throw new Error(`Game not found in Discord's detectable list (AppID: ${appId})`)
 
-        const winExe = game.executables.find(e => e.os === 'win32')
-        if (!winExe) throw new Error(`No Windows executable definition for game ${game.name}`)
+        // Use caller-selected exe if provided, otherwise pick the first win32 executable
+        let exeName: string
+        if (selectedExeName) {
+          exeName = selectedExeName
+        } else {
+          const winExe = game.executables.find(e => e.os === 'win32')
+          if (!winExe) throw new Error(`No Windows executable definition for game ${game.name}`)
+          exeName = winExe.name
+        }
 
-        console.log(`Starting simulated game for ${game.name} (${winExe.name})...`)
+        console.log(`Starting simulated game for ${game.name} (${exeName})...`)
 
         // 3. Setup path
         const home = await homeDir()
@@ -334,11 +341,11 @@ export const useQuestsStore = defineStore('quests', () => {
         const installPath = `${home}${separator}Documents${separator}DiscordQuestGames`
 
         // 4. Create simulated game executable
-        await createSimulatedGame(installPath, winExe.name, appId)
-        activeGameExe.value = winExe.name
+        await createSimulatedGame(installPath, exeName, appId)
+        activeGameExe.value = exeName
 
         // 5. Run simulated game
-        await runSimulatedGame(game.name, installPath, winExe.name, appId)
+        await runSimulatedGame(game.name, installPath, exeName, appId)
 
         // 6. Connect RPC
         const activity = {

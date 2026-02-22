@@ -45,14 +45,22 @@ const windowsExecutables = computed(() => {
 const hasWindowsExecutables = computed(() => windowsExecutables.value.length > 0)
 
 // The executable name that will actually be used for run/create
-const effectiveExecutable = computed(() =>
-  mode.value === 'custom' ? customExeName.value : selectedExecutable.value
-)
+const effectiveExecutable = computed(() => {
+  if (mode.value === 'custom') return customExeName.value
+  if (hasWindowsExecutables.value) return selectedExecutable.value
+  return selectModeCustomExe.value
+})
+
+// In select mode, a custom exe name is provided when the game has no known win32 executables
+const selectModeCustomExe = ref('')
 
 // Whether the footer action buttons should be shown
 const canProceed = computed(() => {
   if (mode.value === 'custom') return !!customExeName.value
-  return !!selectedGame.value && hasWindowsExecutables.value && !!selectedExecutable.value
+  if (!selectedGame.value) return false
+  // Game has no known executables — allow proceeding with a custom name
+  if (!hasWindowsExecutables.value) return !!selectModeCustomExe.value
+  return !!selectedExecutable.value
 })
 
 function switchMode(m: 'select' | 'custom') {
@@ -65,6 +73,7 @@ function selectGame(game: DetectableGame) {
   selectedGame.value = game
   const winExe = game.executables.find(e => e.os === 'win32')
   selectedExecutable.value = winExe ? winExe.name : ''
+  selectModeCustomExe.value = ''
   error.value = null
   success.value = null
 }
@@ -85,7 +94,10 @@ async function pickDialogFolder() {
 }
 
 async function handleCreateGame() {
-  if (!effectiveExecutable.value || !dialogSavePath.value) return
+  const exeName = mode.value === 'custom'
+    ? customExeName.value
+    : (hasWindowsExecutables.value ? selectedExecutable.value : selectModeCustomExe.value)
+  if (!exeName || !dialogSavePath.value) return
 
   creating.value = true
   error.value = null
@@ -93,7 +105,7 @@ async function handleCreateGame() {
 
   try {
     const appId = mode.value === 'custom' ? '' : (selectedGame.value?.id ?? '')
-    await createSimulatedGame(dialogSavePath.value, effectiveExecutable.value, appId)
+    await createSimulatedGame(dialogSavePath.value, exeName, appId)
     showCreateDialog.value = false
     success.value = t('game_sim.create_success')
   } catch (e) {
@@ -104,7 +116,11 @@ async function handleCreateGame() {
 }
 
 async function handleRunGame() {
-  if (!effectiveExecutable.value || !installPath.value) return
+  // Resolve which exe name to use
+  const exeName = mode.value === 'custom'
+    ? customExeName.value
+    : (hasWindowsExecutables.value ? selectedExecutable.value : selectModeCustomExe.value)
+  if (!exeName || !installPath.value) return
 
   running.value = true
   error.value = null
@@ -113,8 +129,13 @@ async function handleRunGame() {
   try {
     const appId = mode.value === 'custom' ? '' : (selectedGame.value?.id ?? '')
     const displayName = mode.value === 'custom' ? customExeName.value : (selectedGame.value?.name ?? '')
-    await runSimulatedGame(displayName, installPath.value, effectiveExecutable.value, appId)
+    await runSimulatedGame(displayName, installPath.value, exeName, appId)
 
+    // ── SELECT / LIST mode ──────────────────────────────────────────────
+    // When launched from the detectable games list we always have an app_id,
+    // so establish a Discord RPC connection to report Rich Presence.
+    // This also covers the case where the game has no known executables but
+    // the user provided a custom name — we still have the app_id for RPC.
     if (mode.value === 'select' && selectedGame.value) {
       const activity = {
         app_id: selectedGame.value.id,
@@ -127,6 +148,10 @@ async function handleRunGame() {
       await connectToDiscordRpc(JSON.stringify(activity), 'connect')
       success.value = t('game_sim.run_success_rpc')
     } else {
+      // ── CUSTOM mode ─────────────────────────────────────────────────
+      // No app_id is available, so we cannot establish an RPC connection.
+      // Detection relies entirely on Discord matching the process name
+      // against its detectable-games database.
       success.value = t('game_sim.run_success')
     }
   } catch (e) {
@@ -186,9 +211,31 @@ async function handleRunGame() {
                 <div class="text-xs text-muted-foreground font-mono">App ID: {{ selectedGame.id }}</div>
               </div>
 
-              <div v-if="!hasWindowsExecutables" class="p-3 bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 rounded-md text-sm border border-yellow-500/20">
-                {{ t('game_sim.no_exe_warning') }}
-              </div>
+              <!-- No known Windows executables — let user enter a custom name -->
+              <template v-if="!hasWindowsExecutables">
+                <div class="p-3 bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 rounded-md text-sm border border-yellow-500/20 space-y-1">
+                  <p>{{ t('game_sim.no_exe_hint') }}</p>
+                  <p>{{ t('game_sim.no_exe_custom_warning') }}</p>
+                </div>
+
+                <div class="space-y-2">
+                  <Label>{{ t('game_sim.custom_exe_label') }}</Label>
+                  <Input
+                    v-model="selectModeCustomExe"
+                    :placeholder="t('game_sim.custom_exe_placeholder')"
+                  />
+                </div>
+
+                <div class="space-y-2">
+                  <Label>{{ t('game_sim.install_path') }}</Label>
+                  <div class="flex gap-2">
+                    <Input v-model="installPath" placeholder="C:\Games\MyGame" class="flex-1" />
+                    <Button type="button" variant="outline" size="icon" @click="pickInstallFolder" class="shrink-0">
+                      <FolderOpen class="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              </template>
 
               <template v-else>
                 <div class="space-y-2">

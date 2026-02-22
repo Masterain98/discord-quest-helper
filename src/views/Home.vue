@@ -266,8 +266,9 @@
                 v-else-if="!quest.user_status?.completed_at && canStartQuest(quest)"
                 @click="startQuest(quest)"
                 variant="default"
-                :disabled="questsStore.activeQuestId !== null"
+                :disabled="questsStore.activeQuestId !== null || startingQuestId !== null"
               >
+                <Loader2 v-if="startingQuestId === quest.id" class="w-4 h-4 mr-2 animate-spin" />
                 {{ getStartButtonText(quest) }}
               </Button>
               
@@ -341,6 +342,62 @@
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+
+    <!-- Exe Selection Dialog for Play Quests with multiple win32 executables -->
+    <Dialog :open="showExeSelectDialog" @update:open="showExeSelectDialog = $event">
+      <DialogContent class="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{{ t('home.exe_select_title') }}</DialogTitle>
+          <DialogDescription>
+            {{ t('home.exe_select_desc', { game: exeSelectGameName }) }}
+          </DialogDescription>
+        </DialogHeader>
+        <div class="flex flex-col gap-2 max-h-64 overflow-y-auto py-2">
+          <Button
+            v-for="exe in exeSelectOptions"
+            :key="exe"
+            variant="outline"
+            class="justify-start font-mono text-sm h-auto py-3 px-4"
+            @click="selectExeAndStartPlay(exe)"
+          >
+            {{ exe }}
+          </Button>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" @click="showExeSelectDialog = false">{{ t('dialog.cancel') }}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <!-- Custom Exe Input Dialog for Play Quests with NO known executables -->
+    <Dialog :open="showCustomExeDialog" @update:open="showCustomExeDialog = $event">
+      <DialogContent class="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{{ t('home.custom_exe_title') }}</DialogTitle>
+          <DialogDescription>
+            {{ t('home.custom_exe_desc', { game: customExeGameName }) }}
+          </DialogDescription>
+        </DialogHeader>
+        <div class="space-y-4 py-2">
+          <div class="p-3 bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 rounded-md text-sm border border-yellow-500/20 space-y-1">
+            <p>{{ t('game_sim.no_exe_hint') }}</p>
+            <p>{{ t('game_sim.no_exe_custom_warning') }}</p>
+          </div>
+          <div class="space-y-2">
+            <Input
+              v-model="customExeInput"
+              :placeholder="t('game_sim.custom_exe_placeholder')"
+              @keyup.enter="submitCustomExeAndStartPlay"
+            />
+            <p class="text-xs text-muted-foreground">{{ t('game_sim.custom_exe_hint') }}</p>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" @click="showCustomExeDialog = false">{{ t('dialog.cancel') }}</Button>
+          <Button @click="submitCustomExeAndStartPlay" :disabled="!customExeInput.trim()">{{ t('dialog.confirm') }}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>
 
@@ -367,6 +424,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { RotateCw, Filter, AlertCircle, Loader2, ArrowUpCircle, ExternalLink, Check, Search } from 'lucide-vue-next'
 import { Input } from '@/components/ui/input'
@@ -401,12 +466,25 @@ const searchQuery = ref('')
 // Accepting quest state
 const acceptingQuest = ref<string | null>(null)
 
+// Loading state for the Start button (fetching detectable games, etc.)
+const startingQuestId = ref<string | null>(null)
+
 // Confirmation dialogs state
 const showAcceptAllDialog = ref(false)
 const showCompleteAllDialog = ref(false)
 const pendingAcceptQuests = ref<Quest[]>([])
 const pendingCompleteQuests = ref<Quest[]>([])
 
+// Exe selection dialog state (for play quests with multiple win32 executables)
+const showExeSelectDialog = ref(false)
+const exeSelectOptions = ref<string[]>([])
+const exeSelectGameName = ref('')
+const pendingPlayQuest = ref<{ quest: Quest, secondsNeeded: number, initialProgress: number } | null>(null)
+
+// Custom exe input dialog state (for play quests with NO known executables)
+const showCustomExeDialog = ref(false)
+const customExeGameName = ref('')
+const customExeInput = ref('')
 // localStorage key for filters
 const FILTERS_STORAGE_KEY = 'questHelper_filters'
 
@@ -707,6 +785,32 @@ function confirmCompleteAll() {
   pendingCompleteQuests.value = []
 }
 
+async function selectExeAndStartPlay(exeName: string) {
+  showExeSelectDialog.value = false
+  if (!pendingPlayQuest.value) return
+  const { quest, secondsNeeded, initialProgress } = pendingPlayQuest.value
+  pendingPlayQuest.value = null
+  try {
+    await questsStore.startPlay(quest, secondsNeeded, initialProgress, exeName)
+  } catch (e) {
+    alert(`Failed to start game simulator: ${e}\n\nPlease try using the Game Simulator tab manually.`)
+  }
+}
+
+async function submitCustomExeAndStartPlay() {
+  const exeName = customExeInput.value.trim()
+  if (!exeName) return
+  showCustomExeDialog.value = false
+  if (!pendingPlayQuest.value) return
+  const { quest, secondsNeeded, initialProgress } = pendingPlayQuest.value
+  pendingPlayQuest.value = null
+  try {
+    await questsStore.startPlay(quest, secondsNeeded, initialProgress, exeName)
+  } catch (e) {
+    alert(`Failed to start game simulator: ${e}\n\nPlease try using the Game Simulator tab manually.`)
+  }
+}
+
 function getExpiryColor(dateStr: string | null | undefined): string {
   if (!dateStr) return 'text-muted-foreground'
   const expires = new Date(dateStr)
@@ -751,6 +855,8 @@ function canStartQuest(quest: Quest): boolean {
 async function startQuest(quest: Quest) {
   if (questsStore.activeQuestId) return
   
+  startingQuestId.value = quest.id
+  try {
   // Get task config and determine task type
   const taskConfig = quest.config.task_config_v2 || quest.config.task_config
   if (!taskConfig?.tasks) return
@@ -797,6 +903,32 @@ async function startQuest(quest: Quest) {
     const gameName = quest.config.messages.game_title || quest.config.messages.quest_name
     console.log(`Starting play quest for ${gameName}`)
     try {
+        // Check if there are multiple win32 executables — let user choose
+        if (questsStore.gameQuestMode === 'simulate') {
+          const appId = quest.config.application?.id
+          if (appId) {
+            const gamesList = await questsStore.getDetectableGames()
+            const game = gamesList.find(g => g.id === appId)
+            if (game) {
+              const winExes = game.executables.filter(e => e.os === 'win32')
+              if (winExes.length > 1) {
+                // Multiple win32 executables — show selection dialog
+                exeSelectOptions.value = winExes.map(e => e.name)
+                exeSelectGameName.value = game.name
+                pendingPlayQuest.value = { quest, secondsNeeded, initialProgress }
+                showExeSelectDialog.value = true
+                return // Wait for user selection
+              } else if (winExes.length === 0) {
+                // No known executables — show custom input dialog
+                customExeGameName.value = game.name
+                customExeInput.value = ''
+                pendingPlayQuest.value = { quest, secondsNeeded, initialProgress }
+                showCustomExeDialog.value = true
+                return // Wait for user input
+              }
+            }
+          }
+        }
         await questsStore.startPlay(quest, secondsNeeded, initialProgress)
     } catch (e) {
         alert(`Failed to start game simulator: ${e}\n\nPlease try using the Game Simulator tab manually.`)
@@ -811,6 +943,9 @@ async function startQuest(quest: Quest) {
   } else {
     // Unknown type - show warning
     alert(`Unknown quest type: ${firstTaskKey}\n\nPlease check the quest requirements in Discord.`)
+  }
+  } finally {
+    startingQuestId.value = null
   }
 }
 

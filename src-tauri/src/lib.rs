@@ -615,7 +615,15 @@ pub fn ensure_stealth_and_run() {
 
     // Register Ctrl+C handler
     if let Err(e) = ctrlc::set_handler(move || {
-        // Wrap cleanup in catch_unwind to log any errors before exiting
+        // Kill all simulated game child processes before exiting
+        let cleanup_games_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            game_simulator::cleanup_all_simulated_games();
+        }));
+        if cleanup_games_result.is_err() {
+            eprintln!("[Cleanup] Error: panic during game cleanup in Ctrl+C handler");
+        }
+
+        // Wrap stealth cleanup in catch_unwind to log any errors before exiting
         let cleanup_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             stealth::cleanup_on_exit();
         }));
@@ -682,7 +690,27 @@ pub fn run() {
         ])
         .on_window_event(|_window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
-                // Clean up on window close
+                // Stop all simulated game processes that were started by this app.
+                // When the main app exits the RPC connection drops, so the child
+                // processes become useless — kill them to avoid orphaned runners.
+                game_simulator::cleanup_all_simulated_games();
+
+                // Disconnect Discord RPC client (if connected)
+                {
+                    let client_option = {
+                        let mut guard = get_discord_rpc_client().lock().unwrap();
+                        guard.take()
+                    };
+                    if let Some(client) = client_option {
+                        // Fire-and-forget async disconnect
+                        tauri::async_runtime::spawn(async move {
+                            client.discord.disconnect().await;
+                            println!("Discord RPC disconnected on app exit");
+                        });
+                    }
+                }
+
+                // Clean up stealth mode artifacts
                 stealth::cleanup_on_exit();
             }
         })

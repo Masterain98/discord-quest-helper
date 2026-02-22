@@ -42,7 +42,11 @@ export default {
         accept_quest: "クエストを受け入れる",
         stop_quest: "クエストを停止",
         complete_quest: "クエストを完了",
-        search_placeholder: "クエストを検索..."
+        search_placeholder: "クエストを検索...",
+        exe_select_title: "実行ファイルを選択",
+        exe_select_desc: "{game} には複数の実行ファイルがあります。シミュレートするものを選択してください：",
+        custom_exe_title: "プロセス名を入力",
+        custom_exe_desc: "{game} には Discord のデータベースに既知の実行ファイルがありません。カスタムプロセス名を入力してください。"
     },
     quest: {
         progress: "進捗",
@@ -172,8 +176,8 @@ export default {
         stop: "停止",
         stopping: "停止中...",
         exe_count: "{count}個の実行ファイル",
-        no_exe_warning: "このアプリケーションには既知の実行ファイルがないため、シミュレーションできません。",
-        mode_from_list: "リストから選択",
+        no_exe_warning: "このアプリケーションには既知の実行ファイルがないため、シミュレーションできません。",        no_exe_hint: "このゲームには Discord のデータベースに既知の実行ファイルがありません。カスタムプロセス名を入力してシミュレートできます。",
+        no_exe_custom_warning: "不正確なプロセス名は Discord に検出されない可能性があります。",        mode_from_list: "リストから選択",
         mode_custom: "カスタムプロセス",
         custom_config_desc: "任意の実行ファイル名を入力してカスタムプロセスをシミュレートします。",
         custom_exe_label: "実行ファイル名",
@@ -201,7 +205,8 @@ export default {
         complete_quests_desc: "{count}件の動画クエストをキューに追加しますか？順番に処理されます。",
         cancel: "キャンセル",
         accept: "受け入れる",
-        start: "開始"
+        start: "開始",
+        confirm: "確認"
     },
     debug: {
         title: "デバッグ情報",

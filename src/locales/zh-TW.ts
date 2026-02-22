@@ -42,7 +42,11 @@ export default {
         accept_quest: "接受任務",
         stop_quest: "停止任務",
         complete_quest: "完成任務",
-        search_placeholder: "搜尋任務..."
+        search_placeholder: "搜尋任務...",
+        exe_select_title: "選擇執行檔",
+        exe_select_desc: "{game} 有多個執行檔，請選擇要模擬的程序：",
+        custom_exe_title: "輸入程序名稱",
+        custom_exe_desc: "{game} 在 Discord 資料庫中沒有已知的執行檔，請輸入自訂程序名稱進行模擬。"
     },
     quest: {
         progress: "進度",
@@ -173,6 +177,8 @@ export default {
         stopping: "停止中...",
         exe_count: "{count} 個執行檔",
         no_exe_warning: "此應用程式沒有已知的執行檔，無法進行模擬。",
+        no_exe_hint: "此遊戲在 Discord 資料庫中沒有已知的執行檔。你可以輸入自訂程序名稱進行模擬。",
+        no_exe_custom_warning: "不正確的程序名稱可能無法被 Discord 偵測到。",
         mode_from_list: "從列表選擇",
         mode_custom: "自訂進程",
         custom_config_desc: "輸入任意執行檔名稱來模擬自訂進程。",
@@ -201,7 +207,8 @@ export default {
         complete_quests_desc: "將 {count} 個影片任務加入完成佇列？將逐一處理。",
         cancel: "取消",
         accept: "接受",
-        start: "開始"
+        start: "開始",
+        confirm: "確認"
     },
     debug: {
         title: "偵錯資訊",

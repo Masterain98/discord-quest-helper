@@ -42,7 +42,11 @@ export default {
         accept_quest: "接受任务",
         stop_quest: "停止任务",
         complete_quest: "完成任务",
-        search_placeholder: "搜索任务..."
+        search_placeholder: "搜索任务...",
+        exe_select_title: "选择可执行文件",
+        exe_select_desc: "{game} 有多个可执行文件，请选择要模拟的进程：",
+        custom_exe_title: "输入进程名称",
+        custom_exe_desc: "{game} 在 Discord 数据库中没有已知的可执行文件，请输入自定义进程名称进行模拟。"
     },
     quest: {
         progress: "进度",
@@ -174,6 +178,8 @@ export default {
         stopping: "停止中...",
         exe_count: "{count} 个可执行文件",
         no_exe_warning: "此应用没有已知的可执行文件，无法进行模拟。",
+        no_exe_hint: "此游戏在 Discord 数据库中没有已知的可执行文件。你可以输入自定义进程名称进行模拟。",
+        no_exe_custom_warning: "不正确的进程名称可能无法被 Discord 检测到。",
         mode_from_list: "从列表选择",
         mode_custom: "自定义进程",
         custom_config_desc: "输入任意可执行文件名来模拟自定义进程。",
@@ -202,7 +208,8 @@ export default {
         complete_quests_desc: "将 {count} 个视频任务添加到完成队列？将逐个处理。",
         cancel: "取消",
         accept: "接受",
-        start: "开始"
+        start: "开始",
+        confirm: "确认"
     },
     debug: {
         title: "调试信息",

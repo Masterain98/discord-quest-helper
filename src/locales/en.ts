@@ -42,7 +42,11 @@ export default {
         accept_quest: "Accept Quest",
         stop_quest: "Stop Quest",
         complete_quest: "Complete Quest",
-        search_placeholder: "Search quests..."
+        search_placeholder: "Search quests...",
+        exe_select_title: "Select Executable",
+        exe_select_desc: "{game} has multiple executables. Please select which one to simulate:",
+        custom_exe_title: "Enter Process Name",
+        custom_exe_desc: "{game} has no known executables in Discord's database. Please enter a custom process name to simulate."
     },
     quest: {
         progress: "Progress",
@@ -174,6 +178,8 @@ export default {
         stopping: "Stopping...",
         exe_count: "{count} executables",
         no_exe_warning: "This application has no known executables and cannot be simulated.",
+        no_exe_hint: "This game has no known executables in Discord's database. You can enter a custom process name to simulate.",
+        no_exe_custom_warning: "An incorrect process name may not be detected by Discord.",
         mode_from_list: "Select from List",
         mode_custom: "Custom Process",
         custom_config_desc: "Enter any executable name to simulate a custom process.",
@@ -202,7 +208,8 @@ export default {
         complete_quests_desc: "Add {count} video quests to the completion queue? This will process them one by one.",
         cancel: "Cancel",
         accept: "Accept",
-        start: "Start"
+        start: "Start",
+        confirm: "Confirm"
     },
     debug: {
         title: "Debug Information",
