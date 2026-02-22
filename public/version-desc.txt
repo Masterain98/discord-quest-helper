@@ -1,8 +1,6 @@
 ## ✨ What's Changed
 
-1. **Added custom process simulator feature**. 
-2. Allowed simulate Discord-listed games/apps without login. 
-3. Blocked discord-listed games/apps without executables been Simulated. 
-4. Optimized Home page and Settings page UI/UX and localizations.
-5. Bump default build number to 499123.
-6. Bump dependencies versions.
+1. Try to solve the issue that simulated RPC not been detected by Discord.
+2. Add custom process name tips for empty executable list app.
+3. Add sub process cleanup when the main app is closed.
+4. Bump default build number to 500334.
