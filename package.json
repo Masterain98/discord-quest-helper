@@ -33,7 +33,7 @@
     "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/cli": "^2.10.0",
     "@vitejs/plugin-vue": "^6.0.4",
-    "autoprefixer": "^10.4.16",
+    "autoprefixer": "^10.4.27",
     "postcss": "^8.4.32",
     "tailwindcss": "^3.4.0",
     "typescript": "^5.3.0",
