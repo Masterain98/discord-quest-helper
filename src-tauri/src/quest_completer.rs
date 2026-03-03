@@ -32,15 +32,18 @@ pub async fn complete_video_quest(
              quest_id, seconds_needed, current_seconds);
     
     loop {
-        // Check cancel signal
-        if cancel_rx.try_recv().is_ok() {
-            println!("Video quest cancelled");
-            let _ = app_handle.emit("quest-stopped", ());
-            return Ok(());
+        // Wait before advancing progress (prevents immediate jump on first iteration)
+        tokio::select! {
+            _ = sleep(Duration::from_secs(interval)) => {},
+            _ = cancel_rx.recv() => {
+                println!("Video quest cancelled");
+                let _ = app_handle.emit("quest-stopped", ());
+                return Ok(());
+            }
         }
         
         // Advance timestamp based on speed and interval
-        // e.g. if speed is 1x and interval is 3s, we should advance 3s
+        // e.g. if speed is 1x and interval is 15s, we should advance 15s
         current_seconds += speed * (interval as f64);
         let timestamp = current_seconds.min(seconds_needed as f64);
         
@@ -66,16 +69,6 @@ pub async fn complete_video_quest(
                 println!("Video progress update failed: {}", e);
                 let _ = app_handle.emit("quest-error", e.to_string());
                 return Err(e);
-            }
-        }
-        
-        // Wait before next update
-        tokio::select! {
-            _ = sleep(Duration::from_secs(interval)) => {},
-            _ = cancel_rx.recv() => {
-                println!("Video quest cancelled");
-                let _ = app_handle.emit("quest-stopped", ());
-                return Ok(());
             }
         }
     }
