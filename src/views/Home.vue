@@ -235,7 +235,8 @@
           <p class="text-muted-foreground">No quests match your filters</p>
           <Button variant="link" @click="clearFilters" v-if="hasActiveFilters">Clear Filters</Button>
         </div>
-        
+
+        <template v-else>
         <!-- Pending Claim Reminder -->
         <div
           v-if="showPendingClaimBanner"
@@ -295,6 +296,7 @@
             </template>
           </QuestCard>
         </TransitionGroup>
+        </template>
       </div>
       
       <div class="lg:col-span-1">
@@ -658,8 +660,13 @@ function getRewardType(quest: Quest): 'orbs' | 'avatar' | 'ingame' {
 
 // Filtered quests based on filter state
 // Quests completed but not yet claimed (across the full store, not filtered)
+// Excludes expired quests to align with filteredQuests visibility rules
 const pendingClaimCount = computed(() =>
-  questsStore.quests.filter(q => q.user_status?.completed_at && !q.user_status?.claimed_at).length
+  questsStore.quests.filter(q => {
+    if (!q.user_status?.completed_at || q.user_status?.claimed_at) return false
+    if (q.config.expires_at && new Date(q.config.expires_at) < new Date()) return false
+    return true
+  }).length
 )
 
 // Show banner only when pending-claim quests exist but aren't visible in the current filtered view
