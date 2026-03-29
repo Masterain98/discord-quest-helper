@@ -9,13 +9,12 @@ updates:
       interval: "monthly"
     # Limit open PRs to reduce noise
     open-pull-requests-limit: 5
-    # Group all non-major updates into a single PR
+    # Group all minor updates into a single PR
     groups:
-      minor-and-patch:
+      minor-only:
         update-types:
           - "minor"
-          - "patch"
-    # Only track minor+ updates; ignore patch-only bumps for non-critical deps
+    # Only track minor updates; ignore patch bumps and major version changes
     ignore:
       - dependency-name: "*"
         update-types:
@@ -29,10 +28,9 @@ updates:
       interval: "monthly"
     open-pull-requests-limit: 5
     groups:
-      minor-and-patch:
+      minor-only:
         update-types:
           - "minor"
-          - "patch"
     ignore:
       - dependency-name: "*"
         update-types:
