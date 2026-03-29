@@ -37,6 +37,8 @@ export default {
         filters: "Filtros",
         accept_all: "Aceptar todas",
         complete_all_video: "Completar todas las misiones de video",
+        pending_claim_reminder: "{count} misión(es) completada(s) y esperando reclamación en Discord.",
+        view_pending_claim: "Ver",
         processing_queue: "Cola de procesamiento",
         remaining: "restantes",
         accept_quest: "Aceptar misión",

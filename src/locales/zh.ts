@@ -39,6 +39,8 @@ export default {
         complete_all_video: "完成所有视频任务",
         processing_queue: "处理队列",
         remaining: "剩余",
+        pending_claim_reminder: "有 {count} 个任务已完成，请前往 Discord 领取奖励。",
+        view_pending_claim: "查看",
         accept_quest: "接受任务",
         stop_quest: "停止任务",
         complete_quest: "完成任务",
