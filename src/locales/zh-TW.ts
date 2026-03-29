@@ -229,6 +229,25 @@ export default {
         runner_not_built: "未建置",
         runner_commit: "提交",
         runner_build_time: "建置時間",
-        runner_size: "大小"
+        runner_size: "大小",
+        captured_headers: "網路請求標頭擷取",
+        captured_headers_desc: "透過 CDP 網路攔截 Discord 用戶端的所有 HTTP 請求，收集請求標頭統計資訊",
+        capture_btn: "擷取",
+        capturing: "擷取中...",
+        capture_hint: "需要 Discord 以除錯模式執行。點擊擷取按鈕以在指定時長內收集所有 HTTP 請求標頭。",
+        captured_from: "擷取來源",
+        total_requests: "總請求數",
+        capture_duration: "擷取時長",
+        header_key_counts: "請求標頭 Key 頻率",
+        header_kv_counts: "請求標頭 Key-Value 頻率",
+        request_list: "請求詳情",
+        request_search: "透過 URL 或請求標頭搜尋...",
+        request_no_match: "沒有符合當前篩選的請求。",
+        decode: "解碼",
+        decoder_title: "x-super-properties 解碼器",
+        decoder_desc: "將 base64 編碼的 x-super-properties 請求標頭解碼為 JSON。",
+        decoder_placeholder: "在此貼上 base64 字串...",
+        decoder_decode: "解碼",
+        decoder_result: "解碼結果"
     }
 }

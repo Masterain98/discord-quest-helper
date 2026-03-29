@@ -229,6 +229,25 @@ export default {
         runner_not_built: "No compilado",
         runner_commit: "Commit",
         runner_build_time: "Compilación",
-        runner_size: "Tamaño"
+        runner_size: "Tamaño",
+        captured_headers: "Captura de Encabezados de Red",
+        captured_headers_desc: "Interceptar todas las solicitudes HTTP del cliente Discord a través de la red CDP y recopilar estadísticas de encabezados",
+        capture_btn: "Capturar",
+        capturing: "Capturando...",
+        capture_hint: "Requiere Discord ejecutándose con la bandera de depuración. Haga clic en Capturar para recopilar todos los encabezados HTTP durante la duración especificada.",
+        captured_from: "Capturado de",
+        total_requests: "Total de Solicitudes",
+        capture_duration: "Duración",
+        header_key_counts: "Frecuencia de Claves de Encabezado",
+        header_kv_counts: "Frecuencia de Clave-Valor de Encabezado",
+        request_list: "Detalles de Solicitudes",
+        request_search: "Buscar por URL o encabezado...",
+        request_no_match: "No hay solicitudes que coincidan con el filtro actual.",
+        decode: "Decodificar",
+        decoder_title: "Decodificador x-super-properties",
+        decoder_desc: "Decodifica el encabezado x-super-properties codificado en base64 para ver el JSON.",
+        decoder_placeholder: "Pegar cadena base64 aquí...",
+        decoder_decode: "Decodificar",
+        decoder_result: "Resultado decodificado"
     }
 }

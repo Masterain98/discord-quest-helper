@@ -42,6 +42,30 @@ pub struct CdpStatus {
     pub error: Option<String>,
 }
 
+/// Captured Discord API request headers via CDP Network interception
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CdpCapturedHeaders {
+    /// Total number of requests captured
+    pub total_requests: usize,
+    /// All captured requests with their URLs, methods, and headers
+    pub requests: Vec<CapturedRequest>,
+    /// Aggregated header key stats: header_name -> count
+    pub header_key_counts: std::collections::HashMap<String, usize>,
+    /// Aggregated header key-value stats: "header_name: value" -> count  
+    /// (authorization values are redacted)
+    pub header_kv_counts: std::collections::HashMap<String, usize>,
+    /// Duration in seconds the capture ran
+    pub capture_duration_secs: u64,
+}
+
+/// A single captured HTTP request
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapturedRequest {
+    pub url: String,
+    pub method: String,
+    pub headers: std::collections::HashMap<String, String>,
+}
+
 /// JavaScript code: Get SuperProperties
 ///
 /// FRAGILE: This code relies on Discord's internal webpack module structure.
@@ -309,6 +333,152 @@ pub async fn fetch_super_properties_via_cdp(port: u16) -> Result<CdpSuperPropert
             super_props.decoded.get("client_build_number").and_then(|v| v.as_u64()).unwrap_or(0)), None);
     
     Ok(super_props)
+}
+
+/// Capture Discord API request headers via CDP Network interception.
+///
+/// Enables CDP Network domain, listens for ALL outgoing requests for `duration_secs`,
+/// and collects all headers with statistics.
+pub async fn capture_discord_headers_via_cdp(port: u16, duration_secs: u64) -> Result<CdpCapturedHeaders> {
+    use crate::logger::{log, LogLevel, LogCategory};
+    use std::collections::HashMap;
+
+    let duration_secs = duration_secs.min(120).max(5); // clamp 5..120
+
+    log(LogLevel::Info, LogCategory::TokenExtraction,
+        &format!("Capturing all request headers via CDP Network on port {} for {}s", port, duration_secs), None);
+
+    let targets = get_cdp_targets(port).await?;
+    let target = pick_discord_target(&targets)
+        .context("No Discord target found")?;
+    let ws_url = target
+        .web_socket_debugger_url
+        .as_ref()
+        .context("Target has no WebSocket URL")?;
+
+    log(LogLevel::Debug, LogCategory::TokenExtraction,
+        &format!("Connecting to CDP target: {}", target.title), None);
+
+    let (ws_stream, _) = connect_async(ws_url)
+        .await
+        .context("Failed to connect to CDP WebSocket")?;
+    let (mut write, mut read) = ws_stream.split();
+
+    // Enable Network domain
+    let enable_request = serde_json::json!({
+        "id": 1,
+        "method": "Network.enable",
+        "params": {}
+    });
+    write
+        .send(Message::Text(enable_request.to_string().into()))
+        .await
+        .context("Failed to send Network.enable")?;
+
+    log(LogLevel::Debug, LogCategory::TokenExtraction,
+        "Network.enable sent, collecting all requests...", None);
+
+    let mut requests: Vec<CapturedRequest> = Vec::new();
+    let mut header_key_counts: HashMap<String, usize> = HashMap::new();
+    let mut header_kv_counts: HashMap<String, usize> = HashMap::new();
+
+    // Sensitive headers whose values should be redacted in kv stats
+    let redact_values = ["authorization", "cookie", "set-cookie"];
+
+    // Collect for the specified duration
+    let _ = tokio::time::timeout(Duration::from_secs(duration_secs), async {
+        while let Some(msg) = read.next().await {
+            match msg {
+                Ok(Message::Text(text)) => {
+                    let json = match serde_json::from_str::<serde_json::Value>(&text) {
+                        Ok(j) => j,
+                        Err(_) => continue,
+                    };
+
+                    if json.get("method").and_then(|v| v.as_str()) != Some("Network.requestWillBeSent") {
+                        continue;
+                    }
+
+                    let params = match json.get("params") {
+                        Some(p) => p,
+                        None => continue,
+                    };
+                    let request = match params.get("request") {
+                        Some(r) => r,
+                        None => continue,
+                    };
+                    let url = request.get("url").and_then(|u| u.as_str()).unwrap_or("").to_string();
+                    let method = request.get("method").and_then(|m| m.as_str()).unwrap_or("GET").to_string();
+
+                    let headers_obj = match request.get("headers").and_then(|h| h.as_object()) {
+                        Some(h) => h,
+                        None => continue,
+                    };
+
+                    let mut req_headers: HashMap<String, String> = HashMap::new();
+
+                    for (key, value) in headers_obj {
+                        let val_str = value.as_str().unwrap_or("").to_string();
+                        let key_lower = key.to_lowercase();
+
+                        // Count header key occurrence
+                        *header_key_counts.entry(key_lower.clone()).or_insert(0) += 1;
+
+                        // Redact sensitive values, keep everything else as-is
+                        let display_val = if redact_values.contains(&key_lower.as_str()) {
+                            if val_str.len() > 20 {
+                                format!("{}...{}", &val_str[..8], &val_str[val_str.len().saturating_sub(4)..])
+                            } else {
+                                "[redacted]".to_string()
+                            }
+                        } else {
+                            val_str.clone()
+                        };
+
+                        // Count header key-value occurrence
+                        let kv_key = format!("{}: {}", key_lower, display_val);
+                        *header_kv_counts.entry(kv_key).or_insert(0) += 1;
+
+                        // Store in per-request headers
+                        req_headers.insert(key_lower, display_val);
+                    }
+
+                    requests.push(CapturedRequest {
+                        url,
+                        method,
+                        headers: req_headers,
+                    });
+                }
+                Err(e) => {
+                    log(LogLevel::Warn, LogCategory::TokenExtraction,
+                        &format!("WebSocket error during capture: {}", e), None);
+                    break;
+                }
+                _ => continue,
+            }
+        }
+    })
+    .await;
+
+    // Disable Network domain and close connection
+    let disable_request = serde_json::json!({
+        "id": 2,
+        "method": "Network.disable",
+        "params": {}
+    });
+    let _ = write.send(Message::Text(disable_request.to_string().into())).await;
+    let _ = write.close().await;
+
+    log(LogLevel::Info, LogCategory::TokenExtraction,
+        &format!("Capture complete. {} requests collected in {}s", requests.len(), duration_secs), None);
+
+    Ok(CdpCapturedHeaders {
+        total_requests: requests.len(),
+        requests,
+        header_key_counts,
+        header_kv_counts,
+        capture_duration_secs: duration_secs,
+    })
 }
 
 #[cfg(test)]

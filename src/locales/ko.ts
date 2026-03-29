@@ -229,6 +229,25 @@ export default {
         runner_not_built: "빌드 안 됨",
         runner_commit: "커밋",
         runner_build_time: "빌드 시간",
-        runner_size: "크기"
+        runner_size: "크기",
+        captured_headers: "네트워크 헤더 캡처",
+        captured_headers_desc: "CDP 네트워크를 통해 Discord 클라이언트의 모든 HTTP 요청을 인터셉트하여 헤더 통계를 수집합니다",
+        capture_btn: "캡처",
+        capturing: "캡처 중...",
+        capture_hint: "Discord가 디버그 플래그로 실행 중이어야 합니다. 캡처를 클릭하여 지정된 시간 동안 모든 HTTP 요청 헤더를 수집합니다.",
+        captured_from: "캡처 대상",
+        total_requests: "총 요청 수",
+        capture_duration: "캡처 시간",
+        header_key_counts: "헤더 키 빈도",
+        header_kv_counts: "헤더 키-값 빈도",
+        request_list: "요청 상세",
+        request_search: "URL 또는 헤더로 검색...",
+        request_no_match: "현재 필터와 일치하는 요청이 없습니다.",
+        decode: "디코드",
+        decoder_title: "x-super-properties 디코더",
+        decoder_desc: "base64로 인코딩된 x-super-properties 헤더를 JSON으로 디코딩합니다.",
+        decoder_placeholder: "base64 문자열을 여기에 붙여넣기...",
+        decoder_decode: "디코드",
+        decoder_result: "디코드 결과"
     }
 }

@@ -230,6 +230,25 @@ export default {
         runner_not_built: "未构建",
         runner_commit: "提交",
         runner_build_time: "构建时间",
-        runner_size: "大小"
+        runner_size: "大小",
+        captured_headers: "网络请求头捕获",
+        captured_headers_desc: "通过 CDP 网络拦截 Discord 客户端的所有 HTTP 请求，收集请求头统计信息",
+        capture_btn: "捕获",
+        capturing: "捕获中...",
+        capture_hint: "需要 Discord 以调试模式运行。点击捕获按钮以在指定时长内收集所有 HTTP 请求头。",
+        captured_from: "捕获来源",
+        total_requests: "总请求数",
+        capture_duration: "捕获时长",
+        header_key_counts: "请求头 Key 频率",
+        header_kv_counts: "请求头 Key-Value 频率",
+        request_list: "请求详情",
+        request_search: "通过 URL 或请求头搜索...",
+        request_no_match: "没有符合当前筛选的请求。",
+        decode: "解码",
+        decoder_title: "x-super-properties 解码器",
+        decoder_desc: "将 base64 编码的 x-super-properties 请求头解码为 JSON。",
+        decoder_placeholder: "在此粘贴 base64 字符串...",
+        decoder_decode: "解码",
+        decoder_result: "解码结果"
     }
 }

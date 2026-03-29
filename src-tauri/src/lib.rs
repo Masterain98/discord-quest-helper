@@ -686,7 +686,8 @@ pub fn run() {
             create_discord_debug_shortcut,
             get_super_properties_mode,
             auto_fetch_super_properties,
-            retry_super_properties
+            retry_super_properties,
+            capture_discord_headers_cdp
         ])
         .on_window_event(|_window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
@@ -780,6 +781,16 @@ async fn fetch_super_properties_cdp(port: Option<u16>) -> Result<cdp_client::Cdp
     }
     
     Ok(result)
+}
+
+/// Capture Discord API request headers via CDP Network interception
+#[tauri::command]
+async fn capture_discord_headers_cdp(port: Option<u16>, duration_secs: Option<u64>) -> Result<cdp_client::CdpCapturedHeaders, String> {
+    let port = port.unwrap_or(cdp_client::DEFAULT_CDP_PORT);
+    let duration = duration_secs.unwrap_or(30);
+    cdp_client::capture_discord_headers_via_cdp(port, duration)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Get current SuperProperties source mode and build number

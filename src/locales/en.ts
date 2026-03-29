@@ -230,6 +230,25 @@ export default {
         runner_not_built: "Not Built",
         runner_commit: "Commit",
         runner_build_time: "Built",
-        runner_size: "Size"
+        runner_size: "Size",
+        captured_headers: "Network Header Capture",
+        captured_headers_desc: "Intercept all Discord client HTTP requests via CDP Network and collect header statistics",
+        capture_btn: "Capture",
+        capturing: "Capturing...",
+        capture_hint: "Requires Discord running with debug flag. Click Capture to collect all HTTP request headers for the specified duration.",
+        captured_from: "Captured from",
+        total_requests: "Total Requests",
+        capture_duration: "Duration",
+        header_key_counts: "Header Key Frequency",
+        header_kv_counts: "Header Key-Value Frequency",
+        request_list: "Request Details",
+        request_search: "Search by URL or header...",
+        request_no_match: "No requests match the current filter.",
+        decode: "Decode",
+        decoder_title: "x-super-properties Decoder",
+        decoder_desc: "Decode base64-encoded x-super-properties header to view the JSON payload.",
+        decoder_placeholder: "Paste base64 string here...",
+        decoder_decode: "Decode",
+        decoder_result: "Decoded Result"
     }
 }

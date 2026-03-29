@@ -227,6 +227,25 @@ export default {
         runner_not_built: "未ビルド",
         runner_commit: "コミット",
         runner_build_time: "ビルド日時",
-        runner_size: "サイズ"
+        runner_size: "サイズ",
+        captured_headers: "ネットワークヘッダーキャプチャ",
+        captured_headers_desc: "CDP ネットワーク経由で Discord クライアントのすべての HTTP リクエストを傍受し、ヘッダー統計を収集します",
+        capture_btn: "キャプチャ",
+        capturing: "キャプチャ中...",
+        capture_hint: "Discord をデバッグフラグ付きで起動する必要があります。キャプチャをクリックして指定時間内のすべての HTTP リクエストヘッダーを収集します。",
+        captured_from: "キャプチャ元",
+        total_requests: "総リクエスト数",
+        capture_duration: "キャプチャ時間",
+        header_key_counts: "ヘッダーキー頻度",
+        header_kv_counts: "ヘッダーキー・バリュー頻度",
+        request_list: "リクエスト詳細",
+        request_search: "URLまたはヘッダーで検索...",
+        request_no_match: "現在のフィルターに一致するリクエストはありません。",
+        decode: "デコード",
+        decoder_title: "x-super-properties デコーダー",
+        decoder_desc: "base64エンコードされたx-super-propertiesヘッダーをJSONにデコードします。",
+        decoder_placeholder: "base64文字列をここに貼り付け...",
+        decoder_decode: "デコード",
+        decoder_result: "デコード結果"
     }
 }

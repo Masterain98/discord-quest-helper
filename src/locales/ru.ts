@@ -229,6 +229,25 @@ export default {
         runner_not_built: "Не собран",
         runner_commit: "Коммит",
         runner_build_time: "Время сборки",
-        runner_size: "Размер"
+        runner_size: "Размер",
+        captured_headers: "Захват сетевых заголовков",
+        captured_headers_desc: "Перехват всех HTTP-запросов клиента Discord через сеть CDP и сбор статистики заголовков",
+        capture_btn: "Захватить",
+        capturing: "Захват...",
+        capture_hint: "Требуется запуск Discord с флагом отладки. Нажмите Захватить для сбора всех HTTP-заголовков в течение указанного времени.",
+        captured_from: "Перехвачено из",
+        total_requests: "Всего запросов",
+        capture_duration: "Длительность",
+        header_key_counts: "Частота ключей заголовков",
+        header_kv_counts: "Частота ключ-значение заголовков",
+        request_list: "Детали запросов",
+        request_search: "Поиск по URL или заголовку...",
+        request_no_match: "Нет запросов, соответствующих текущему фильтру.",
+        decode: "Декодировать",
+        decoder_title: "Декодер x-super-properties",
+        decoder_desc: "Декодирование base64-закодированного заголовка x-super-properties в JSON.",
+        decoder_placeholder: "Вставьте строку base64 здесь...",
+        decoder_decode: "Декодировать",
+        decoder_result: "Результат декодирования"
     }
 }
