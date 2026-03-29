@@ -1,6 +1,6 @@
 ## ✨ What's Changed
 
-1. Try to solve the issue that simulated RPC not been detected by Discord.
-2. Add custom process name tips for empty executable list app.
-3. Add sub process cleanup when the main app is closed.
-4. Bump default build number to 500334.
+1. Fixed delayed process bar in all tasks.
+2. Fixed unexpected progress submission when starting video quests.
+3. Bump dependencies versions.
+4. Bump default build number to 509958.
