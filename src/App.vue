@@ -32,6 +32,9 @@ const debugModeEnabled = ref(false)
 
 
 
+// Account selection tracking
+const selectedAccountId = ref<string | null>(null)
+
 // Manual login
 const manualTokenInput = ref('')
 
@@ -114,8 +117,13 @@ function setLanguage(lang: string) {
 
 // Account Selection Logic
 async function selectAccount(account: ExtractedAccount) {
-    await authStore.loginWithToken(account.token)
-    authStore.detectedAccounts = [] // Clear after selection
+    selectedAccountId.value = account.user.id
+    try {
+      await authStore.loginWithToken(account.token)
+      authStore.detectedAccounts = [] // Clear after selection
+    } finally {
+      selectedAccountId.value = null
+    }
 }
 
 onMounted(() => {
@@ -237,12 +245,17 @@ onMounted(() => {
                 :key="account.user.id"
                 variant="outline"
                 class="w-full justify-start h-auto py-3 px-4"
+                :disabled="authStore.loading"
                 @click="selectAccount(account)"
               >
+                <Loader2 
+                  v-if="selectedAccountId === account.user.id"
+                  class="w-5 h-5 rounded-full mr-3 animate-spin shrink-0"
+                />
                 <img 
-                  v-if="account.user.avatar"
+                  v-else-if="account.user.avatar"
                   :src="`https://cdn.discordapp.com/avatars/${account.user.id}/${account.user.avatar}.png`" 
-                  class="w-8 h-8 rounded-full mr-3"
+                  class="w-8 h-8 rounded-full mr-3 shrink-0"
                   alt="Avatar"
                 />
                 <div class="text-left">
