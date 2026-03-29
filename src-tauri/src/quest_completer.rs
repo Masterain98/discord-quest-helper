@@ -32,9 +32,14 @@ pub async fn complete_video_quest(
              quest_id, seconds_needed, current_seconds);
     
     loop {
+        // Calculate the remaining simulated seconds, then the real wait time
+        let remaining_sim_seconds = (seconds_needed as f64) - current_seconds;
+        let real_seconds_to_finish = if speed > 0.0 { remaining_sim_seconds / speed } else { interval as f64 };
+        let wait_secs = (real_seconds_to_finish.ceil() as u64).min(interval).max(1);
+
         // Wait before advancing progress (prevents immediate jump on first iteration)
         tokio::select! {
-            _ = sleep(Duration::from_secs(interval)) => {},
+            _ = sleep(Duration::from_secs(wait_secs)) => {},
             _ = cancel_rx.recv() => {
                 println!("Video quest cancelled");
                 let _ = app_handle.emit("quest-stopped", ());
@@ -42,9 +47,8 @@ pub async fn complete_video_quest(
             }
         }
         
-        // Advance timestamp based on speed and interval
-        // e.g. if speed is 1x and interval is 15s, we should advance 15s
-        current_seconds += speed * (interval as f64);
+        // Advance timestamp based on speed and actual wait time
+        current_seconds += speed * (wait_secs as f64);
         let timestamp = current_seconds.min(seconds_needed as f64);
         
         // Add some randomness to look more natural
