@@ -39,6 +39,8 @@ export default {
         complete_all_video: "Complete All Video Quests",
         processing_queue: "Processing Queue",
         remaining: "remaining",
+        pending_claim_reminder: "{count} quest(s) completed and awaiting claim in Discord.",
+        view_pending_claim: "View",
         accept_quest: "Accept Quest",
         stop_quest: "Stop Quest",
         complete_quest: "Complete Quest",

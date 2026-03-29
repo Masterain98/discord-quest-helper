@@ -37,6 +37,8 @@ export default {
         filters: "フィルター",
         accept_all: "すべて受け入れる",
         complete_all_video: "すべての動画クエストを完了",
+        pending_claim_reminder: "{count} 件のクエストが完了済みです。Discordで報酬を受け取ってください。",
+        view_pending_claim: "確認",
         processing_queue: "処理キュー",
         remaining: "残り",
         accept_quest: "クエストを受け入れる",

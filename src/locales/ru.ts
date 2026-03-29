@@ -37,6 +37,8 @@ export default {
         filters: "Фильтры",
         accept_all: "Принять все",
         complete_all_video: "Завершить все видео квесты",
+        pending_claim_reminder: "{count} квест(ов) завершено и ожидает получения награды в Discord.",
+        view_pending_claim: "Просмотр",
         processing_queue: "Очередь обработки",
         remaining: "осталось",
         accept_quest: "Принять квест",

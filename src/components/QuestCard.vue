@@ -124,13 +124,16 @@ const discordRewards = computed(() => {
 })
 
 function formatDuration(seconds: number): string {
-  const minutes = Math.floor(seconds / 60)
+  const totalSeconds = Math.round(seconds)
+  const minutes = Math.floor(totalSeconds / 60)
+  const secs = totalSeconds % 60
   if (minutes >= 60) {
     const hours = Math.floor(minutes / 60)
     const mins = minutes % 60
-    return `${hours}h ${mins}m`
+    return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`
   }
-  return `${minutes}m`
+  if (minutes === 0) return `${secs}s`
+  return secs > 0 ? `${minutes}m ${secs}s` : `${minutes}m`
 }
 
 function formatDate(dateStr: string): string {

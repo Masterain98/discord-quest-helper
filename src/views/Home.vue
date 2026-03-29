@@ -235,8 +235,23 @@
           <p class="text-muted-foreground">No quests match your filters</p>
           <Button variant="link" @click="clearFilters" v-if="hasActiveFilters">Clear Filters</Button>
         </div>
-        
-        <div v-else class="space-y-4">
+
+        <template v-else>
+        <!-- Pending Claim Reminder -->
+        <div
+          v-if="showPendingClaimBanner"
+          class="flex items-center justify-between gap-3 p-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10"
+        >
+          <div class="flex items-center gap-2 text-sm text-yellow-700 dark:text-yellow-300">
+            <Gift class="w-4 h-4 shrink-0" />
+            <span>{{ t('home.pending_claim_reminder', { count: pendingClaimCount }) }}</span>
+          </div>
+          <Button size="sm" variant="outline" class="shrink-0 border-yellow-500/40 text-yellow-700 dark:text-yellow-300 hover:bg-yellow-500/10" @click="showPendingClaimFilter">
+            {{ t('home.view_pending_claim') }}
+          </Button>
+        </div>
+
+        <TransitionGroup name="quest-list" tag="div" class="space-y-4">
           <QuestCard 
             v-for="quest in filteredQuests" 
             :key="quest.id"
@@ -280,7 +295,8 @@
               </span>
             </template>
           </QuestCard>
-        </div>
+        </TransitionGroup>
+        </template>
       </div>
       
       <div class="lg:col-span-1">
@@ -433,7 +449,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
-import { RotateCw, Filter, AlertCircle, Loader2, ArrowUpCircle, ExternalLink, Check, Search } from 'lucide-vue-next'
+import { RotateCw, Filter, AlertCircle, Loader2, ArrowUpCircle, ExternalLink, Check, Search, Gift } from 'lucide-vue-next'
 import { Input } from '@/components/ui/input'
 import { useI18n } from 'vue-i18n'
 import { open } from '@tauri-apps/plugin-shell'
@@ -643,6 +659,27 @@ function getRewardType(quest: Quest): 'orbs' | 'avatar' | 'ingame' {
 }
 
 // Filtered quests based on filter state
+// Quests completed but not yet claimed (across the full store, not filtered)
+// Excludes expired quests to align with filteredQuests visibility rules
+const pendingClaimCount = computed(() =>
+  questsStore.quests.filter(q => {
+    if (!q.user_status?.completed_at || q.user_status?.claimed_at) return false
+    if (q.config.expires_at && new Date(q.config.expires_at) < new Date()) return false
+    return true
+  }).length
+)
+
+// Show banner only when pending-claim quests exist but aren't visible in the current filtered view
+const showPendingClaimBanner = computed(() => {
+  if (pendingClaimCount.value === 0) return false
+  return !filteredQuests.value.some(q => q.user_status?.completed_at && !q.user_status?.claimed_at)
+})
+
+function showPendingClaimFilter() {
+  filters.value.status.pendingClaim = true
+  showFilters.value = true
+}
+
 const filteredQuests = computed(() => { 
   // Global filter: Hide expired quests (unless claimed)
   let quests = questsStore.quests.filter(q => {
@@ -967,3 +1004,15 @@ async function acceptQuest(quest: Quest) {
   }
 }
 </script>
+
+<style scoped>
+/* Quest list leave animation */
+.quest-list-leave-active {
+  transition: opacity 0.35s ease, transform 0.35s ease;
+  pointer-events: none;
+}
+.quest-list-leave-to {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.98);
+}
+</style>
