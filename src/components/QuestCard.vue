@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch, onUnmounted } from 'vue'
 import type { Quest } from '@/api/tauri'
 import { useQuestsStore } from '@/stores/quests'
 import {
@@ -11,7 +11,6 @@ import {
   CardFooter,
 } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Progress } from '@/components/ui/progress'
 import { Clock, Gift, MonitorPlay, Gamepad2, Activity } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 
@@ -146,6 +145,48 @@ const activeLocalPercent = computed(() => {
   return 0
 })
 
+// Animate the submitted (blue) progress value so it eases forward instead of jumping
+const animatedSubmitted = ref(progress.value)
+let _raf: number | null = null
+watch(progress, (next) => {
+  if (_raf !== null) cancelAnimationFrame(_raf)
+  const from = animatedSubmitted.value
+  const to = next
+  const duration = 450
+  const t0 = performance.now()
+  const step = (now: number) => {
+    const t = Math.min((now - t0) / duration, 1)
+    const eased = 1 - Math.pow(1 - t, 3) // ease-out cubic
+    animatedSubmitted.value = from + (to - from) * eased
+    if (t < 1) _raf = requestAnimationFrame(step)
+    else { animatedSubmitted.value = to; _raf = null }
+  }
+  _raf = requestAnimationFrame(step)
+})
+onUnmounted(() => { if (_raf !== null) cancelAnimationFrame(_raf) })
+
+// Single-gradient progress bar style: true blue→green color blend, no transparency tricks
+const progressBarStyle = computed(() => {
+  const local = activeLocalPercent.value
+  const submitted = animatedSubmitted.value
+  if (local <= 0) return {}
+  // Compute gradient stops as % within the bar's own width
+  const junctionPct = Math.round((submitted / local) * 100)
+  const stop1 = Math.max(0, junctionPct - 2)
+  const stop2 = Math.min(100, junctionPct + 8)
+  const hasPending = local > submitted + 0.5
+  const bg = !hasPending
+    ? 'hsl(var(--primary))'
+    : `linear-gradient(to right, hsl(var(--primary)) ${stop1}%, rgb(74,222,128) ${stop2}%, rgb(74,222,128) 100%)`
+  return {
+    width: `${local}%`,
+    background: bg,
+    boxShadow: hasPending
+      ? '0 0 4px 1px hsl(var(--primary) / 0.6), 0 0 8px 2px hsl(var(--primary) / 0.25), 2px 0 6px 1px rgb(74 222 128 / 0.35)'
+      : '0 0 4px 1px hsl(var(--primary) / 0.6), 0 0 8px 2px hsl(var(--primary) / 0.25)',
+  }
+})
+
 const activeTimeText = computed(() => {
   if (!isActiveQuest.value) return ''
   const total = targetDuration.value
@@ -214,22 +255,24 @@ const activeTimeText = computed(() => {
           <span v-if="targetDuration" class="text-muted-foreground">{{ formatDuration(targetDuration) }} required</span>
         </div>
         
-        <!-- Dual Layer Progress Bar for Active Quest -->
-        <div v-if="isActiveQuest" class="relative h-2 w-full overflow-hidden rounded-full bg-secondary">
-           <!-- Layer 1: Local Accumulated (Green) -->
-           <div 
-             class="absolute h-full bg-green-500/50 transition-all duration-300 ease-linear"
-             :style="{ width: `${activeLocalPercent}%` }"
-           ></div>
-           <!-- Layer 2: Submitted (Blue) -->
-           <div 
-             class="absolute h-full bg-primary transition-all duration-300 ease-in-out"
-             :style="{ width: `${progress}%` }"
-           ></div>
+        <!-- Progress Bar for Active Quest: single gradient div, blue→green -->
+        <div v-if="isActiveQuest" class="relative h-1.5 w-full rounded-full bg-secondary">
+          <div
+            class="absolute inset-y-0 left-0 rounded-full transition-all duration-300"
+            :style="progressBarStyle"
+          ></div>
         </div>
         
-        <!-- Standard Progress Bar for others -->
-        <Progress v-else :model-value="progress" class="h-2" />
+        <!-- Standard Progress Bar for others (with glow) -->
+        <div v-else class="relative h-1.5 w-full rounded-full bg-secondary">
+          <div
+            class="absolute inset-y-0 left-0 rounded-full bg-primary transition-all duration-300"
+            :style="{
+              width: `${progress}%`,
+          boxShadow: progress > 0 ? '0 0 4px 1px hsl(var(--primary) / 0.6), 0 0 8px 2px hsl(var(--primary) / 0.25)' : 'none'
+            }"
+          />
+        </div>
       </div>
       
       <!-- In-Game Rewards (with images) -->
