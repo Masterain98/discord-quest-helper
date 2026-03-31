@@ -702,6 +702,27 @@ export const useQuestsStore = defineStore('quests', () => {
     }
   }
 
+  function resetForLogout() {
+    quests.value = []
+    lastQuestsFetchTime.value = 0
+    loading.value = false
+    error.value = null
+    activeQuestId.value = null
+    activeQuestType.value = null
+    activeQuestProgress.value = 0
+    activeQuestTargetDuration.value = 0
+    localProgress.value = 0
+    activeGameExe.value = null
+    questQueue.value = []
+    isQueueRunning.value = false
+    stopping.value = false
+    detectableGames.value = []
+    fetchingGames.value = false
+    stopProgressSimulation()
+    cleanupListeners()
+    stopPolling()
+  }
+
   return {
     quests,
     loading,
@@ -743,6 +764,7 @@ export const useQuestsStore = defineStore('quests', () => {
     },
     // Game Process Caching
     detectableGames,
-    getDetectableGames
+    getDetectableGames,
+    resetForLogout
   }
 })

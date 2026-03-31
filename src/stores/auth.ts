@@ -76,6 +76,11 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = null
     token.value = null
     error.value = null
+    detectedAccounts.value = []
+
+    // Reset quests store to clear all cached data from previous account
+    const questsStore = useQuestsStore()
+    questsStore.resetForLogout()
   }
 
   return {
