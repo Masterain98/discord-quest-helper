@@ -10,6 +10,7 @@ mod super_properties;
 mod token_extractor;
 mod logger;
 mod cdp_client;
+mod cdp_quest;
 mod stealth;
 
 use discord_api::DiscordApiClient;
@@ -343,6 +344,71 @@ async fn start_game_heartbeat_quest(
     Ok(())
 }
 
+/// Start a quest via CDP injection
+///
+/// Dispatches to the appropriate CDP completion function based on quest_type.
+#[tauri::command]
+async fn start_cdp_quest(
+    quest_id: String,
+    quest_type: String,
+    application_id: String,
+    application_name: String,
+    seconds_needed: u32,
+    initial_progress: f64,
+    cdp_port: u16,
+    state: State<'_, AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    // Stop current quest (if any)
+    stop_quest_internal(&state).await;
+
+    // Create cancel channel
+    let (cancel_tx, cancel_rx) = tokio::sync::mpsc::channel::<()>(1);
+
+    // Save quest state
+    *state.quest_state.lock().unwrap() = Some(QuestState {
+        quest_id: quest_id.clone(),
+        cancel_flag: cancel_tx,
+    });
+
+    let quest_type_clone = quest_type.clone();
+
+    // Run in background task
+    tokio::spawn(async move {
+        let result = match quest_type_clone.as_str() {
+            "play" => {
+                cdp_quest::complete_play_quest_via_cdp(
+                    cdp_port, quest_id, application_id, application_name,
+                    seconds_needed, initial_progress,
+                    app_handle.clone(), cancel_rx,
+                ).await
+            }
+            "stream" => {
+                cdp_quest::complete_stream_quest_via_cdp(
+                    cdp_port, quest_id, application_id,
+                    seconds_needed, initial_progress,
+                    app_handle.clone(), cancel_rx,
+                ).await
+            }
+            "video" => {
+                cdp_quest::complete_video_quest_via_cdp(
+                    cdp_port, quest_id, seconds_needed, initial_progress,
+                    app_handle.clone(), cancel_rx,
+                ).await
+            }
+            _ => {
+                Err(anyhow::anyhow!("Unknown CDP quest type: {}", quest_type_clone))
+            }
+        };
+
+        if let Err(e) = result {
+            let _ = app_handle.emit("quest-error", format!("CDP quest failed: {:#}", e));
+        }
+    });
+
+    Ok(())
+}
+
 /// Stop current quest
 #[tauri::command]
 async fn stop_quest(state: State<'_, AppState>) -> Result<(), String> {
@@ -669,6 +735,7 @@ pub fn run() {
             start_video_quest,
             start_stream_quest,
             start_game_heartbeat_quest,
+            start_cdp_quest,
             stop_quest,
             create_simulated_game,
             run_simulated_game,

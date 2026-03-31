@@ -155,18 +155,18 @@ async function createShortcut() {
 
 // Emit for tab navigation (consolidated above)
 
-// Heartbeat Safety Warning Logic
+// [LEGACY] Heartbeat Safety Warning Logic — replaced by CDP mode
 const showHeartbeatWarning = ref(false)
 
-function handleHeartbeatClick() {
-  if (questsStore.gameQuestMode === 'heartbeat') return // Already selected
-  showHeartbeatWarning.value = true
-}
+// function handleHeartbeatClick() {
+//   if (questsStore.gameQuestMode === 'heartbeat') return // Already selected
+//   showHeartbeatWarning.value = true
+// }
 
-function confirmHeartbeatMode() {
-  questsStore.gameQuestMode = 'heartbeat'
-  showHeartbeatWarning.value = false
-}
+// function confirmHeartbeatMode() {
+//   questsStore.gameQuestMode = 'heartbeat'
+//   showHeartbeatWarning.value = false
+// }
 
 async function copyPath() {
   if (cachePath.value) {
@@ -247,6 +247,8 @@ onMounted(async () => {
   
   // Check CDP status (will also load SuperProperties mode after check completes)
   await checkCdp()
+  // Update quest store's CDP availability for mode selection
+  await questsStore.initCdpMode()
 })
 
 // Log export functionality
@@ -457,6 +459,7 @@ async function exportLogs() {
                 <div class="font-medium">{{ t('settings.game_mode_simulate') }}</div>
                 <div class="text-xs text-muted-foreground mt-1">{{ t('settings.game_mode_simulate_desc') }}</div>
               </button>
+              <!-- [LEGACY] Heartbeat mode button — replaced by CDP mode
               <button 
                 @click="handleHeartbeatClick"
                 :class="[
@@ -472,12 +475,36 @@ async function exportLogs() {
                 </div>
                 <div class="text-xs text-muted-foreground mt-1">{{ t('settings.game_mode_heartbeat_desc') }}</div>
               </button>
+              -->
+              <button 
+                @click="questsStore.cdpAvailable ? questsStore.gameQuestMode = 'cdp' : null"
+                :disabled="!questsStore.cdpAvailable"
+                :class="[
+                  'p-4 rounded-lg border-2 text-left transition-all',
+                  questsStore.gameQuestMode === 'cdp' 
+                    ? 'border-green-500 bg-green-500/5' 
+                    : questsStore.cdpAvailable
+                      ? 'border-border hover:border-green-500/50'
+                      : 'border-border opacity-50 cursor-not-allowed'
+                ]"
+              >
+                <div class="font-medium flex items-center gap-2">
+                  {{ t('settings.game_mode_cdp') }}
+                  <Badge v-if="questsStore.gameQuestMode === 'cdp'" variant="outline" class="text-green-500 border-green-500/50 text-[10px] px-1.5 py-0">
+                    {{ t('settings.game_mode_cdp_connected') }}
+                  </Badge>
+                </div>
+                <div class="text-xs text-muted-foreground mt-1">
+                  <template v-if="questsStore.cdpAvailable">{{ t('settings.game_mode_cdp_desc') }}</template>
+                  <template v-else>{{ t('settings.game_mode_cdp_unavailable') }}</template>
+                </div>
+              </button>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      <!-- Safety Warning Dialog -->
+      <!-- [LEGACY] Heartbeat Safety Warning Dialog — no longer used with CDP mode
       <AlertDialog :open="showHeartbeatWarning" @update:open="showHeartbeatWarning = $event">
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -500,6 +527,7 @@ async function exportLogs() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      -->
 
       
       <!-- Discord CDP Integration -->
@@ -737,6 +765,13 @@ async function exportLogs() {
                        <img src="/icons/github-mark.svg" alt="GitHub" class="w-4 h-4 dark:hidden" />
                        <img src="/icons/github-mark-white.svg" alt="GitHub" class="w-4 h-4 hidden dark:block" />
                        <span class="hover:underline">taisrisk/Discord-Quest-Helper</span>
+                     </a>
+                   </li>
+                   <li>
+                     <a href="#" @click.prevent="openExternal('https://gist.github.com/aamiaa/204cd9d42013ded9faf646fae7f89fbb')" class="inline-flex items-center gap-2 hover:opacity-80 transition-opacity">
+                       <img src="/icons/github-mark.svg" alt="GitHub" class="w-4 h-4 dark:hidden" />
+                       <img src="/icons/github-mark-white.svg" alt="GitHub" class="w-4 h-4 hidden dark:block" />
+                       <span class="hover:underline">aamiaa/CompleteDiscordQuest.md</span>
                      </a>
                    </li>
                    <li>

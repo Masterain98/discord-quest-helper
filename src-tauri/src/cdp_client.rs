@@ -481,6 +481,112 @@ pub async fn capture_discord_headers_via_cdp(port: u16, duration_secs: u64) -> R
     })
 }
 
+/// Execute arbitrary JavaScript code via CDP Runtime.evaluate.
+///
+/// This is a generic helper used by `cdp_quest` to inject JS into the Discord client.
+/// Supports `awaitPromise` for async JS expressions and a configurable timeout.
+pub async fn execute_js_via_cdp(port: u16, js_code: &str, await_promise: bool, timeout_secs: u64) -> Result<String> {
+    use crate::logger::{log, LogLevel, LogCategory};
+
+    log(LogLevel::Debug, LogCategory::TokenExtraction,
+        &format!("execute_js_via_cdp: port={}, await_promise={}, timeout={}s, code_len={}",
+            port, await_promise, timeout_secs, js_code.len()), None);
+
+    let targets = get_cdp_targets(port).await?;
+    let target = pick_discord_target(&targets)
+        .context("No Discord target found")?;
+    let ws_url = target
+        .web_socket_debugger_url
+        .as_ref()
+        .context("Target has no WebSocket URL")?;
+
+    let (ws_stream, _) = connect_async(ws_url)
+        .await
+        .context("Failed to connect to CDP WebSocket")?;
+    let (mut write, mut read) = ws_stream.split();
+
+    let request = serde_json::json!({
+        "id": 1,
+        "method": "Runtime.evaluate",
+        "params": {
+            "expression": js_code,
+            "returnByValue": true,
+            "awaitPromise": await_promise
+        }
+    });
+
+    write
+        .send(Message::Text(request.to_string().into()))
+        .await
+        .context("Failed to send CDP request")?;
+
+    let response = tokio::time::timeout(Duration::from_secs(timeout_secs), async {
+        while let Some(msg) = read.next().await {
+            match msg {
+                Ok(Message::Text(text)) => {
+                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
+                        if json.get("id") == Some(&serde_json::json!(1)) {
+                            return Ok(json);
+                        }
+                    }
+                }
+                Ok(_) => continue,
+                Err(e) => return Err(anyhow::anyhow!("WebSocket error: {}", e)),
+            }
+        }
+        Err(anyhow::anyhow!("WebSocket closed unexpectedly"))
+    })
+    .await
+    .context(format!("CDP request timed out ({}s)", timeout_secs))??;
+
+    let _ = write.close().await;
+
+    // Check for CDP-level errors (e.g., method not found, invalid params)
+    if let Some(error) = response.get("error") {
+        let code = error.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
+        let message = error.get("message")
+            .and_then(|m| m.as_str())
+            .unwrap_or("Unknown CDP error");
+        anyhow::bail!("CDP error (code {}): {}", code, message);
+    }
+
+    // Extract the result value from the CDP response
+    // For successful evaluations: response.result.result.value (string)
+    // For exceptions: response.result.exceptionDetails
+    if let Some(exception) = response.get("result").and_then(|r| r.get("exceptionDetails")) {
+        let text = exception.get("text")
+            .and_then(|t| t.as_str())
+            .unwrap_or("Unknown JS exception");
+        anyhow::bail!("JavaScript exception: {}", text);
+    }
+
+    let result_value = response
+        .get("result")
+        .and_then(|r| r.get("result"))
+        .and_then(|r| {
+            // Handle both string values and other types
+            if let Some(s) = r.get("value").and_then(|v| v.as_str()) {
+                Some(s.to_string())
+            } else if let Some(v) = r.get("value") {
+                // If value is not a string (e.g., object with returnByValue), serialize it
+                Some(v.to_string())
+            } else {
+                // No value field — check if type is "undefined"
+                let rtype = r.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                log(LogLevel::Warn, LogCategory::TokenExtraction,
+                    &format!("CDP result has no value field. type={}, full result: {}", 
+                        rtype, serde_json::to_string(r).unwrap_or_default()), None);
+                None
+            }
+        })
+        .unwrap_or_default();
+
+    log(LogLevel::Debug, LogCategory::TokenExtraction,
+        &format!("execute_js_via_cdp result: {}...", &result_value.chars().take(200).collect::<String>()), None);
+
+    Ok(result_value)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

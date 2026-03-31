@@ -119,6 +119,8 @@ export async function stopQuest(): Promise<void> {
   return await invoke('stop_quest')
 }
 
+// [LEGACY] Direct heartbeat mode — kept for backward compatibility
+// Use startCdpQuest() instead for new code
 export async function startGameHeartbeatQuest(
   questId: string,
   applicationId: string,
@@ -312,4 +314,26 @@ export interface CdpCapturedHeaders {
 
 export async function captureDiscordHeadersCdp(port?: number, durationSecs?: number): Promise<CdpCapturedHeaders> {
   return await invoke('capture_discord_headers_cdp', { port, durationSecs })
+}
+
+// CDP Quest Completion
+
+export async function startCdpQuest(
+  questId: string,
+  questType: 'play' | 'stream' | 'video',
+  applicationId: string,
+  applicationName: string,
+  secondsNeeded: number,
+  initialProgress: number,
+  cdpPort: number
+): Promise<void> {
+  return await invoke('start_cdp_quest', {
+    questId,
+    questType,
+    applicationId,
+    applicationName,
+    secondsNeeded,
+    initialProgress,
+    cdpPort
+  })
 }
