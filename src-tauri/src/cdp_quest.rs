@@ -154,6 +154,9 @@ const JS_INIT_QUEST_MODULES: &str = r#"
 /// Overrides `getRunningGames()` to return an array containing the spoofed game,
 /// then dispatches `RUNNING_GAMES_CHANGE` so Discord's heartbeat system picks it up.
 fn js_spoof_play_game(app_id: &str, app_name: &str) -> String {
+    // Safely escape values for embedding in JS string literals
+    let safe_app_id = serde_json::to_string(app_id).unwrap_or_else(|_| "\"\"" .to_string());
+    let safe_app_name = serde_json::to_string(app_name).unwrap_or_else(|_| "\"\"" .to_string());
     format!(r#"
 (async () => {{
     try {{
@@ -161,8 +164,8 @@ fn js_spoof_play_game(app_id: &str, app_name: &str) -> String {
         if (!dqh || !dqh.initialized) return JSON.stringify({{ success: false, error: "Modules not initialized" }});
 
         const pid = Math.floor(Math.random() * 30000) + 1000;
-        const applicationId = "{app_id}";
-        const applicationName = "{app_name}";
+        const applicationId = {safe_app_id};
+        const applicationName = {safe_app_name};
 
         // Fetch real exe info from Discord's public API (same as gist)
         let exeName = applicationName.replace(/[\/\\:*?"<>|]/g, "") + ".exe";
@@ -316,7 +319,7 @@ fn js_spoof_play_game(app_id: &str, app_name: &str) -> String {
         return JSON.stringify({{ success: false, error: String(e) }});
     }}
 }})()
-"#, app_id = app_id, app_name = app_name)
+"#)
 }
 
 /// Generate JS to spoof streaming metadata in ApplicationStreamingStore.
@@ -324,6 +327,7 @@ fn js_spoof_play_game(app_id: &str, app_name: &str) -> String {
 /// Overrides `getStreamerActiveStreamMetadata()` to return metadata indicating
 /// the user is streaming the specified application.
 fn js_spoof_stream(app_id: &str) -> String {
+    let safe_app_id = serde_json::to_string(app_id).unwrap_or_else(|_| "\"\"".to_string());
     format!(r#"
 (() => {{
     try {{
@@ -333,7 +337,7 @@ fn js_spoof_stream(app_id: &str) -> String {
         const pid = Math.floor(Math.random() * 30000) + 1000;
 
         dqh.ApplicationStreamingStore.getStreamerActiveStreamMetadata = () => ({{
-            id: "{app_id}",
+            id: {safe_app_id},
             pid: pid,
             sourceName: null
         }});
@@ -366,7 +370,7 @@ fn js_spoof_stream(app_id: &str) -> String {
         return JSON.stringify({{ success: false, error: String(e) }});
     }}
 }})()
-"#, app_id = app_id)
+"#)
 }
 
 /// Generate JS for video quest completion (fire-and-forget pattern).

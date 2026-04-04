@@ -221,7 +221,11 @@ async function captureHeaders() {
   capturing.value = true
   captureError.value = null
   try {
-    capturedHeaders.value = await captureDiscordHeadersCdp(undefined, captureDuration.value)
+    const duration = Math.min(
+      120,
+      Math.max(5, Number.isFinite(captureDuration.value) ? captureDuration.value : 30),
+    )
+    capturedHeaders.value = await captureDiscordHeadersCdp(undefined, duration)
     saveCapturedHeaders()
   } catch (e) {
     captureError.value = String(e)

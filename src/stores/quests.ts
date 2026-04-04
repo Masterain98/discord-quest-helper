@@ -276,7 +276,8 @@ export const useQuestsStore = defineStore('quests', () => {
       activeQuestProgress.value = progressPct
       activeQuestTargetDuration.value = secondsNeeded
 
-      startProgressSimulation(speedMultiplier.value)
+      // CDP video progress is server-enforced real-time; don't inflate local simulation
+      startProgressSimulation(gameQuestMode.value === 'cdp' ? 1.0 : speedMultiplier.value)
       setupListeners()
     } catch (e) {
       error.value = e as string
@@ -434,8 +435,8 @@ export const useQuestsStore = defineStore('quests', () => {
     stopProgressSimulation()
 
     try {
-      // Force Save Logic for Video Quests
-      if (activeQuestId.value && activeQuestType.value === 'video' && activeQuestTargetDuration.value > 0) {
+      // Force Save Logic for Video Quests (skip in CDP mode — progress is server-managed)
+      if (activeQuestId.value && activeQuestType.value === 'video' && activeQuestTargetDuration.value > 0 && gameQuestMode.value !== 'cdp') {
         try {
           const currentSeconds = (localProgress.value / 100) * activeQuestTargetDuration.value
           // Only force if we have significant progress
