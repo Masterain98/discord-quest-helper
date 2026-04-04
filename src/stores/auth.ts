@@ -53,6 +53,11 @@ export const useAuthStore = defineStore('auth', () => {
         const questsStore = useQuestsStore()
         await autoFetchSuperProperties(questsStore.cdpPort)
 
+        // Check CDP availability and update banner immediately after login
+        questsStore.initCdpMode().catch(err => {
+          console.warn('CDP init on login failed:', err)
+        })
+
         // Pre-fetch game list in background to avoid waiting later
         // do not await - let it run async
         questsStore.getDetectableGames().catch(err => {
@@ -72,10 +77,22 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  function logout() {
+  async function logout() {
+    // Stop any in-progress quest before clearing state
+    const questsStore = useQuestsStore()
+    try {
+      await questsStore.stop()
+    } catch (e) {
+      console.warn('Failed to stop quest during logout:', e)
+    }
+
     user.value = null
     token.value = null
     error.value = null
+    detectedAccounts.value = []
+
+    // Reset quests store to clear all cached data from previous account
+    questsStore.resetForLogout()
   }
 
   return {

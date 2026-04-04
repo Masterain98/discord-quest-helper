@@ -28,8 +28,8 @@ pub async fn complete_video_quest(
     // Convert initial progress (percentage) to seconds
     let mut current_seconds = (initial_progress / 100.0 * seconds_needed as f64) as f64;
     
-    println!("Starting video quest: quest_id={}, target={}s, current_progress={:.1}s", 
-             quest_id, seconds_needed, current_seconds);
+    println!("Starting video quest: quest_id={}, target={}s, current_progress={:.1}s, speed={:.1}x, interval={}s", 
+             quest_id, seconds_needed, current_seconds, speed, interval);
     
     loop {
         // Calculate the remaining simulated seconds, then the real wait time

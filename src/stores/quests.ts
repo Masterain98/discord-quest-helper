@@ -16,7 +16,9 @@ import {
   connectToDiscordRpc,
   acceptQuest,
   startGameHeartbeatQuest,
-  forceVideoProgress
+  forceVideoProgress,
+  startCdpQuest,
+  checkCdpStatus
 } from '@/api/tauri'
 import { homeDir, sep } from '@tauri-apps/api/path'
 import { emit } from '@tauri-apps/api/event'
@@ -70,10 +72,17 @@ export const useQuestsStore = defineStore('quests', () => {
   }
   const gamePollingInterval = ref(initialGamePolling)
 
-  // Game Quest Mode - 'simulate' runs a fake game exe, 'heartbeat' sends direct API heartbeats
+  // Game Quest Mode - 'simulate' runs a fake game exe, 'heartbeat' sends direct API heartbeats, 'cdp' injects via CDP
   const STORAGE_GAME_QUEST_MODE_KEY = 'questHelper_gameQuestMode'
   const savedGameQuestMode = localStorage.getItem(STORAGE_GAME_QUEST_MODE_KEY)
-  const gameQuestMode = ref<'simulate' | 'heartbeat'>(savedGameQuestMode === 'heartbeat' ? 'heartbeat' : 'simulate')
+  const gameQuestMode = ref<'simulate' | 'heartbeat' | 'cdp'>(
+    savedGameQuestMode === 'heartbeat' ? 'heartbeat' 
+    : savedGameQuestMode === 'cdp' ? 'cdp' 
+    : 'simulate'
+  )
+
+  // CDP availability status
+  const cdpAvailable = ref(false)
 
   // CDP Port - default 9223, user configurable
   const STORAGE_CDP_PORT_KEY = 'questHelper_cdpPort'
@@ -253,13 +262,22 @@ export const useQuestsStore = defineStore('quests', () => {
   async function startVideo(questId: string, secondsNeeded: number, initialProgress: number) {
     try {
       const progressPct = (secondsNeeded > 0) ? (initialProgress / secondsNeeded) * 100 : 0
-      await startVideoQuest(questId, secondsNeeded, progressPct, speedMultiplier.value, heartbeatInterval.value)
+
+      if (gameQuestMode.value === 'cdp') {
+        // CDP mode: use Discord's internal api.post() for video progress
+        await startCdpQuest(questId, 'video', '', '', secondsNeeded, initialProgress, cdpPort.value)
+      } else {
+        console.log(`[startVideo] mode=${gameQuestMode.value} speed=${speedMultiplier.value}x interval=${heartbeatInterval.value}s`)
+        await startVideoQuest(questId, secondsNeeded, progressPct, speedMultiplier.value, heartbeatInterval.value)
+      }
+
       activeQuestId.value = questId
       activeQuestType.value = 'video'
       activeQuestProgress.value = progressPct
       activeQuestTargetDuration.value = secondsNeeded
 
-      startProgressSimulation(speedMultiplier.value)
+      // CDP video progress is server-enforced real-time; don't inflate local simulation
+      startProgressSimulation(gameQuestMode.value === 'cdp' ? 1.0 : speedMultiplier.value)
       setupListeners()
     } catch (e) {
       error.value = e as string
@@ -292,9 +310,33 @@ export const useQuestsStore = defineStore('quests', () => {
       const appId = quest.config.application?.id
       if (!appId) throw new Error('Quest missing application ID')
 
-      // Check mode: 'heartbeat' uses direct API calls, 'simulate' runs fake game
-      if (gameQuestMode.value === 'heartbeat') {
-        // Direct heartbeat mode - no game simulation needed
+      // Check mode: 'cdp' uses CDP injection, 'heartbeat' uses direct API calls, 'simulate' runs fake game
+      if (gameQuestMode.value === 'cdp') {
+        // CDP mode - inject into Discord client, no game simulation needed
+        console.log(`Starting game quest via CDP for AppID: ${appId}`)
+        const appName = quest.config.application?.name || quest.config.messages.game_title || 'Game'
+
+        const progressPct = (secondsNeeded > 0) ? (initialProgress / secondsNeeded) * 100 : 0
+        await startCdpQuest(
+          quest.id,
+          'play',
+          appId,
+          appName,
+          secondsNeeded,
+          initialProgress,
+          cdpPort.value
+        )
+
+        activeQuestId.value = quest.id
+        activeQuestType.value = 'game'
+        activeQuestProgress.value = progressPct
+        activeQuestTargetDuration.value = secondsNeeded
+
+        startProgressSimulation(1.0)
+        setupListeners()
+
+      } else if (gameQuestMode.value === 'heartbeat') {
+        // [LEGACY] Direct heartbeat mode - no game simulation needed
         console.log(`Starting game quest via direct heartbeat for AppID: ${appId}`)
 
         const progressPct = (secondsNeeded > 0) ? (initialProgress / secondsNeeded) * 100 : 0
@@ -393,8 +435,8 @@ export const useQuestsStore = defineStore('quests', () => {
     stopProgressSimulation()
 
     try {
-      // Force Save Logic for Video Quests
-      if (activeQuestId.value && activeQuestType.value === 'video' && activeQuestTargetDuration.value > 0) {
+      // Force Save Logic for Video Quests (skip in CDP mode — progress is server-managed)
+      if (activeQuestId.value && activeQuestType.value === 'video' && activeQuestTargetDuration.value > 0 && gameQuestMode.value !== 'cdp') {
         try {
           const currentSeconds = (localProgress.value / 100) * activeQuestTargetDuration.value
           // Only force if we have significant progress
@@ -416,7 +458,8 @@ export const useQuestsStore = defineStore('quests', () => {
       let exeToStop = activeGameExe.value
 
       // Recovery: If activeGameExe is missing but we have a quest, try to find it
-      if (!exeToStop && activeQuestId.value && activeQuestType.value !== 'video') { // Don't look for exe if video
+      // Only applies to simulate mode — CDP/heartbeat modes never create a real process
+      if (!exeToStop && activeQuestId.value && activeQuestType.value !== 'video' && gameQuestMode.value === 'simulate') {
         console.warn('activeGameExe is null, attempting to recover from activeQuestId...')
         const quest = quests.value.find(q => q.id === activeQuestId.value)
         if (quest && quest.config.application?.id) {
@@ -437,8 +480,8 @@ export const useQuestsStore = defineStore('quests', () => {
         }
       }
 
-      // Stop simulated game if running
-      if (exeToStop) {
+      // Stop simulated game if running (simulate mode only)
+      if (exeToStop && gameQuestMode.value === 'simulate') {
         try {
           console.log(`Stopping simulated game: ${exeToStop}`)
           await stopSimulatedGame(exeToStop)
@@ -702,6 +745,46 @@ export const useQuestsStore = defineStore('quests', () => {
     }
   }
 
+  function resetForLogout() {
+    quests.value = []
+    lastQuestsFetchTime.value = 0
+    loading.value = false
+    error.value = null
+    activeQuestId.value = null
+    activeQuestType.value = null
+    activeQuestProgress.value = 0
+    activeQuestTargetDuration.value = 0
+    localProgress.value = 0
+    activeGameExe.value = null
+    questQueue.value = []
+    isQueueRunning.value = false
+    stopping.value = false
+    detectableGames.value = []
+    fetchingGames.value = false
+    cdpAvailable.value = false
+    stopProgressSimulation()
+    cleanupListeners()
+    stopPolling()
+  }
+
+  // Check CDP availability and auto-fallback if mode is 'cdp' but CDP isn't reachable
+  async function initCdpMode() {
+    try {
+      const status = await checkCdpStatus(cdpPort.value)
+      cdpAvailable.value = status.connected
+      if (gameQuestMode.value === 'cdp' && !status.connected) {
+        console.warn('CDP mode selected but CDP not available — falling back to simulate mode')
+        gameQuestMode.value = 'simulate'
+      }
+    } catch {
+      cdpAvailable.value = false
+      if (gameQuestMode.value === 'cdp') {
+        console.warn('CDP check failed — falling back to simulate mode')
+        gameQuestMode.value = 'simulate'
+      }
+    }
+  }
+
   return {
     quests,
     loading,
@@ -716,6 +799,7 @@ export const useQuestsStore = defineStore('quests', () => {
     gamePollingInterval,
     gameQuestMode,
     cdpPort,
+    cdpAvailable,
     stopping,
     activeGameExe,
     questQueue, // Export queue
@@ -743,6 +827,8 @@ export const useQuestsStore = defineStore('quests', () => {
     },
     // Game Process Caching
     detectableGames,
-    getDetectableGames
+    getDetectableGames,
+    resetForLogout,
+    initCdpMode
   }
 })

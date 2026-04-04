@@ -941,6 +941,7 @@ async function startQuest(quest: Quest) {
     console.log(`Starting play quest for ${gameName}`)
     try {
         // Check if there are multiple win32 executables — let user choose
+        // Skip exe selection entirely for CDP mode (doesn't need executables)
         if (questsStore.gameQuestMode === 'simulate') {
           const appId = quest.config.application?.id
           if (appId) {

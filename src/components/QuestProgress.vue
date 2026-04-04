@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch, onUnmounted } from 'vue'
 import { useQuestsStore } from '@/stores/quests'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -27,6 +27,47 @@ const submittedTimeText = computed(() => {
 async function handleStop() {
   await questsStore.stop()
 }
+
+// Animate the submitted (blue) progress value so it eases forward instead of jumping
+const animatedSubmitted = ref(questsStore.activeQuestProgress)
+let _raf: number | null = null
+watch(() => questsStore.activeQuestProgress, (next) => {
+  if (_raf !== null) cancelAnimationFrame(_raf)
+  const from = animatedSubmitted.value
+  const to = next
+  const duration = 450
+  const t0 = performance.now()
+  const step = (now: number) => {
+    const t = Math.min((now - t0) / duration, 1)
+    const eased = 1 - Math.pow(1 - t, 3) // ease-out cubic
+    animatedSubmitted.value = from + (to - from) * eased
+    if (t < 1) _raf = requestAnimationFrame(step)
+    else { animatedSubmitted.value = to; _raf = null }
+  }
+  _raf = requestAnimationFrame(step)
+})
+onUnmounted(() => { if (_raf !== null) cancelAnimationFrame(_raf) })
+
+// Single-gradient progress bar style: true blue→green color blend
+const progressBarStyle = computed(() => {
+  const local = questsStore.localProgress
+  const submitted = animatedSubmitted.value
+  if (local <= 0) return {}
+  const junctionPct = Math.round((submitted / local) * 100)
+  const stop1 = Math.max(0, junctionPct - 2)
+  const stop2 = Math.min(100, junctionPct + 8)
+  const hasPending = local > submitted + 0.5
+  const bg = !hasPending
+    ? 'hsl(var(--primary))'
+    : `linear-gradient(to right, hsl(var(--primary)) ${stop1}%, rgb(74,222,128) ${stop2}%, rgb(74,222,128) 100%)`
+  return {
+    width: `${local}%`,
+    background: bg,
+    boxShadow: hasPending
+      ? '0 0 4px 1px hsl(var(--primary) / 0.6), 0 0 8px 2px hsl(var(--primary) / 0.25), 2px 0 6px 1px rgb(74 222 128 / 0.35)'
+      : '0 0 4px 1px hsl(var(--primary) / 0.6), 0 0 8px 2px hsl(var(--primary) / 0.25)',
+  }
+})
 </script>
 
 <template>
@@ -49,18 +90,12 @@ async function handleStop() {
              <span class="font-medium text-lg">{{ Math.floor(questsStore.activeQuestProgress) }}%</span>
           </div>
           
-          <!-- Dual Layer Progress Bar -->
-          <div class="relative h-3 w-full overflow-hidden rounded-full bg-secondary">
-             <!-- Layer 1: Local Accumulated (Green) -->
-             <div 
-               class="absolute h-full bg-green-500/50 transition-all duration-300 ease-linear"
-               :style="{ width: `${questsStore.localProgress}%` }"
-             ></div>
-             <!-- Layer 2: Submitted (Blue) -->
-             <div 
-               class="absolute h-full bg-primary transition-all duration-300 ease-in-out"
-               :style="{ width: `${questsStore.activeQuestProgress}%` }"
-             ></div>
+          <!-- Progress Bar: single gradient div, blue→green -->
+          <div class="relative h-1.5 w-full rounded-full bg-secondary">
+            <div
+              class="absolute inset-y-0 left-0 rounded-full transition-all duration-300"
+              :style="progressBarStyle"
+            ></div>
           </div>
           <div class="flex justify-between text-[10px] text-muted-foreground px-1">
              <div class="flex items-center gap-1">
@@ -68,7 +103,7 @@ async function handleStop() {
                <span>{{ t('quest.submitted') }}</span>
              </div>
              <div class="flex items-center gap-1">
-               <div class="w-2 h-2 rounded-full bg-green-500/50"></div>
+               <div class="w-2 h-2 rounded-full bg-green-400"></div>
                <span>{{ t('quest.pending') }}</span>
              </div>
           </div>

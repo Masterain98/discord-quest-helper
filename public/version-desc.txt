@@ -1,8 +1,3 @@
 ## ✨ What's Changed
 
-1. Show a loading spinner on account buttons while logging in.
-2. Fix video quest completion timing: the final heartbeat now fires exactly when the quest duration is reached, instead of waiting a full extra interval.
-3. Quest duration display now shows seconds precisely.
-4. Completed quests removed by active filters now fade out with a smooth animation instead of disappearing instantly.
-5. A yellow reminder banner is shown when quests have been completed but their rewards are still unclaimed in Discord.
-6. Bump default build number to 518551.
+N/A
