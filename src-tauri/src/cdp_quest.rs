@@ -4,8 +4,9 @@
 //! Discord's internal webpack stores (RunningGameStore, QuestsStore, FluxDispatcher, etc.),
 //! making Discord itself send signed heartbeats for quest progress.
 //!
-//! Based on aamiaa's CompleteDiscordQuest.js approach (GPL-3.0), adapted for CDP injection.
-//! https://gist.github.com/aamiaa/204cd9d42013ded9faf646fae7f89fbb
+//! Inspired by the approach described in aamiaa's CompleteDiscordQuest.js
+//! (https://gist.github.com/aamiaa/204cd9d42013ded9faf646fae7f89fbb).
+//! This is a clean-room Rust/CDP reimplementation; no source code was copied.
 
 
 use anyhow::{Context, Result};
@@ -397,6 +398,7 @@ fn js_start_video_quest(quest_id: &str, seconds_needed: u32, initial_seconds: f6
         }}
 
         // Initialize video state fields (polled by Rust)
+        dqh._videoQuestId = questId;
         dqh._videoProgress = {initial_seconds};
         dqh._videoCompleted = false;
         dqh._videoError = null;
@@ -540,14 +542,15 @@ fn js_query_progress(quest_id: &str) -> String {
         const dqh = window.__dqh_cdp;
         if (!dqh || !dqh.initialized) return JSON.stringify({{ success: false, error: "Modules not initialized" }});
 
-        // Check video quest progress (set by video JS loop)
-        if (dqh._videoProgress !== undefined && dqh._videoProgress > 0) {{
+        // Check video quest progress (set by video JS loop) — only if this quest owns the video state
+        const isVideoQuest = dqh._videoQuestId === "{quest_id}";
+        if (isVideoQuest && dqh._videoProgress !== undefined && dqh._videoProgress > 0) {{
             return JSON.stringify({{ success: true, progress: dqh._videoProgress, completed: !!dqh._videoCompleted, source: "video", error: dqh._videoError || null, videoResult: dqh._videoResult || null, videoRunning: !!dqh._videoRunning }});
         }}
-        if (dqh._videoResult) {{
+        if (isVideoQuest && dqh._videoResult) {{
             return JSON.stringify({{ success: true, progress: dqh._videoProgress || 0, completed: !!dqh._videoCompleted, source: "video_result", videoResult: dqh._videoResult, videoRunning: false }});
         }}
-        if (dqh._videoError) {{
+        if (isVideoQuest && dqh._videoError) {{
             return JSON.stringify({{ success: true, progress: 0, completed: false, source: "video_error", error: dqh._videoError, videoRunning: !!dqh._videoRunning }});
         }}
 
@@ -1148,8 +1151,18 @@ pub async fn complete_video_quest_via_cdp(
                                         final_secs, js_completed, api_calls, store_progress, store_completed), None);
                                 log(LogLevel::Debug, LogCategory::TokenExtraction,
                                     &format!("CDP video quest first API response: {}", debug_resp), None);
-                                let _ = app_handle.emit("quest-progress", 100.0f64);
-                                let _ = app_handle.emit("quest-complete", ());
+
+                                // Only emit quest-complete if server confirmed completion
+                                if js_completed || store_completed {
+                                    let _ = app_handle.emit("quest-progress", 100.0f64);
+                                    let _ = app_handle.emit("quest-complete", ());
+                                } else {
+                                    log(LogLevel::Warn, LogCategory::TokenExtraction,
+                                        &format!("CDP video quest JS succeeded but server has not confirmed completion (completed={}, storeCompleted={}). Not emitting quest-complete.", js_completed, store_completed), None);
+                                    let progress_pct = store_progress.unwrap_or(0.0).min(99.0);
+                                    let _ = app_handle.emit("quest-progress", progress_pct);
+                                    let _ = app_handle.emit("quest-error", "Video quest finished but server has not confirmed completion. Please check quest status in Discord.".to_string());
+                                }
                                 return Ok(());
                             } else {
                                 let error = parsed.get("error")

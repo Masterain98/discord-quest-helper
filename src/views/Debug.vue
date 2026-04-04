@@ -25,13 +25,18 @@ const CAPTURE_STORAGE_KEY = 'debug_captured_headers'
 
 function saveCapturedHeaders() {
   if (capturedHeaders.value) {
-    localStorage.setItem(CAPTURE_STORAGE_KEY, JSON.stringify(capturedHeaders.value))
+    try {
+      sessionStorage.setItem(CAPTURE_STORAGE_KEY, JSON.stringify(capturedHeaders.value))
+    } catch (e) {
+      console.error('Failed to save captured headers:', e)
+      captureError.value = 'Captured headers could not be saved locally. They are still available for this session.'
+    }
   }
 }
 
 function loadCapturedHeaders() {
   try {
-    const saved = localStorage.getItem(CAPTURE_STORAGE_KEY)
+    const saved = sessionStorage.getItem(CAPTURE_STORAGE_KEY)
     if (saved) {
       capturedHeaders.value = JSON.parse(saved)
     }
@@ -45,7 +50,7 @@ function clearCapturedHeaders() {
   captureError.value = null
   requestSearch.value = ''
   requestTypeFilter.value = 'All'
-  localStorage.removeItem(CAPTURE_STORAGE_KEY)
+  sessionStorage.removeItem(CAPTURE_STORAGE_KEY)
 }
 
 // Request type filter & search
@@ -115,8 +120,14 @@ interface HeaderGroup {
 
 const groupedHeaders = computed<HeaderGroup[]>(() => {
   if (!capturedHeaders.value) return []
-  const kvCounts = capturedHeaders.value.header_kv_counts
-  const keyCounts = capturedHeaders.value.header_key_counts
+  const kvCounts =
+    capturedHeaders.value?.header_kv_counts && typeof capturedHeaders.value.header_kv_counts === 'object'
+      ? capturedHeaders.value.header_kv_counts
+      : {}
+  const keyCounts =
+    capturedHeaders.value?.header_key_counts && typeof capturedHeaders.value.header_key_counts === 'object'
+      ? capturedHeaders.value.header_key_counts
+      : {}
   
   // Build grouped map from kv entries: "key: value" -> count
   const groups = new Map<string, Map<string, number>>()

@@ -424,13 +424,9 @@ pub async fn capture_discord_headers_via_cdp(port: u16, duration_secs: u64) -> R
                         // Count header key occurrence
                         *header_key_counts.entry(key_lower.clone()).or_insert(0) += 1;
 
-                        // Redact sensitive values, keep everything else as-is
+                        // Fully redact sensitive values
                         let display_val = if redact_values.contains(&key_lower.as_str()) {
-                            if val_str.len() > 20 {
-                                format!("{}...{}", &val_str[..8], &val_str[val_str.len().saturating_sub(4)..])
-                            } else {
-                                "[redacted]".to_string()
-                            }
+                            "[redacted]".to_string()
                         } else {
                             val_str.clone()
                         };

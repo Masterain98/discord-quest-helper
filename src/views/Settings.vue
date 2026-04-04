@@ -158,18 +158,7 @@ async function createShortcut() {
 
 // Emit for tab navigation (consolidated above)
 
-// [LEGACY] Heartbeat Safety Warning Logic — replaced by CDP mode
-const showHeartbeatWarning = ref(false)
 
-// function handleHeartbeatClick() {
-//   if (questsStore.gameQuestMode === 'heartbeat') return // Already selected
-//   showHeartbeatWarning.value = true
-// }
-
-// function confirmHeartbeatMode() {
-//   questsStore.gameQuestMode = 'heartbeat'
-//   showHeartbeatWarning.value = false
-// }
 
 async function copyPath() {
   if (cachePath.value) {

@@ -77,14 +77,21 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  function logout() {
+  async function logout() {
+    // Stop any in-progress quest before clearing state
+    const questsStore = useQuestsStore()
+    try {
+      await questsStore.stop()
+    } catch (e) {
+      console.warn('Failed to stop quest during logout:', e)
+    }
+
     user.value = null
     token.value = null
     error.value = null
     detectedAccounts.value = []
 
     // Reset quests store to clear all cached data from previous account
-    const questsStore = useQuestsStore()
     questsStore.resetForLogout()
   }
 
