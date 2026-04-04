@@ -9,16 +9,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Eye, EyeOff, Loader2, CheckCircle2, Copy, Check, AlertTriangle, Download, Link2, Wifi, WifiOff, RotateCw } from 'lucide-vue-next'
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogAction,
-  AlertDialogCancel,
-} from '@/components/ui/alert-dialog'
 import { useI18n } from 'vue-i18n'
 import { checkCdpStatus, fetchSuperPropertiesCdp, createDiscordDebugShortcut, getSuperPropertiesMode, retrySuperProperties, type CdpStatus, type SuperPropertiesModeInfo } from '@/api/tauri'
 
