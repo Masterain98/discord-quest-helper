@@ -146,6 +146,41 @@ impl DiscordApiClient {
         Ok(user)
     }
 
+    /// Get progress for a specific quest.
+    ///
+    /// Returns `(progress_seconds, completed)` by fetching the full quest list
+    /// and extracting the relevant quest's user_status.
+    pub async fn get_quest_progress(&self, quest_id: &str) -> Result<(f64, bool)> {
+        let data = self.get_quests_raw().await?;
+        let quests = data.get("quests")
+            .and_then(|q| q.as_array())
+            .ok_or_else(|| anyhow::anyhow!("Quest list missing 'quests' array"))?;
+
+        let quest = quests.iter()
+            .find(|q| q.get("id").and_then(|id| id.as_str()) == Some(quest_id))
+            .ok_or_else(|| anyhow::anyhow!("Quest {} not found in quest list", quest_id))?;
+
+        let user_status = quest.get("user_status");
+        let completed = user_status
+            .and_then(|us| us.get("completed_at"))
+            .map(|v| !v.is_null())
+            .unwrap_or(false);
+
+        let mut progress_seconds = 0.0f64;
+        if let Some(progress) = user_status.and_then(|us| us.get("progress")).and_then(|p| p.as_object()) {
+            // progress is {"TASK_KEY": {"value": N}, ...}
+            if let Some(first) = progress.values().next() {
+                if let Some(val) = first.get("value").and_then(|v| v.as_f64()) {
+                    progress_seconds = val;
+                }
+            }
+        } else if let Some(sps) = user_status.and_then(|us| us.get("stream_progress_seconds")).and_then(|v| v.as_f64()) {
+            progress_seconds = sps;
+        }
+
+        Ok((progress_seconds, completed))
+    }
+
     /// Get raw quest list data (via /quests/@me endpoint)
     pub async fn get_quests_raw(&self) -> Result<serde_json::Value> {
         let url = format!("{}/quests/@me", DISCORD_API_BASE);

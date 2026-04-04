@@ -107,11 +107,14 @@ async function checkCdp() {
   cdpChecking.value = true
   try {
     cdpStatus.value = await checkCdpStatus(questsStore.cdpPort)
+    // Sync CDP availability to quests store so mode selector and banner stay in sync
+    questsStore.cdpAvailable = cdpStatus.value.connected
     // Also refresh SuperProperties mode after checking CDP status (fix race condition)
     await loadSuperPropsMode()
   } catch (e) {
     console.error('CDP check failed:', e)
     cdpStatus.value = { available: false, connected: false, target_title: null, error: String(e) }
+    questsStore.cdpAvailable = false
   } finally {
     cdpChecking.value = false
   }
@@ -368,6 +371,11 @@ async function exportLogs() {
           <CardDescription>{{ t('settings.video_quest_config_desc') }}</CardDescription>
         </CardHeader>
         <CardContent class="space-y-8">
+          <!-- CDP mode notice -->
+          <div v-if="questsStore.gameQuestMode === 'cdp'" class="flex items-start gap-2.5 rounded-md border border-blue-500/30 bg-blue-500/10 px-4 py-3 text-sm text-blue-500">
+            <AlertTriangle class="w-4 h-4 mt-0.5 shrink-0" />
+            <span>{{ t('settings.video_config_cdp_notice') }}</span>
+          </div>
            <div class="space-y-4">
              <div class="flex justify-between items-center">
                <Label>{{ t('settings.completion_speed') }} ({{ questsStore.speedMultiplier }}x)</Label>

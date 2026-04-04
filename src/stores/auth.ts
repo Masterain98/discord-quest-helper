@@ -53,6 +53,11 @@ export const useAuthStore = defineStore('auth', () => {
         const questsStore = useQuestsStore()
         await autoFetchSuperProperties(questsStore.cdpPort)
 
+        // Check CDP availability and update banner immediately after login
+        questsStore.initCdpMode().catch(err => {
+          console.warn('CDP init on login failed:', err)
+        })
+
         // Pre-fetch game list in background to avoid waiting later
         // do not await - let it run async
         questsStore.getDetectableGames().catch(err => {

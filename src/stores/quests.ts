@@ -267,6 +267,7 @@ export const useQuestsStore = defineStore('quests', () => {
         // CDP mode: use Discord's internal api.post() for video progress
         await startCdpQuest(questId, 'video', '', '', secondsNeeded, initialProgress, cdpPort.value)
       } else {
+        console.log(`[startVideo] mode=${gameQuestMode.value} speed=${speedMultiplier.value}x interval=${heartbeatInterval.value}s`)
         await startVideoQuest(questId, secondsNeeded, progressPct, speedMultiplier.value, heartbeatInterval.value)
       }
 
@@ -456,7 +457,8 @@ export const useQuestsStore = defineStore('quests', () => {
       let exeToStop = activeGameExe.value
 
       // Recovery: If activeGameExe is missing but we have a quest, try to find it
-      if (!exeToStop && activeQuestId.value && activeQuestType.value !== 'video') { // Don't look for exe if video
+      // Only applies to simulate mode — CDP/heartbeat modes never create a real process
+      if (!exeToStop && activeQuestId.value && activeQuestType.value !== 'video' && gameQuestMode.value === 'simulate') {
         console.warn('activeGameExe is null, attempting to recover from activeQuestId...')
         const quest = quests.value.find(q => q.id === activeQuestId.value)
         if (quest && quest.config.application?.id) {
@@ -477,8 +479,8 @@ export const useQuestsStore = defineStore('quests', () => {
         }
       }
 
-      // Stop simulated game if running
-      if (exeToStop) {
+      // Stop simulated game if running (simulate mode only)
+      if (exeToStop && gameQuestMode.value === 'simulate') {
         try {
           console.log(`Stopping simulated game: ${exeToStop}`)
           await stopSimulatedGame(exeToStop)

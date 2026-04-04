@@ -373,6 +373,9 @@ async fn start_cdp_quest(
 
     let quest_type_clone = quest_type.clone();
 
+    // Clone the API client for progress polling (play/stream quests)
+    let client = state.client.lock().unwrap().clone();
+
     // Run in background task
     tokio::spawn(async move {
         let result = match quest_type_clone.as_str() {
@@ -380,6 +383,7 @@ async fn start_cdp_quest(
                 cdp_quest::complete_play_quest_via_cdp(
                     cdp_port, quest_id, application_id, application_name,
                     seconds_needed, initial_progress,
+                    client,
                     app_handle.clone(), cancel_rx,
                 ).await
             }
@@ -387,6 +391,7 @@ async fn start_cdp_quest(
                 cdp_quest::complete_stream_quest_via_cdp(
                     cdp_port, quest_id, application_id,
                     seconds_needed, initial_progress,
+                    client,
                     app_handle.clone(), cancel_rx,
                 ).await
             }
