@@ -48,7 +48,9 @@ export default {
         exe_select_title: "選擇執行檔",
         exe_select_desc: "{game} 有多個執行檔，請選擇要模擬的程序：",
         custom_exe_title: "輸入程序名稱",
-        custom_exe_desc: "{game} 在 Discord 資料庫中沒有已知的執行檔，請輸入自訂程序名稱進行模擬。"
+        custom_exe_desc: "{game} 在 Discord 資料庫中沒有已知的執行檔，請輸入自訂程序名稱進行模擬。",
+        no_quests_match: "沒有符合篩選條件的任務",
+        clear_filters: "清除篩選"
     },
     quest: {
         progress: "進度",

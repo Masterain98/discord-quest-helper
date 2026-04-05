@@ -48,7 +48,9 @@ export default {
         exe_select_title: "실행 파일 선택",
         exe_select_desc: "{game}에 여러 실행 파일이 있습니다. 시뮬레이션할 파일을 선택하세요:",
         custom_exe_title: "프로세스 이름 입력",
-        custom_exe_desc: "{game}에는 Discord 데이터베이스에 알려진 실행 파일이 없습니다. 사용자 지정 프로세스 이름을 입력하세요."
+        custom_exe_desc: "{game}에는 Discord 데이터베이스에 알려진 실행 파일이 없습니다. 사용자 지정 프로세스 이름을 입력하세요.",
+        no_quests_match: "필터에 맞는 퀘스트가 없습니다",
+        clear_filters: "필터 초기화"
     },
     quest: {
         progress: "진행률",

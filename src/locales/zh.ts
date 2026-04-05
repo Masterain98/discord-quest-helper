@@ -48,7 +48,9 @@ export default {
         exe_select_title: "选择可执行文件",
         exe_select_desc: "{game} 有多个可执行文件，请选择要模拟的进程：",
         custom_exe_title: "输入进程名称",
-        custom_exe_desc: "{game} 在 Discord 数据库中没有已知的可执行文件，请输入自定义进程名称进行模拟。"
+        custom_exe_desc: "{game} 在 Discord 数据库中没有已知的可执行文件，请输入自定义进程名称进行模拟。",
+        no_quests_match: "没有符合筛选条件的任务",
+        clear_filters: "清除筛选"
     },
     quest: {
         progress: "进度",

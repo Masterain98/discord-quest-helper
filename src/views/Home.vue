@@ -232,8 +232,8 @@
         </div>
         
         <div v-else-if="filteredQuests.length === 0" class="text-center py-12">
-          <p class="text-muted-foreground">No quests match your filters</p>
-          <Button variant="link" @click="clearFilters" v-if="hasActiveFilters">Clear Filters</Button>
+          <p class="text-muted-foreground">{{ t('home.no_quests_match') }}</p>
+          <Button variant="link" @click="clearFilters" v-if="hasActiveFilters">{{ t('home.clear_filters') }}</Button>
         </div>
 
         <template v-else>

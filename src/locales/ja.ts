@@ -48,7 +48,9 @@ export default {
         exe_select_title: "実行ファイルを選択",
         exe_select_desc: "{game} には複数の実行ファイルがあります。シミュレートするものを選択してください：",
         custom_exe_title: "プロセス名を入力",
-        custom_exe_desc: "{game} には Discord のデータベースに既知の実行ファイルがありません。カスタムプロセス名を入力してください。"
+        custom_exe_desc: "{game} には Discord のデータベースに既知の実行ファイルがありません。カスタムプロセス名を入力してください。",
+        no_quests_match: "フィルターに一致するクエストがありません",
+        clear_filters: "フィルターをクリア"
     },
     quest: {
         progress: "進捗",

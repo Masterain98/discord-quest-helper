@@ -48,7 +48,9 @@ export default {
         exe_select_title: "Select Executable",
         exe_select_desc: "{game} has multiple executables. Please select which one to simulate:",
         custom_exe_title: "Enter Process Name",
-        custom_exe_desc: "{game} has no known executables in Discord's database. Please enter a custom process name to simulate."
+        custom_exe_desc: "{game} has no known executables in Discord's database. Please enter a custom process name to simulate.",
+        no_quests_match: "No quests match your filters",
+        clear_filters: "Clear Filters"
     },
     quest: {
         progress: "Progress",
