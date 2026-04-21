@@ -231,12 +231,14 @@ fn is_discord_target(target: &CdpTarget) -> bool {
 fn select_discord_targets<'a>(targets: &'a [CdpTarget]) -> Vec<&'a CdpTarget> {
     let mut selected_targets: Vec<&CdpTarget> = targets
         .iter()
-        .filter(|t| is_discord_target(t))
+        .filter(|t| is_discord_target(t) && t.web_socket_debugger_url.is_some())
         .collect();
 
     // Fallback: keep old behavior if detection fails and use the best single target.
     if selected_targets.is_empty() {
-        if let Some(target) = pick_discord_target(targets) {
+        if let Some(target) = pick_discord_target(targets)
+            .filter(|t| t.web_socket_debugger_url.is_some())
+        {
             selected_targets.push(target);
         }
     }
@@ -683,12 +685,21 @@ mod tests {
     use super::*;
 
     fn mk_target(target_type: &str, title: &str, url: &str) -> CdpTarget {
+        mk_target_opt_ws(target_type, title, url, Some("ws://example".to_string()))
+    }
+
+    fn mk_target_opt_ws(
+        target_type: &str,
+        title: &str,
+        url: &str,
+        ws: Option<String>,
+    ) -> CdpTarget {
         CdpTarget {
             id: format!("{}-{}", target_type, title),
             target_type: target_type.to_string(),
             title: title.to_string(),
             url: url.to_string(),
-            web_socket_debugger_url: Some("ws://example".to_string()),
+            web_socket_debugger_url: ws,
         }
     }
     
@@ -760,5 +771,25 @@ mod tests {
         let fallback = select_discord_targets(&no_match_targets);
         assert_eq!(fallback.len(), 1);
         assert_eq!(fallback[0].url, "https://example.com/a");
+
+        let with_missing_ws = vec![
+            mk_target_opt_ws(
+                "page",
+                "Discord Main",
+                "https://discord.com/app",
+                None,
+            ),
+            mk_target("page", "Discord Secondary", "https://discordapp.com/channels/@me"),
+        ];
+        let filtered = select_discord_targets(&with_missing_ws);
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].title, "Discord Secondary");
+
+        let fallback_missing_ws = vec![
+            mk_target_opt_ws("page", "Page A", "https://example.com/a", None),
+            mk_target_opt_ws("page", "Page B", "https://example.com/b", None),
+        ];
+        let fallback_none = select_discord_targets(&fallback_missing_ws);
+        assert_eq!(fallback_none.len(), 0);
     }
 }
