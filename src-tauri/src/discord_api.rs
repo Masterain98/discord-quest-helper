@@ -1,15 +1,18 @@
 use crate::models::*;
 use anyhow::{Context, Result};
+use arc_swap::ArcSwap;
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE, USER_AGENT};
 use reqwest::{Method, RequestBuilder};
 use base64::Engine;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 const DISCORD_API_BASE: &str = "https://discord.com/api/v9";
 const USER_AGENT_STRING: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) discord/1.0.9219 Chrome/138.0.7204.251 Electron/37.6.0 Safari/537.36";
+const PROXY_STATE_CHECK_INTERVAL_MS: u64 = 5_000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ProxyState {
@@ -18,8 +21,13 @@ struct ProxyState {
 }
 
 impl ProxyState {
+    fn hash_setting(hasher: &mut DefaultHasher, key: &str, value: &str) {
+        key.hash(hasher);
+        value.trim().hash(hasher);
+    }
+
     fn current() -> Self {
-        let mut parts = Vec::new();
+        let mut hasher = DefaultHasher::new();
 
         let http_proxy = std::env::var("HTTP_PROXY").unwrap_or_default();
         let https_proxy = std::env::var("HTTPS_PROXY").unwrap_or_default();
@@ -30,14 +38,14 @@ impl ProxyState {
         let all_proxy_lower = std::env::var("all_proxy").unwrap_or_default();
         let no_proxy_lower = std::env::var("no_proxy").unwrap_or_default();
 
-        parts.push(format!("http_proxy={}", http_proxy));
-        parts.push(format!("https_proxy={}", https_proxy));
-        parts.push(format!("all_proxy={}", all_proxy));
-        parts.push(format!("no_proxy={}", no_proxy));
-        parts.push(format!("http_proxy_lower={}", http_proxy_lower));
-        parts.push(format!("https_proxy_lower={}", https_proxy_lower));
-        parts.push(format!("all_proxy_lower={}", all_proxy_lower));
-        parts.push(format!("no_proxy_lower={}", no_proxy_lower));
+        Self::hash_setting(&mut hasher, "HTTP_PROXY", &http_proxy);
+        Self::hash_setting(&mut hasher, "HTTPS_PROXY", &https_proxy);
+        Self::hash_setting(&mut hasher, "ALL_PROXY", &all_proxy);
+        Self::hash_setting(&mut hasher, "NO_PROXY", &no_proxy);
+        Self::hash_setting(&mut hasher, "http_proxy", &http_proxy_lower);
+        Self::hash_setting(&mut hasher, "https_proxy", &https_proxy_lower);
+        Self::hash_setting(&mut hasher, "all_proxy", &all_proxy_lower);
+        Self::hash_setting(&mut hasher, "no_proxy", &no_proxy_lower);
 
         let mut has_proxy = !http_proxy.trim().is_empty()
             || !https_proxy.trim().is_empty()
@@ -59,11 +67,13 @@ impl ProxyState {
                     let auto_config_url = settings.get_string("AutoConfigURL").unwrap_or_default();
                     let auto_detect = settings.get_u32("AutoDetect").unwrap_or(0);
 
-                    parts.push(format!("proxy_enable={}", proxy_enable));
-                    parts.push(format!("proxy_server={}", proxy_server));
-                    parts.push(format!("proxy_override={}", proxy_override));
-                    parts.push(format!("auto_config_url={}", auto_config_url));
-                    parts.push(format!("auto_detect={}", auto_detect));
+                    "ProxyEnable".hash(&mut hasher);
+                    proxy_enable.hash(&mut hasher);
+                    Self::hash_setting(&mut hasher, "ProxyServer", &proxy_server);
+                    Self::hash_setting(&mut hasher, "ProxyOverride", &proxy_override);
+                    Self::hash_setting(&mut hasher, "AutoConfigURL", &auto_config_url);
+                    "AutoDetect".hash(&mut hasher);
+                    auto_detect.hash(&mut hasher);
 
                     has_proxy = has_proxy
                         || (proxy_enable == 1 && !proxy_server.trim().is_empty())
@@ -71,14 +81,10 @@ impl ProxyState {
                         || auto_detect == 1;
                 }
                 Err(_) => {
-                    parts.push("registry_unavailable=1".to_string());
+                    "registry_unavailable".hash(&mut hasher);
                 }
             }
         }
-
-        let raw = parts.join("|");
-        let mut hasher = DefaultHasher::new();
-        raw.hash(&mut hasher);
 
         Self {
             fingerprint: hasher.finish(),
@@ -87,15 +93,13 @@ impl ProxyState {
     }
 }
 
-struct HttpClientState {
-    client: reqwest::Client,
-    proxy_state: ProxyState,
-}
-
 /// Discord API client
 #[derive(Clone)]
 pub struct DiscordApiClient {
-    http: Arc<Mutex<HttpClientState>>,
+    client: Arc<ArcSwap<reqwest::Client>>,
+    proxy_fingerprint: Arc<AtomicU64>,
+    proxy_has_proxy: Arc<AtomicBool>,
+    last_proxy_check_at_ms: Arc<AtomicU64>,
     token: String,
 }
 
@@ -166,56 +170,93 @@ impl DiscordApiClient {
         );
 
         Ok(Self {
-            http: Arc::new(Mutex::new(HttpClientState {
-                client,
-                proxy_state,
-            })),
+            client: Arc::new(ArcSwap::from_pointee(client)),
+            proxy_fingerprint: Arc::new(AtomicU64::new(proxy_state.fingerprint)),
+            proxy_has_proxy: Arc::new(AtomicBool::new(proxy_state.has_proxy)),
+            last_proxy_check_at_ms: Arc::new(AtomicU64::new(Self::now_millis())),
             token,
         })
     }
 
-    fn current_client(&self) -> reqwest::Client {
-        use crate::logger::{log, LogCategory, LogLevel};
-
-        let latest_proxy_state = ProxyState::current();
-        let mut state = self
-            .http
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-
-        if state.proxy_state != latest_proxy_state {
-            let details = format!(
-                "fingerprint={} -> {}, has_proxy={} -> {}",
-                state.proxy_state.fingerprint,
-                latest_proxy_state.fingerprint,
-                state.proxy_state.has_proxy,
-                latest_proxy_state.has_proxy
-            );
-
-            log(
-                LogLevel::Info,
-                LogCategory::Api,
-                "System proxy state changed, rebuilding HTTP client",
-                Some(&details),
-            );
-
-            match Self::build_http_client(&self.token) {
-                Ok(client) => {
-                    state.client = client;
-                    state.proxy_state = latest_proxy_state;
-                }
-                Err(err) => {
-                    log(
-                        LogLevel::Warn,
-                        LogCategory::Api,
-                        "Failed to rebuild HTTP client after proxy change; using previous client",
-                        Some(&err.to_string()),
-                    );
+    fn now_millis() -> u64 {
+        match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+            Ok(duration) => {
+                let millis = duration.as_millis();
+                if millis > u64::MAX as u128 {
+                    u64::MAX
+                } else {
+                    millis as u64
                 }
             }
+            Err(_) => 0,
+        }
+    }
+
+    fn maybe_refresh_client_for_proxy_state(&self) {
+        use crate::logger::{log, LogCategory, LogLevel};
+
+        let now_ms = Self::now_millis();
+        let last_check_ms = self.last_proxy_check_at_ms.load(Ordering::Acquire);
+
+        if now_ms.saturating_sub(last_check_ms) < PROXY_STATE_CHECK_INTERVAL_MS {
+            return;
         }
 
-        state.client.clone()
+        if self
+            .last_proxy_check_at_ms
+            .compare_exchange(last_check_ms, now_ms, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return;
+        }
+
+        let latest_proxy_state = ProxyState::current();
+        let previous_fingerprint = self.proxy_fingerprint.load(Ordering::Acquire);
+        let previous_has_proxy = self.proxy_has_proxy.load(Ordering::Acquire);
+
+        if latest_proxy_state.fingerprint == previous_fingerprint
+            && latest_proxy_state.has_proxy == previous_has_proxy
+        {
+            return;
+        }
+
+        let details = format!(
+            "fingerprint={} -> {}, has_proxy={} -> {}",
+            previous_fingerprint,
+            latest_proxy_state.fingerprint,
+            previous_has_proxy,
+            latest_proxy_state.has_proxy
+        );
+
+        log(
+            LogLevel::Info,
+            LogCategory::Api,
+            "System proxy state changed, rebuilding HTTP client",
+            Some(&details),
+        );
+
+        match Self::build_http_client(&self.token) {
+            Ok(client) => {
+                self.client.store(Arc::new(client));
+                self.proxy_fingerprint
+                    .store(latest_proxy_state.fingerprint, Ordering::Release);
+                self.proxy_has_proxy
+                    .store(latest_proxy_state.has_proxy, Ordering::Release);
+            }
+            Err(err) => {
+                log(
+                    LogLevel::Warn,
+                    LogCategory::Api,
+                    "Failed to rebuild HTTP client after proxy change; using previous client",
+                    Some(&err.to_string()),
+                );
+            }
+        }
+    }
+
+    fn current_client(&self) -> reqwest::Client {
+        self.maybe_refresh_client_for_proxy_state();
+        self.client.load_full().as_ref().clone()
     }
 
     /// Get the current X-Super-Properties value (dynamically obtained to ensure latest data)
