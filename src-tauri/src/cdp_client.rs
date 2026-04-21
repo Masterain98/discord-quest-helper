@@ -42,6 +42,15 @@ pub struct CdpStatus {
     pub error: Option<String>,
 }
 
+/// Result of executing JS on a specific CDP target.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CdpTargetExecutionResult {
+    pub target_title: String,
+    pub target_url: String,
+    pub result: Option<String>,
+    pub error: Option<String>,
+}
+
 /// Captured Discord API request headers via CDP Network interception
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CdpCapturedHeaders {
@@ -196,18 +205,27 @@ fn pick_discord_target(targets: &[CdpTarget]) -> Option<&CdpTarget> {
     
     // Find Discord main application
     for target in &pages {
-        let title_lower = target.title.to_lowercase();
-        let url_lower = target.url.to_lowercase();
-        
-        if (title_lower.contains("discord") && !title_lower.contains("updater"))
-            || url_lower.contains("discord.com")
-        {
+        if is_discord_target(target) {
             return Some(target);
         }
     }
     
     // Fallback: return the first page
     pages.first().copied()
+}
+
+/// Return true if this target looks like a Discord app page.
+fn is_discord_target(target: &CdpTarget) -> bool {
+    if target.target_type != "page" {
+        return false;
+    }
+
+    let title_lower = target.title.to_lowercase();
+    let url_lower = target.url.to_lowercase();
+
+    (title_lower.contains("discord") && !title_lower.contains("updater"))
+        || url_lower.contains("discord.com")
+        || url_lower.contains("discordapp.com")
 }
 
 /// Get SuperProperties via CDP
@@ -495,6 +513,75 @@ pub async fn execute_js_via_cdp(port: u16, js_code: &str, await_promise: bool, t
         .web_socket_debugger_url
         .as_ref()
         .context("Target has no WebSocket URL")?;
+
+    execute_js_via_ws(ws_url, js_code, await_promise, timeout_secs).await
+}
+
+/// Execute JS on every Discord-like CDP page target.
+///
+/// This is used for best-effort cleanup, ensuring spoof state is removed even when
+/// Discord exposes multiple page targets and the "active" one changes between calls.
+pub async fn execute_js_via_all_discord_targets(
+    port: u16,
+    js_code: &str,
+    await_promise: bool,
+    timeout_secs: u64,
+) -> Result<Vec<CdpTargetExecutionResult>> {
+    use crate::logger::{log, LogLevel, LogCategory};
+
+    let targets = get_cdp_targets(port).await?;
+
+    let mut selected_targets: Vec<&CdpTarget> = targets
+        .iter()
+        .filter(|t| is_discord_target(t))
+        .collect();
+
+    // Fallback: keep old behavior if detection fails and use the best single target.
+    if selected_targets.is_empty() {
+        if let Some(target) = pick_discord_target(&targets) {
+            selected_targets.push(target);
+        }
+    }
+
+    if selected_targets.is_empty() {
+        anyhow::bail!("No CDP page targets found");
+    }
+
+    log(LogLevel::Debug, LogCategory::TokenExtraction,
+        &format!("execute_js_via_all_discord_targets: running on {} target(s)", selected_targets.len()), None);
+
+    let mut results = Vec::with_capacity(selected_targets.len());
+
+    for target in selected_targets {
+        let mut item = CdpTargetExecutionResult {
+            target_title: target.title.clone(),
+            target_url: target.url.clone(),
+            result: None,
+            error: None,
+        };
+
+        if let Some(ws_url) = target.web_socket_debugger_url.as_ref() {
+            match execute_js_via_ws(ws_url, js_code, await_promise, timeout_secs).await {
+                Ok(result) => item.result = Some(result),
+                Err(e) => item.error = Some(e.to_string()),
+            }
+        } else {
+            item.error = Some("Target has no WebSocket URL".to_string());
+        }
+
+        results.push(item);
+    }
+
+    Ok(results)
+}
+
+async fn execute_js_via_ws(
+    ws_url: &str,
+    js_code: &str,
+    await_promise: bool,
+    timeout_secs: u64,
+) -> Result<String> {
+    use crate::logger::{log, LogLevel, LogCategory};
 
     let (ws_stream, _) = connect_async(ws_url)
         .await

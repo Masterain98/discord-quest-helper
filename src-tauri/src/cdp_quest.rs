@@ -649,8 +649,15 @@ const JS_CLEANUP_SPOOF: &str = r#"
         if (dqh._origGetRunningGames) {
             dqh.RunningGameStore.getRunningGames = dqh._origGetRunningGames;
         }
-        if (dqh._origGetGameForPID) {
+        if (typeof dqh._origGetGameForPID === "function") {
             dqh.RunningGameStore.getGameForPID = dqh._origGetGameForPID;
+        } else {
+            // If the original store had no getGameForPID, remove the spoofed method.
+            try {
+                delete dqh.RunningGameStore.getGameForPID;
+            } catch(e) {
+                dqh.RunningGameStore.getGameForPID = undefined;
+            }
         }
         if (dqh._origGetStreamerActiveStreamMetadata) {
             dqh.ApplicationStreamingStore.getStreamerActiveStreamMetadata = dqh._origGetStreamerActiveStreamMetadata;
@@ -683,6 +690,25 @@ const JS_CLEANUP_SPOOF: &str = r#"
 
         delete window.__dqh_cdp;
         return JSON.stringify({ success: true });
+    } catch (e) {
+        return JSON.stringify({ success: false, error: String(e) });
+    }
+})()
+"#;
+
+/// JavaScript: verify whether spoof state is still present in this page target.
+const JS_VERIFY_CLEANUP_STATE: &str = r#"
+(() => {
+    try {
+        const dqh = window.__dqh_cdp;
+        return JSON.stringify({
+            success: true,
+            dqhPresent: !!dqh,
+            spoofActive: !!dqh?._spoofActive,
+            fakeGamePresent: !!dqh?._fakeGame,
+            hasDispatchHook: !!dqh?._origDispatch,
+            broadPatchCount: Array.isArray(dqh?._broadPatched) ? dqh._broadPatched.length : 0
+        });
     } catch (e) {
         return JSON.stringify({ success: false, error: String(e) });
     }
@@ -725,21 +751,159 @@ async fn cdp_cleanup(port: u16) {
 
     // Try cleanup up to 2 times — CDP connection can be flaky
     for attempt in 1..=2 {
-        match cdp_client::execute_js_via_cdp(port, JS_CLEANUP_SPOOF, false, 5).await {
-            Ok(result) => {
-                log(LogLevel::Info, LogCategory::TokenExtraction,
-                    &format!("CDP cleanup result (attempt {}): {}", attempt, result), None);
-                return;
+        let mut cleanup_success_count = 0usize;
+
+        match cdp_client::execute_js_via_all_discord_targets(port, JS_CLEANUP_SPOOF, false, 5).await {
+            Ok(results) => {
+                let mut error_count = 0usize;
+
+                for item in results {
+                    if let Some(err) = item.error {
+                        error_count += 1;
+                        log(LogLevel::Warn, LogCategory::TokenExtraction,
+                            &format!(
+                                "CDP cleanup target error (attempt {}): target='{}' url='{}' err={}",
+                                attempt, item.target_title, item.target_url, err
+                            ),
+                            None,
+                        );
+                        continue;
+                    }
+
+                    let raw = item.result.unwrap_or_default();
+                    let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap_or_default();
+                    let target_success = parsed.get("success") == Some(&serde_json::json!(true));
+
+                    if target_success {
+                        cleanup_success_count += 1;
+                        log(LogLevel::Info, LogCategory::TokenExtraction,
+                            &format!(
+                                "CDP cleanup target ok (attempt {}): target='{}' url='{}' result={}",
+                                attempt, item.target_title, item.target_url, raw
+                            ),
+                            None,
+                        );
+                    } else {
+                        error_count += 1;
+                        log(LogLevel::Warn, LogCategory::TokenExtraction,
+                            &format!(
+                                "CDP cleanup target returned failure (attempt {}): target='{}' url='{}' result={}",
+                                attempt, item.target_title, item.target_url, raw
+                            ),
+                            None,
+                        );
+                    }
+                }
+
+                if cleanup_success_count == 0 {
+                    log(LogLevel::Warn, LogCategory::TokenExtraction,
+                        &format!(
+                            "CDP cleanup had no successful target (attempt {}, failed_targets={})",
+                            attempt, error_count
+                        ),
+                        None,
+                    );
+                }
             }
             Err(e) => {
                 log(LogLevel::Warn, LogCategory::TokenExtraction,
-                    &format!("CDP cleanup failed (attempt {}): {}", attempt, e), None);
-                if attempt < 2 {
-                    tokio::time::sleep(Duration::from_millis(500)).await;
-                }
+                    &format!("CDP cleanup request failed (attempt {}): {}", attempt, e), None);
             }
         }
+
+        // Verify cleanup state across all page targets.
+        match cdp_client::execute_js_via_all_discord_targets(port, JS_VERIFY_CLEANUP_STATE, false, 5).await {
+            Ok(results) => {
+                let mut verify_checked = 0usize;
+                let mut verify_dirty = 0usize;
+                let mut verify_errors = 0usize;
+
+                for item in results {
+                    if let Some(err) = item.error {
+                        verify_errors += 1;
+                        log(LogLevel::Warn, LogCategory::TokenExtraction,
+                            &format!(
+                                "CDP cleanup verify target error (attempt {}): target='{}' url='{}' err={}",
+                                attempt, item.target_title, item.target_url, err
+                            ),
+                            None,
+                        );
+                        continue;
+                    }
+
+                    let raw = item.result.unwrap_or_default();
+                    let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap_or_default();
+                    let verify_success = parsed.get("success") == Some(&serde_json::json!(true));
+
+                    if !verify_success {
+                        verify_dirty += 1;
+                        log(LogLevel::Warn, LogCategory::TokenExtraction,
+                            &format!(
+                                "CDP cleanup verify parse failure (attempt {}): target='{}' url='{}' result={}",
+                                attempt, item.target_title, item.target_url, raw
+                            ),
+                            None,
+                        );
+                        continue;
+                    }
+
+                    verify_checked += 1;
+                    let dqh_present = parsed.get("dqhPresent").and_then(|v| v.as_bool()).unwrap_or(false);
+                    let spoof_active = parsed.get("spoofActive").and_then(|v| v.as_bool()).unwrap_or(false);
+                    let fake_game_present = parsed.get("fakeGamePresent").and_then(|v| v.as_bool()).unwrap_or(false);
+                    let has_dispatch_hook = parsed.get("hasDispatchHook").and_then(|v| v.as_bool()).unwrap_or(false);
+                    let broad_patch_count = parsed.get("broadPatchCount").and_then(|v| v.as_u64()).unwrap_or(0);
+
+                    let target_dirty = dqh_present || spoof_active || fake_game_present || has_dispatch_hook || broad_patch_count > 0;
+                    if target_dirty {
+                        verify_dirty += 1;
+                        log(LogLevel::Warn, LogCategory::TokenExtraction,
+                            &format!(
+                                "CDP cleanup verify found residual state (attempt {}): target='{}' url='{}' dqhPresent={} spoofActive={} fakeGamePresent={} hasDispatchHook={} broadPatchCount={}",
+                                attempt,
+                                item.target_title,
+                                item.target_url,
+                                dqh_present,
+                                spoof_active,
+                                fake_game_present,
+                                has_dispatch_hook,
+                                broad_patch_count
+                            ),
+                            None,
+                        );
+                    }
+                }
+
+                if verify_dirty == 0 && verify_checked > 0 {
+                    log(LogLevel::Info, LogCategory::TokenExtraction,
+                        &format!(
+                            "CDP cleanup verified (attempt {}): checked_targets={}, cleanup_success_targets={}, verify_errors={}",
+                            attempt, verify_checked, cleanup_success_count, verify_errors
+                        ),
+                        None,
+                    );
+                    return;
+                }
+
+                log(LogLevel::Warn, LogCategory::TokenExtraction,
+                    &format!(
+                        "CDP cleanup verification incomplete (attempt {}): checked_targets={}, dirty_targets={}, verify_errors={}, cleanup_success_targets={}",
+                        attempt, verify_checked, verify_dirty, verify_errors, cleanup_success_count
+                    ),
+                    None,
+                );
+            }
+            Err(e) => {
+                log(LogLevel::Warn, LogCategory::TokenExtraction,
+                    &format!("CDP cleanup verify request failed (attempt {}): {}", attempt, e), None);
+            }
+        }
+
+        if attempt < 2 {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
     }
+
     log(LogLevel::Error, LogCategory::TokenExtraction,
         "CDP cleanup failed after all retries — spoof may still be active in Discord!", None);
 }
@@ -834,6 +998,10 @@ pub async fn complete_play_quest_via_cdp(
 
     log(LogLevel::Info, LogCategory::TokenExtraction,
         &format!("CDP play quest: quest_id={}, app_id={}, app_name={}", quest_id, app_id, app_name), None);
+
+    // Defensive pre-cleanup: prevent stale spoof state from a previous run from leaking
+    // into the new quest session.
+    cdp_cleanup(port).await;
 
     // 1. Init modules
     cdp_init_modules(port).await
@@ -943,6 +1111,9 @@ pub async fn complete_stream_quest_via_cdp(
     log(LogLevel::Info, LogCategory::TokenExtraction,
         &format!("CDP stream quest: quest_id={}, app_id={}", quest_id, app_id), None);
 
+    // Defensive pre-cleanup: ensure previous spoof state is removed before applying new patches.
+    cdp_cleanup(port).await;
+
     // 1. Init modules
     cdp_init_modules(port).await
         .context("Failed to initialize CDP modules for stream quest")?;
@@ -1048,6 +1219,9 @@ pub async fn complete_video_quest_via_cdp(
     log(LogLevel::Info, LogCategory::TokenExtraction,
         &format!("CDP video quest: quest_id={}, target={}s, initial={:.0}s", 
             quest_id, seconds_needed, initial_progress), None);
+
+    // Defensive pre-cleanup for cross-quest consistency.
+    cdp_cleanup(port).await;
 
     // 1. Init modules
     cdp_init_modules(port).await
