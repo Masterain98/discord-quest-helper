@@ -874,7 +874,7 @@ async fn cdp_cleanup(port: u16) {
                     }
                 }
 
-                if verify_dirty == 0 && verify_checked > 0 {
+                if verify_dirty == 0 && verify_checked > 0 && verify_errors == 0 {
                     log(LogLevel::Info, LogCategory::TokenExtraction,
                         &format!(
                             "CDP cleanup verified (attempt {}): checked_targets={}, cleanup_success_targets={}, verify_errors={}",
