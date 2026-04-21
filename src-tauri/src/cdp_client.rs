@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
-use futures_util::{SinkExt, StreamExt};
+use futures_util::{future::join_all, SinkExt, StreamExt};
 
 /// Default CDP debugging port
 pub const DEFAULT_CDP_PORT: u16 = 9223;
@@ -39,6 +39,15 @@ pub struct CdpStatus {
     pub available: bool,
     pub connected: bool,
     pub target_title: Option<String>,
+    pub error: Option<String>,
+}
+
+/// Result of executing JS on a specific CDP target.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CdpTargetExecutionResult {
+    pub target_title: String,
+    pub target_url: String,
+    pub result: Option<String>,
     pub error: Option<String>,
 }
 
@@ -196,18 +205,45 @@ fn pick_discord_target(targets: &[CdpTarget]) -> Option<&CdpTarget> {
     
     // Find Discord main application
     for target in &pages {
-        let title_lower = target.title.to_lowercase();
-        let url_lower = target.url.to_lowercase();
-        
-        if (title_lower.contains("discord") && !title_lower.contains("updater"))
-            || url_lower.contains("discord.com")
-        {
+        if is_discord_target(target) {
             return Some(target);
         }
     }
     
     // Fallback: return the first page
     pages.first().copied()
+}
+
+/// Return true if this target looks like a Discord app page.
+fn is_discord_target(target: &CdpTarget) -> bool {
+    if target.target_type != "page" {
+        return false;
+    }
+
+    let title_lower = target.title.to_lowercase();
+    let url_lower = target.url.to_lowercase();
+
+    (title_lower.contains("discord") && !title_lower.contains("updater"))
+        || url_lower.contains("discord.com")
+        || url_lower.contains("discordapp.com")
+}
+
+fn select_discord_targets<'a>(targets: &'a [CdpTarget]) -> Vec<&'a CdpTarget> {
+    let mut selected_targets: Vec<&CdpTarget> = targets
+        .iter()
+        .filter(|t| is_discord_target(t) && t.web_socket_debugger_url.is_some())
+        .collect();
+
+    // Fallback: keep old behavior if detection fails and use the best single target.
+    if selected_targets.is_empty() {
+        if let Some(target) = pick_discord_target(targets)
+            .filter(|t| t.web_socket_debugger_url.is_some())
+        {
+            selected_targets.push(target);
+        }
+    }
+
+    selected_targets
 }
 
 /// Get SuperProperties via CDP
@@ -496,6 +532,67 @@ pub async fn execute_js_via_cdp(port: u16, js_code: &str, await_promise: bool, t
         .as_ref()
         .context("Target has no WebSocket URL")?;
 
+    execute_js_via_ws(ws_url, js_code, await_promise, timeout_secs).await
+}
+
+/// Execute JS on every Discord-like CDP page target.
+///
+/// This is used for best-effort cleanup, ensuring spoof state is removed even when
+/// Discord exposes multiple page targets and the "active" one changes between calls.
+pub async fn execute_js_via_all_discord_targets(
+    port: u16,
+    js_code: &str,
+    await_promise: bool,
+    timeout_secs: u64,
+) -> Result<Vec<CdpTargetExecutionResult>> {
+    use crate::logger::{log, LogLevel, LogCategory};
+
+    let targets = get_cdp_targets(port).await?;
+
+    let selected_targets = select_discord_targets(&targets);
+
+    if selected_targets.is_empty() {
+        anyhow::bail!("No CDP page targets found");
+    }
+
+    log(LogLevel::Debug, LogCategory::TokenExtraction,
+        &format!("execute_js_via_all_discord_targets: running on {} target(s)", selected_targets.len()), None);
+
+    // Execute all target evaluations concurrently. Each task still respects per-target
+    // timeout via execute_js_via_ws().
+    let tasks = selected_targets.into_iter().map(|target| async move {
+        let mut item = CdpTargetExecutionResult {
+            target_title: target.title.clone(),
+            target_url: target.url.clone(),
+            result: None,
+            error: None,
+        };
+
+        if let Some(ws_url) = target.web_socket_debugger_url.as_ref() {
+            match execute_js_via_ws(ws_url, js_code, await_promise, timeout_secs).await {
+                Ok(result) => item.result = Some(result),
+                Err(e) => item.error = Some(e.to_string()),
+            }
+        } else {
+            item.error = Some("Target has no WebSocket URL".to_string());
+        }
+
+        item
+    });
+
+    let results = join_all(tasks).await;
+
+    Ok(results)
+}
+
+async fn execute_js_via_ws(
+    ws_url: &str,
+    js_code: &str,
+    await_promise: bool,
+    timeout_secs: u64,
+) -> Result<String> {
+    use crate::logger::{log, LogLevel, LogCategory};
+
     let (ws_stream, _) = connect_async(ws_url)
         .await
         .context("Failed to connect to CDP WebSocket")?;
@@ -586,6 +683,25 @@ pub async fn execute_js_via_cdp(port: u16, js_code: &str, await_promise: bool, t
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn mk_target(target_type: &str, title: &str, url: &str) -> CdpTarget {
+        mk_target_opt_ws(target_type, title, url, Some("ws://example".to_string()))
+    }
+
+    fn mk_target_opt_ws(
+        target_type: &str,
+        title: &str,
+        url: &str,
+        ws: Option<String>,
+    ) -> CdpTarget {
+        CdpTarget {
+            id: format!("{}-{}", target_type, title),
+            target_type: target_type.to_string(),
+            title: title.to_string(),
+            url: url.to_string(),
+            web_socket_debugger_url: ws,
+        }
+    }
     
     #[test]
     fn test_pick_discord_target() {
@@ -609,5 +725,71 @@ mod tests {
         let picked = pick_discord_target(&targets);
         assert!(picked.is_some());
         assert_eq!(picked.unwrap().id, "2");
+    }
+
+    #[test]
+    fn test_is_discord_target_domain_and_updater_filter() {
+        let discord_app = mk_target("page", "Some Title", "https://discordapp.com/channels/@me");
+        let discord_updater = mk_target("page", "Discord Updater", "about:blank");
+        let worker = mk_target("worker", "Discord", "https://discord.com/app");
+
+        assert!(is_discord_target(&discord_app));
+        assert!(!is_discord_target(&discord_updater));
+        assert!(!is_discord_target(&worker));
+    }
+
+    #[test]
+    fn test_pick_discord_target_fallback_to_first_page() {
+        let targets = vec![
+            mk_target("page", "Not Discord 1", "https://example.com/a"),
+            mk_target("page", "Not Discord 2", "https://example.com/b"),
+        ];
+
+        let picked = pick_discord_target(&targets);
+        assert!(picked.is_some());
+        assert_eq!(picked.unwrap().url, "https://example.com/a");
+    }
+
+    #[test]
+    fn test_select_discord_targets_filters_and_fallbacks() {
+        let targets = vec![
+            mk_target("page", "Discord Updater", "about:blank"),
+            mk_target("page", "Discord", "https://discord.com/app"),
+            mk_target("page", "Other", "https://discordapp.com/channels/@me"),
+            mk_target("page", "Other Site", "https://example.com"),
+        ];
+
+        let selected = select_discord_targets(&targets);
+        assert_eq!(selected.len(), 2);
+        assert!(selected.iter().any(|t| t.url.contains("discord.com")));
+        assert!(selected.iter().any(|t| t.url.contains("discordapp.com")));
+
+        let no_match_targets = vec![
+            mk_target("page", "Page A", "https://example.com/a"),
+            mk_target("page", "Page B", "https://example.com/b"),
+        ];
+        let fallback = select_discord_targets(&no_match_targets);
+        assert_eq!(fallback.len(), 1);
+        assert_eq!(fallback[0].url, "https://example.com/a");
+
+        let with_missing_ws = vec![
+            mk_target_opt_ws(
+                "page",
+                "Discord Main",
+                "https://discord.com/app",
+                None,
+            ),
+            mk_target("page", "Discord Secondary", "https://discordapp.com/channels/@me"),
+        ];
+        let filtered = select_discord_targets(&with_missing_ws);
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].title, "Discord Secondary");
+
+        let fallback_missing_ws = vec![
+            mk_target_opt_ws("page", "Page A", "https://example.com/a", None),
+            mk_target_opt_ws("page", "Page B", "https://example.com/b", None),
+        ];
+        let fallback_none = select_discord_targets(&fallback_missing_ws);
+        assert_eq!(fallback_none.len(), 0);
     }
 }
