@@ -8,7 +8,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const DISCORD_API_BASE: &str = "https://discord.com/api/v9";
 const USER_AGENT_STRING: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) discord/1.0.9219 Chrome/138.0.7204.251 Electron/37.6.0 Safari/537.36";
@@ -99,7 +99,8 @@ pub struct DiscordApiClient {
     client: Arc<ArcSwap<reqwest::Client>>,
     proxy_fingerprint: Arc<AtomicU64>,
     proxy_has_proxy: Arc<AtomicBool>,
-    last_proxy_check_at_ms: Arc<AtomicU64>,
+    created_at: Arc<Instant>,
+    last_proxy_check_elapsed_ms: Arc<AtomicU64>,
     token: String,
 }
 
@@ -169,55 +170,37 @@ impl DiscordApiClient {
             }),
         );
 
+        let created_at = Arc::new(Instant::now());
+
         Ok(Self {
             client: Arc::new(ArcSwap::from_pointee(client)),
             proxy_fingerprint: Arc::new(AtomicU64::new(proxy_state.fingerprint)),
             proxy_has_proxy: Arc::new(AtomicBool::new(proxy_state.has_proxy)),
-            last_proxy_check_at_ms: Arc::new(AtomicU64::new(Self::now_millis())),
+            created_at,
+            last_proxy_check_elapsed_ms: Arc::new(AtomicU64::new(0)),
             token,
         })
     }
 
-    fn now_millis() -> u64 {
-        match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
-            Ok(duration) => {
-                let millis = duration.as_millis();
-                if millis > u64::MAX as u128 {
-                    u64::MAX
-                } else {
-                    millis as u64
-                }
-            }
-            Err(_) => 0,
+    fn elapsed_millis_since_creation(&self) -> u64 {
+        let millis = self.created_at.elapsed().as_millis();
+        if millis > u64::MAX as u128 {
+            u64::MAX
+        } else {
+            millis as u64
         }
     }
 
-    fn maybe_refresh_client_for_proxy_state(&self) {
+    fn apply_proxy_state_if_changed(&self, latest_proxy_state: ProxyState) -> bool {
         use crate::logger::{log, LogCategory, LogLevel};
 
-        let now_ms = Self::now_millis();
-        let last_check_ms = self.last_proxy_check_at_ms.load(Ordering::Acquire);
-
-        if now_ms.saturating_sub(last_check_ms) < PROXY_STATE_CHECK_INTERVAL_MS {
-            return;
-        }
-
-        if self
-            .last_proxy_check_at_ms
-            .compare_exchange(last_check_ms, now_ms, Ordering::AcqRel, Ordering::Acquire)
-            .is_err()
-        {
-            return;
-        }
-
-        let latest_proxy_state = ProxyState::current();
         let previous_fingerprint = self.proxy_fingerprint.load(Ordering::Acquire);
         let previous_has_proxy = self.proxy_has_proxy.load(Ordering::Acquire);
 
         if latest_proxy_state.fingerprint == previous_fingerprint
             && latest_proxy_state.has_proxy == previous_has_proxy
         {
-            return;
+            return false;
         }
 
         let details = format!(
@@ -242,6 +225,7 @@ impl DiscordApiClient {
                     .store(latest_proxy_state.fingerprint, Ordering::Release);
                 self.proxy_has_proxy
                     .store(latest_proxy_state.has_proxy, Ordering::Release);
+                true
             }
             Err(err) => {
                 log(
@@ -250,8 +234,35 @@ impl DiscordApiClient {
                     "Failed to rebuild HTTP client after proxy change; using previous client",
                     Some(&err.to_string()),
                 );
+                false
             }
         }
+    }
+
+    fn maybe_refresh_client_for_proxy_state_with<F>(&self, now_elapsed_ms: u64, probe: F) -> bool
+    where
+        F: FnOnce() -> ProxyState,
+    {
+        let last_check_ms = self.last_proxy_check_elapsed_ms.load(Ordering::Acquire);
+
+        if now_elapsed_ms.saturating_sub(last_check_ms) < PROXY_STATE_CHECK_INTERVAL_MS {
+            return false;
+        }
+
+        if self
+            .last_proxy_check_elapsed_ms
+            .compare_exchange(last_check_ms, now_elapsed_ms, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return false;
+        }
+
+        self.apply_proxy_state_if_changed(probe())
+    }
+
+    fn maybe_refresh_client_for_proxy_state(&self) {
+        let now_elapsed_ms = self.elapsed_millis_since_creation();
+        let _ = self.maybe_refresh_client_for_proxy_state_with(now_elapsed_ms, ProxyState::current);
     }
 
     fn current_client(&self) -> reqwest::Client {
@@ -692,6 +703,91 @@ fn convert_api_quest_to_quest(quest_json: &serde_json::Value) -> Option<Quest> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    static ENV_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    const PROXY_ENV_KEYS: [&str; 8] = [
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "NO_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+        "no_proxy",
+    ];
+
+    fn env_snapshot() -> Vec<(String, Option<String>)> {
+        PROXY_ENV_KEYS
+            .iter()
+            .map(|key| ((*key).to_string(), std::env::var(key).ok()))
+            .collect()
+    }
+
+    fn restore_env(snapshot: &[(String, Option<String>)]) {
+        for (key, value) in snapshot {
+            match value {
+                Some(v) => {
+                    unsafe { std::env::set_var(key, v) };
+                }
+                None => {
+                    unsafe { std::env::remove_var(key) };
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn proxy_state_fingerprint_changes_when_env_changes() {
+        let _guard = ENV_TEST_LOCK.lock().unwrap();
+        let snapshot = env_snapshot();
+
+        unsafe { std::env::set_var("HTTP_PROXY", "http://127.0.0.1:7890") };
+        let state_a = ProxyState::current();
+
+        unsafe { std::env::set_var("HTTP_PROXY", "http://127.0.0.1:7891") };
+        let state_b = ProxyState::current();
+
+        restore_env(&snapshot);
+
+        assert_ne!(state_a.fingerprint, state_b.fingerprint);
+    }
+
+    #[test]
+    fn proxy_refresh_respects_interval_and_rebuilds_on_change() {
+        let client = DiscordApiClient::new("test-token".to_string()).unwrap();
+
+        client
+            .last_proxy_check_elapsed_ms
+            .store(0, Ordering::Release);
+
+        let original_fingerprint = client.proxy_fingerprint.load(Ordering::Acquire);
+        let changed_state = ProxyState {
+            fingerprint: original_fingerprint.wrapping_add(1),
+            has_proxy: !client.proxy_has_proxy.load(Ordering::Acquire),
+        };
+
+        let before_interval_refresh = client.maybe_refresh_client_for_proxy_state_with(
+            PROXY_STATE_CHECK_INTERVAL_MS.saturating_sub(1),
+            || changed_state,
+        );
+        assert!(!before_interval_refresh);
+        assert_eq!(
+            client.proxy_fingerprint.load(Ordering::Acquire),
+            original_fingerprint
+        );
+
+        let after_interval_refresh = client.maybe_refresh_client_for_proxy_state_with(
+            PROXY_STATE_CHECK_INTERVAL_MS,
+            || changed_state,
+        );
+        assert!(after_interval_refresh);
+        assert_eq!(
+            client.proxy_fingerprint.load(Ordering::Acquire),
+            changed_state.fingerprint
+        );
+    }
 
     #[tokio::test]
     #[ignore] // Requires valid token
