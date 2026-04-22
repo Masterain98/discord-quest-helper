@@ -177,6 +177,7 @@ pub async fn check_cdp_available(port: u16) -> CdpStatus {
 /// Get CDP target list
 async fn get_cdp_targets(port: u16) -> Result<Vec<CdpTarget>> {
     let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(2))
         .timeout(Duration::from_secs(3))
         .build()?;
     
