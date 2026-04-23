@@ -890,6 +890,12 @@ function canStartQuest(quest: Quest): boolean {
 }
 
 async function startQuest(quest: Quest) {
+  // Blur the focused button before DOM mutation to prevent scroll-to-top
+  // when the button is removed from the DOM by the v-else-if condition change.
+  if (document.activeElement instanceof HTMLElement) {
+    document.activeElement.blur()
+  }
+
   if (questsStore.activeQuestId) return
   
   startingQuestId.value = quest.id
