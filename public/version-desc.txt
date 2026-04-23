@@ -1,10 +1,5 @@
 ## ✨ What's Changed
 
-1. Add **CDP Injection Mode** to replace Direct Heartbeat Mode: a new quest completion method that injects JavaScript into the Discord client via Chrome DevTools Protocol (CDP), making Discord itself send signed heartbeats. Works for all quest types without any game simulation. Requires Discord to be launched with `--remote-debugging-port`. You can create a shortcut easily in the settings page.
-    - It's based on [aamiaa's work](https://gist.github.com/aamiaa/204cd9d42013ded9faf646fae7f89fbb)
-2. Add a CDP connection status indicator in the title bar showing the active completion mode with a hover tooltip describing each mode's capabilities.
-3. Add a Network Header Capture tool to the Debug page: captures all Discord HTTP request headers via CDP with header frequency statistics, search/filter, and a built-in `x-super-properties` base64 decoder.
-4. Fix a logout and account switch issue that caused by cached quest states.
-5. UI/UX improvements across pages.
-6. Replenish missing locale text.
-7. Bump default build number to 523061.
+1. Fixed CDP status clean up process.
+2. Added Windows system proxy detection and utilize proxy when it's available.
+
