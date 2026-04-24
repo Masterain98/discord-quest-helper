@@ -196,6 +196,12 @@ jobs:
             ./build/${{ env.macos_build_release }}.dmg
             ./build/${{ env.macos_build_release }}.zip
           prerelease: ${{ env.PRERELEASE }}
-          draft: false
+          draft: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish Release
+        run: gh release edit "${{ env.version }}" --draft=false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
