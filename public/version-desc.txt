@@ -1,5 +1,7 @@
 ## ✨ What's Changed
 
-1. Fixed CDP status clean up process.
-2. Added Windows system proxy detection and utilize proxy when it's available.
-
+1. Upgraded CDP execution to support multi-target JavaScript runs across Discord pages, improving behavior when multiple page targets are present.
+2. Reworked CDP spoof cleanup with stronger verification and retry flow, and added defensive pre-cleanup before play/stream/video quest sessions.
+3. Added system proxy support and detection and auto-refresh HTTP client when proxy state changes.
+4. Added connection/request timeout controls to major network paths (Discord API, CDP target checks, token/client metadata fetch) for better stability.
+5. Fixed quest-start UI behavior by blurring focused elements before state switches to prevent unexpected page scroll-to-top.
