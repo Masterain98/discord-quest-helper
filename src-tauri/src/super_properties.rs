@@ -92,8 +92,8 @@ impl Default for SuperProperties {
             // Discord releases new versions. The actual build number is fetched dynamically
             // from Discord when possible.
             // Default build_number
-            // May 16th, 2026
-            client_build_number: 545032,
+            // May 21th, 2026
+            client_build_number: 548544,
             native_build_number: Some(73211),
             client_event_source: None,
             launch_signature: None,

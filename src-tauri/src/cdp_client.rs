@@ -247,6 +247,68 @@ fn select_discord_targets<'a>(targets: &'a [CdpTarget]) -> Vec<&'a CdpTarget> {
     selected_targets
 }
 
+pub async fn get_primary_discord_target(port: u16) -> Result<CdpTarget> {
+    let targets = get_cdp_targets(port).await?;
+
+    pick_discord_target(&targets)
+        .cloned()
+        .context("No Discord target found")
+}
+
+pub async fn navigate_primary_discord_target(port: u16, url: &str, timeout_secs: u64) -> Result<()> {
+    use crate::logger::{log, LogCategory, LogLevel};
+
+    let target = get_primary_discord_target(port).await?;
+    let ws_url = target
+        .web_socket_debugger_url
+        .as_ref()
+        .context("Target has no WebSocket URL")?;
+
+    log(
+        LogLevel::Debug,
+        LogCategory::TokenExtraction,
+        &format!(
+            "navigate_primary_discord_target: from={} to={} timeout={}s",
+            target.url,
+            url,
+            timeout_secs
+        ),
+        None,
+    );
+
+    navigate_target_via_ws(ws_url, url, timeout_secs).await
+}
+
+pub async fn execute_js_via_primary_discord_target(
+    port: u16,
+    js_code: &str,
+    await_promise: bool,
+    timeout_secs: u64,
+) -> Result<String> {
+    use crate::logger::{log, LogCategory, LogLevel};
+
+    let target = get_primary_discord_target(port).await?;
+    let ws_url = target
+        .web_socket_debugger_url
+        .as_ref()
+        .context("Target has no WebSocket URL")?;
+
+    log(
+        LogLevel::Debug,
+        LogCategory::TokenExtraction,
+        &format!(
+            "execute_js_via_primary_discord_target: target_url={} await_promise={} timeout={}s code_len={}",
+            target.url,
+            await_promise,
+            timeout_secs,
+            js_code.len()
+        ),
+        None,
+    );
+
+    execute_js_via_ws(ws_url, js_code, await_promise, timeout_secs).await
+}
+
 /// Get SuperProperties via CDP
 pub async fn fetch_super_properties_via_cdp(port: u16) -> Result<CdpSuperProperties> {
     use crate::logger::{log, LogLevel, LogCategory};
@@ -514,28 +576,6 @@ pub async fn capture_discord_headers_via_cdp(port: u16, duration_secs: u64) -> R
     })
 }
 
-/// Execute arbitrary JavaScript code via CDP Runtime.evaluate.
-///
-/// This is a generic helper used by `cdp_quest` to inject JS into the Discord client.
-/// Supports `awaitPromise` for async JS expressions and a configurable timeout.
-pub async fn execute_js_via_cdp(port: u16, js_code: &str, await_promise: bool, timeout_secs: u64) -> Result<String> {
-    use crate::logger::{log, LogLevel, LogCategory};
-
-    log(LogLevel::Debug, LogCategory::TokenExtraction,
-        &format!("execute_js_via_cdp: port={}, await_promise={}, timeout={}s, code_len={}",
-            port, await_promise, timeout_secs, js_code.len()), None);
-
-    let targets = get_cdp_targets(port).await?;
-    let target = pick_discord_target(&targets)
-        .context("No Discord target found")?;
-    let ws_url = target
-        .web_socket_debugger_url
-        .as_ref()
-        .context("Target has no WebSocket URL")?;
-
-    execute_js_via_ws(ws_url, js_code, await_promise, timeout_secs).await
-}
-
 /// Execute JS on every Discord-like CDP page target.
 ///
 /// This is used for best-effort cleanup, ensuring spoof state is removed even when
@@ -679,6 +719,123 @@ async fn execute_js_via_ws(
         &format!("execute_js_via_cdp result: {}...", &result_value.chars().take(200).collect::<String>()), None);
 
     Ok(result_value)
+}
+
+async fn navigate_target_via_ws(ws_url: &str, url: &str, timeout_secs: u64) -> Result<()> {
+    let (ws_stream, _) = connect_async(ws_url)
+        .await
+        .context("Failed to connect to CDP WebSocket")?;
+    let (mut write, mut read) = ws_stream.split();
+
+    let enable_request = serde_json::json!({
+        "id": 1,
+        "method": "Page.enable",
+        "params": {}
+    });
+
+    write
+        .send(Message::Text(enable_request.to_string().into()))
+        .await
+        .context("Failed to send CDP Page.enable request")?;
+
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while let Some(msg) = read.next().await {
+            match msg {
+                Ok(Message::Text(text)) => {
+                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
+                        if json.get("id") == Some(&serde_json::json!(1)) {
+                            if let Some(error) = json.get("error") {
+                                let code = error.get("code").and_then(|value| value.as_i64()).unwrap_or(0);
+                                let message = error
+                                    .get("message")
+                                    .and_then(|value| value.as_str())
+                                    .unwrap_or("Unknown CDP error");
+                                return Err(anyhow::anyhow!("CDP error (code {}): {}", code, message));
+                            }
+
+                            return Ok(());
+                        }
+                    }
+                }
+                Ok(_) => continue,
+                Err(e) => return Err(anyhow::anyhow!("WebSocket error: {}", e)),
+            }
+        }
+
+        Err(anyhow::anyhow!("WebSocket closed before Page.enable acknowledgement"))
+    })
+    .await
+    .context("CDP Page.enable timed out")??;
+
+    let navigate_request = serde_json::json!({
+        "id": 2,
+        "method": "Page.navigate",
+        "params": {
+            "url": url,
+        }
+    });
+
+    write
+        .send(Message::Text(navigate_request.to_string().into()))
+        .await
+        .context("Failed to send CDP Page.navigate request")?;
+
+    let mut navigation_acknowledged = false;
+
+    tokio::time::timeout(Duration::from_secs(timeout_secs), async {
+        while let Some(msg) = read.next().await {
+            match msg {
+                Ok(Message::Text(text)) => {
+                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
+                        if json.get("id") == Some(&serde_json::json!(2)) {
+                            if let Some(error) = json.get("error") {
+                                let code = error.get("code").and_then(|value| value.as_i64()).unwrap_or(0);
+                                let message = error
+                                    .get("message")
+                                    .and_then(|value| value.as_str())
+                                    .unwrap_or("Unknown CDP error");
+                                return Err(anyhow::anyhow!("CDP error (code {}): {}", code, message));
+                            }
+
+                            if let Some(error_text) = json
+                                .get("result")
+                                .and_then(|value| value.get("errorText"))
+                                .and_then(|value| value.as_str())
+                            {
+                                return Err(anyhow::anyhow!("Page.navigate failed: {}", error_text));
+                            }
+
+                            navigation_acknowledged = true;
+                            continue;
+                        }
+
+                        if navigation_acknowledged {
+                            match json.get("method").and_then(|value| value.as_str()) {
+                                Some("Page.loadEventFired")
+                                | Some("Page.navigatedWithinDocument")
+                                | Some("Page.frameStoppedLoading") => return Ok(()),
+                                _ => continue,
+                            }
+                        }
+                    }
+                }
+                Ok(_) => continue,
+                Err(e) => return Err(anyhow::anyhow!("WebSocket error: {}", e)),
+            }
+        }
+
+        if navigation_acknowledged {
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!("WebSocket closed before Page.navigate acknowledgement"))
+        }
+    })
+    .await
+    .context(format!("CDP page navigation timed out ({}s)", timeout_secs))??;
+
+    let _ = write.close().await;
+
+    Ok(())
 }
 
 #[cfg(test)]
