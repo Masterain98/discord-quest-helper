@@ -16,6 +16,12 @@ use tokio::time::sleep;
 
 use crate::cdp_client;
 
+const QUEST_HOME_URL: &str = "https://discord.com/quest-home";
+const QUEST_HOME_DETOUR_URL: &str = "https://discord.com/store";
+const QUEST_WARMUP_NAV_TIMEOUT_SECS: u64 = 20;
+const QUEST_WARMUP_DWELL_MS: u64 = 1500;
+const QUEST_WARMUP_RESTORE_SETTLE_MS: u64 = 800;
+
 /// JavaScript: Initialize quest-related Discord webpack modules and store them in window.__dqh_cdp.
 ///
 /// Finds and caches references to:
@@ -715,32 +721,477 @@ const JS_VERIFY_CLEANUP_STATE: &str = r#"
 })()
 "#;
 
+struct CdpJsonExecutionSummary {
+    total_targets: usize,
+    successful_results: Vec<serde_json::Value>,
+    target_failures: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct QuestRouteWarmupPlan {
+    original_url: String,
+    warmup_url: String,
+    restore_url: String,
+    already_on_quest_home: bool,
+}
+
+fn build_quest_route_warmup_plan(current_url: &str) -> Option<QuestRouteWarmupPlan> {
+    let current = reqwest::Url::parse(current_url).ok()?;
+    if !matches!(current.scheme(), "http" | "https") {
+        return None;
+    }
+
+    let already_on_quest_home = current.path().eq_ignore_ascii_case("/quest-home");
+    let warmup_url = if already_on_quest_home {
+        current.join(QUEST_HOME_DETOUR_URL).ok()?
+    } else {
+        current.join(QUEST_HOME_URL).ok()?
+    };
+
+    Some(QuestRouteWarmupPlan {
+        original_url: current_url.to_string(),
+        warmup_url: warmup_url.to_string(),
+        restore_url: current_url.to_string(),
+        already_on_quest_home,
+    })
+}
+
+fn js_warmup_quest_route(plan: &QuestRouteWarmupPlan) -> String {
+    let warmup_url = serde_json::to_string(&plan.warmup_url).unwrap_or_else(|_| "\"\"".to_string());
+    let restore_url = serde_json::to_string(&plan.restore_url).unwrap_or_else(|_| "\"\"".to_string());
+
+    format!(r#"
+(async () => {{
+    try {{
+        const warmupUrl = new URL({warmup_url}, window.location.href);
+        const restoreUrl = new URL({restore_url}, window.location.href);
+        const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+        const pathFor = url => url.pathname + url.search + url.hash;
+        const currentPath = () => window.location.pathname + window.location.search + window.location.hash;
+
+        let wpRequire = null;
+        try {{
+            if (typeof webpackChunkdiscord_app !== "undefined") {{
+                wpRequire = webpackChunkdiscord_app.push([[Symbol()], {{}}, r => r]);
+                webpackChunkdiscord_app.pop();
+            }}
+        }} catch (_) {{}}
+
+        function findRouter() {{
+            if (!wpRequire || !wpRequire.c) return null;
+
+            const seen = new Set();
+            const inspect = value => {{
+                if (!value || (typeof value !== "object" && typeof value !== "function") || seen.has(value)) {{
+                    return null;
+                }}
+                seen.add(value);
+
+                if (typeof value.transitionTo === "function" && (
+                    typeof value.replaceWith === "function"
+                    || typeof value.navigate === "function"
+                    || typeof value.back === "function"
+                )) {{
+                    return value;
+                }}
+
+                if (value.router && typeof value.router.transitionTo === "function") {{
+                    return value.router;
+                }}
+
+                return null;
+            }};
+
+            for (const moduleRecord of Object.values(wpRequire.c)) {{
+                try {{
+                    const exportsObj = moduleRecord?.exports;
+                    if (!exportsObj) continue;
+
+                    const direct = inspect(exportsObj);
+                    if (direct) return direct;
+
+                    for (const key of Object.keys(exportsObj)) {{
+                        const candidate = inspect(exportsObj[key]);
+                        if (candidate) return candidate;
+                    }}
+                }} catch (_) {{}}
+            }}
+
+            return null;
+        }}
+
+        async function waitForPath(expectedPath, timeoutMs) {{
+            const start = Date.now();
+            while (Date.now() - start < timeoutMs) {{
+                if (currentPath() === expectedPath) return true;
+                await sleep(50);
+            }}
+            return currentPath() === expectedPath;
+        }}
+
+        async function navigateWithinApp(targetUrl) {{
+            const targetPath = pathFor(targetUrl);
+            const failures = [];
+            if (currentPath() === targetPath) {{
+                return {{ success: true, method: "already-there", targetPath, failures }};
+            }}
+
+            const router = findRouter();
+            if (router) {{
+                if (typeof router.transitionTo === "function") {{
+                    try {{
+                        await Promise.resolve(router.transitionTo(targetPath));
+                        if (await waitForPath(targetPath, 2500)) {{
+                            return {{ success: true, method: "router.transitionTo", targetPath, failures }};
+                        }}
+                        failures.push("router.transitionTo:no-route-change");
+                    }} catch (e) {{
+                        failures.push("router.transitionTo:" + String(e));
+                    }}
+                }}
+
+                if (typeof router.replaceWith === "function") {{
+                    try {{
+                        await Promise.resolve(router.replaceWith(targetPath));
+                        if (await waitForPath(targetPath, 2500)) {{
+                            return {{ success: true, method: "router.replaceWith", targetPath, failures }};
+                        }}
+                        failures.push("router.replaceWith:no-route-change");
+                    }} catch (e) {{
+                        failures.push("router.replaceWith:" + String(e));
+                    }}
+                }}
+
+                if (typeof router.navigate === "function") {{
+                    try {{
+                        await Promise.resolve(router.navigate(targetPath));
+                        if (await waitForPath(targetPath, 2500)) {{
+                            return {{ success: true, method: "router.navigate", targetPath, failures }};
+                        }}
+                        failures.push("router.navigate:no-route-change");
+                    }} catch (e) {{
+                        failures.push("router.navigate:" + String(e));
+                    }}
+                }}
+            }} else {{
+                failures.push("router:not-found");
+            }}
+
+            try {{
+                history.pushState(history.state, "", targetPath);
+                window.dispatchEvent(new PopStateEvent("popstate", {{ state: history.state }}));
+                window.dispatchEvent(new Event("locationchange"));
+                document.dispatchEvent(new Event("locationchange"));
+                if (await waitForPath(targetPath, 1200)) {{
+                    return {{ success: true, method: "history.pushState", targetPath, failures }};
+                }}
+                failures.push("history.pushState:no-route-change");
+            }} catch (e) {{
+                failures.push("history.pushState:" + String(e));
+            }}
+
+            return {{ success: false, method: null, targetPath, failures }};
+        }}
+
+        const warmupResult = await navigateWithinApp(warmupUrl);
+        if (!warmupResult.success) {{
+            return JSON.stringify({{
+                success: false,
+                stage: "warmup",
+                error: "Failed to navigate within Discord SPA",
+                details: warmupResult.failures,
+                currentUrl: window.location.href
+            }});
+        }}
+
+        await sleep({dwell_ms});
+
+        const restoreResult = await navigateWithinApp(restoreUrl);
+        if (!restoreResult.success) {{
+            return JSON.stringify({{
+                success: false,
+                stage: "restore",
+                error: "Failed to restore original Discord SPA route",
+                details: restoreResult.failures,
+                warmupMethod: warmupResult.method,
+                currentUrl: window.location.href
+            }});
+        }}
+
+        await sleep({restore_settle_ms});
+
+        return JSON.stringify({{
+            success: true,
+            warmupMethod: warmupResult.method,
+            restoreMethod: restoreResult.method,
+            finalUrl: window.location.href,
+            finalPath: currentPath(),
+        }});
+    }} catch (e) {{
+        return JSON.stringify({{ success: false, error: String(e) }});
+    }}
+}})()
+"#, dwell_ms = QUEST_WARMUP_DWELL_MS, restore_settle_ms = QUEST_WARMUP_RESTORE_SETTLE_MS)
+}
+
+fn cdp_result_succeeded(parsed: &serde_json::Value) -> bool {
+    parsed.get("success").and_then(|value| value.as_bool()).unwrap_or(false)
+}
+
+fn summarize_target_failures(failures: &[String]) -> String {
+    if failures.is_empty() {
+        return "no target details".to_string();
+    }
+
+    let sample = failures.iter().take(3).cloned().collect::<Vec<_>>().join(" | ");
+    if failures.len() > 3 {
+        format!("{} | ... +{} more", sample, failures.len() - 3)
+    } else {
+        sample
+    }
+}
+
+fn log_partial_target_failures(operation: &str, failures: &[String]) {
+    use crate::logger::{log, LogCategory, LogLevel};
+
+    if failures.is_empty() {
+        return;
+    }
+
+    log(
+        LogLevel::Warn,
+        LogCategory::TokenExtraction,
+        &format!(
+            "CDP {} had {} target failure(s): {}",
+            operation,
+            failures.len(),
+            summarize_target_failures(failures)
+        ),
+        None,
+    );
+}
+
+async fn cdp_execute_json_on_all_targets(
+    port: u16,
+    js_code: &str,
+    await_promise: bool,
+    timeout_secs: u64,
+    operation: &str,
+) -> Result<CdpJsonExecutionSummary> {
+    let results = cdp_client::execute_js_via_all_discord_targets(port, js_code, await_promise, timeout_secs)
+        .await
+        .with_context(|| format!("Failed to execute CDP {} across Discord targets", operation))?;
+
+    let total_targets = results.len();
+    let mut successful_results = Vec::new();
+    let mut target_failures = Vec::new();
+
+    for item in results {
+        let target_prefix = format!("target='{}' url='{}'", item.target_title, item.target_url);
+
+        if let Some(err) = item.error {
+            target_failures.push(format!("{} err={}", target_prefix, err));
+            continue;
+        }
+
+        let raw = item.result.unwrap_or_default();
+        if raw.is_empty() {
+            target_failures.push(format!("{} err=empty result", target_prefix));
+            continue;
+        }
+
+        let parsed: serde_json::Value = match serde_json::from_str(&raw) {
+            Ok(parsed) => parsed,
+            Err(err) => {
+                target_failures.push(format!(
+                    "{} parse_err={} raw={}",
+                    target_prefix,
+                    err,
+                    raw.chars().take(200).collect::<String>()
+                ));
+                continue;
+            }
+        };
+
+        if cdp_result_succeeded(&parsed) {
+            successful_results.push(parsed);
+            continue;
+        }
+
+        let error = parsed
+            .get("error")
+            .and_then(|value| value.as_str())
+            .map(ToOwned::to_owned)
+            .unwrap_or_else(|| raw.chars().take(200).collect::<String>());
+        target_failures.push(format!("{} err={}", target_prefix, error));
+    }
+
+    if successful_results.is_empty() {
+        anyhow::bail!(
+            "CDP {} failed on all {} target(s): {}",
+            operation,
+            total_targets,
+            summarize_target_failures(&target_failures)
+        );
+    }
+
+    Ok(CdpJsonExecutionSummary {
+        total_targets,
+        successful_results,
+        target_failures,
+    })
+}
+
+async fn cdp_warmup_quest_route(port: u16) {
+    use crate::logger::{log, LogCategory, LogLevel};
+
+    let primary_target = match cdp_client::get_primary_discord_target(port).await {
+        Ok(target) => target,
+        Err(err) => {
+            log(
+                LogLevel::Warn,
+                LogCategory::TokenExtraction,
+                &format!("CDP quest route warmup skipped: unable to inspect primary target: {}", err),
+                None,
+            );
+            return;
+        }
+    };
+
+    let plan = match build_quest_route_warmup_plan(&primary_target.url) {
+        Some(plan) => plan,
+        None => {
+            log(
+                LogLevel::Warn,
+                LogCategory::TokenExtraction,
+                &format!("CDP quest route warmup skipped: unsupported target URL {}", primary_target.url),
+                None,
+            );
+            return;
+        }
+    };
+
+    log(
+        LogLevel::Info,
+        LogCategory::TokenExtraction,
+        &format!(
+            "CDP quest route warmup: current_url={} warmup_url={} restore_url={} already_on_quest_home={}",
+            plan.original_url,
+            plan.warmup_url,
+            plan.restore_url,
+            plan.already_on_quest_home
+        ),
+        None,
+    );
+
+    let spa_warmup_js = js_warmup_quest_route(&plan);
+    match cdp_client::execute_js_via_primary_discord_target(port, &spa_warmup_js, true, QUEST_WARMUP_NAV_TIMEOUT_SECS).await {
+        Ok(raw) => {
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&raw) {
+                if cdp_result_succeeded(&parsed) {
+                    log(
+                        LogLevel::Info,
+                        LogCategory::TokenExtraction,
+                        &format!(
+                            "CDP quest route warmup completed via in-app navigation (warmupMethod={}, restoreMethod={}, finalUrl={})",
+                            parsed.get("warmupMethod").and_then(|value| value.as_str()).unwrap_or("unknown"),
+                            parsed.get("restoreMethod").and_then(|value| value.as_str()).unwrap_or("unknown"),
+                            parsed.get("finalUrl").and_then(|value| value.as_str()).unwrap_or("unknown")
+                        ),
+                        None,
+                    );
+                    return;
+                }
+
+                log(
+                    LogLevel::Warn,
+                    LogCategory::TokenExtraction,
+                    &format!(
+                        "CDP quest route warmup SPA attempt failed (stage={}, error={}, details={:?}); falling back to Page.navigate",
+                        parsed.get("stage").and_then(|value| value.as_str()).unwrap_or("unknown"),
+                        parsed.get("error").and_then(|value| value.as_str()).unwrap_or("unknown"),
+                        parsed.get("details")
+                    ),
+                    None,
+                );
+            } else {
+                log(
+                    LogLevel::Warn,
+                    LogCategory::TokenExtraction,
+                    &format!("CDP quest route warmup SPA attempt returned non-JSON result: {}", raw),
+                    None,
+                );
+            }
+        }
+        Err(err) => {
+            log(
+                LogLevel::Warn,
+                LogCategory::TokenExtraction,
+                &format!("CDP quest route warmup SPA attempt failed to execute: {}; falling back to Page.navigate", err),
+                None,
+            );
+        }
+    }
+
+    if let Err(err) = cdp_client::navigate_primary_discord_target(port, &plan.warmup_url, QUEST_WARMUP_NAV_TIMEOUT_SECS).await {
+        log(
+            LogLevel::Warn,
+            LogCategory::TokenExtraction,
+            &format!("CDP quest route warmup failed while navigating to {}: {}", plan.warmup_url, err),
+            None,
+        );
+        return;
+    }
+
+    sleep(Duration::from_millis(QUEST_WARMUP_DWELL_MS)).await;
+
+    if let Err(err) = cdp_client::navigate_primary_discord_target(port, &plan.restore_url, QUEST_WARMUP_NAV_TIMEOUT_SECS).await {
+        log(
+            LogLevel::Warn,
+            LogCategory::TokenExtraction,
+            &format!("CDP quest route warmup failed while restoring {}: {}", plan.restore_url, err),
+            None,
+        );
+        return;
+    }
+
+    sleep(Duration::from_millis(QUEST_WARMUP_RESTORE_SETTLE_MS)).await;
+
+    log(
+        LogLevel::Info,
+        LogCategory::TokenExtraction,
+        &format!(
+            "CDP quest route warmup completed via {} and restored to {}",
+            plan.warmup_url,
+            plan.restore_url
+        ),
+        None,
+    );
+}
+
 /// Initialize Discord webpack modules via CDP.
 async fn cdp_init_modules(port: u16) -> Result<()> {
     use crate::logger::{log, LogLevel, LogCategory};
 
-    let result = cdp_client::execute_js_via_cdp(port, JS_INIT_QUEST_MODULES, true, 60).await?;
+    let summary = cdp_execute_json_on_all_targets(port, JS_INIT_QUEST_MODULES, true, 60, "module initialization").await?;
 
-    log(LogLevel::Debug, LogCategory::TokenExtraction,
-        &format!("cdp_init_modules raw result: {}", &result), None);
+    log_partial_target_failures("module initialization", &summary.target_failures);
 
-    if result.is_empty() {
-        anyhow::bail!("CDP returned empty result — JS expression may have returned undefined");
-    }
-
-    let parsed: serde_json::Value = serde_json::from_str(&result)
-        .with_context(|| format!("Failed to parse init response as JSON: {}", &result.chars().take(500).collect::<String>()))?;
-
-    if parsed.get("success") != Some(&serde_json::json!(true)) {
-        let error = parsed.get("error")
-            .and_then(|e| e.as_str())
-            .unwrap_or("Unknown init error");
-        anyhow::bail!("CDP module initialization failed: {}", error);
-    }
+    let cached_targets = summary
+        .successful_results
+        .iter()
+        .filter(|parsed| parsed.get("cached").and_then(|value| value.as_bool()).unwrap_or(false))
+        .count();
 
     log(LogLevel::Info, LogCategory::TokenExtraction,
-        &format!("CDP modules initialized successfully (cached: {})",
-            parsed.get("cached").and_then(|c| c.as_bool()).unwrap_or(false)), None);
+        &format!(
+            "CDP modules initialized on {}/{} target(s) (cached on {})",
+            summary.successful_results.len(),
+            summary.total_targets,
+            cached_targets
+        ),
+        None,
+    );
 
     Ok(())
 }
@@ -915,16 +1366,26 @@ async fn cdp_poll_progress(port: u16, quest_id: &str) -> Result<(f64, bool)> {
     use crate::logger::{log, LogLevel, LogCategory};
 
     let js = js_query_progress(quest_id);
-    // awaitPromise=true because js_query_progress is now async (uses api.get)
-    let result = cdp_client::execute_js_via_cdp(port, &js, true, 15).await?;
-    let parsed: serde_json::Value = serde_json::from_str(&result)
-        .context("Failed to parse progress response")?;
+    let summary = cdp_execute_json_on_all_targets(port, &js, true, 15, "progress query").await?;
+    let mut parsed = summary
+        .successful_results
+        .first()
+        .context("CDP progress query returned no successful target results")?;
+    let mut best_progress = parsed.get("progress").and_then(|value| value.as_f64()).unwrap_or(0.0);
+    let mut best_completed = parsed.get("completed").and_then(|value| value.as_bool()).unwrap_or(false);
 
-    if parsed.get("success") != Some(&serde_json::json!(true)) {
-        let error = parsed.get("error")
-            .and_then(|e| e.as_str())
-            .unwrap_or("Unknown progress error");
-        anyhow::bail!("Progress query failed: {}", error);
+    for candidate in summary.successful_results.iter().skip(1) {
+        let candidate_progress = candidate.get("progress").and_then(|value| value.as_f64()).unwrap_or(0.0);
+        let candidate_completed = candidate.get("completed").and_then(|value| value.as_bool()).unwrap_or(false);
+
+        let is_better = (!best_completed && candidate_completed)
+            || (best_completed == candidate_completed && candidate_progress > best_progress);
+
+        if is_better {
+            parsed = candidate;
+            best_progress = candidate_progress;
+            best_completed = candidate_completed;
+        }
     }
 
     let source = parsed.get("source")
@@ -1002,6 +1463,7 @@ pub async fn complete_play_quest_via_cdp(
     // Defensive pre-cleanup: prevent stale spoof state from a previous run from leaking
     // into the new quest session.
     cdp_cleanup(port).await;
+    cdp_warmup_quest_route(port).await;
 
     // 1. Init modules
     cdp_init_modules(port).await
@@ -1009,13 +1471,21 @@ pub async fn complete_play_quest_via_cdp(
 
     // 2. Spoof running game
     let js = js_spoof_play_game(&app_id, &app_name);
-    let result = cdp_client::execute_js_via_cdp(port, &js, true, 15).await?;
-    let parsed: serde_json::Value = serde_json::from_str(&result).unwrap_or_default();
-    if parsed.get("success") != Some(&serde_json::json!(true)) {
-        cdp_cleanup(port).await;
-        anyhow::bail!("Failed to spoof running game: {}", 
-            parsed.get("error").and_then(|e| e.as_str()).unwrap_or("unknown"));
-    }
+    let spoof_summary = match cdp_execute_json_on_all_targets(port, &js, true, 15, "play quest spoof").await {
+        Ok(summary) => summary,
+        Err(err) => {
+            cdp_cleanup(port).await;
+            return Err(err);
+        }
+    };
+
+    log_partial_target_failures("play quest spoof", &spoof_summary.target_failures);
+
+    let parsed = spoof_summary
+        .successful_results
+        .iter()
+        .max_by_key(|value| value.get("patchCount").and_then(|patches| patches.as_u64()).unwrap_or(0))
+        .context("CDP play quest spoof returned no successful target result")?;
 
     let patch_count = parsed.get("patchCount").and_then(|p| p.as_u64()).unwrap_or(1);
     let exe_name = parsed.get("exeName").and_then(|e| e.as_str()).unwrap_or("?");
@@ -1024,8 +1494,16 @@ pub async fn complete_play_quest_via_cdp(
         .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>().join(", "))
         .unwrap_or_default();
     log(LogLevel::Info, LogCategory::TokenExtraction,
-        &format!("CDP: Game spoofed successfully ({} RunningGameStore patches, exe={}, allExes=[{}], dispatch interceptor active). Polling progress...", 
-            patch_count, exe_name, all_exes), None);
+        &format!(
+            "CDP: Game spoofed successfully on {}/{} target(s) (max {} RunningGameStore patches, exe={}, allExes=[{}], dispatch interceptor active). Polling progress...",
+            spoof_summary.successful_results.len(),
+            spoof_summary.total_targets,
+            patch_count,
+            exe_name,
+            all_exes
+        ),
+        None,
+    );
 
     // 3. Poll progress using Rust API client (reliable) with CDP fallback
     let poll_interval = Duration::from_secs(15);
@@ -1113,6 +1591,7 @@ pub async fn complete_stream_quest_via_cdp(
 
     // Defensive pre-cleanup: ensure previous spoof state is removed before applying new patches.
     cdp_cleanup(port).await;
+    cdp_warmup_quest_route(port).await;
 
     // 1. Init modules
     cdp_init_modules(port).await
@@ -1120,20 +1599,30 @@ pub async fn complete_stream_quest_via_cdp(
 
     // 2. Spoof streaming metadata
     let js = js_spoof_stream(&app_id);
-    let result = cdp_client::execute_js_via_cdp(port, &js, false, 10).await?;
-    let parsed: serde_json::Value = serde_json::from_str(&result).unwrap_or_default();
-    if parsed.get("success") != Some(&serde_json::json!(true)) {
-        cdp_cleanup(port).await;
-        anyhow::bail!("Failed to spoof stream: {}",
-            parsed.get("error").and_then(|e| e.as_str()).unwrap_or("unknown"));
-    }
+    let stream_summary = match cdp_execute_json_on_all_targets(port, &js, false, 10, "stream quest spoof").await {
+        Ok(summary) => summary,
+        Err(err) => {
+            cdp_cleanup(port).await;
+            return Err(err);
+        }
+    };
+
+    log_partial_target_failures("stream quest spoof", &stream_summary.target_failures);
 
     // Also spoof running game (stream quests also need the game running)
     let js_game = js_spoof_play_game(&app_id, "StreamedApp");
-    let _ = cdp_client::execute_js_via_cdp(port, &js_game, true, 15).await;
+    if let Ok(game_summary) = cdp_execute_json_on_all_targets(port, &js_game, true, 15, "stream companion game spoof").await {
+        log_partial_target_failures("stream companion game spoof", &game_summary.target_failures);
+    }
 
     log(LogLevel::Info, LogCategory::TokenExtraction,
-        "CDP: Stream spoofed successfully. Polling progress...", None);
+        &format!(
+            "CDP: Stream spoofed successfully on {}/{} target(s). Polling progress...",
+            stream_summary.successful_results.len(),
+            stream_summary.total_targets
+        ),
+        None,
+    );
 
     // 3. Poll progress using Rust API client (reliable) with CDP fallback
     let poll_interval = Duration::from_secs(20);
@@ -1222,6 +1711,7 @@ pub async fn complete_video_quest_via_cdp(
 
     // Defensive pre-cleanup for cross-quest consistency.
     cdp_cleanup(port).await;
+    cdp_warmup_quest_route(port).await;
 
     // 1. Init modules
     cdp_init_modules(port).await
@@ -1236,19 +1726,19 @@ pub async fn complete_video_quest_via_cdp(
     //    This avoids CDP "Promise was collected" errors from awaitPromise=true.
     let js = js_start_video_quest(&quest_id, seconds_needed, initial_progress);
 
-    let start_result = cdp_client::execute_js_via_cdp(port, &js, false, 15).await
+    let start_summary = cdp_execute_json_on_all_targets(port, &js, false, 15, "video quest start").await
         .context("Failed to launch video quest JS")?;
 
-    let start_parsed: serde_json::Value = serde_json::from_str(&start_result).unwrap_or_default();
-    if start_parsed.get("success") != Some(&serde_json::json!(true)) {
-        let error = start_parsed.get("error")
-            .and_then(|e| e.as_str())
-            .unwrap_or("Unknown start error");
-        anyhow::bail!("Failed to start video quest JS: {}", error);
-    }
+    log_partial_target_failures("video quest start", &start_summary.target_failures);
 
     log(LogLevel::Info, LogCategory::TokenExtraction,
-        "CDP video quest JS launched (fire-and-forget). Polling progress...", None);
+        &format!(
+            "CDP video quest JS launched on {}/{} target(s) (fire-and-forget). Polling progress...",
+            start_summary.successful_results.len(),
+            start_summary.total_targets
+        ),
+        None,
+    );
 
     // 3. Poll progress until the JS loop finishes (videoRunning=false) or quest completes
     let poll_interval = Duration::from_secs(5);
@@ -1263,8 +1753,12 @@ pub async fn complete_video_quest_via_cdp(
             _ = cancel_rx.recv() => {
                 log(LogLevel::Info, LogCategory::TokenExtraction, "CDP video quest cancelled", None);
                 // Try to stop the JS loop
-                let _ = cdp_client::execute_js_via_cdp(
-                    port, "(() => { if (window.__dqh_cdp) { window.__dqh_cdp._videoRunning = false; } return 'stopped'; })()", false, 5
+                let _ = cdp_execute_json_on_all_targets(
+                    port,
+                    "(() => { if (window.__dqh_cdp) { window.__dqh_cdp._videoRunning = false; } return JSON.stringify({ success: true, stopped: true }); })()",
+                    false,
+                    5,
+                    "video quest stop signal"
                 ).await;
                 let _ = app_handle.emit("quest-stopped", ());
                 return Ok(());
@@ -1304,18 +1798,31 @@ pub async fn complete_video_quest_via_cdp(
         }
 
         // Check if the JS loop has finished by reading _videoResult
-        match cdp_client::execute_js_via_cdp(
+        match cdp_execute_json_on_all_targets(
             port,
-            "(() => { const d = window.__dqh_cdp; return JSON.stringify({ running: !!d?._videoRunning, result: d?._videoResult || null }); })()",
-            false, 10
+            "(() => { const d = window.__dqh_cdp; return JSON.stringify({ success: true, running: !!d?._videoRunning, result: d?._videoResult || null }); })()",
+            false,
+            10,
+            "video quest status"
         ).await {
-            Ok(status_str) => {
-                if let Ok(status) = serde_json::from_str::<serde_json::Value>(&status_str) {
+            Ok(status_summary) => {
+                let status = status_summary
+                    .successful_results
+                    .iter()
+                    .find(|parsed| parsed.get("result").and_then(|value| value.as_str()).is_some())
+                    .or_else(|| {
+                        status_summary.successful_results.iter().find(|parsed| {
+                            parsed.get("running").and_then(|value| value.as_bool()) == Some(false)
+                        })
+                    })
+                    .or_else(|| status_summary.successful_results.first());
+
+                if let Some(status) = status {
                     let running = status.get("running").and_then(|v| v.as_bool()).unwrap_or(true);
                     if !running {
                         if let Some(result_str) = status.get("result").and_then(|v| v.as_str()) {
                             let parsed: serde_json::Value = serde_json::from_str(result_str).unwrap_or_default();
-                            if parsed.get("success") == Some(&serde_json::json!(true)) {
+                            if cdp_result_succeeded(&parsed) {
                                 let final_secs = parsed.get("finalSeconds").and_then(|v| v.as_f64()).unwrap_or(0.0);
                                 let js_completed = parsed.get("completed").and_then(|v| v.as_bool()).unwrap_or(false);
                                 let api_calls = parsed.get("apiCallCount").and_then(|v| v.as_u64()).unwrap_or(0);
@@ -1352,8 +1859,12 @@ pub async fn complete_video_quest_via_cdp(
                                 if parsed.get("apiModuleWrong") == Some(&serde_json::json!(true)) {
                                     log(LogLevel::Warn, LogCategory::TokenExtraction,
                                         "API module mismatch detected — invalidating CDP module cache", None);
-                                    let _ = cdp_client::execute_js_via_cdp(
-                                        port, "(() => { delete window.__dqh_cdp; return 'cleared'; })()", false, 5
+                                    let _ = cdp_execute_json_on_all_targets(
+                                        port,
+                                        "(() => { delete window.__dqh_cdp; return JSON.stringify({ success: true, cleared: true }); })()",
+                                        false,
+                                        5,
+                                        "video quest cache clear"
                                     ).await;
                                 }
 
@@ -1375,6 +1886,36 @@ pub async fn complete_video_quest_via_cdp(
                     &format!("Failed to check video JS status: {}", e), None);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_build_quest_route_warmup_plan_for_non_quest_page() {
+        let plan = build_quest_route_warmup_plan("https://discord.com/channels/@me").unwrap();
+
+        assert_eq!(plan.original_url, "https://discord.com/channels/@me");
+        assert_eq!(plan.warmup_url, QUEST_HOME_URL);
+        assert_eq!(plan.restore_url, "https://discord.com/channels/@me");
+        assert!(!plan.already_on_quest_home);
+    }
+
+    #[test]
+    fn test_build_quest_route_warmup_plan_for_quest_home() {
+        let plan = build_quest_route_warmup_plan("https://discord.com/quest-home").unwrap();
+
+        assert_eq!(plan.warmup_url, QUEST_HOME_DETOUR_URL);
+        assert_eq!(plan.restore_url, QUEST_HOME_URL);
+        assert!(plan.already_on_quest_home);
+    }
+
+    #[test]
+    fn test_build_quest_route_warmup_plan_rejects_invalid_urls() {
+        assert!(build_quest_route_warmup_plan("not-a-url").is_none());
+        assert!(build_quest_route_warmup_plan("chrome://version").is_none());
     }
 }
 

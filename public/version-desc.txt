@@ -1,7 +1,5 @@
 ## ✨ What's Changed
 
-1. Upgraded CDP execution to support multi-target JavaScript runs across Discord pages, improving behavior when multiple page targets are present.
-2. Reworked CDP spoof cleanup with stronger verification and retry flow, and added defensive pre-cleanup before play/stream/video quest sessions.
-3. Added system proxy support and detection and auto-refresh HTTP client when proxy state changes.
-4. Added connection/request timeout controls to major network paths (Discord API, CDP target checks, token/client metadata fetch) for better stability.
-5. Fixed quest-start UI behavior by blurring focused elements before state switches to prevent unexpected page scroll-to-top.
+1. Fixed task completion with CDP Mode.
+2. Added a task warmup script for CDP Mode.
+3. Bump default `client_build_number` to `548544`, `native_build_number` to `82474`, `client_version` to `1.0.9238`, and `browser_user_agent`.
