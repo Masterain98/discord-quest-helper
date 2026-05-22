@@ -78,23 +78,23 @@ impl Default for SuperProperties {
             os: "Windows".to_string(),
             browser: "Discord Client".to_string(),
             release_channel: "stable".to_string(),
-            client_version: Some("1.0.9219".to_string()),
+            client_version: Some("1.0.9238".to_string()),
             os_version: "10.0.19045".to_string(),
             os_arch: Some("x64".to_string()),
             app_arch: Some("x64".to_string()),
             system_locale: "en-US".to_string(),
             has_client_mods: false, // Must be false
-            browser_user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) discord/1.0.9219 Chrome/138.0.7204.251 Electron/37.6.0 Safari/537.36".to_string(),
+            browser_user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) discord/1.0.9238 Chrome/138.0.7204.251 Electron/37.6.0 Safari/537.36".to_string(),
             browser_version: "37.6.0".to_string(),
             os_sdk_version: Some("19045".to_string()),
-            // FALLBACK BUILD NUMBER: Captured ~March 2026. This hardcoded value is used when
+            // FALLBACK BUILD NUMBER: Captured ~May 2026. This hardcoded value is used when
             // CDP extraction and remote JS fetch both fail. May need periodic updates as
             // Discord releases new versions. The actual build number is fetched dynamically
             // from Discord when possible.
             // Default build_number
             // May 21th, 2026
             client_build_number: 548544,
-            native_build_number: Some(73211),
+            native_build_number: Some(82474),
             client_event_source: None,
             launch_signature: None,
             client_launch_id: None,
