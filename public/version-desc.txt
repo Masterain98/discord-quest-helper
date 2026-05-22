@@ -1,5 +1,5 @@
 ## ✨ What's Changed
 
-1. Fixed the task completion wtih CDP Mode.
-2. Add task warmup script for CDP Mode.
+1. Fixed task completion with CDP Mode.
+2. Added a task warmup script for CDP Mode.
 3. Bump default `client_build_number` to `548544`, `native_build_number` to `82474`, `client_version` to `1.0.9238`, and `browser_user_agent`.
