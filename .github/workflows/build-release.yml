@@ -96,7 +96,7 @@ jobs:
       # Runner binary is embedded in the main executable via include_bytes!
       - name: Upload Windows artifact (portable)
         if: matrix.platform == 'windows-latest'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tauri-win-portable
           path: |
@@ -105,7 +105,7 @@ jobs:
       # Upload Windows artifact (MSI installer)
       - name: Upload Windows artifact (MSI)
         if: matrix.platform == 'windows-latest'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tauri-win-msi
           path: src-tauri/target/release/bundle/msi/*.msi
@@ -113,7 +113,7 @@ jobs:
       # Upload macOS artifact
       - name: Upload macOS artifact
         if: matrix.platform == 'macos-14'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tauri-macos-arm64-release
           path: |
@@ -138,19 +138,19 @@ jobs:
         shell: bash
 
       - name: Download Windows artifact (portable)
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: tauri-win-portable
           path: tauri-win-portable
 
       - name: Download Windows artifact (MSI)
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: tauri-win-msi
           path: tauri-win-msi
 
       - name: Download macOS artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: tauri-macos-arm64-release
           path: tauri-macos-arm64-release
@@ -185,7 +185,7 @@ jobs:
 
       - name: Create and Upload Release
         id: create_release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.version }}
           name: ${{ env.version }}
