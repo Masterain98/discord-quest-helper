@@ -267,10 +267,16 @@ impl DiscordApiClient {
     }
 
     fn header_value(value: &str, name: &str) -> Option<HeaderValue> {
+        use crate::logger::{log, LogCategory, LogLevel};
         match HeaderValue::from_str(value) {
             Ok(header) => Some(header),
             Err(err) => {
-                eprintln!("Skipping invalid {} header: {}", name, err);
+                log(
+                    LogLevel::Warn,
+                    LogCategory::Api,
+                    &format!("Skipping invalid {} header", name),
+                    Some(&err.to_string()),
+                );
                 None
             }
         }

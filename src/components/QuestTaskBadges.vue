@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { Quest } from '@/api/tauri'
 import { getQuestTasks } from '@/utils/questTasks'
 import { Badge } from '@/components/ui/badge'
@@ -8,7 +9,7 @@ const props = defineProps<{
   quest: Quest
 }>()
 
-const tasks = getQuestTasks(props.quest)
+const tasks = computed(() => getQuestTasks(props.quest))
 
 function taskBadgeClass(type: string): string {
   if (type === 'PLAY_ON_XBOX') {

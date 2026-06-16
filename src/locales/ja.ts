@@ -53,7 +53,9 @@ export default {
         clear_filters: "フィルターをクリア",
         current_orbs: "現在の Orbs",
         orbs_not_loaded: "読み込み中...",
-        orbs_updated_at: "{time} に更新"
+        orbs_updated_at: "{time} に更新",
+        enrollment_blocked_until: "クエスト登録は {time} までブロックされています。",
+        claim_reward: "報酬を受け取る"
     },
     quest: {
         progress: "進捗",

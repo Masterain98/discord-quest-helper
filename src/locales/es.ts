@@ -53,7 +53,9 @@ export default {
         clear_filters: "Limpiar filtros",
         current_orbs: "Orbs actuales",
         orbs_not_loaded: "Cargando...",
-        orbs_updated_at: "Actualizado {time}"
+        orbs_updated_at: "Actualizado {time}",
+        enrollment_blocked_until: "La inscripción en misiones está bloqueada hasta {time}.",
+        claim_reward: "Reclamar recompensa"
     },
     quest: {
         progress: "Progreso",

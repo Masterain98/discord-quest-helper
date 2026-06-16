@@ -53,7 +53,9 @@ export default {
         clear_filters: "清除筛选",
         current_orbs: "当前 Orbs",
         orbs_not_loaded: "加载中...",
-        orbs_updated_at: "更新时间 {time}"
+        orbs_updated_at: "更新时间 {time}",
+        enrollment_blocked_until: "任务注册已被封禁至 {time}。",
+        claim_reward: "领取奖励"
     },
     quest: {
         progress: "进度",

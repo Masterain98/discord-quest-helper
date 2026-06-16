@@ -51,11 +51,14 @@
         </div>
 
         <div
-          v-if="questsStore.questEnrollmentBlockedUntil"
+          v-if="
+            questsStore.questEnrollmentBlockedUntil &&
+            new Date(questsStore.questEnrollmentBlockedUntil).getTime() > Date.now()
+          "
           class="flex items-center gap-2 rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-700 dark:text-yellow-300"
         >
           <AlertCircle class="h-4 w-4 shrink-0" />
-          <span>Quest enrollment is blocked until {{ formatBlockedUntil(questsStore.questEnrollmentBlockedUntil) }}.</span>
+          <span>{{ t('home.enrollment_blocked_until', { time: formatBlockedUntil(questsStore.questEnrollmentBlockedUntil) }) }}</span>
         </div>
 
         <div
@@ -321,7 +324,7 @@
                 @click="claimReward(quest)"
               >
                 <Loader2 v-if="claimingQuest === quest.id" class="w-4 h-4 mr-2 animate-spin" />
-                Claim Reward
+                {{ t('home.claim_reward') }}
               </Button>
                <span v-else-if="quest.user_status?.completed_at" class="text-sm font-medium text-green-500 self-center px-2">
                 ✓ Completed

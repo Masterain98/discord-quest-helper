@@ -956,10 +956,11 @@ async fn capture_discord_headers_cdp(port: Option<u16>, duration_secs: Option<u6
         .await
         .map_err(|e| e.to_string())?;
 
-    if let Ok(mut manager) = SUPER_PROPERTIES_MANAGER.lock() {
-        for request in &captured.requests {
-            manager.update_header_profile_from_headers(&request.headers);
-        }
+    let mut manager = SUPER_PROPERTIES_MANAGER
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    for request in &captured.requests {
+        manager.update_header_profile_from_headers(&request.headers);
     }
 
     Ok(captured)

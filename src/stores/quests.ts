@@ -129,7 +129,9 @@ export const useQuestsStore = defineStore('quests', () => {
   watch(showOrbsBalance, (enabled) => {
     localStorage.setItem(STORAGE_SHOW_ORBS_BALANCE_KEY, String(enabled))
     if (enabled && orbsBalance.value == null) {
-      fetchOrbsBalance()
+      fetchOrbsBalance().catch(err => {
+        console.warn('Background Orbs balance fetch failed:', err)
+      })
     }
   })
 
@@ -169,7 +171,10 @@ export const useQuestsStore = defineStore('quests', () => {
     }
   }
 
+  let orbsFetchGeneration = 0
+
   async function fetchOrbsBalance(force = false) {
+    const generationAtStart = orbsFetchGeneration
     if (!showOrbsBalance.value && !force) return
     if (orbsBalanceLoading.value) return
     if (!force && orbsBalance.value != null) return
@@ -177,13 +182,18 @@ export const useQuestsStore = defineStore('quests', () => {
     orbsBalanceLoading.value = true
     orbsBalanceError.value = null
     try {
-      orbsBalance.value = await getVirtualCurrencyBalance()
+      const balance = await getVirtualCurrencyBalance()
+      if (generationAtStart !== orbsFetchGeneration) return
+      orbsBalance.value = balance
       orbsBalanceFetchedAt.value = new Date().toISOString()
     } catch (e) {
+      if (generationAtStart !== orbsFetchGeneration) return
       orbsBalanceError.value = e as string
       throw e
     } finally {
-      orbsBalanceLoading.value = false
+      if (generationAtStart === orbsFetchGeneration) {
+        orbsBalanceLoading.value = false
+      }
     }
   }
 
@@ -716,10 +726,10 @@ export const useQuestsStore = defineStore('quests', () => {
       // Start video
       // Calculate duration needed
       let seconds = 0
-      const taskConfig = quest.config.task_config || quest.config.task_config_v2
-      if (taskConfig?.tasks) {
-        const tasks = Object.values(taskConfig.tasks)
-        if (tasks.length > 0) seconds = tasks[0].target || 0
+      const queueTasks = quest.config.task_config_v2?.tasks ?? quest.config.task_config?.tasks
+      if (queueTasks) {
+        const taskValues = Object.values(queueTasks)
+        if (taskValues.length > 0) seconds = taskValues[0].target || 0
       }
 
       // Check if already partial
@@ -786,6 +796,7 @@ export const useQuestsStore = defineStore('quests', () => {
   }
 
   function resetForLogout() {
+    orbsFetchGeneration++
     quests.value = []
     excludedQuests.value = []
     questEnrollmentBlockedUntil.value = null

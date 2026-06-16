@@ -453,7 +453,10 @@ async function fetchQuestDecisionDebug() {
   decisionLoading.value = true
   decisionError.value = null
   try {
-    decisionResult.value = await getQuestDecisionDebug(decisionPlacement.value) as Record<string, unknown>
+    decisionResult.value = await withCommandTimeout(
+      getQuestDecisionDebug(decisionPlacement.value),
+      'get_quest_decision_debug'
+    ) as Record<string, unknown>
   } catch (e) {
     decisionError.value = String(e)
   } finally {
@@ -465,7 +468,10 @@ async function fetchQuestDecisionsDebug() {
   decisionLoading.value = true
   decisionError.value = null
   try {
-    decisionsResult.value = await getQuestDecisionsDebug(decisionsPlacement.value, decisionsNum.value) as Record<string, unknown>
+    decisionsResult.value = await withCommandTimeout(
+      getQuestDecisionsDebug(decisionsPlacement.value, decisionsNum.value),
+      'get_quest_decisions_debug'
+    ) as Record<string, unknown>
   } catch (e) {
     decisionError.value = String(e)
   } finally {

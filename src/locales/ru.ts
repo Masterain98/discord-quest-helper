@@ -53,7 +53,9 @@ export default {
         clear_filters: "Сбросить фильтры",
         current_orbs: "Текущие Orbs",
         orbs_not_loaded: "Загрузка...",
-        orbs_updated_at: "Обновлено {time}"
+        orbs_updated_at: "Обновлено {time}",
+        enrollment_blocked_until: "Регистрация на квесты заблокирована до {time}.",
+        claim_reward: "Получить награду"
     },
     quest: {
         progress: "Прогресс",

@@ -69,10 +69,9 @@ function toTaskView(key: string, task: QuestTaskConfigEntry): QuestTaskView {
 }
 
 export function getQuestTasks(quest: Quest): QuestTaskView[] {
-  const taskConfig = quest.config.task_config_v2 || quest.config.task_config
-  if (!taskConfig?.tasks) return []
-
-  return Object.entries(taskConfig.tasks).map(([key, task]) => toTaskView(key, task))
+  const tasks = quest.config.task_config_v2?.tasks ?? quest.config.task_config?.tasks
+  if (!tasks) return []
+  return Object.entries(tasks).map(([key, task]) => toTaskView(key, task))
 }
 
 export function getQuestKind(quest: Quest): QuestKind {

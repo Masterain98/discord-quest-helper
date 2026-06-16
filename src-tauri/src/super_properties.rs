@@ -128,7 +128,12 @@ impl HeaderProfile {
             .ok()
             .and_then(|raw| raw.split('.').next().map(str::to_string))
             .map(|locale| locale.replace('_', "-"))
-            .filter(|locale| !locale.trim().is_empty() && locale != "C");
+            .filter(|locale| {
+                !locale.trim().is_empty()
+                    && locale != "C"
+                    && locale != "POSIX"
+                    && !locale.starts_with("C-")
+            });
 
         match from_env {
             Some(locale) => (locale, "system".to_string()),

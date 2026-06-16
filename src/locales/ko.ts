@@ -53,7 +53,9 @@ export default {
         clear_filters: "필터 초기화",
         current_orbs: "현재 Orbs",
         orbs_not_loaded: "로딩 중...",
-        orbs_updated_at: "{time} 업데이트"
+        orbs_updated_at: "{time} 업데이트",
+        enrollment_blocked_until: "퀘스트 등록이 {time}까지 차단되었습니다.",
+        claim_reward: "보상 받기"
     },
     quest: {
         progress: "진행률",
