@@ -50,7 +50,10 @@ export default {
         custom_exe_title: "Введите имя процесса",
         custom_exe_desc: "У {game} нет известных исполняемых файлов в базе Discord. Введите пользовательское имя процесса.",
         no_quests_match: "Нет заданий, соответствующих фильтрам",
-        clear_filters: "Сбросить фильтры"
+        clear_filters: "Сбросить фильтры",
+        current_orbs: "Текущие Orbs",
+        orbs_not_loaded: "Загрузка...",
+        orbs_updated_at: "Обновлено {time}"
     },
     quest: {
         progress: "Прогресс",
@@ -102,6 +105,10 @@ export default {
         game_polling_desc: "Для квестов Play/Game: частота проверки прогресса. Использует Discord RPC для активности, только опрашивает статус.",
         game_polling_interval: "Интервал опроса",
         game_polling_hint: "Больше = меньше API вызовов",
+        display: "Отображение",
+        display_desc: "Дополнительная информация аккаунта на главной странице.",
+        show_orbs_balance: "Показывать баланс Orbs",
+        show_orbs_balance_desc: "Получает баланс виртуальной валюты при входе и при ручном обновлении.",
         game_quest_mode: "Режим игровых квестов",
         game_quest_mode_desc: "Выберите способ завершения игровых квестов. Прямой heartbeat пропускает симуляцию игры.",
         game_mode_simulate: 'Режим симуляции игры (Рекомендуемый)',
@@ -271,6 +278,19 @@ export default {
         decoder_desc: "Декодирование base64-закодированного заголовка x-super-properties в JSON.",
         decoder_placeholder: "Вставьте строку base64 здесь...",
         decoder_decode: "Декодировать",
-        decoder_result: "Результат декодирования"
+        decoder_result: "Результат декодирования",
+        developer_details: "Сведения для разработчика",
+        header_profile: "Профиль заголовков",
+        header_profile_desc: "Идентификатор запроса и языковые заголовки, используемые API-вызовами.",
+        quest_api_baseline: "Базовая линия Quest API",
+        quest_api_baseline_desc: "Эндпоинты Quest, обнаруженные в текущем сетевом захвате CDP.",
+        query_keys: "Ключи запроса",
+        quest_api_baseline_empty: "Захватите заголовки Discord через CDP, чтобы заполнить базовую линию Quest API.",
+        quest_placement_decisions: "Решения размещения Quest",
+        quest_placement_decisions_desc: "Только для диагностики. Основной список квестов по-прежнему использует /quests/@me.",
+        loading_status: "Загрузка {command}...",
+        last_load_duration: "Последняя загрузка отладки завершилась за {ms} мс",
+        load_failed: "Не удалось загрузить отладочную информацию",
+        fetch: "Получить"
     }
 }

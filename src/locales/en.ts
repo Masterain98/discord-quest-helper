@@ -50,7 +50,10 @@ export default {
         custom_exe_title: "Enter Process Name",
         custom_exe_desc: "{game} has no known executables in Discord's database. Please enter a custom process name to simulate.",
         no_quests_match: "No quests match your filters",
-        clear_filters: "Clear Filters"
+        clear_filters: "Clear Filters",
+        current_orbs: "Current Orbs",
+        orbs_not_loaded: "Loading...",
+        orbs_updated_at: "Updated {time}"
     },
     quest: {
         progress: "Progress",
@@ -102,6 +105,10 @@ export default {
         game_polling_desc: "For play/game quests: How often to check quest progress. Uses Discord RPC for activity, only polls for status.",
         game_polling_interval: "Polling Interval",
         game_polling_hint: "Higher = less API calls",
+        display: "Display",
+        display_desc: "Optional account-level information shown on the Home page.",
+        show_orbs_balance: "Show Orbs balance",
+        show_orbs_balance_desc: "Fetches virtual currency balance on login and when manually refreshed.",
         game_quest_mode: "Game Quest Mode",
         game_quest_mode_desc: "Choose how to complete Play/Game quests. Direct heartbeat skips game simulation.",
         game_mode_simulate: 'Simulated Game Mode (Recommended)',
@@ -272,6 +279,19 @@ export default {
         decoder_desc: "Decode base64-encoded x-super-properties header to view the JSON payload.",
         decoder_placeholder: "Paste base64 string here...",
         decoder_decode: "Decode",
-        decoder_result: "Decoded Result"
+        decoder_result: "Decoded Result",
+        developer_details: "Developer Details",
+        header_profile: "Header Profile",
+        header_profile_desc: "Resolved request identity and locale headers used by API calls.",
+        quest_api_baseline: "Quest API Baseline",
+        quest_api_baseline_desc: "Observed Quest-related endpoints from the current CDP network capture.",
+        query_keys: "Query keys",
+        quest_api_baseline_empty: "Capture headers from Discord with CDP to populate the Quest API baseline.",
+        quest_placement_decisions: "Quest Placement Decisions",
+        quest_placement_decisions_desc: "Fetches diagnostics only. Main quest list still uses /quests/@me.",
+        loading_status: "Loading {command}...",
+        last_load_duration: "Last debug load finished in {ms}ms",
+        load_failed: "Debug load failed",
+        fetch: "Fetch"
     }
 }

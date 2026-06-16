@@ -1,8 +1,8 @@
 import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
-import type { Quest, DetectableGame } from '@/api/tauri'
+import type { Quest, DetectableGame, ExcludedQuest } from '@/api/tauri'
 import {
-  getQuests,
+  getQuestsFull,
   startVideoQuest,
   startStreamQuest,
   stopQuest,
@@ -18,7 +18,8 @@ import {
   startGameHeartbeatQuest,
   forceVideoProgress,
   startCdpQuest,
-  checkCdpStatus
+  checkCdpStatus,
+  getVirtualCurrencyBalance
 } from '@/api/tauri'
 import { homeDir, sep } from '@tauri-apps/api/path'
 import { emit } from '@tauri-apps/api/event'
@@ -29,10 +30,16 @@ const STORAGE_SPEED_KEY = 'questHelper_speedMultiplier'
 
 export const useQuestsStore = defineStore('quests', () => {
   const quests = ref<Quest[]>([])
+  const excludedQuests = ref<ExcludedQuest[]>([])
+  const questEnrollmentBlockedUntil = ref<string | null>(null)
   const lastQuestsFetchTime = ref(0)
   const loading = ref(false)
   const stopping = ref(false)
   const error = ref<string | null>(null)
+  const orbsBalance = ref<number | null>(null)
+  const orbsBalanceFetchedAt = ref<string | null>(null)
+  const orbsBalanceLoading = ref(false)
+  const orbsBalanceError = ref<string | null>(null)
 
   const activeQuestId = ref<string | null>(null)
   const activeQuestType = ref<'video' | 'stream' | 'game' | null>(null)
@@ -89,6 +96,11 @@ export const useQuestsStore = defineStore('quests', () => {
   const savedCdpPort = localStorage.getItem(STORAGE_CDP_PORT_KEY)
   const cdpPort = ref(savedCdpPort ? parseInt(savedCdpPort) : 9223)
 
+  // Optional display: account Orbs balance. Disabled by default to avoid extra requests.
+  const STORAGE_SHOW_ORBS_BALANCE_KEY = 'questHelper_showOrbsBalance'
+  const savedShowOrbsBalance = localStorage.getItem(STORAGE_SHOW_ORBS_BALANCE_KEY)
+  const showOrbsBalance = ref(savedShowOrbsBalance === null ? true : savedShowOrbsBalance === 'true')
+
   // Persist speed changes to localStorage
   watch(speedMultiplier, (newSpeed) => {
     localStorage.setItem(STORAGE_SPEED_KEY, String(newSpeed))
@@ -112,6 +124,13 @@ export const useQuestsStore = defineStore('quests', () => {
   // Persist CDP port changes
   watch(cdpPort, (newPort) => {
     localStorage.setItem(STORAGE_CDP_PORT_KEY, String(newPort))
+  })
+
+  watch(showOrbsBalance, (enabled) => {
+    localStorage.setItem(STORAGE_SHOW_ORBS_BALANCE_KEY, String(enabled))
+    if (enabled && orbsBalance.value == null) {
+      fetchOrbsBalance()
+    }
   })
 
   let progressUnlisten: (() => void) | null = null
@@ -138,12 +157,33 @@ export const useQuestsStore = defineStore('quests', () => {
     error.value = null
     try {
       console.log('Fetching quests from API...')
-      quests.value = await getQuests()
+      const response = await getQuestsFull()
+      quests.value = response.quests
+      excludedQuests.value = response.excluded_quests || []
+      questEnrollmentBlockedUntil.value = response.quest_enrollment_blocked_until || null
       lastQuestsFetchTime.value = Date.now()
     } catch (e) {
       error.value = e as string
     } finally {
       if (!silent) loading.value = false
+    }
+  }
+
+  async function fetchOrbsBalance(force = false) {
+    if (!showOrbsBalance.value && !force) return
+    if (orbsBalanceLoading.value) return
+    if (!force && orbsBalance.value != null) return
+
+    orbsBalanceLoading.value = true
+    orbsBalanceError.value = null
+    try {
+      orbsBalance.value = await getVirtualCurrencyBalance()
+      orbsBalanceFetchedAt.value = new Date().toISOString()
+    } catch (e) {
+      orbsBalanceError.value = e as string
+      throw e
+    } finally {
+      orbsBalanceLoading.value = false
     }
   }
 
@@ -747,9 +787,15 @@ export const useQuestsStore = defineStore('quests', () => {
 
   function resetForLogout() {
     quests.value = []
+    excludedQuests.value = []
+    questEnrollmentBlockedUntil.value = null
     lastQuestsFetchTime.value = 0
     loading.value = false
     error.value = null
+    orbsBalance.value = null
+    orbsBalanceFetchedAt.value = null
+    orbsBalanceLoading.value = false
+    orbsBalanceError.value = null
     activeQuestId.value = null
     activeQuestType.value = null
     activeQuestProgress.value = 0
@@ -787,8 +833,15 @@ export const useQuestsStore = defineStore('quests', () => {
 
   return {
     quests,
+    excludedQuests,
+    questEnrollmentBlockedUntil,
     loading,
     error,
+    orbsBalance,
+    orbsBalanceFetchedAt,
+    orbsBalanceLoading,
+    orbsBalanceError,
+    showOrbsBalance,
     activeQuestId,
     activeQuestType,
     activeQuestProgress,
@@ -805,6 +858,7 @@ export const useQuestsStore = defineStore('quests', () => {
     questQueue, // Export queue
     isQueueRunning,
     fetchQuests,
+    fetchOrbsBalance,
     updateQuestEnrollment,
     startVideo,
     startStream,

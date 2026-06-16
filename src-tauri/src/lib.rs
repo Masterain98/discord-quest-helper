@@ -191,6 +191,23 @@ async fn get_quests(state: State<'_, AppState>) -> Result<serde_json::Value, Str
     Ok(quests.get("quests").cloned().unwrap_or(serde_json::Value::Array(vec![])))
 }
 
+/// Get full quest list response, preserving excluded quests and enrollment block status.
+#[tauri::command]
+async fn get_quests_full(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let client = {
+        let guard = state.client.lock().unwrap();
+        guard
+            .as_ref()
+            .ok_or_else(|| "Not logged in".to_string())?
+            .clone()
+    };
+
+    client
+        .get_quests_raw()
+        .await
+        .map_err(|e| format!("Failed to get quest list: {}", e))
+}
+
 /// Start video quest
 #[tauri::command]
 async fn start_video_quest(
@@ -540,6 +557,74 @@ async fn accept_quest(quest_id: String, state: State<'_, AppState>) -> Result<se
     Ok(result)
 }
 
+#[tauri::command]
+async fn get_virtual_currency_balance(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let client = {
+        let guard = state.client.lock().unwrap();
+        guard
+            .as_ref()
+            .ok_or_else(|| "Not logged in".to_string())?
+            .clone()
+    };
+
+    client
+        .get_virtual_currency_balance()
+        .await
+        .map_err(|e| format!("Failed to get virtual currency balance: {}", e))
+}
+
+#[tauri::command]
+async fn get_quest_decision_debug(placement: u64, state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let client = {
+        let guard = state.client.lock().unwrap();
+        guard
+            .as_ref()
+            .ok_or_else(|| "Not logged in".to_string())?
+            .clone()
+    };
+
+    client
+        .get_quest_decision_debug(placement)
+        .await
+        .map_err(|e| format!("Failed to get quest placement decision: {}", e))
+}
+
+#[tauri::command]
+async fn get_quest_decisions_debug(placement: u64, num: u64, state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let client = {
+        let guard = state.client.lock().unwrap();
+        guard
+            .as_ref()
+            .ok_or_else(|| "Not logged in".to_string())?
+            .clone()
+    };
+
+    client
+        .get_quest_decisions_debug(placement, num)
+        .await
+        .map_err(|e| format!("Failed to get quest placement decisions: {}", e))
+}
+
+#[tauri::command]
+async fn claim_quest_reward(
+    quest_id: String,
+    platform: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let client = {
+        let guard = state.client.lock().unwrap();
+        guard
+            .as_ref()
+            .ok_or_else(|| "Not logged in".to_string())?
+            .clone()
+    };
+
+    client
+        .claim_quest_reward(&quest_id, platform)
+        .await
+        .map_err(|e| format!("Failed to claim quest reward: {}", e))
+}
+
 mod rpc;
 mod runner;
 
@@ -739,6 +824,7 @@ pub fn run() {
             auto_detect_token,
             set_token,
             get_quests,
+            get_quests_full,
             start_video_quest,
             start_stream_quest,
             start_game_heartbeat_quest,
@@ -749,6 +835,10 @@ pub fn run() {
             stop_simulated_game,
             fetch_detectable_games,
             accept_quest,
+            get_virtual_currency_balance,
+            get_quest_decision_debug,
+            get_quest_decisions_debug,
+            claim_quest_reward,
             connect_to_discord_rpc,
             open_in_explorer,
             force_video_progress,
@@ -862,9 +952,17 @@ async fn fetch_super_properties_cdp(port: Option<u16>) -> Result<cdp_client::Cdp
 async fn capture_discord_headers_cdp(port: Option<u16>, duration_secs: Option<u64>) -> Result<cdp_client::CdpCapturedHeaders, String> {
     let port = port.unwrap_or(cdp_client::DEFAULT_CDP_PORT);
     let duration = duration_secs.unwrap_or(30);
-    cdp_client::capture_discord_headers_via_cdp(port, duration)
+    let captured = cdp_client::capture_discord_headers_via_cdp(port, duration)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    if let Ok(mut manager) = SUPER_PROPERTIES_MANAGER.lock() {
+        for request in &captured.requests {
+            manager.update_header_profile_from_headers(&request.headers);
+        }
+    }
+
+    Ok(captured)
 }
 
 /// Get current SuperProperties source mode and build number

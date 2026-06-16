@@ -49,6 +49,32 @@
             </Button>
           </div>
         </div>
+
+        <div
+          v-if="questsStore.questEnrollmentBlockedUntil"
+          class="flex items-center gap-2 rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-700 dark:text-yellow-300"
+        >
+          <AlertCircle class="h-4 w-4 shrink-0" />
+          <span>Quest enrollment is blocked until {{ formatBlockedUntil(questsStore.questEnrollmentBlockedUntil) }}.</span>
+        </div>
+
+        <div
+          v-if="questsStore.showOrbsBalance"
+          class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-muted/30 p-3"
+        >
+          <div class="flex items-center gap-2 text-sm">
+            <img src="/icons/orbs.png" alt="" class="h-5 w-5 object-contain" />
+            <span class="text-muted-foreground">{{ t('home.current_orbs') }}:</span>
+            <span class="font-semibold">{{ questsStore.orbsBalance == null ? t('home.orbs_not_loaded') : questsStore.orbsBalance.toLocaleString() }}</span>
+            <span v-if="questsStore.orbsBalanceFetchedAt" class="text-xs text-muted-foreground">
+              {{ t('home.orbs_updated_at', { time: new Date(questsStore.orbsBalanceFetchedAt).toLocaleTimeString() }) }}
+            </span>
+          </div>
+          <Button variant="outline" size="sm" class="gap-2" @click="refreshOrbsBalance" :disabled="questsStore.orbsBalanceLoading || !authStore.user">
+            <RotateCw :class="cn('h-3.5 w-3.5', questsStore.orbsBalanceLoading && 'animate-spin')" />
+            {{ t('general.refresh') }}
+          </Button>
+        </div>
         
         <!-- Filter Panel -->
         <Card v-if="showFilters" class="animate-in slide-in-from-top-2 duration-200">
@@ -257,6 +283,7 @@
             :key="quest.id"
             :quest="quest"
             :quest-type="getQuestType(quest)"
+            :show-developer-details="props.debugModeEnabled"
           >
             <template #actions>
               <Button 
@@ -287,8 +314,14 @@
                 {{ getStartButtonText(quest) }}
               </Button>
               
-              <Button v-else-if="quest.user_status?.completed_at && !quest.user_status?.claimed_at" variant="outline" disabled>
-                 Pending Claim
+              <Button
+                v-else-if="quest.user_status?.completed_at && !quest.user_status?.claimed_at"
+                variant="outline"
+                :disabled="claimingQuest === quest.id"
+                @click="claimReward(quest)"
+              >
+                <Loader2 v-if="claimingQuest === quest.id" class="w-4 h-4 mr-2 animate-spin" />
+                Claim Reward
               </Button>
                <span v-else-if="quest.user_status?.completed_at" class="text-sm font-medium text-green-500 self-center px-2">
                 ✓ Completed
@@ -426,7 +459,7 @@ import { useVersionStore } from '@/stores/version'
 import QuestCard from '@/components/QuestCard.vue'
 import QuestProgress from '@/components/QuestProgress.vue'
 import type { Quest } from '@/api/tauri'
-import { acceptQuest as acceptQuestApi } from '@/api/tauri'
+import { acceptQuest as acceptQuestApi, claimQuestReward } from '@/api/tauri'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -453,11 +486,26 @@ import { RotateCw, Filter, AlertCircle, Loader2, ArrowUpCircle, ExternalLink, Ch
 import { Input } from '@/components/ui/input'
 import { useI18n } from 'vue-i18n'
 import { open } from '@tauri-apps/plugin-shell'
+import {
+  firstProgressValue,
+  firstStartableTask,
+  getQuestKind,
+  getQuestTasks,
+  isActivityTask,
+  isDesktopPlayTask,
+  isStreamTask,
+  isVideoTask,
+} from '@/utils/questTasks'
+import { getQuestRewardCategory } from '@/utils/questRewards'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
 const questsStore = useQuestsStore()
 const versionStore = useVersionStore()
+
+const props = defineProps<{
+  debugModeEnabled?: boolean
+}>()
 
 // Open update page in browser
 async function openUpdatePage() {
@@ -481,6 +529,7 @@ const searchQuery = ref('')
 
 // Accepting quest state
 const acceptingQuest = ref<string | null>(null)
+const claimingQuest = ref<string | null>(null)
 
 // Loading state for the Start button (fetching detectable games, etc.)
 const startingQuestId = ref<string | null>(null)
@@ -579,12 +628,18 @@ function clearFilters() {
 onMounted(() => {
   if (authStore.user) {
     questsStore.fetchQuests()
+    questsStore.fetchOrbsBalance().catch(err => {
+      console.warn('Background Orbs balance fetch failed:', err)
+    })
   }
 })
 
 watch(() => authStore.user, (newUser) => {
   if (newUser) {
     questsStore.fetchQuests()
+    questsStore.fetchOrbsBalance().catch(err => {
+      console.warn('Background Orbs balance fetch failed:', err)
+    })
   } else {
     questsStore.quests = []
   }
@@ -595,67 +650,33 @@ async function refreshQuests() {
   await questsStore.fetchQuests(false, true)
 }
 
+async function refreshOrbsBalance() {
+  await questsStore.fetchOrbsBalance(true)
+}
+
+function formatBlockedUntil(value: string): string {
+  return new Date(value).toLocaleString()
+}
+
 // Determine quest type based on task_config
 function getQuestType(quest: Quest): 'video' | 'stream' | 'activity' {
-  const taskConfig = quest.config.task_config_v2 || quest.config.task_config
-  if (taskConfig?.tasks) {
-    const taskKeys = Object.keys(taskConfig.tasks)
-    
-    // Activity quests
-    if (taskKeys.some(key => key.includes('ACTIVITY') || key.includes('ACHIEVEMENT'))) {
-      return 'activity'
-    }
-
-    // Check for stream/play task names
-    if (taskKeys.some(key => 
-      key.includes('STREAM') || 
-      key.includes('PLAY')
-    )) {
-      return 'stream'
-    }
-  }
-  return 'video'
+  return getQuestKind(quest)
 }
 
 // Get button text based on quest type
 function getStartButtonText(quest: Quest): string {
-  const taskConfig = quest.config.task_config_v2 || quest.config.task_config
-  if (!taskConfig?.tasks) return 'Start Quest'
-  
-  const taskKeys = Object.keys(taskConfig.tasks)
-  
-  // Video quests
-  if (taskKeys.some(key => key.includes('WATCH_VIDEO') || key.includes('VIDEO'))) {
-    return '🎬 Start Watching'
-  }
-  
-  // Play quests (game simulation)
-  if (taskKeys.some(key => key.includes('PLAY_ON_DESKTOP') || key.includes('PLAY_ON'))) {
-    return '🎮 Start Playing'
-  }
-  
-  // Stream quests
-  if (taskKeys.some(key => key.includes('STREAM'))) {
-    return '📡 Start Streaming'
-  }
-  
-  // Activity quests
-  if (taskKeys.some(key => key.includes('ACTIVITY'))) {
-    return '🎯 Launch Activity'
-  }
-  
+  const task = firstStartableTask(quest)
+  if (!task) return 'Start Quest'
+  if (isVideoTask(task)) return 'Start Watching'
+  if (isDesktopPlayTask(task)) return 'Start Playing'
+  if (isStreamTask(task)) return 'Start Streaming'
+  if (isActivityTask(task)) return 'Launch Activity'
   return 'Start Quest'
 }
 
 // Get reward type for a quest
 function getRewardType(quest: Quest): 'orbs' | 'avatar' | 'ingame' {
-  const config = quest.config.rewards_config
-  if (!config?.rewards) return 'ingame'
-  
-  const rewardNames = config.rewards.map(r => r.messages?.name?.toLowerCase() || '').join(' ')
-  if (rewardNames.includes('orb')) return 'orbs'
-  if (rewardNames.includes('avatar') || rewardNames.includes('decoration')) return 'avatar'
-  return 'ingame'
+  return getQuestRewardCategory(quest)
 }
 
 // Filtered quests based on filter state
@@ -879,14 +900,7 @@ function getExpiryText(dateStr: string | null | undefined): string {
 function canStartQuest(quest: Quest): boolean {
   // Check if quest is already completed
   if (quest.user_status?.completed_at) return false
-  
-  // Can start video or stream quests - check task_config for duration
-  const taskConfig = quest.config.task_config_v2 || quest.config.task_config
-  if (taskConfig?.tasks) {
-    // Check if any task has a target (duration requirement)
-    return Object.values(taskConfig.tasks).some(task => task.target !== undefined && task.target > 0)
-  }
-  return false
+  return firstStartableTask(quest) !== null
 }
 
 async function startQuest(quest: Quest) {
@@ -900,43 +914,18 @@ async function startQuest(quest: Quest) {
   
   startingQuestId.value = quest.id
   try {
-  // Get task config and determine task type
-  const taskConfig = quest.config.task_config_v2 || quest.config.task_config
-  if (!taskConfig?.tasks) return
+  const task = firstStartableTask(quest)
+  if (!task?.target) return
   
-  const taskKeys = Object.keys(taskConfig.tasks)
-  const firstTaskKey = taskKeys[0]
-  const firstTask = taskConfig.tasks[firstTaskKey]
+  const secondsNeeded = task.target
+  const initialProgress = firstProgressValue(quest, task.key)
+  const taskTypes = getQuestTasks(quest).map(item => item.type)
+  const isVideoQuest = isVideoTask(task)
+  const isPlayQuest = isDesktopPlayTask(task)
+  const isStreamQuest = isStreamTask(task)
+  const isActivityQuest = isActivityTask(task)
   
-  if (!firstTask?.target) return
-  
-  const secondsNeeded = firstTask.target
-  
-  // Get initial progress from user_status.progress[TASK_KEY].value
-  let initialProgress = 0
-  const progressObj = quest.user_status?.progress
-  if (progressObj && typeof progressObj === 'object') {
-    const progressValues = Object.values(progressObj as Record<string, { value?: number }>)
-    if (progressValues.length > 0 && progressValues[0]?.value !== undefined) {
-      initialProgress = progressValues[0].value
-    }
-  }
-  
-  // Detect quest type based on task key
-  const isVideoQuest = taskKeys.some(key => 
-    key.includes('WATCH_VIDEO') || key.includes('VIDEO')
-  )
-  const isPlayQuest = taskKeys.some(key => 
-    key.includes('PLAY_ON_DESKTOP') || key.includes('PLAY_ON')
-  )
-  const isStreamQuest = taskKeys.some(key => 
-    key.includes('STREAM')
-  )
-  const isActivityQuest = taskKeys.some(key => 
-    key.includes('ACTIVITY') || key.includes('ACHIEVEMENT')
-  )
-  
-  console.log(`Starting quest: type=${firstTaskKey}, target=${secondsNeeded}s, progress=${initialProgress}s`)
+  console.log(`Starting quest: type=${task.type}, target=${secondsNeeded}s, progress=${initialProgress}s`)
   
   if (isVideoQuest) {
     // Video quest - uses video-progress API with timestamp
@@ -986,7 +975,7 @@ async function startQuest(quest: Quest) {
     alert('Activity quests require launching a Discord Activity. Please complete in Discord client.')
   } else {
     // Unknown type - show warning
-    alert(`Unknown quest type: ${firstTaskKey}\n\nPlease check the quest requirements in Discord.`)
+    alert(`Unknown quest type: ${taskTypes.join(', ') || 'none'}\n\nPlease check the quest requirements in Discord.`)
   }
   } finally {
     startingQuestId.value = null
@@ -1008,6 +997,21 @@ async function acceptQuest(quest: Quest) {
     alert(`Failed to accept quest: ${error}`)
   } finally {
     acceptingQuest.value = null
+  }
+}
+
+async function claimReward(quest: Quest) {
+  if (claimingQuest.value) return
+
+  try {
+    claimingQuest.value = quest.id
+    await claimQuestReward(quest.id)
+    await questsStore.fetchQuests(true, true)
+  } catch (error) {
+    console.error('Failed to claim quest reward:', error)
+    alert(`Failed to claim reward: ${error}`)
+  } finally {
+    claimingQuest.value = null
   }
 }
 </script>

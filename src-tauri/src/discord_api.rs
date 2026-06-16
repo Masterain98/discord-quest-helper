@@ -1,7 +1,7 @@
 use crate::models::*;
 use anyhow::{Context, Result};
 use arc_swap::ArcSwap;
-use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE, USER_AGENT};
+use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE, REFERER, USER_AGENT};
 use reqwest::{Method, RequestBuilder};
 use base64::Engine;
 use std::collections::hash_map::DefaultHasher;
@@ -11,8 +11,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 const DISCORD_API_BASE: &str = "https://discord.com/api/v9";
-const USER_AGENT_STRING: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) discord/1.0.9219 Chrome/138.0.7204.251 Electron/37.6.0 Safari/537.36";
 const PROXY_STATE_CHECK_INTERVAL_MS: u64 = 5_000;
+const QUEST_HOME_REFERER: &str = "https://discord.com/quest-home";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ProxyState {
@@ -105,6 +105,14 @@ pub struct DiscordApiClient {
 }
 
 impl DiscordApiClient {
+    fn normalize_video_timestamp(timestamp: f64) -> u64 {
+        if !timestamp.is_finite() || timestamp <= 0.0 {
+            return 0;
+        }
+
+        timestamp.round() as u64
+    }
+
     fn build_default_headers(token: &str) -> Result<HeaderMap> {
         let mut headers = HeaderMap::new();
         headers.insert(
@@ -115,20 +123,8 @@ impl DiscordApiClient {
             CONTENT_TYPE,
             HeaderValue::from_static("application/json"),
         );
-        headers.insert(
-            USER_AGENT,
-            HeaderValue::from_static(USER_AGENT_STRING),
-        );
         // Note: X-Super-Properties is no longer set here, but dynamically obtained on each request
         // This ensures the latest validation parameters (including data obtained from CDP) are used
-        headers.insert(
-            "x-discord-timezone",
-            HeaderValue::from_static("America/Los_Angeles"),
-        );
-        headers.insert(
-            "x-discord-locale",
-            HeaderValue::from_static("en-US"),
-        );
         headers.insert(
             "x-debug-options",
             HeaderValue::from_static("bugReporterEnabled"),
@@ -270,6 +266,16 @@ impl DiscordApiClient {
         self.client.load_full().as_ref().clone()
     }
 
+    fn header_value(value: &str, name: &str) -> Option<HeaderValue> {
+        match HeaderValue::from_str(value) {
+            Ok(header) => Some(header),
+            Err(err) => {
+                eprintln!("Skipping invalid {} header: {}", name, err);
+                None
+            }
+        }
+    }
+
     /// Get the current X-Super-Properties value (dynamically obtained to ensure latest data)
     fn get_super_properties_header(&self) -> HeaderValue {
         let super_props = {
@@ -300,11 +306,54 @@ impl DiscordApiClient {
         })
     }
 
+    fn quest_referer_for_url(url: &str) -> Option<&'static str> {
+        let parsed = reqwest::Url::parse(url).ok()?;
+        let path = parsed.path();
+
+        if path.starts_with("/api/v9/quests")
+            || path == "/api/v9/users/@me/virtual-currency/balance"
+        {
+            Some(QUEST_HOME_REFERER)
+        } else {
+            None
+        }
+    }
+
     /// Centralized request builder to enforce security headers
     fn request(&self, method: Method, url: &str) -> RequestBuilder {
-        self.current_client()
+        let (user_agent, header_profile) = {
+            let manager = crate::SUPER_PROPERTIES_MANAGER
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            (manager.get_user_agent_string(), manager.get_header_profile())
+        };
+
+        let mut request = self.current_client()
             .request(method, url)
-            .header("x-super-properties", self.get_super_properties_header())
+            .header("x-super-properties", self.get_super_properties_header());
+
+        if let Some(value) = Self::header_value(&user_agent, "User-Agent") {
+            request = request.header(USER_AGENT, value);
+        }
+        if let Some(value) = Self::header_value(&header_profile.timezone, "x-discord-timezone") {
+            request = request.header("x-discord-timezone", value);
+        }
+        if let Some(value) = Self::header_value(&header_profile.locale, "x-discord-locale") {
+            request = request.header("x-discord-locale", value);
+        }
+        if let Some(value) = Self::header_value(&header_profile.accept_language, "accept-language") {
+            request = request.header("accept-language", value);
+        }
+        if let Some(installation_id) = header_profile.installation_id.as_deref() {
+            if let Some(value) = Self::header_value(installation_id, "x-installation-id") {
+                request = request.header("x-installation-id", value);
+            }
+        }
+        if let Some(referer) = Self::quest_referer_for_url(url) {
+            request = request.header(REFERER, HeaderValue::from_static(referer));
+        }
+
+        request
     }
 
     #[allow(dead_code)]
@@ -419,6 +468,108 @@ impl DiscordApiClient {
         Ok(data)
     }
 
+    pub async fn get_quest_decision_debug(&self, placement: u64) -> Result<serde_json::Value> {
+        let (heartbeat_session_id, ad_session_id) = {
+            let manager = crate::SUPER_PROPERTIES_MANAGER
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            (
+                manager.client_heartbeat_session_id(),
+                manager.client_ad_session_id(),
+            )
+        };
+
+        let mut url = reqwest::Url::parse(&format!("{}/quests/decision", DISCORD_API_BASE))?;
+        url.query_pairs_mut()
+            .append_pair("placement", &placement.to_string())
+            .append_pair("client_heartbeat_session_id", &heartbeat_session_id)
+            .append_pair("client_ad_session_id", &ad_session_id);
+
+        let response = self.request(Method::GET, url.as_str())
+            .send()
+            .await
+            .context("Request for quest placement decision failed")?;
+
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        if !status.is_success() {
+            anyhow::bail!("Failed to get quest placement decision: {} - {}", status, body);
+        }
+
+        serde_json::from_str(&body).context("Failed to parse quest placement decision")
+    }
+
+    pub async fn get_quest_decisions_debug(&self, placement: u64, num: u64) -> Result<serde_json::Value> {
+        let (heartbeat_session_id, ad_session_id) = {
+            let manager = crate::SUPER_PROPERTIES_MANAGER
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            (
+                manager.client_heartbeat_session_id(),
+                manager.client_ad_session_id(),
+            )
+        };
+
+        let mut url = reqwest::Url::parse(&format!("{}/quests/get-decisions", DISCORD_API_BASE))?;
+        url.query_pairs_mut()
+            .append_pair("placement", &placement.to_string())
+            .append_pair("num_decisions_requested", &num.to_string())
+            .append_pair("client_heartbeat_session_id", &heartbeat_session_id)
+            .append_pair("client_ad_session_id", &ad_session_id);
+
+        let response = self.request(Method::GET, url.as_str())
+            .send()
+            .await
+            .context("Request for quest placement decisions failed")?;
+
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        if !status.is_success() {
+            anyhow::bail!("Failed to get quest placement decisions: {} - {}", status, body);
+        }
+
+        serde_json::from_str(&body).context("Failed to parse quest placement decisions")
+    }
+
+    pub async fn get_virtual_currency_balance(&self) -> Result<serde_json::Value> {
+        let url = format!("{}/users/@me/virtual-currency/balance", DISCORD_API_BASE);
+
+        let response = self.request(Method::GET, &url)
+            .send()
+            .await
+            .context("Request for virtual currency balance failed")?;
+
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        if !status.is_success() {
+            anyhow::bail!("Failed to get virtual currency balance: {} - {}", status, body);
+        }
+
+        serde_json::from_str(&body).context("Failed to parse virtual currency balance")
+    }
+
+    pub async fn claim_quest_reward(&self, quest_id: &str, platform: Option<String>) -> Result<serde_json::Value> {
+        let url = format!("{}/quests/{}/claim-reward", DISCORD_API_BASE, quest_id);
+        let payload = match platform {
+            Some(platform) if !platform.trim().is_empty() => serde_json::json!({ "platform": platform }),
+            _ => serde_json::json!({}),
+        };
+
+        let response = self.request(Method::POST, &url)
+            .json(&payload)
+            .send()
+            .await
+            .context("Request to claim quest reward failed")?;
+
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        if !status.is_success() {
+            anyhow::bail!("Failed to claim quest reward: {} - {}", status, body);
+        }
+
+        serde_json::from_str(&body).context("Failed to parse claim reward response")
+    }
+
 
     /// Update video watch progress
     pub async fn update_video_progress(
@@ -429,10 +580,10 @@ impl DiscordApiClient {
         let url = format!("{}/quests/{}/video-progress", DISCORD_API_BASE, quest_id);
         
         let payload = VideoProgressPayload {
-            timestamp,
+            timestamp: Self::normalize_video_timestamp(timestamp),
         };
 
-        println!("Sending video progress: quest_id={}, timestamp={:.1}", quest_id, timestamp);
+        println!("Sending video progress: quest_id={}, timestamp={}", quest_id, payload.timestamp);
 
         let response = self.request(Method::POST, &url)
             .json(&payload)
@@ -534,16 +685,37 @@ impl DiscordApiClient {
             .await
             .context("Failed to accept quest")?;
 
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            anyhow::bail!("Failed to accept quest: {} - {}", status, body);
+        if response.status().is_success() {
+            let body: serde_json::Value = response.json().await.unwrap_or_default();
+            println!("Quest accepted successfully: {:?}", body);
+            return Ok(body);
         }
 
-        let body: serde_json::Value = response.json().await.unwrap_or_default();
-        println!("Quest accepted successfully: {:?}", body);
-        
-        Ok(body)
+        let first_status = response.status();
+        let first_body = response.text().await.unwrap_or_default();
+
+        let minimal_payload = serde_json::json!({ "location": 11 });
+        let fallback_response = self.request(Method::POST, &url)
+            .json(&minimal_payload)
+            .send()
+            .await
+            .context("Failed to accept quest with minimal payload")?;
+
+        if fallback_response.status().is_success() {
+            let body: serde_json::Value = fallback_response.json().await.unwrap_or_default();
+            println!("Quest accepted successfully with minimal payload: {:?}", body);
+            return Ok(body);
+        }
+
+        let fallback_status = fallback_response.status();
+        let fallback_body = fallback_response.text().await.unwrap_or_default();
+        anyhow::bail!(
+            "Failed to accept quest. Compatibility payload failed: {} - {}. Minimal payload failed: {} - {}",
+            first_status,
+            first_body,
+            fallback_status,
+            fallback_body
+        );
     }
 
     /// Get detectable games list
@@ -787,6 +959,54 @@ mod tests {
             client.proxy_fingerprint.load(Ordering::Acquire),
             changed_state.fingerprint
         );
+    }
+
+    #[test]
+    fn video_timestamp_is_normalized_to_integer_seconds() {
+        assert_eq!(DiscordApiClient::normalize_video_timestamp(12.49), 12);
+        assert_eq!(DiscordApiClient::normalize_video_timestamp(12.5), 13);
+        assert_eq!(DiscordApiClient::normalize_video_timestamp(-1.0), 0);
+        assert_eq!(DiscordApiClient::normalize_video_timestamp(f64::NAN), 0);
+    }
+
+    #[test]
+    fn quest_referer_is_only_added_for_quest_context_routes() {
+        assert_eq!(
+            DiscordApiClient::quest_referer_for_url("https://discord.com/api/v9/quests/@me"),
+            Some(QUEST_HOME_REFERER)
+        );
+        assert_eq!(
+            DiscordApiClient::quest_referer_for_url("https://discord.com/api/v9/users/@me/virtual-currency/balance"),
+            Some(QUEST_HOME_REFERER)
+        );
+        assert_eq!(
+            DiscordApiClient::quest_referer_for_url("https://discord.com/api/v9/users/@me"),
+            None
+        );
+    }
+
+    #[test]
+    fn request_injects_user_agent_matching_x_super_properties() {
+        let client = DiscordApiClient::new("test-token".to_string()).unwrap();
+        let request = client
+            .request(Method::GET, "https://discord.com/api/v9/quests/@me")
+            .build()
+            .unwrap();
+
+        let headers = request.headers();
+        let user_agent = headers.get(USER_AGENT).unwrap().to_str().unwrap();
+        let xsp = headers.get("x-super-properties").unwrap().to_str().unwrap();
+        let decoded = base64::engine::general_purpose::STANDARD.decode(xsp).unwrap();
+        let props: serde_json::Value = serde_json::from_slice(&decoded).unwrap();
+
+        assert_eq!(
+            user_agent,
+            props.get("browser_user_agent").and_then(|value| value.as_str()).unwrap()
+        );
+        assert!(headers.get(REFERER).is_some());
+        assert!(headers.get("x-discord-timezone").is_some());
+        assert!(headers.get("x-discord-locale").is_some());
+        assert!(headers.get("accept-language").is_some());
     }
 
     #[tokio::test]

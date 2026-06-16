@@ -50,7 +50,10 @@ export default {
         custom_exe_title: "프로세스 이름 입력",
         custom_exe_desc: "{game}에는 Discord 데이터베이스에 알려진 실행 파일이 없습니다. 사용자 지정 프로세스 이름을 입력하세요.",
         no_quests_match: "필터에 맞는 퀘스트가 없습니다",
-        clear_filters: "필터 초기화"
+        clear_filters: "필터 초기화",
+        current_orbs: "현재 Orbs",
+        orbs_not_loaded: "로딩 중...",
+        orbs_updated_at: "{time} 업데이트"
     },
     quest: {
         progress: "진행률",
@@ -102,6 +105,10 @@ export default {
         game_polling_desc: "플레이/게임 퀘스트용: 퀘스트 진행률 확인 빈도. Discord RPC로 활동을 보고하고 상태만 폴링.",
         game_polling_interval: "폴링 간격",
         game_polling_hint: "높을수록 = API 호출 감소",
+        display: "표시",
+        display_desc: "홈 화면에 표시할 선택적 계정 정보입니다.",
+        show_orbs_balance: "Orbs 잔액 표시",
+        show_orbs_balance_desc: "로그인 시와 수동 새로고침 시 가상 화폐 잔액을 가져옵니다.",
         game_quest_mode: "게임 퀘스트 모드",
         game_quest_mode_desc: "플레이/게임 퀘스트 완료 방법을 선택하세요. 직접 하트비트는 게임 시뮬레이션을 건너뜁니다.",
         game_mode_simulate: '시뮬레이션 게임 모드 (권장)',
@@ -271,6 +278,19 @@ export default {
         decoder_desc: "base64로 인코딩된 x-super-properties 헤더를 JSON으로 디코딩합니다.",
         decoder_placeholder: "base64 문자열을 여기에 붙여넣기...",
         decoder_decode: "디코드",
-        decoder_result: "디코드 결과"
+        decoder_result: "디코드 결과",
+        developer_details: "개발자 세부 정보",
+        header_profile: "헤더 프로필",
+        header_profile_desc: "API 호출에 사용되는 요청 ID 및 로케일 헤더입니다.",
+        quest_api_baseline: "Quest API 기준선",
+        quest_api_baseline_desc: "현재 CDP 네트워크 캡처에서 관측된 Quest 관련 엔드포인트입니다.",
+        query_keys: "쿼리 키",
+        quest_api_baseline_empty: "CDP로 Discord 헤더를 캡처하면 Quest API 기준선이 표시됩니다.",
+        quest_placement_decisions: "Quest 배치 결정",
+        quest_placement_decisions_desc: "진단 전용입니다. 기본 퀘스트 목록은 계속 /quests/@me를 사용합니다.",
+        loading_status: "{command} 불러오는 중...",
+        last_load_duration: "마지막 디버그 로드는 {ms}ms 만에 완료되었습니다",
+        load_failed: "디버그 정보 로드 실패",
+        fetch: "가져오기"
     }
 }

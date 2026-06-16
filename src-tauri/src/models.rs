@@ -52,7 +52,7 @@ pub struct QuestsResponse {
 
 #[derive(Debug, Serialize)]
 pub struct VideoProgressPayload {
-    pub timestamp: f64,
+    pub timestamp: u64,
 }
 
 #[derive(Debug, Serialize)]
