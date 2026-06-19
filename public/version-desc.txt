@@ -1,5 +1,18 @@
 ## ✨ What's Changed
 
-1. Fixed task completion with CDP Mode.
-2. Added a task warmup script for CDP Mode.
-3. Bump default `client_build_number` to `548544`, `native_build_number` to `82474`, `client_version` to `1.0.9238`, and `browser_user_agent`.
+### 🎊 New Features
+1. Added Orbs balance display on the Home page with an optional toggle in Settings.
+2. Added task type badges (Desktop, Mobile, Xbox, PlayStation, etc.) to quest cards.
+3. Added support for Discord Nitro membership and Nitro quest 1.2x bonus reward recognition
+
+### 👩‍💻 Developer's Tools
+1. Added a collapsible Developer Details panel for quest debugging.
+2. Added Debug page sections for Header Profile, Quest API Baseline, and Quest Placement Decisions.
+3. Added HAR analysis and quest schema validation scripts.
+
+### ⚡ Enhancements
+1. Refactored quest reward and task logic into dedicated utility modules.
+2. Enhanced Discord API client with Referer header, dynamic User-Agent, and video timestamp normalization.
+3. Added quest enrollment block detection and excluded quest tracking.
+4. Fixed vue-i18n interpolation syntax issues across all locale files.
+5. Bump default `client_build_number` to `565311`, `native_build_number` to `84410`, `client_version` to `1.0.9242`.

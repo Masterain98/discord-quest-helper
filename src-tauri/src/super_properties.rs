@@ -9,7 +9,7 @@ use uuid::Uuid;
 /// Discord client mod detection bits (128-bit mask)
 /// Source: https://github.com/sparklost/endcord/blob/main/endcord/client_properties.py
 const CLIENT_MOD_DETECTION_BITS: u128 = 0b00000000100000000001000000010000000010000001000000001000000000000010000010000001000000000100000000000001000000000000100000000000;
-const DEFAULT_CLIENT_VERSION: &str = "1.0.9238";
+const DEFAULT_CLIENT_VERSION: &str = "1.0.9242";
 const DEFAULT_CHROME_VERSION: &str = "138.0.7204.251";
 const DEFAULT_ELECTRON_VERSION: &str = "37.6.0";
 
@@ -243,8 +243,8 @@ impl Default for SuperProperties {
             // from Discord when possible.
             // Default build_number
             // May 21st, 2026
-            client_build_number: 548544,
-            native_build_number: Some(82474),
+            client_build_number: 565311,
+            native_build_number: Some(84410),
             client_event_source: None,
             launch_signature: None,
             client_launch_id: None,
