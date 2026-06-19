@@ -290,7 +290,7 @@ export default {
         query_keys: "Query keys",
         quest_api_baseline_empty: "Capture headers from Discord with CDP to populate the Quest API baseline.",
         quest_placement_decisions: "Quest Placement Decisions",
-        quest_placement_decisions_desc: "Fetches diagnostics only. Main quest list still uses /quests/@me.",
+        quest_placement_decisions_desc: "Fetches diagnostics only. Main quest list still uses {'/quests/@me'}.",
         loading_status: "Loading {command}...",
         last_load_duration: "Last debug load finished in {ms}ms",
         load_failed: "Debug load failed",

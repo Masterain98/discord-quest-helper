@@ -290,7 +290,7 @@ export default {
         query_keys: "查询参数",
         quest_api_baseline_empty: "通过 CDP 捕获 Discord 请求头后，将在这里生成 Quest API 基线。",
         quest_placement_decisions: "Quest 投放决策",
-        quest_placement_decisions_desc: "仅用于诊断。主任务列表仍使用 /quests/@me。",
+        quest_placement_decisions_desc: "仅用于诊断。主任务列表仍使用 {'/quests/@me'}。",
         loading_status: "正在加载 {command}...",
         last_load_duration: "上次调试信息加载耗时 {ms}ms",
         load_failed: "调试信息加载失败",

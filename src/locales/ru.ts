@@ -289,7 +289,7 @@ export default {
         query_keys: "Ключи запроса",
         quest_api_baseline_empty: "Захватите заголовки Discord через CDP, чтобы заполнить базовую линию Quest API.",
         quest_placement_decisions: "Решения размещения Quest",
-        quest_placement_decisions_desc: "Только для диагностики. Основной список квестов по-прежнему использует /quests/@me.",
+        quest_placement_decisions_desc: "Только для диагностики. Основной список квестов по-прежнему использует {'/quests/@me'}.",
         loading_status: "Загрузка {command}...",
         last_load_duration: "Последняя загрузка отладки завершилась за {ms} мс",
         load_failed: "Не удалось загрузить отладочную информацию",

@@ -289,7 +289,7 @@ export default {
         query_keys: "查詢參數",
         quest_api_baseline_empty: "透過 CDP 擷取 Discord 請求標頭後，將在這裡產生 Quest API 基線。",
         quest_placement_decisions: "Quest 投放決策",
-        quest_placement_decisions_desc: "僅供診斷使用。主任務列表仍使用 /quests/@me。",
+        quest_placement_decisions_desc: "僅供診斷使用。主任務列表仍使用 {'/quests/@me'}。",
         loading_status: "正在載入 {command}...",
         last_load_duration: "上次偵錯資訊載入耗時 {ms}ms",
         load_failed: "偵錯資訊載入失敗",
