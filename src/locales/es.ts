@@ -289,7 +289,7 @@ export default {
         query_keys: "Claves de consulta",
         quest_api_baseline_empty: "Captura encabezados de Discord con CDP para generar la línea base de Quest API.",
         quest_placement_decisions: "Decisiones de ubicación de Quest",
-        quest_placement_decisions_desc: "Solo para diagnóstico. La lista principal de misiones sigue usando {'/quests/@me'}.",
+        quest_placement_decisions_desc: "Solo para diagnóstico. No afecta la lista principal de misiones.",
         loading_status: "Cargando {command}...",
         last_load_duration: "La última carga de depuración terminó en {ms}ms",
         load_failed: "Error al cargar información de depuración",

@@ -287,7 +287,7 @@ export default {
         query_keys: "クエリキー",
         quest_api_baseline_empty: "CDP で Discord ヘッダーをキャプチャすると Quest API ベースラインが表示されます。",
         quest_placement_decisions: "Quest 配信決定",
-        quest_placement_decisions_desc: "診断専用です。メインのクエスト一覧は引き続き {'/quests/@me'} を使用します。",
+        quest_placement_decisions_desc: "診断専用です。メインのクエスト一覧には影響しません。",
         loading_status: "{command} を読み込み中...",
         last_load_duration: "前回のデバッグ読み込みは {ms}ms で完了しました",
         load_failed: "デバッグ情報の読み込みに失敗しました",

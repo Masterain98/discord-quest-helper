@@ -289,7 +289,7 @@ export default {
         query_keys: "쿼리 키",
         quest_api_baseline_empty: "CDP로 Discord 헤더를 캡처하면 Quest API 기준선이 표시됩니다.",
         quest_placement_decisions: "Quest 배치 결정",
-        quest_placement_decisions_desc: "진단 전용입니다. 기본 퀘스트 목록은 계속 {'/quests/@me'}를 사용합니다.",
+        quest_placement_decisions_desc: "진단 전용입니다. 기본 퀘스트 목록에는 영향을 미치지 않습니다.",
         loading_status: "{command} 불러오는 중...",
         last_load_duration: "마지막 디버그 로드는 {ms}ms 만에 완료되었습니다",
         load_failed: "디버그 정보 로드 실패",
