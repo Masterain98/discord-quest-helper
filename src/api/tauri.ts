@@ -11,25 +11,25 @@ export interface DiscordUser {
 
 export interface Quest {
   id: string
+  traffic_metadata_raw?: string | null
+  traffic_metadata_sealed?: string | null
   config: {
+    id?: string
     messages: {
       quest_name: string
       game_title?: string
+      task_title?: string
+      task_description?: string
     }
     rewards_config?: {
-      rewards: Array<{
-        messages: {
-          name: string
-        }
-        asset?: string
-      }>
+      rewards: QuestReward[]
     }
     stream_duration_requirement_minutes?: number
     task_config?: {
-      tasks?: Record<string, { target?: number }>
+      tasks?: Record<string, QuestTaskConfigEntry>
     }
     task_config_v2?: {
-      tasks?: Record<string, { target?: number }>
+      tasks?: Record<string, QuestTaskConfigEntry>
     }
     application?: {
       id: string
@@ -41,13 +41,79 @@ export interface Quest {
       hero?: string
     }
     expires_at?: string
+    features?: string[]
+    share_policy?: unknown
+    cta_config?: {
+      link?: string | null
+      [key: string]: unknown
+    }
+    preview?: unknown
+    targeted_content?: unknown
+    traffic_metadata_raw?: string | null
+    traffic_metadata_sealed?: string | null
   }
-  user_status: {
-    progress?: Record<string, { value?: number }>
-    completed_at?: string | null
-    claimed_at?: string | null
-    enrolled_at?: string | null
-  } | null
+  user_status: QuestUserStatus | null
+}
+
+export interface QuestReward {
+  type: number
+  sku_id: string
+  messages: {
+    name: string
+    name_with_article?: string
+    redemption_instructions_by_platform?: Record<string, string>
+  }
+  asset?: string | null
+  asset_video?: string | null
+  approximate_count?: number | null
+  redemption_link?: string | null
+  expires_at?: string | null
+  expires_at_premium?: string | null
+  expiration_mode?: number | null
+  orb_quantity?: number | null
+  premium_orb_quantity?: number | null
+  quantity?: number | null
+}
+
+export interface QuestTaskConfigEntry {
+  type?: string
+  target?: number
+  applications?: Array<{ id: string }>
+  external_ids?: string[]
+  assets?: unknown
+  messages?: Record<string, string>
+  event_name?: string
+}
+
+export interface QuestTaskProgress {
+  value?: number
+  target?: number
+  completed_at?: string | null
+}
+
+export interface QuestUserStatus {
+  user_id?: string
+  quest_id?: string
+  enrolled_at?: string | null
+  completed_at?: string | null
+  claimed_at?: string | null
+  claimed_tier?: number | null
+  last_stream_heartbeat_at?: string | null
+  stream_progress_seconds?: number | null
+  dismissed_quest_content?: number | null
+  progress?: Record<string, QuestTaskProgress>
+  orb_quantity_claimed?: number | null
+}
+
+export interface ExcludedQuest {
+  id: string
+  replacement_id?: string | null
+}
+
+export interface CurrentUserQuestsResponse {
+  quests: Quest[]
+  excluded_quests: ExcludedQuest[]
+  quest_enrollment_blocked_until?: string | null
 }
 
 export interface DetectableGame {
@@ -83,6 +149,27 @@ export function connectToDiscordRpc(activityJson: string, action: string = 'conn
 // User status commands
 export async function getQuests(): Promise<Quest[]> {
   return await invoke('get_quests')
+}
+
+export async function getQuestsFull(): Promise<CurrentUserQuestsResponse> {
+  return await invoke('get_quests_full')
+}
+
+export async function getVirtualCurrencyBalance(): Promise<number> {
+  const response = await invoke<{ balance?: number }>('get_virtual_currency_balance')
+  return response.balance ?? 0
+}
+
+export async function getQuestDecisionDebug(placement: number): Promise<unknown> {
+  return await invoke('get_quest_decision_debug', { placement })
+}
+
+export async function getQuestDecisionsDebug(placement: number, num: number): Promise<unknown> {
+  return await invoke('get_quest_decisions_debug', { placement, num })
+}
+
+export async function claimQuestReward(questId: string, platform?: string): Promise<unknown> {
+  return await invoke('claim_quest_reward', { questId, platform })
 }
 
 export async function startVideoQuest(
@@ -221,12 +308,34 @@ export interface SuperProperties {
 }
 
 export interface DebugInfo {
-  x_super_properties_base64: string
-  super_properties: SuperProperties
-  client_launch_id: string
-  client_heartbeat_session_id: string
-  launch_signature: string
-  source: string  // "Auto-Generated" or "Discord Client (Extracted)"
+  x_super_properties_base64?: string
+  super_properties?: SuperProperties
+  client_launch_id?: string
+  client_heartbeat_session_id?: string
+  launch_signature?: string
+  source?: string  // "Auto-Generated" or "Discord Client (Extracted)"
+  client_identity?: ClientIdentitySnapshot
+  header_profile?: HeaderProfilePreview
+}
+
+export interface ClientIdentitySnapshot {
+  user_agent: string
+  client_version?: string
+  browser_version: string
+  client_build_number?: number
+  native_build_number?: number
+  source: string
+}
+
+export interface HeaderProfilePreview {
+  timezone: string
+  timezone_source: string
+  locale: string
+  locale_source: string
+  accept_language: string
+  accept_language_source: string
+  installation_id_present: boolean
+  installation_id_source: string
 }
 
 export async function getDebugInfo(): Promise<DebugInfo> {

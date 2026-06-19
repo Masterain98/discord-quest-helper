@@ -63,6 +63,11 @@ export const useAuthStore = defineStore('auth', () => {
         questsStore.getDetectableGames().catch(err => {
           console.warn('Background game list fetch failed:', err)
         })
+
+        // If enabled, load the account Orbs balance immediately after login.
+        questsStore.fetchOrbsBalance().catch(err => {
+          console.warn('Background Orbs balance fetch failed:', err)
+        })
       } catch (e) {
         // SuperProperties fetch failure should not block login
         console.warn('Failed to fetch SuperProperties:', e)

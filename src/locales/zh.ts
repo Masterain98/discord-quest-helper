@@ -50,7 +50,12 @@ export default {
         custom_exe_title: "输入进程名称",
         custom_exe_desc: "{game} 在 Discord 数据库中没有已知的可执行文件，请输入自定义进程名称进行模拟。",
         no_quests_match: "没有符合筛选条件的任务",
-        clear_filters: "清除筛选"
+        clear_filters: "清除筛选",
+        current_orbs: "当前 Orbs",
+        orbs_not_loaded: "加载中...",
+        orbs_updated_at: "更新时间 {time}",
+        enrollment_blocked_until: "任务注册已被封禁至 {time}。",
+        claim_reward: "领取奖励"
     },
     quest: {
         progress: "进度",
@@ -102,6 +107,10 @@ export default {
         game_polling_desc: "用于游玩/游戏类任务：检查任务进度的频率。通过 Discord RPC 上报活动，仅用于轮询状态。",
         game_polling_interval: "轮询间隔",
         game_polling_hint: "越高 = API 调用越少",
+        display: "显示",
+        display_desc: "首页显示的可选账号级信息。",
+        show_orbs_balance: "显示 Orbs 余额",
+        show_orbs_balance_desc: "登录后自动获取虚拟货币余额，也可手动刷新。",
         game_quest_mode: "游戏任务模式",
         game_quest_mode_desc: "选择完成游玩/游戏任务的方式。直接心跳模式可跳过游戏模拟。",
         game_mode_simulate: '模拟游戏模式 (推荐)',
@@ -272,6 +281,19 @@ export default {
         decoder_desc: "将 base64 编码的 x-super-properties 请求头解码为 JSON。",
         decoder_placeholder: "在此粘贴 base64 字符串...",
         decoder_decode: "解码",
-        decoder_result: "解码结果"
+        decoder_result: "解码结果",
+        developer_details: "开发者详情",
+        header_profile: "请求头配置",
+        header_profile_desc: "API 请求使用的身份、地区和语言请求头。",
+        quest_api_baseline: "Quest API 基线",
+        quest_api_baseline_desc: "当前 CDP 网络捕获中观测到的 Quest 相关端点。",
+        query_keys: "查询参数",
+        quest_api_baseline_empty: "通过 CDP 捕获 Discord 请求头后，将在这里生成 Quest API 基线。",
+        quest_placement_decisions: "Quest 投放决策",
+        quest_placement_decisions_desc: "仅用于诊断。不影响主任务列表。",
+        loading_status: "正在加载 {command}...",
+        last_load_duration: "上次调试信息加载耗时 {ms}ms",
+        load_failed: "调试信息加载失败",
+        fetch: "获取"
     }
 }

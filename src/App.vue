@@ -282,7 +282,7 @@ onMounted(() => {
       <main class="fade-in flex-1">
         <!-- Home requires login -->
         <template v-if="currentTab === 'home'">
-          <Home v-if="authStore.user" />
+          <Home v-if="authStore.user" :debug-mode-enabled="debugModeEnabled" />
           <!-- Welcome/Login Screen when not logged in -->
           <div v-else class="flex items-center justify-center h-full">
         <div class="max-w-md w-full text-center space-y-8 p-8">

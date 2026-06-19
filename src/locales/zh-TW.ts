@@ -50,7 +50,12 @@ export default {
         custom_exe_title: "輸入程序名稱",
         custom_exe_desc: "{game} 在 Discord 資料庫中沒有已知的執行檔，請輸入自訂程序名稱進行模擬。",
         no_quests_match: "沒有符合篩選條件的任務",
-        clear_filters: "清除篩選"
+        clear_filters: "清除篩選",
+        current_orbs: "目前 Orbs",
+        orbs_not_loaded: "載入中...",
+        orbs_updated_at: "更新時間 {time}",
+        enrollment_blocked_until: "任務註冊已被封鎖至 {time}。",
+        claim_reward: "領取獎勵"
     },
     quest: {
         progress: "進度",
@@ -102,6 +107,10 @@ export default {
         game_polling_desc: "用於遊玩/遊戲類任務：檢查任務進度的頻率。透過 Discord RPC 回報活動，僅用於輪詢狀態。",
         game_polling_interval: "輪詢間隔",
         game_polling_hint: "越高 = API 呼叫越少",
+        display: "顯示",
+        display_desc: "首頁顯示的可選帳號層級資訊。",
+        show_orbs_balance: "顯示 Orbs 餘額",
+        show_orbs_balance_desc: "登入後自動取得虛擬貨幣餘額，也可手動重新整理。",
         game_quest_mode: "遊戲任務模式",
         game_quest_mode_desc: "選擇完成遊玩/遊戲任務的方式。直接心跳模式可跳過遊戲模擬。",
         game_mode_simulate: '模擬遊戲模式 (推薦)',
@@ -271,6 +280,19 @@ export default {
         decoder_desc: "將 base64 編碼的 x-super-properties 請求標頭解碼為 JSON。",
         decoder_placeholder: "在此貼上 base64 字串...",
         decoder_decode: "解碼",
-        decoder_result: "解碼結果"
+        decoder_result: "解碼結果",
+        developer_details: "開發者詳情",
+        header_profile: "請求標頭設定",
+        header_profile_desc: "API 請求使用的身分、地區與語言標頭。",
+        quest_api_baseline: "Quest API 基線",
+        quest_api_baseline_desc: "目前 CDP 網路擷取中觀測到的 Quest 相關端點。",
+        query_keys: "查詢參數",
+        quest_api_baseline_empty: "透過 CDP 擷取 Discord 請求標頭後，將在這裡產生 Quest API 基線。",
+        quest_placement_decisions: "Quest 投放決策",
+        quest_placement_decisions_desc: "僅供診斷使用。不會影響主任務列表。",
+        loading_status: "正在載入 {command}...",
+        last_load_duration: "上次偵錯資訊載入耗時 {ms}ms",
+        load_failed: "偵錯資訊載入失敗",
+        fetch: "取得"
     }
 }

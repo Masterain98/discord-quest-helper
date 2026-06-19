@@ -50,7 +50,12 @@ export default {
         custom_exe_title: "Introducir nombre del proceso",
         custom_exe_desc: "{game} no tiene ejecutables conocidos en la base de datos de Discord. Introduce un nombre de proceso personalizado para simular.",
         no_quests_match: "Ninguna misión coincide con tus filtros",
-        clear_filters: "Limpiar filtros"
+        clear_filters: "Limpiar filtros",
+        current_orbs: "Orbs actuales",
+        orbs_not_loaded: "Cargando...",
+        orbs_updated_at: "Actualizado {time}",
+        enrollment_blocked_until: "La inscripción en misiones está bloqueada hasta {time}.",
+        claim_reward: "Reclamar recompensa"
     },
     quest: {
         progress: "Progreso",
@@ -102,6 +107,10 @@ export default {
         game_polling_desc: "Para misiones de juego: frecuencia de verificación del progreso. Usa Discord RPC para actividad, solo sondea estado.",
         game_polling_interval: "Intervalo de sondeo",
         game_polling_hint: "Mayor = menos llamadas API",
+        display: "Visualización",
+        display_desc: "Información opcional de la cuenta mostrada en Inicio.",
+        show_orbs_balance: "Mostrar saldo de Orbs",
+        show_orbs_balance_desc: "Obtiene el saldo de moneda virtual al iniciar sesión y al actualizar manualmente.",
         game_quest_mode: "Modo de misión de juego",
         game_quest_mode_desc: "Elige cómo completar las misiones de juego. El heartbeat directo omite la simulación del juego.",
         game_mode_simulate: 'Modo de Juego Simulado (Recomendado)',
@@ -271,6 +280,19 @@ export default {
         decoder_desc: "Decodifica el encabezado x-super-properties codificado en base64 para ver el JSON.",
         decoder_placeholder: "Pegar cadena base64 aquí...",
         decoder_decode: "Decodificar",
-        decoder_result: "Resultado decodificado"
+        decoder_result: "Resultado decodificado",
+        developer_details: "Detalles de desarrollador",
+        header_profile: "Perfil de encabezados",
+        header_profile_desc: "Identidad de solicitud y encabezados de idioma usados por las llamadas API.",
+        quest_api_baseline: "Línea base de Quest API",
+        quest_api_baseline_desc: "Endpoints relacionados con Quest observados en la captura de red CDP actual.",
+        query_keys: "Claves de consulta",
+        quest_api_baseline_empty: "Captura encabezados de Discord con CDP para generar la línea base de Quest API.",
+        quest_placement_decisions: "Decisiones de ubicación de Quest",
+        quest_placement_decisions_desc: "Solo para diagnóstico. No afecta la lista principal de misiones.",
+        loading_status: "Cargando {command}...",
+        last_load_duration: "La última carga de depuración terminó en {ms}ms",
+        load_failed: "Error al cargar información de depuración",
+        fetch: "Obtener"
     }
 }

@@ -9,16 +9,20 @@ updates:
       interval: "monthly"
     # Limit open PRs to reduce noise
     open-pull-requests-limit: 5
-    # Group all minor updates into a single PR
-    groups:
-      minor-only:
-        update-types:
-          - "minor"
-    # Only track minor updates; ignore patch bumps and major version changes
-    ignore:
+    # Only track patch updates, grouped into a single PR
+    allow:
       - dependency-name: "*"
         update-types:
           - "version-update:semver-patch"
+    groups:
+      patch-only:
+        update-types:
+          - "patch"
+    # Keep the dependency surface stable by ignoring minor and major version bumps
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-minor"
           - "version-update:semver-major"
 
   - package-ecosystem: "cargo"
@@ -27,12 +31,16 @@ updates:
     schedule:
       interval: "monthly"
     open-pull-requests-limit: 5
-    groups:
-      minor-only:
-        update-types:
-          - "minor"
-    ignore:
+    allow:
       - dependency-name: "*"
         update-types:
           - "version-update:semver-patch"
+    groups:
+      patch-only:
+        update-types:
+          - "patch"
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-minor"
           - "version-update:semver-major"

@@ -50,7 +50,12 @@ export default {
         custom_exe_title: "プロセス名を入力",
         custom_exe_desc: "{game} には Discord のデータベースに既知の実行ファイルがありません。カスタムプロセス名を入力してください。",
         no_quests_match: "フィルターに一致するクエストがありません",
-        clear_filters: "フィルターをクリア"
+        clear_filters: "フィルターをクリア",
+        current_orbs: "現在の Orbs",
+        orbs_not_loaded: "読み込み中...",
+        orbs_updated_at: "{time} に更新",
+        enrollment_blocked_until: "クエスト登録は {time} までブロックされています。",
+        claim_reward: "報酬を受け取る"
     },
     quest: {
         progress: "進捗",
@@ -102,6 +107,10 @@ export default {
         game_polling_desc: "プレイ/ゲームクエスト用：クエスト進捗のチェック頻度。Discord RPCでアクティビティを報告し、ステータスのみポーリング。",
         game_polling_interval: "ポーリング間隔",
         game_polling_hint: "高い = API呼び出し回数減少",
+        display: "表示",
+        display_desc: "ホーム画面に表示する任意のアカウント情報。",
+        show_orbs_balance: "Orbs 残高を表示",
+        show_orbs_balance_desc: "ログイン時と手動更新時に仮想通貨残高を取得します。",
         game_quest_mode: "ゲームクエストモード",
         game_quest_mode_desc: "プレイ/ゲームクエストの完了方法を選択します。直接ハートビートはゲームシミュレーションをスキップします。",
         game_mode_simulate: '模擬ゲームモード (推奨)',
@@ -269,6 +278,19 @@ export default {
         decoder_desc: "base64エンコードされたx-super-propertiesヘッダーをJSONにデコードします。",
         decoder_placeholder: "base64文字列をここに貼り付け...",
         decoder_decode: "デコード",
-        decoder_result: "デコード結果"
+        decoder_result: "デコード結果",
+        developer_details: "開発者詳細",
+        header_profile: "ヘッダープロファイル",
+        header_profile_desc: "API 呼び出しで使用するリクエスト ID とロケールヘッダー。",
+        quest_api_baseline: "Quest API ベースライン",
+        quest_api_baseline_desc: "現在の CDP ネットワークキャプチャで観測された Quest 関連エンドポイント。",
+        query_keys: "クエリキー",
+        quest_api_baseline_empty: "CDP で Discord ヘッダーをキャプチャすると Quest API ベースラインが表示されます。",
+        quest_placement_decisions: "Quest 配信決定",
+        quest_placement_decisions_desc: "診断専用です。メインのクエスト一覧には影響しません。",
+        loading_status: "{command} を読み込み中...",
+        last_load_duration: "前回のデバッグ読み込みは {ms}ms で完了しました",
+        load_failed: "デバッグ情報の読み込みに失敗しました",
+        fetch: "取得"
     }
 }

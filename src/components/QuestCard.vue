@@ -2,6 +2,8 @@
 import { computed, ref, watch, onUnmounted } from 'vue'
 import type { Quest } from '@/api/tauri'
 import { useQuestsStore } from '@/stores/quests'
+import QuestDeveloperDetails from '@/components/QuestDeveloperDetails.vue'
+import QuestTaskBadges from '@/components/QuestTaskBadges.vue'
 import {
   Card,
   CardHeader,
@@ -11,28 +13,28 @@ import {
   CardFooter,
 } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Clock, Gift, MonitorPlay, Gamepad2, Activity } from 'lucide-vue-next'
+import { Button } from '@/components/ui/button'
+import { Clock, Gift, MonitorPlay, Gamepad2, Activity, Copy, Check } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
+import { firstProgressValue, firstTargetTask, formatDuration } from '@/utils/questTasks'
+import { getQuestRewardViews, type QuestRewardView } from '@/utils/questRewards'
 
 const { t } = useI18n()
 
 const props = defineProps<{
   quest: Quest
   questType?: 'video' | 'stream' | 'activity'
+  showDeveloperDetails?: boolean
 }>()
 
 const questsStore = useQuestsStore()
+const copiedQuestId = ref(false)
 
 // Check if this quest is currently active
 const isActiveQuest = computed(() => questsStore.activeQuestId === props.quest.id)
 
 const targetDuration = computed(() => {
-  const taskConfig = props.quest.config.task_config_v2 || props.quest.config.task_config
-  if (taskConfig?.tasks) {
-    const firstTask = Object.values(taskConfig.tasks)[0]
-    return firstTask?.target || 0
-  }
-  return 0
+  return firstTargetTask(props.quest)?.target || 0
 })
 
 const progress = computed(() => {
@@ -43,17 +45,10 @@ const progress = computed(() => {
     return Math.min(100, questsStore.activeQuestProgress)
   }
   
-  // Progress is stored as progress[TASK_KEY].value
-  const progressObj = props.quest.user_status?.progress
-  if (!progressObj || typeof progressObj !== 'object') return 0
-  
-  // Get the first task's progress value
-  const progressValues = Object.values(progressObj as Record<string, { value?: number }>)
-  if (progressValues.length > 0 && progressValues[0]?.value !== undefined) {
-    const target = targetDuration.value
-    if (target > 0) {
-      return (progressValues[0].value / target) * 100
-    }
+  const targetTask = firstTargetTask(props.quest)
+  const target = targetTask?.target || targetDuration.value
+  if (target > 0) {
+    return (firstProgressValue(props.quest, targetTask?.key) / target) * 100
   }
   return 0
 })
@@ -78,68 +73,33 @@ const statusVariant = computed(() => {
   return 'default' // In Progress
 })
 
-// In-game rewards with images (rewards that have asset field, but not Discord items)
-const inGameRewards = computed(() => {
-  const config = props.quest.config.rewards_config
-  if (!config || !config.rewards) return []
-  
-  return config.rewards
-    .filter(r => {
-      if (!r.asset) return false
-      // Exclude Discord items (decorations, orbs, profile effects, etc.)
-      const name = (r.messages?.name || '').toLowerCase()
-      const isDiscordItem = name.includes('decoration') || 
-                            name.includes('avatar') ||
-                            name.includes('orb') || 
-                            name.includes('profile')
-      return !isDiscordItem
-    })
-    .map(r => ({
-      name: r.messages?.name || 'Reward',
-      asset: r.asset,
-      questId: props.quest.id
-    }))
-})
-
-// Discord rewards (orbs, decorations, profile effects - with or without assets)
-const discordRewards = computed(() => {
-  const config = props.quest.config.rewards_config
-  if (!config || !config.rewards) return []
-  
-  return config.rewards
-    .filter(r => {
-      const name = (r.messages?.name || '').toLowerCase()
-      const isDiscordItem = name.includes('decoration') || 
-                            name.includes('avatar') ||
-                            name.includes('orb') || 
-                            name.includes('profile')
-      // Include if it's a Discord item, or if it has no asset but has a name
-      return isDiscordItem || (!r.asset && r.messages?.name)
-    })
-    .map(r => ({
-      name: r.messages?.name || 'Reward',
-      asset: r.asset || null
-    }))
-})
-
-function formatDuration(seconds: number): string {
-  const totalSeconds = Math.round(seconds)
-  const minutes = Math.floor(totalSeconds / 60)
-  const secs = totalSeconds % 60
-  if (minutes >= 60) {
-    const hours = Math.floor(minutes / 60)
-    const mins = minutes % 60
-    return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`
-  }
-  if (minutes === 0) return `${secs}s`
-  return secs > 0 ? `${minutes}m ${secs}s` : `${minutes}m`
-}
+const rewardViews = computed(() => getQuestRewardViews(props.quest))
+const inGameRewards = computed(() => rewardViews.value.filter(reward => reward.kind === 'ingame' && reward.asset))
+const discordRewards = computed(() => rewardViews.value.filter(reward => reward.kind !== 'ingame' || !reward.asset))
 
 function formatDate(dateStr: string): string {
   if (!dateStr) return 'N/A'
   const date = new Date(dateStr)
   return date.toLocaleDateString()
 }
+
+const shortQuestId = computed(() => {
+  const id = props.quest.id
+  return id.length > 14 ? `${id.slice(0, 6)}...${id.slice(-4)}` : id
+})
+
+async function copyQuestId() {
+  await navigator.clipboard.writeText(props.quest.id)
+  copiedQuestId.value = true
+  setTimeout(() => {
+    copiedQuestId.value = false
+  }, 1500)
+}
+
+function rewardKey(reward: QuestRewardView): string {
+  return `${reward.skuId}-${reward.type}-${reward.name}`
+}
+
 const activeLocalPercent = computed(() => {
   if (isActiveQuest.value) return Math.min(100, questsStore.localProgress)
   return 0
@@ -225,16 +185,31 @@ const activeTimeText = computed(() => {
             class="w-12 h-12 rounded-lg flex-shrink-0"
           />
           <div class="space-y-1">
-            <div class="flex items-center gap-2">
+            <div class="flex flex-wrap items-center gap-2">
               <Badge :variant="questType === 'video' ? 'default' : 'secondary'" class="mb-1">
                  <MonitorPlay v-if="questType === 'video'" class="w-3 h-3 mr-1" />
                  <Gamepad2 v-else-if="questType === 'stream'" class="w-3 h-3 mr-1" />
                  <Activity v-else class="w-3 h-3 mr-1" />
                  {{ questType === 'video' ? 'Video' : (questType === 'activity' ? 'Activity' : 'Stream/Play') }}
               </Badge>
+              <Badge variant="outline" class="mb-1 max-w-full gap-1 font-mono text-[10px]" :title="quest.id">
+                <span class="hidden sm:inline">ID {{ quest.id }}</span>
+                <span class="sm:hidden">ID {{ shortQuestId }}</span>
+              </Badge>
+              <Button
+                variant="ghost"
+                size="icon"
+                class="mb-1 h-6 w-6"
+                :title="copiedQuestId ? 'Copied' : 'Copy quest ID'"
+                @click="copyQuestId"
+              >
+                <Check v-if="copiedQuestId" class="h-3 w-3 text-green-500" />
+                <Copy v-else class="h-3 w-3" />
+              </Button>
             </div>
             <CardTitle class="text-xl text-primary">{{ quest.config.messages.quest_name }}</CardTitle>
             <CardDescription>{{ quest.config.messages.game_title }}</CardDescription>
+            <QuestTaskBadges :quest="quest" />
           </div>
         </div>
         <Badge :variant="statusVariant" class="whitespace-nowrap">
@@ -280,7 +255,7 @@ const activeTimeText = computed(() => {
         <p class="text-xs text-muted-foreground font-medium">{{ t('quest.in_game_rewards') }}</p>
         <div 
           v-for="reward in inGameRewards" 
-          :key="reward.asset"
+          :key="rewardKey(reward)"
           class="flex items-center gap-3 p-3 rounded-lg bg-gradient-to-r from-muted/40 to-muted/20 border border-border/50"
         >
           <!-- Video asset (.mp4) -->
@@ -300,7 +275,7 @@ const activeTimeText = computed(() => {
             :alt="reward.name"
             class="w-14 h-14 object-contain rounded-md flex-shrink-0"
           />
-          <span class="text-sm font-medium">{{ reward.name }}</span>
+          <span class="text-sm font-medium">{{ reward.amountText }}</span>
         </div>
       </div>
       
@@ -309,7 +284,7 @@ const activeTimeText = computed(() => {
         <p class="text-xs text-muted-foreground font-medium">{{ t('quest.discord_rewards') }}</p>
         <div 
           v-for="reward in discordRewards" 
-          :key="reward.name"
+          :key="rewardKey(reward)"
           class="flex items-center gap-3 p-3 rounded-lg bg-gradient-to-r from-muted/40 to-muted/20 border border-border/50"
         >
           <!-- Video asset (Avatar Decoration .mp4) -->
@@ -331,14 +306,24 @@ const activeTimeText = computed(() => {
           />
           <!-- Orbs reward -->
           <img 
-            v-else-if="reward.name.toLowerCase().includes('orb')"
+            v-else-if="reward.icon === 'orbs'"
             src="/icons/orbs.png"
             :alt="reward.name"
             class="w-14 h-14 object-contain rounded-md flex-shrink-0"
           />
           <!-- Fallback icon -->
           <Gift v-else class="w-10 h-10 text-pink-400 flex-shrink-0" />
-          <span class="text-sm font-medium">{{ reward.name }}</span>
+          <div class="min-w-0 flex-1">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="text-sm font-medium">{{ reward.amountText }}</span>
+              <Badge v-if="reward.badgeText" variant="secondary" class="text-[10px]">
+                {{ reward.badgeText }}
+              </Badge>
+            </div>
+            <div v-if="reward.amountText !== reward.name" class="truncate text-xs text-muted-foreground">
+              {{ reward.name }}
+            </div>
+          </div>
         </div>
       </div>
       
@@ -349,6 +334,8 @@ const activeTimeText = computed(() => {
         </div>
          <!-- Target duration handled above -->
       </div>
+
+      <QuestDeveloperDetails v-if="showDeveloperDetails" :quest="quest" />
     </CardContent>
 
     <CardFooter class="flex gap-2 justify-end pt-2">
