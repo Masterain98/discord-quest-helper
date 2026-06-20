@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import GameSelector from '@/components/GameSelector.vue'
 import type { DetectableGame } from '@/api/tauri'
 import { createSimulatedGame, runSimulatedGame, connectToDiscordRpc } from '@/api/tauri'
@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
-import { Loader2, Play, Hammer, List, Terminal, FolderOpen } from 'lucide-vue-next'
+import { Loader2, Play, Hammer, List, Terminal, FolderOpen, ChevronDown, Check } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
@@ -53,6 +53,28 @@ const effectiveExecutable = computed(() => {
 
 // In select mode, a custom exe name is provided when the game has no known win32 executables
 const selectModeCustomExe = ref('')
+
+// Custom exe dropdown state
+const exeDropdownOpen = ref(false)
+const exeDropdownRef = ref<HTMLElement | null>(null)
+
+function toggleExeDropdown() {
+  exeDropdownOpen.value = !exeDropdownOpen.value
+}
+
+function selectExe(name: string) {
+  selectedExecutable.value = name
+  exeDropdownOpen.value = false
+}
+
+function handleClickOutsideExeDropdown(e: MouseEvent) {
+  if (exeDropdownRef.value && !exeDropdownRef.value.contains(e.target as Node)) {
+    exeDropdownOpen.value = false
+  }
+}
+
+onMounted(() => document.addEventListener('mousedown', handleClickOutsideExeDropdown))
+onUnmounted(() => document.removeEventListener('mousedown', handleClickOutsideExeDropdown))
 
 // Whether the footer action buttons should be shown
 const canProceed = computed(() => {
@@ -240,14 +262,47 @@ async function handleRunGame() {
               <template v-else>
                 <div class="space-y-2">
                   <Label>{{ t('game_sim.select_exe') }}</Label>
-                  <select
-                    v-model="selectedExecutable"
-                    class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <option v-for="exe in windowsExecutables" :key="exe.name" :value="exe.name">
-                      {{ exe.name }}
-                    </option>
-                  </select>
+                  <div ref="exeDropdownRef" class="relative">
+                    <button
+                      type="button"
+                      class="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                      @click="toggleExeDropdown"
+                    >
+                      <span :class="selectedExecutable ? 'text-foreground' : 'text-muted-foreground'">
+                        {{ selectedExecutable || t('game_sim.select_exe') }}
+                      </span>
+                      <ChevronDown class="w-4 h-4 text-muted-foreground shrink-0 transition-transform" :class="exeDropdownOpen && 'rotate-180'" />
+                    </button>
+
+                    <Transition
+                      enter-active-class="transition ease-out duration-100"
+                      enter-from-class="opacity-0 -translate-y-1"
+                      enter-to-class="opacity-100 translate-y-0"
+                      leave-active-class="transition ease-in duration-75"
+                      leave-from-class="opacity-100 translate-y-0"
+                      leave-to-class="opacity-0 -translate-y-1"
+                    >
+                      <div
+                        v-if="exeDropdownOpen"
+                        class="absolute z-50 mt-1 w-full rounded-md border bg-popover text-popover-foreground shadow-md overflow-hidden"
+                      >
+                        <div class="max-h-48 overflow-y-auto p-1">
+                          <button
+                            v-for="exe in windowsExecutables"
+                            :key="exe.name"
+                            type="button"
+                            class="flex w-full items-center gap-2 rounded-sm px-2.5 py-1.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground"
+                            :class="selectedExecutable === exe.name && 'bg-accent/50'"
+                            @click="selectExe(exe.name)"
+                          >
+                            <Check v-if="selectedExecutable === exe.name" class="w-4 h-4 shrink-0 text-primary" />
+                            <span v-else class="w-4 shrink-0" />
+                            <span class="font-mono truncate">{{ exe.name }}</span>
+                          </button>
+                        </div>
+                      </div>
+                    </Transition>
+                  </div>
                 </div>
 
                 <div class="space-y-2">

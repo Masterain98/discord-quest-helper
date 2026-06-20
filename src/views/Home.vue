@@ -1411,11 +1411,18 @@ function cancelActivityLaunch() {
 
 async function claimReward(quest: Quest) {
   if (claimingQuest.value) return
+  claimingQuest.value = quest.id
 
   try {
-    claimingQuest.value = quest.id
-    await claimQuestReward(quest.id)
-    await questsStore.fetchQuests(true, true)
+    if (questsStore.cdpAvailable) {
+      // Navigate to the quest page in Discord client so user can claim there
+      const questPath = `/quest-home#${encodeURIComponent(quest.id)}`
+      await navigateDiscordSpa(questPath, questsStore.cdpPort)
+    } else {
+      // Fallback: try API claim when CDP is not available
+      await claimQuestReward(quest.id)
+      await questsStore.fetchQuests(true, true)
+    }
   } catch (error) {
     console.error('Failed to claim quest reward:', error)
     alert(`Failed to claim reward: ${error}`)
