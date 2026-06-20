@@ -152,20 +152,36 @@ export const useQuestsStore = defineStore('quests', () => {
     }
   })
 
+  function normalizeCheckpoint(value: number, fallback: number, min: number, max: number): number {
+    if (!Number.isFinite(value)) return fallback
+    const n = Math.round(value)
+    return Math.min(max, Math.max(min, n))
+  }
+
   // Persist activity checkpoint interval changes
   watch(activityCheckpointMin, (newMin) => {
-    localStorage.setItem(STORAGE_ACTIVITY_CHECKPOINT_MIN_KEY, String(newMin))
+    const normalizedMin = normalizeCheckpoint(newMin, 180, 30, 600)
+    if (normalizedMin !== newMin) {
+      activityCheckpointMin.value = normalizedMin
+      return
+    }
+    localStorage.setItem(STORAGE_ACTIVITY_CHECKPOINT_MIN_KEY, String(normalizedMin))
     // Ensure max >= min
-    if (activityCheckpointMax.value < newMin) {
-      activityCheckpointMax.value = newMin
+    if (activityCheckpointMax.value < normalizedMin) {
+      activityCheckpointMax.value = normalizedMin
     }
   })
 
   watch(activityCheckpointMax, (newMax) => {
-    localStorage.setItem(STORAGE_ACTIVITY_CHECKPOINT_MAX_KEY, String(newMax))
+    const normalizedMax = normalizeCheckpoint(newMax, 300, 60, 900)
+    if (normalizedMax !== newMax) {
+      activityCheckpointMax.value = normalizedMax
+      return
+    }
+    localStorage.setItem(STORAGE_ACTIVITY_CHECKPOINT_MAX_KEY, String(normalizedMax))
     // Ensure min <= max
-    if (activityCheckpointMin.value > newMax) {
-      activityCheckpointMin.value = newMax
+    if (activityCheckpointMin.value > normalizedMax) {
+      activityCheckpointMin.value = normalizedMax
     }
   })
 
@@ -199,7 +215,7 @@ export const useQuestsStore = defineStore('quests', () => {
       questEnrollmentBlockedUntil.value = response.quest_enrollment_blocked_until || null
       lastQuestsFetchTime.value = Date.now()
     } catch (e) {
-      error.value = e as string
+      error.value = e instanceof Error ? e.message : String(e)
     } finally {
       if (!silent) loading.value = false
     }
@@ -364,7 +380,7 @@ export const useQuestsStore = defineStore('quests', () => {
       startProgressSimulation(gameQuestMode.value === 'cdp' ? 1.0 : speedMultiplier.value)
       setupListeners()
     } catch (e) {
-      error.value = e as string
+      error.value = e instanceof Error ? e.message : String(e)
       throw e
     }
   }
@@ -381,7 +397,7 @@ export const useQuestsStore = defineStore('quests', () => {
       startProgressSimulation(1.0)
       setupListeners()
     } catch (e) {
-      error.value = e as string
+      error.value = e instanceof Error ? e.message : String(e)
       throw e
     }
   }
@@ -498,7 +514,7 @@ export const useQuestsStore = defineStore('quests', () => {
         startPolling()
       }
     } catch (e) {
-      error.value = e as string
+      error.value = e instanceof Error ? e.message : String(e)
       // Clean up if started (only for simulate mode)
       if (activeGameExe.value) {
         try {
@@ -562,7 +578,7 @@ export const useQuestsStore = defineStore('quests', () => {
       setupListeners()
 
     } catch (e) {
-      error.value = e as string
+      error.value = e instanceof Error ? e.message : String(e)
       throw e
     } finally {
       loading.value = false
@@ -765,7 +781,7 @@ export const useQuestsStore = defineStore('quests', () => {
       // Optimistic update
       updateQuestEnrollment(questId, new Date().toISOString())
     } catch (e) {
-      error.value = e as string
+      error.value = e instanceof Error ? e.message : String(e)
       throw e
     }
   }

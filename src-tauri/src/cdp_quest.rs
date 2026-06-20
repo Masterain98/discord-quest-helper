@@ -1931,14 +1931,14 @@ fn js_init_activity_quest(quest_id: &str) -> String {
         try {{
             await sdk.commands.questStartTimer({{ quest_id: questId }});
         }} catch(e) {{
-            console.warn("[DQH] questStartTimer failed:", e);
+            return JSON.stringify({{ success: false, error: "questStartTimer failed: " + String(e) }});
         }}
 
         let questInfo = null;
         try {{
             questInfo = await sdk.commands.getQuest();
         }} catch(e) {{
-            console.warn("[DQH] getQuest failed:", e);
+            return JSON.stringify({{ success: false, error: "getQuest failed: " + String(e) }});
         }}
 
         return JSON.stringify({{
@@ -2227,8 +2227,10 @@ pub async fn complete_activity_quest_via_cdp(
         Err(e) => {
             log(LogLevel::Warn, LogCategory::TokenExtraction,
                 &format!("CDP activity quest verification failed: {}", e), None);
-            let _ = app_handle.emit("quest-progress", 100.0f64);
-            let _ = app_handle.emit("quest-complete", ());
+            let _ = app_handle.emit(
+                "quest-error",
+                format!("Activity quest verification failed: {}", e),
+            );
         }
     }
 

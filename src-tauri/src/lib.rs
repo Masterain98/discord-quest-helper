@@ -420,7 +420,9 @@ async fn start_cdp_quest(
                 ).await
             }
             "activity" => {
-                let times = checkpoint_times.unwrap_or_else(|| vec![180, 180, 180]);
+                let times = checkpoint_times
+                    .filter(|v| !v.is_empty())
+                    .unwrap_or_else(|| vec![180, 180, 180]);
                 cdp_quest::complete_activity_quest_via_cdp(
                     cdp_port, quest_id, times,
                     app_handle.clone(), cancel_rx,
