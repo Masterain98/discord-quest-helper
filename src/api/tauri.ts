@@ -429,12 +429,13 @@ export async function captureDiscordHeadersCdp(port?: number, durationSecs?: num
 
 export async function startCdpQuest(
   questId: string,
-  questType: 'play' | 'stream' | 'video',
+  questType: 'play' | 'stream' | 'video' | 'activity',
   applicationId: string,
   applicationName: string,
   secondsNeeded: number,
   initialProgress: number,
-  cdpPort: number
+  cdpPort: number,
+  checkpointTimes?: number[]
 ): Promise<void> {
   return await invoke('start_cdp_quest', {
     questId,
@@ -443,6 +444,11 @@ export async function startCdpQuest(
     applicationName,
     secondsNeeded,
     initialProgress,
-    cdpPort
+    cdpPort,
+    checkpointTimes: checkpointTimes || []
   })
+}
+
+export async function navigateDiscordSpa(targetPath: string, cdpPort: number): Promise<void> {
+  return await invoke('navigate_discord_spa', { targetPath, cdpPort })
 }

@@ -55,7 +55,21 @@ export default {
         orbs_not_loaded: "載入中...",
         orbs_updated_at: "更新時間 {time}",
         enrollment_blocked_until: "任務註冊已被封鎖至 {time}。",
-        claim_reward: "領取獎勵"
+        claim_reward: "領取獎勵",
+        // Activity quest dialog
+        activity_launch_title: "啟動 Activity 任務",
+        activity_launch_desc: "此任務需要啟動 Discord Activity。將執行以下步驟：",
+        activity_launch_step1: "在 Discord 中前往任務頁面",
+        activity_launch_step2: "在 Discord 中點擊「Launch Quest」開啟 Activity",
+        activity_launch_step3: "完成 Discord 中的授權提示",
+        activity_launch_step4: "返回此處點擊「開始任務」以開始",
+        activity_launch_confirm: "我已在 Discord 中啟動 Activity",
+        activity_launch_start: "開始任務",
+        activity_launch_cancel: "取消",
+        activity_launch_navigate: "在 Discord 中開啟任務",
+        activity_launch_navigate_desc: "點擊後會將 Discord 導航到此任務頁面，並將焦點切回 Discord",
+        activity_navigate_error: "無法將 Discord 導航到任務頁面。請手動開啟 Discord 並前往任務頁面。",
+        activity_cdp_required: "Activity 任務需要 CDP 模式。請在設定中啟用 CDP。"
     },
     quest: {
         progress: "進度",
@@ -180,6 +194,13 @@ export default {
         video_config_cdp_notice: "CDP 模式下這些設定不會生效，CDP 模式透過 Discord 內部 API 直接提交進度。",
         cdp_banner_connected: "CDP 已連接 - 將使用 CDP 模式完成任務",
         cdp_banner_disconnected: "CDP 未連接 - 請使用除錯參數啟動 Discord",
+        // Activity quest settings
+        activity_quest_title: "Activity 任務設定",
+        activity_quest_desc: "設定 Activity 類型任務的檢查點時間間隔。此類任務會在 Discord 的 Activity iframe 中執行，需要 CDP 模式。",
+        activity_checkpoint_min: "檢查點最小間隔",
+        activity_checkpoint_max: "檢查點最大間隔",
+        activity_checkpoint_unit: "秒",
+        activity_cdp_required: "Activity 任務需要 CDP 模式。請在上方的 Discord 用戶端整合區段啟用 CDP。",
         debug_unlock_hint: "再點擊 {steps} 次即可成為開發者。"
     },
     version: {

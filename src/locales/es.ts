@@ -55,7 +55,21 @@ export default {
         orbs_not_loaded: "Cargando...",
         orbs_updated_at: "Actualizado {time}",
         enrollment_blocked_until: "La inscripción en misiones está bloqueada hasta {time}.",
-        claim_reward: "Reclamar recompensa"
+        claim_reward: "Reclamar recompensa",
+        // Activity quest dialog
+        activity_launch_title: "Iniciar misión de Activity",
+        activity_launch_desc: "Esta misión requiere iniciar una Activity de Discord. Se realizarán los siguientes pasos:",
+        activity_launch_step1: "Ir a la página de la misión en Discord",
+        activity_launch_step2: "Haz clic en 'Launch Quest' en Discord para abrir la Activity",
+        activity_launch_step3: "Completa cualquier solicitud de autorización en Discord",
+        activity_launch_step4: "Vuelve aquí y haz clic en 'Iniciar misión' para comenzar",
+        activity_launch_confirm: "Ya inicié la Activity en Discord",
+        activity_launch_start: "Iniciar misión",
+        activity_launch_cancel: "Cancelar",
+        activity_launch_navigate: "Abrir misión en Discord",
+        activity_launch_navigate_desc: "Haz clic para llevar Discord a esta misión y devolver el foco a Discord",
+        activity_navigate_error: "No se pudo navegar a la página de la misión en Discord. Abre Discord manualmente y ve a la página de misiones.",
+        activity_cdp_required: "Las misiones de Activity requieren modo CDP. Activa CDP en Configuración."
     },
     quest: {
         progress: "Progreso",
@@ -180,6 +194,13 @@ export default {
         video_config_cdp_notice: "Estos ajustes no se usan en modo CDP. CDP envía el progreso directamente a través de la API interna de Discord.",
         cdp_banner_connected: "CDP conectado - Las tareas usarán el modo CDP",
         cdp_banner_disconnected: "CDP no conectado - Inicia Discord con flag de depuración",
+        // Activity quest settings
+        activity_quest_title: "Configuración de misiones de Activity",
+        activity_quest_desc: "Configura los tiempos de las misiones de tipo Activity. Estas misiones se ejecutan dentro del iframe de Activity de Discord y requieren modo CDP.",
+        activity_checkpoint_min: "Intervalo mínimo de checkpoint",
+        activity_checkpoint_max: "Intervalo máximo de checkpoint",
+        activity_checkpoint_unit: "segundos",
+        activity_cdp_required: "Las misiones de Activity requieren modo CDP. Activa CDP en la sección de integración del cliente Discord de arriba.",
         debug_unlock_hint: "Estás a {steps} pasos de ser desarrollador."
     },
     version: {

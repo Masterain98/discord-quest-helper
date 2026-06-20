@@ -55,7 +55,21 @@ export default {
         orbs_not_loaded: "Loading...",
         orbs_updated_at: "Updated {time}",
         enrollment_blocked_until: "Quest enrollment is blocked until {time}.",
-        claim_reward: "Claim Reward"
+        claim_reward: "Claim Reward",
+        // Activity quest dialog
+        activity_launch_title: "Launch Activity Quest",
+        activity_launch_desc: "This quest requires launching a Discord Activity. The following steps will be performed:",
+        activity_launch_step1: "Navigate to the quest page in Discord",
+        activity_launch_step2: "Click 'Launch Quest' in Discord to open the Activity",
+        activity_launch_step3: "Complete any authorization prompts in Discord",
+        activity_launch_step4: "Return here and click 'Start Quest' to begin",
+        activity_launch_confirm: "I've launched the Activity in Discord",
+        activity_launch_start: "Start Quest",
+        activity_launch_cancel: "Cancel",
+        activity_launch_navigate: "Open Quest in Discord",
+        activity_launch_navigate_desc: "Click to navigate Discord to this quest page and switch focus to Discord",
+        activity_navigate_error: "Failed to navigate Discord to quest page. Please open Discord manually and go to the Quests page.",
+        activity_cdp_required: "Activity quests require CDP mode. Please enable CDP in Settings."
     },
     quest: {
         progress: "Progress",
@@ -181,6 +195,13 @@ export default {
         tooltip_heartbeat_2: "Video quests support speed multiplier",
         tooltip_heartbeat_3: "No process simulation, but not recommended",
         video_config_cdp_notice: "These settings are not used in CDP mode. CDP mode sends progress directly via Discord's internal API.",
+        // Activity quest settings
+        activity_quest_title: "Activity Quest Configuration",
+        activity_quest_desc: "Configure timing for Activity-type quests. These quests run inside Discord's Activity iframe and require CDP mode.",
+        activity_checkpoint_min: "Checkpoint Interval Min",
+        activity_checkpoint_max: "Checkpoint Interval Max",
+        activity_checkpoint_unit: "seconds",
+        activity_cdp_required: "Activity quests require CDP mode. Enable CDP in the Discord Client Integration section above.",
         debug_unlock_hint: "You are {steps} steps away from being a developer."
     },
     version: {

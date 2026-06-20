@@ -279,6 +279,25 @@ pub async fn navigate_primary_discord_target(port: u16, url: &str, timeout_secs:
     navigate_target_via_ws(ws_url, url, timeout_secs).await
 }
 
+pub async fn bring_primary_discord_target_to_front(port: u16) -> Result<()> {
+    use crate::logger::{log, LogCategory, LogLevel};
+
+    let target = get_primary_discord_target(port).await?;
+    let ws_url = target
+        .web_socket_debugger_url
+        .as_ref()
+        .context("Target has no WebSocket URL")?;
+
+    log(
+        LogLevel::Debug,
+        LogCategory::TokenExtraction,
+        &format!("bring_primary_discord_target_to_front: target_url={}", target.url),
+        None,
+    );
+
+    bring_target_to_front_via_ws(ws_url, 5).await
+}
+
 pub async fn execute_js_via_primary_discord_target(
     port: u16,
     js_code: &str,
@@ -626,6 +645,29 @@ pub async fn execute_js_via_all_discord_targets(
     Ok(results)
 }
 
+/// Find the activity iframe CDP target (discordsays.com).
+pub async fn find_activity_iframe_target(port: u16) -> Result<CdpTarget> {
+    let targets = get_cdp_targets(port).await?;
+
+    let iframe_target = targets.iter().find(|t| {
+        (t.target_type == "iframe" || t.target_type == "page")
+            && t.url.contains("discordsays.com")
+            && t.web_socket_debugger_url.is_some()
+    });
+
+    iframe_target.cloned().context("No activity iframe target found. Make sure the Activity is launched in Discord.")
+}
+
+/// Execute JavaScript on a specific CDP target via its WebSocket URL.
+pub async fn execute_js_on_target(
+    ws_url: &str,
+    js_code: &str,
+    await_promise: bool,
+    timeout_secs: u64,
+) -> Result<String> {
+    execute_js_via_ws(ws_url, js_code, await_promise, timeout_secs).await
+}
+
 async fn execute_js_via_ws(
     ws_url: &str,
     js_code: &str,
@@ -832,6 +874,57 @@ async fn navigate_target_via_ws(ws_url: &str, url: &str, timeout_secs: u64) -> R
     })
     .await
     .context(format!("CDP page navigation timed out ({}s)", timeout_secs))??;
+
+    let _ = write.close().await;
+
+    Ok(())
+}
+
+async fn bring_target_to_front_via_ws(ws_url: &str, timeout_secs: u64) -> Result<()> {
+    let (ws_stream, _) = connect_async(ws_url)
+        .await
+        .context("Failed to connect to CDP WebSocket")?;
+    let (mut write, mut read) = ws_stream.split();
+
+    let request = serde_json::json!({
+        "id": 1,
+        "method": "Page.bringToFront",
+        "params": {}
+    });
+
+    write
+        .send(Message::Text(request.to_string().into()))
+        .await
+        .context("Failed to send CDP Page.bringToFront request")?;
+
+    tokio::time::timeout(Duration::from_secs(timeout_secs), async {
+        while let Some(msg) = read.next().await {
+            match msg {
+                Ok(Message::Text(text)) => {
+                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
+                        if json.get("id") == Some(&serde_json::json!(1)) {
+                            if let Some(error) = json.get("error") {
+                                let code = error.get("code").and_then(|value| value.as_i64()).unwrap_or(0);
+                                let message = error
+                                    .get("message")
+                                    .and_then(|value| value.as_str())
+                                    .unwrap_or("Unknown CDP error");
+                                return Err(anyhow::anyhow!("CDP error (code {}): {}", code, message));
+                            }
+
+                            return Ok(());
+                        }
+                    }
+                }
+                Ok(_) => continue,
+                Err(e) => return Err(anyhow::anyhow!("WebSocket error: {}", e)),
+            }
+        }
+
+        Err(anyhow::anyhow!("WebSocket closed before Page.bringToFront acknowledgement"))
+    })
+    .await
+    .context(format!("CDP Page.bringToFront timed out ({}s)", timeout_secs))??;
 
     let _ = write.close().await;
 

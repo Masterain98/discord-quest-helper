@@ -55,7 +55,21 @@ export default {
         orbs_not_loaded: "読み込み中...",
         orbs_updated_at: "{time} に更新",
         enrollment_blocked_until: "クエスト登録は {time} までブロックされています。",
-        claim_reward: "報酬を受け取る"
+        claim_reward: "報酬を受け取る",
+        // Activity quest dialog
+        activity_launch_title: "Activity クエストを起動",
+        activity_launch_desc: "このクエストでは Discord Activity の起動が必要です。次の手順を行います：",
+        activity_launch_step1: "Discord のクエストページへ移動",
+        activity_launch_step2: "Discord で 'Launch Quest' をクリックして Activity を開く",
+        activity_launch_step3: "Discord の認可プロンプトを完了",
+        activity_launch_step4: "ここに戻り、「クエスト開始」をクリックして開始",
+        activity_launch_confirm: "Discord で Activity を起動しました",
+        activity_launch_start: "クエスト開始",
+        activity_launch_cancel: "キャンセル",
+        activity_launch_navigate: "Discord でクエストを開く",
+        activity_launch_navigate_desc: "クリックすると Discord をこのクエストページへ移動し、Discord にフォーカスを戻します",
+        activity_navigate_error: "Discord のクエストページへ移動できませんでした。手動で Discord を開き、クエストページへ移動してください。",
+        activity_cdp_required: "Activity クエストには CDP モードが必要です。設定で CDP を有効にしてください。"
     },
     quest: {
         progress: "進捗",
@@ -180,6 +194,13 @@ export default {
         video_config_cdp_notice: "CDP モードではこれらの設定は使用されません。CDP モードは Discord の内部 API を介して進行状況を送信します。",
         cdp_banner_connected: "CDP 接続済み - タスクは CDP モードで実行されます",
         cdp_banner_disconnected: "CDP 未接続 - デバッグフラグで Discord を起動してください",
+        // Activity quest settings
+        activity_quest_title: "Activity クエスト設定",
+        activity_quest_desc: "Activity タイプのクエストのタイミングを設定します。これらのクエストは Discord の Activity iframe 内で実行され、CDP モードが必要です。",
+        activity_checkpoint_min: "チェックポイント最小間隔",
+        activity_checkpoint_max: "チェックポイント最大間隔",
+        activity_checkpoint_unit: "秒",
+        activity_cdp_required: "Activity クエストには CDP モードが必要です。上の Discord クライアント連携セクションで CDP を有効にしてください。",
         debug_unlock_hint: "あと {steps} 回タップで開発者になれます。"
     },
     version: {

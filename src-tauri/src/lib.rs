@@ -373,6 +373,7 @@ async fn start_cdp_quest(
     seconds_needed: u32,
     initial_progress: f64,
     cdp_port: u16,
+    checkpoint_times: Option<Vec<u32>>,
     state: State<'_, AppState>,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
@@ -418,6 +419,15 @@ async fn start_cdp_quest(
                     app_handle.clone(), cancel_rx,
                 ).await
             }
+            "activity" => {
+                let times = checkpoint_times
+                    .filter(|v| !v.is_empty())
+                    .unwrap_or_else(|| vec![180, 180, 180]);
+                cdp_quest::complete_activity_quest_via_cdp(
+                    cdp_port, quest_id, times,
+                    app_handle.clone(), cancel_rx,
+                ).await
+            }
             _ => {
                 Err(anyhow::anyhow!("Unknown CDP quest type: {}", quest_type_clone))
             }
@@ -448,6 +458,14 @@ async fn stop_quest_internal(state: &State<'_, AppState>) {
         let _ = quest.cancel_flag.send(()).await;
         println!("Quest stopped");
     }
+}
+
+/// Navigate Discord client SPA to a specific path (no reload)
+#[tauri::command]
+async fn navigate_discord_spa(target_path: String, cdp_port: u16) -> Result<(), String> {
+    cdp_quest::navigate_discord_spa(cdp_port, &target_path)
+        .await
+        .map_err(|e| format!("Failed to navigate Discord SPA: {}", e))
 }
 
 /// Create simulated game
@@ -851,7 +869,8 @@ pub fn run() {
             get_super_properties_mode,
             auto_fetch_super_properties,
             retry_super_properties,
-            capture_discord_headers_cdp
+            capture_discord_headers_cdp,
+            navigate_discord_spa
         ])
         .on_window_event(|_window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {

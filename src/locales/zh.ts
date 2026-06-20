@@ -55,7 +55,21 @@ export default {
         orbs_not_loaded: "加载中...",
         orbs_updated_at: "更新时间 {time}",
         enrollment_blocked_until: "任务注册已被封禁至 {time}。",
-        claim_reward: "领取奖励"
+        claim_reward: "领取奖励",
+        // Activity quest dialog
+        activity_launch_title: "启动 Activity 任务",
+        activity_launch_desc: "此任务需要启动 Discord Activity。将执行以下步骤：",
+        activity_launch_step1: "在 Discord 中导航到任务页面",
+        activity_launch_step2: "在 Discord 中点击「Launch Quest」打开 Activity",
+        activity_launch_step3: "完成 Discord 中的授权提示",
+        activity_launch_step4: "返回此处点击「开始任务」确认开始",
+        activity_launch_confirm: "我已在 Discord 中启动了 Activity",
+        activity_launch_start: "开始任务",
+        activity_launch_cancel: "取消",
+        activity_launch_navigate: "在 Discord 中打开任务",
+        activity_launch_navigate_desc: "点击后将 Discord 导航到此任务页面，并将焦点切换到 Discord",
+        activity_navigate_error: "无法将 Discord 导航到任务页面。请手动打开 Discord 并进入任务页面。",
+        activity_cdp_required: "Activity 任务需要 CDP 模式。请在设置中启用 CDP。"
     },
     quest: {
         progress: "进度",
@@ -181,6 +195,13 @@ export default {
         tooltip_heartbeat_2: "视频任务支持倍速完成",
         tooltip_heartbeat_3: "无需进程模拟，但不推荐使用",
         video_config_cdp_notice: "CDP 模式下这些设置不会生效，CDP 模式通过 Discord 内部 API 直接提交进度。",
+        // Activity quest settings
+        activity_quest_title: "Activity 任务配置",
+        activity_quest_desc: "配置 Activity 类型任务的检查点时间间隔。此类任务在 Discord 的 Activity iframe 中运行，需要 CDP 模式。",
+        activity_checkpoint_min: "检查点最小间隔",
+        activity_checkpoint_max: "检查点最大间隔",
+        activity_checkpoint_unit: "秒",
+        activity_cdp_required: "Activity 任务需要 CDP 模式。请在上方的 Discord 客户端集成部分启用 CDP。",
         debug_unlock_hint: "再点击 {steps} 次即可成为开发者。"
     },
     version: {

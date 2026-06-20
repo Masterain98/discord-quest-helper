@@ -16,7 +16,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Clock, Gift, MonitorPlay, Gamepad2, Activity, Copy, Check } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
-import { firstProgressValue, firstTargetTask, formatDuration } from '@/utils/questTasks'
+import { firstProgressValue, firstTargetTask, formatDuration, getQuestKind } from '@/utils/questTasks'
 import { getQuestRewardViews, type QuestRewardView } from '@/utils/questRewards'
 
 const { t } = useI18n()
@@ -34,6 +34,18 @@ const copiedQuestId = ref(false)
 const isActiveQuest = computed(() => questsStore.activeQuestId === props.quest.id)
 
 const targetDuration = computed(() => {
+  // For active quests, use the store's target duration (includes calculated checkpoint times)
+  if (isActiveQuest.value && questsStore.activeQuestTargetDuration > 0) {
+    return questsStore.activeQuestTargetDuration
+  }
+  // For activity quests that haven't started, estimate based on checkpoint settings
+  const questKind = getQuestKind(props.quest)
+  if (questKind === 'activity') {
+    const task = firstTargetTask(props.quest)
+    const checkpointCount = task?.target || 3
+    const avgCheckpoint = (questsStore.activityCheckpointMin + questsStore.activityCheckpointMax) / 2
+    return Math.round(checkpointCount * avgCheckpoint)
+  }
   return firstTargetTask(props.quest)?.target || 0
 })
 
