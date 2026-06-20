@@ -89,15 +89,15 @@ onMounted(async () => {
       </div>
       
       <div v-else-if="error" class="p-3 bg-destructive/10 text-destructive rounded-md text-sm">
-        Error: {{ error }}
+        {{ error }}
       </div>
-      
+
       <div v-else-if="games.length === 0" class="text-center py-8 text-muted-foreground">
-        No detectable games found.
+        {{ t('game_sim.no_games_found') }}
       </div>
-      
+
       <div v-else-if="filteredGames.length === 0" class="text-center py-8 text-muted-foreground">
-        No games match your search.
+        {{ t('game_sim.no_match') }}
       </div>
 
       <div v-else class="space-y-2 h-full overflow-y-auto pr-2">
@@ -124,7 +124,7 @@ onMounted(async () => {
             <div class="flex items-center gap-2 w-full">
                <span class="font-bold truncate">{{ game.name }}</span>
                <Badge variant="outline" class="text-[10px] h-5 px-1.5 shrink-0" :class="game.type_name === 'Game' ? 'border-primary/50 text-primary' : 'border-muted-foreground/50 text-muted-foreground'">
-                 {{ game.type_name || 'Game' }}
+                 {{ game.type_name === 'App' ? t('game_sim.type_app') : t('game_sim.type_game') }}
                </Badge>
             </div>
             <div class="text-xs font-normal" :class="game.executables.filter(e => e.os === 'win32').length === 0 ? 'text-yellow-500' : 'text-muted-foreground'">

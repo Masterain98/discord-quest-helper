@@ -244,12 +244,12 @@ const activeTimeText = computed(() => {
       <div class="space-y-2">
         <div class="flex justify-between text-sm">
           <span class="text-muted-foreground">
-            Progress: {{ Math.round(progress) }}%
+            {{ t('quest.progress') }}: {{ Math.round(progress) }}%
             <span v-if="isActiveQuest" class="ml-2 font-mono text-xs text-muted-foreground/80">
                ({{ activeTimeText }})
             </span>
           </span>
-          <span v-if="targetDuration" class="text-muted-foreground">{{ formatDuration(targetDuration) }} required</span>
+          <span v-if="targetDuration" class="text-muted-foreground">{{ t('quest.required', { duration: formatDuration(targetDuration) }) }}</span>
         </div>
         
         <!-- Progress Bar for Active Quest: single gradient div, blue→green -->
@@ -352,7 +352,7 @@ const activeTimeText = computed(() => {
       <div class="grid grid-cols-2 gap-4 text-xs text-muted-foreground">
         <div class="flex items-center gap-1">
           <Clock class="w-3 h-3" />
-          Expires: {{ quest.config.expires_at ? formatDate(quest.config.expires_at) : 'N/A' }}
+          {{ t('quest.expires') }}: {{ quest.config.expires_at ? formatDate(quest.config.expires_at) : t('quest.na') }}
         </div>
          <!-- Target duration handled above -->
       </div>

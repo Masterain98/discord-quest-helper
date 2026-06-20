@@ -308,7 +308,7 @@
                 @click="acceptQuest(quest)"
                 :disabled="acceptingQuest === quest.id || acceptingAllQuestIds.has(quest.id)"
               >
-                {{ (acceptingQuest === quest.id || acceptingAllQuestIds.has(quest.id)) ? 'Accepting...' : 'Accept Quest' }}
+                {{ (acceptingQuest === quest.id || acceptingAllQuestIds.has(quest.id)) ? t('home.accepting') : t('home.accept_quest') }}
               </Button>
 
               <Button
@@ -318,7 +318,7 @@
                 :disabled="questsStore.stopping || isBatchAccepting"
               >
                 <Loader2 v-if="questsStore.stopping" class="w-4 h-4 mr-2 animate-spin" />
-                Stop
+                {{ t('home.stop') }}
               </Button>
 
               <Button
@@ -333,15 +333,16 @@
 
               <Button
                 v-else-if="quest.user_status?.completed_at && !quest.user_status?.claimed_at"
-                variant="outline"
                 :disabled="claimingQuest === quest.id || isBatchAccepting"
+                class="bg-green-600 hover:bg-green-700 text-white gap-1.5"
                 @click="claimReward(quest)"
               >
-                <Loader2 v-if="claimingQuest === quest.id" class="w-4 h-4 mr-2 animate-spin" />
+                <Loader2 v-if="claimingQuest === quest.id" class="w-4 h-4 animate-spin" />
+                <Gift v-else class="w-4 h-4" />
                 {{ t('home.claim_reward') }}
               </Button>
                <span v-else-if="quest.user_status?.completed_at" class="text-sm font-medium text-green-500 self-center px-2">
-                ✓ Completed
+                {{ t('home.completed') }}
               </span>
             </template>
           </QuestCard>
@@ -821,12 +822,12 @@ function getQuestType(quest: Quest): 'video' | 'stream' | 'activity' {
 // Get button text based on quest type
 function getStartButtonText(quest: Quest): string {
   const task = firstStartableTask(quest)
-  if (!task) return 'Start Quest'
-  if (isVideoTask(task)) return 'Start Watching'
-  if (isDesktopPlayTask(task)) return 'Start Playing'
-  if (isStreamTask(task)) return 'Start Streaming'
-  if (isActivityTask(task)) return 'Launch Activity'
-  return 'Start Quest'
+  if (!task) return t('home.start_quest')
+  if (isVideoTask(task)) return t('home.start_watching')
+  if (isDesktopPlayTask(task)) return t('home.start_playing')
+  if (isStreamTask(task)) return t('home.start_streaming')
+  if (isActivityTask(task)) return t('home.launch_activity')
+  return t('home.start_quest')
 }
 
 // Get reward type for a quest
