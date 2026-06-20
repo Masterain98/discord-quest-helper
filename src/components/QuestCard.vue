@@ -78,11 +78,11 @@ const statusLabel = computed(() => {
   return t('filter.in_progress')
 })
 
-const statusVariant = computed(() => {
-  if (isNotAccepted.value) return 'secondary'
-  if (isPendingClaim.value) return 'destructive' // Orange-ish usually, but destructive stands out
-  if (isClaimed.value) return 'outline' // Done
-  return 'default' // In Progress
+const statusClass = computed(() => {
+  if (isNotAccepted.value) return 'border-gray-400/60 bg-gray-500/10 text-gray-600 dark:text-gray-400'
+  if (isPendingClaim.value) return 'border-orange-400/60 bg-orange-500/10 text-orange-600 dark:text-orange-400'
+  if (isClaimed.value) return 'border-green-500/30 bg-green-500/15 text-green-600 dark:text-green-400'
+  return 'border-sky-400/60 bg-sky-500/10 text-sky-600 dark:text-sky-400' // In Progress
 })
 
 const rewardViews = computed(() => getQuestRewardViews(props.quest))
@@ -198,11 +198,19 @@ const activeTimeText = computed(() => {
           />
           <div class="space-y-1">
             <div class="flex flex-wrap items-center gap-2">
-              <Badge :variant="questType === 'video' ? 'default' : 'secondary'" class="mb-1">
+              <Badge
+                variant="outline"
+                :class="[
+                  'mb-1',
+                  questType === 'video' && 'border-sky-400/60 bg-sky-500/10 text-sky-600 dark:text-sky-400',
+                  questType === 'stream' && 'border-violet-400/60 bg-violet-500/10 text-violet-600 dark:text-violet-400',
+                  questType === 'activity' && 'border-amber-400/60 bg-amber-500/10 text-amber-600 dark:text-amber-400',
+                ]"
+              >
                  <MonitorPlay v-if="questType === 'video'" class="w-3 h-3 mr-1" />
                  <Gamepad2 v-else-if="questType === 'stream'" class="w-3 h-3 mr-1" />
                  <Activity v-else class="w-3 h-3 mr-1" />
-                 {{ questType === 'video' ? 'Video' : (questType === 'activity' ? 'Activity' : 'Stream/Play') }}
+                 {{ questType === 'video' ? t('filter.video') : (questType === 'activity' ? t('filter.activity') : t('filter.stream_play')) }}
               </Badge>
               <Badge variant="outline" class="mb-1 max-w-full gap-1 font-mono text-[10px]" :title="quest.id">
                 <span class="hidden sm:inline">ID {{ quest.id }}</span>
@@ -224,7 +232,7 @@ const activeTimeText = computed(() => {
             <QuestTaskBadges :quest="quest" />
           </div>
         </div>
-        <Badge :variant="statusVariant" class="whitespace-nowrap">
+        <Badge variant="outline" :class="['whitespace-nowrap', statusClass]">
            {{ statusLabel }}
         </Badge>
       </div>

@@ -37,6 +37,8 @@ export default {
         filters: "필터",
         accept_all: "모두 수락",
         complete_all_video: "모든 비디오 퀘스트 완료",
+        complete_all_game: "모든 게임 퀘스트 완료",
+        complete_all_tasks: "모든 퀘스트 완료",
         pending_claim_reminder: "{count}개의 퀘스트가 완료되었습니다. Discord에서 보상을 수령하세요.",
         view_pending_claim: "보기",
         processing_queue: "처리 대기열",
@@ -201,7 +203,8 @@ export default {
         activity_checkpoint_max: "체크포인트 최대 간격",
         activity_checkpoint_unit: "초",
         activity_cdp_required: "Activity 퀘스트에는 CDP 모드가 필요합니다. 위의 Discord 클라이언트 통합 섹션에서 CDP를 활성화하세요.",
-        debug_unlock_hint: "{steps}번 더 탭하면 개발자가 됩니다."
+        debug_unlock_hint: "{steps}번 더 탭하면 개발자가 됩니다.",
+        debug_already_unlocked: "개발자 모드가 활성화되었습니다"
     },
     version: {
         update_available: "새 버전이 있습니다!",
@@ -260,6 +263,11 @@ export default {
         accept_quests_desc: "{count}개의 퀘스트를 수락하시겠습니까? 이 퀘스트들에 등록됩니다.",
         complete_quests_title: "비디오 퀘스트 완료",
         complete_quests_desc: "{count}개의 비디오 퀘스트를 대기열에 추가하시겠습니까? 순서대로 처리됩니다.",
+        complete_game_title: "게임 퀘스트 완료",
+        complete_game_desc: "{count}개의 게임 퀘스트를 완료 대기열에 추가하시겠습니까? 하나씩 처리됩니다.",
+        complete_all_title: "모든 퀘스트 완료",
+        complete_all_desc: "{count}개의 퀘스트를 완료 대기열에 추가하시겠습니까? 하나씩 처리됩니다.",
+        activity_excluded_notice: "Activity 퀘스트는 수동 작업이 필요하며 자동으로 완료되지 않습니다.",
         cancel: "취소",
         accept: "수락",
         start: "시작",

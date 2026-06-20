@@ -37,6 +37,8 @@ export default {
         filters: "Фильтры",
         accept_all: "Принять все",
         complete_all_video: "Завершить все видео квесты",
+        complete_all_game: "Завершить все игровые квесты",
+        complete_all_tasks: "Завершить все квесты",
         pending_claim_reminder: "{count} квест(ов) завершено и ожидает получения награды в Discord.",
         view_pending_claim: "Просмотр",
         processing_queue: "Очередь обработки",
@@ -201,7 +203,8 @@ export default {
         activity_checkpoint_max: "Максимальный интервал checkpoint",
         activity_checkpoint_unit: "секунд",
         activity_cdp_required: "Для Activity-квестов требуется режим CDP. Включите CDP в разделе интеграции клиента Discord выше.",
-        debug_unlock_hint: "Ещё {steps} нажатий до статуса разработчика."
+        debug_unlock_hint: "Ещё {steps} нажатий до статуса разработчика.",
+        debug_already_unlocked: "Режим разработчика включён"
     },
     version: {
         update_available: "Доступна новая версия!",
@@ -260,6 +263,11 @@ export default {
         accept_quests_desc: "Принять {count} квестов? Это действие зарегистрирует вас в этих квестах.",
         complete_quests_title: "Завершить видео квесты",
         complete_quests_desc: "Добавить {count} видео квестов в очередь? Они будут обработаны по очереди.",
+        complete_game_title: "Завершить игровые квесты",
+        complete_game_desc: "Добавить {count} игровых квестов в очередь завершения? Они будут обработаны по одному.",
+        complete_all_title: "Завершить все квесты",
+        complete_all_desc: "Добавить {count} квестов в очередь завершения? Они будут обработаны по одному.",
+        activity_excluded_notice: "Квесты Activity требуют ручного взаимодействия и не будут завершены автоматически.",
         cancel: "Отмена",
         accept: "Принять",
         start: "Начать",

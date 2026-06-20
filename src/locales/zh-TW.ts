@@ -37,6 +37,8 @@ export default {
         filters: "篩選",
         accept_all: "全部接受",
         complete_all_video: "完成所有影片任務",
+        complete_all_game: "完成全部遊戲任務",
+        complete_all_tasks: "完成全部任務",
         processing_queue: "處理佇列",
         remaining: "剩餘",
         pending_claim_reminder: "有 {count} 個任務已完成，請前往 Discord 領取獎勵。",
@@ -201,7 +203,8 @@ export default {
         activity_checkpoint_max: "檢查點最大間隔",
         activity_checkpoint_unit: "秒",
         activity_cdp_required: "Activity 任務需要 CDP 模式。請在上方的 Discord 用戶端整合區段啟用 CDP。",
-        debug_unlock_hint: "再點擊 {steps} 次即可成為開發者。"
+        debug_unlock_hint: "再點擊 {steps} 次即可成為開發者。",
+        debug_already_unlocked: "已開啟開發者模式"
     },
     version: {
         update_available: "發現新版本！",
@@ -260,6 +263,11 @@ export default {
         accept_quests_desc: "接受 {count} 個任務？此操作將報名這些任務。",
         complete_quests_title: "完成影片任務",
         complete_quests_desc: "將 {count} 個影片任務加入完成佇列？將逐一處理。",
+        complete_game_title: "完成遊戲任務",
+        complete_game_desc: "將 {count} 個遊戲任務添加到完成隊列？將逐個處理。",
+        complete_all_title: "完成全部任務",
+        complete_all_desc: "將 {count} 個任務添加到完成隊列？將逐個處理。",
+        activity_excluded_notice: "Activity 類型任務需要手動操作，不會被自動完成。",
         cancel: "取消",
         accept: "接受",
         start: "開始",

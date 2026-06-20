@@ -1,6 +1,12 @@
 import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
 import type { Quest, DetectableGame, ExcludedQuest } from '@/api/tauri'
+import { getQuestKind } from '@/utils/questTasks'
+
+/** Quest with optional pre-selected executable name for batch game quest processing */
+interface QueueItem extends Quest {
+  selectedExeName?: string
+}
 import {
   getQuestsFull,
   startVideoQuest,
@@ -254,6 +260,32 @@ export const useQuestsStore = defineStore('quests', () => {
 
     // Check completion
     if (quest.user_status?.completed_at) {
+      // If queue is running, handle transition to next quest instead of full stop
+      if (isQueueRunning.value && questQueue.value.length > 0) {
+        console.log('Queue item completed detected via polling.')
+        const finished = questQueue.value.shift()
+        console.log(`Queue item finished: ${finished?.id}. Remaining: ${questQueue.value.length}`)
+
+        // Reset active state
+        activeQuestId.value = null
+        activeQuestType.value = null
+        activeQuestProgress.value = 0
+        activeQuestTargetDuration.value = 0
+        activeGameExe.value = null
+        localProgress.value = 0
+        stopProgressSimulation()
+        stopPolling()
+
+        // Refresh quests to update status in UI
+        fetchQuests(true, true)
+
+        // Process next item after a short delay
+        setTimeout(() => {
+          processQueue()
+        }, 2000)
+        return
+      }
+
       console.log('Quest completed detected via polling, stopping game.')
       stop()
       return
@@ -816,7 +848,7 @@ export const useQuestsStore = defineStore('quests', () => {
   // Refined Complete All Video:
   // We can't blocking-wait in the UI thread for 15 mins x N quests.
   // But we can start a "Queue Mode".
-  const questQueue = ref<Quest[]>([])
+  const questQueue = ref<QueueItem[]>([])
   const isQueueRunning = ref(false)
 
   async function processQueue() {
@@ -826,14 +858,14 @@ export const useQuestsStore = defineStore('quests', () => {
     }
 
     isQueueRunning.value = true
-    const quest = questQueue.value[0]
+    const queueItem = questQueue.value[0]
 
     try {
-      console.log(`Queue processing: ${quest.id}`)
-      // Start video
+      console.log(`Queue processing: ${queueItem.id}`)
+
       // Calculate duration needed
       let seconds = 0
-      const queueTasks = quest.config.task_config_v2?.tasks ?? quest.config.task_config?.tasks
+      const queueTasks = queueItem.config.task_config_v2?.tasks ?? queueItem.config.task_config?.tasks
       if (queueTasks) {
         const taskValues = Object.values(queueTasks)
         if (taskValues.length > 0) seconds = taskValues[0].target || 0
@@ -841,24 +873,33 @@ export const useQuestsStore = defineStore('quests', () => {
 
       // Check if already partial
       let progress = 0
-      if (quest.user_status?.progress) {
-        const vals = Object.values(quest.user_status.progress)
+      if (queueItem.user_status?.progress) {
+        const vals = Object.values(queueItem.user_status.progress)
         if (vals.length > 0) progress = vals[0].value || 0
       }
 
       // If completed, skip
-      if (quest.user_status?.completed_at) {
+      if (queueItem.user_status?.completed_at) {
         questQueue.value.shift()
         processQueue()
         return
       }
 
-      await startVideo(quest.id, seconds, progress)
+      // Route by quest type
+      const questKind = getQuestKind(queueItem)
+      console.log(`Queue item type: ${questKind}`)
 
-      // Now we wait for completion event. 
-      // setupListeners handles `onQuestComplete`.
-      // We need to hook into that.
-      // Modifying setupListeners to check queue?
+      if (questKind === 'video') {
+        await startVideo(queueItem.id, seconds, progress)
+      } else {
+        // Game (stream/play) quests — use startPlay with optional pre-selected exe
+        await startPlay(queueItem, seconds, progress, queueItem.selectedExeName)
+      }
+
+      // Now we wait for completion.
+      // Video quests: handled by onQuestComplete event in setupListeners.
+      // Game quests (simulate): handled by polling in checkActiveQuestStatus.
+      // Game quests (CDP/heartbeat): handled by onQuestComplete event.
 
     } catch (e) {
       console.error("Queue error:", e)
@@ -989,9 +1030,10 @@ export const useQuestsStore = defineStore('quests', () => {
     acceptQuest: acceptQuestWrapper,
     acceptAllQuests,
     // Add to queue logic needs integration with listeners
-    addToQueue: (q: Quest) => {
+    addToQueue: (q: Quest, selectedExeName?: string) => {
       if (!questQueue.value.find(x => x.id === q.id)) {
-        questQueue.value.push(q)
+        const item: QueueItem = { ...q, selectedExeName }
+        questQueue.value.push(item)
       }
     },
     startQueue: processQueue,

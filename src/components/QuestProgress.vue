@@ -3,11 +3,14 @@ import { computed, ref, watch, onUnmounted } from 'vue'
 import { useQuestsStore } from '@/stores/quests'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { AlertCircle } from 'lucide-vue-next'
+import { AlertCircle, RotateCw } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
+import { cn } from '@/lib/utils'
+import { useAuthStore } from '@/stores/auth'
 
 const { t } = useI18n()
 const questsStore = useQuestsStore()
+const authStore = useAuthStore()
 
 // Local progress is now managed by the store
 
@@ -72,6 +75,27 @@ const progressBarStyle = computed(() => {
 
 <template>
   <Card class="sticky top-20 border-border/50">
+    <!-- Current Orbs -->
+    <div
+      v-if="questsStore.showOrbsBalance"
+      class="grid grid-cols-[auto_1fr_auto] gap-x-3 items-center px-6 py-3 border-b border-border/50"
+    >
+      <img src="/icons/orbs.png" alt="" class="h-8 w-8 object-contain row-span-2" />
+      <span class="text-xs text-muted-foreground leading-none">{{ t('home.current_orbs') }}</span>
+      <Button
+        variant="ghost"
+        size="icon"
+        class="h-7 w-7 shrink-0 row-span-2"
+        @click="questsStore.fetchOrbsBalance(true)"
+        :disabled="questsStore.orbsBalanceLoading || !authStore.user"
+      >
+        <RotateCw :class="cn('h-3.5 w-3.5', questsStore.orbsBalanceLoading && 'animate-spin')" />
+      </Button>
+      <span class="text-base font-bold leading-tight">
+        {{ questsStore.orbsBalance == null ? t('home.orbs_not_loaded') : questsStore.orbsBalance.toLocaleString() }}
+      </span>
+    </div>
+
     <CardHeader>
       <CardTitle class="text-lg">{{ t('quest.active_progress') }}</CardTitle>
     </CardHeader>

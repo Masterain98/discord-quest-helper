@@ -37,6 +37,8 @@ export default {
         filters: "Filtros",
         accept_all: "Aceptar todas",
         complete_all_video: "Completar todas las misiones de video",
+        complete_all_game: "Completar todas las misiones de juego",
+        complete_all_tasks: "Completar todas las misiones",
         pending_claim_reminder: "{count} misión(es) completada(s) y esperando reclamación en Discord.",
         view_pending_claim: "Ver",
         processing_queue: "Cola de procesamiento",
@@ -201,7 +203,8 @@ export default {
         activity_checkpoint_max: "Intervalo máximo de checkpoint",
         activity_checkpoint_unit: "segundos",
         activity_cdp_required: "Las misiones de Activity requieren modo CDP. Activa CDP en la sección de integración del cliente Discord de arriba.",
-        debug_unlock_hint: "Estás a {steps} pasos de ser desarrollador."
+        debug_unlock_hint: "Estás a {steps} pasos de ser desarrollador.",
+        debug_already_unlocked: "Modo desarrollador activado"
     },
     version: {
         update_available: "¡Nueva versión disponible!",
@@ -260,6 +263,11 @@ export default {
         accept_quests_desc: "¿Aceptar {count} misiones? Esta acción te inscribirá en estas misiones.",
         complete_quests_title: "Completar misiones de video",
         complete_quests_desc: "¿Agregar {count} misiones de video a la cola de completado? Se procesarán una por una.",
+        complete_game_title: "Completar misiones de juego",
+        complete_game_desc: "¿Añadir {count} misiones de juego a la cola de completado? Se procesarán una por una.",
+        complete_all_title: "Completar todas las misiones",
+        complete_all_desc: "¿Añadir {count} misiones a la cola de completado? Se procesarán una por una.",
+        activity_excluded_notice: "Las misiones de tipo Activity requieren interacción manual y no se completarán automáticamente.",
         cancel: "Cancelar",
         accept: "Aceptar",
         start: "Iniciar",

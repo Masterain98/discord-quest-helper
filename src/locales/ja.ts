@@ -37,6 +37,8 @@ export default {
         filters: "フィルター",
         accept_all: "すべて受け入れる",
         complete_all_video: "すべての動画クエストを完了",
+        complete_all_game: "すべてのゲームクエストを完了",
+        complete_all_tasks: "すべてのタスクを完了",
         pending_claim_reminder: "{count} 件のクエストが完了済みです。Discordで報酬を受け取ってください。",
         view_pending_claim: "確認",
         processing_queue: "処理キュー",
@@ -201,7 +203,8 @@ export default {
         activity_checkpoint_max: "チェックポイント最大間隔",
         activity_checkpoint_unit: "秒",
         activity_cdp_required: "Activity クエストには CDP モードが必要です。上の Discord クライアント連携セクションで CDP を有効にしてください。",
-        debug_unlock_hint: "あと {steps} 回タップで開発者になれます。"
+        debug_unlock_hint: "あと {steps} 回タップで開発者になれます。",
+        debug_already_unlocked: "開発者モードが有効です"
     },
     version: {
         update_available: "新しいバージョンが利用可能です！",
@@ -258,6 +261,11 @@ export default {
         accept_quests_desc: "{count}件のクエストを受け入れますか？これらのクエストに登録されます。",
         complete_quests_title: "動画クエストを完了",
         complete_quests_desc: "{count}件の動画クエストをキューに追加しますか？順番に処理されます。",
+        complete_game_title: "ゲームクエストを完了",
+        complete_game_desc: "{count} 件のゲームクエストを完了キューに追加しますか？順番に処理されます。",
+        complete_all_title: "すべてのタスクを完了",
+        complete_all_desc: "{count} 件のタスクを完了キューに追加しますか？順番に処理されます。",
+        activity_excluded_notice: "Activity クエストは手動操作が必要なため、自動的には完了しません。",
         cancel: "キャンセル",
         accept: "受け入れる",
         start: "開始",

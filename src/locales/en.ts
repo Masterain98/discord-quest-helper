@@ -37,6 +37,8 @@ export default {
         filters: "Filters",
         accept_all: "Accept All",
         complete_all_video: "Complete All Video Quests",
+        complete_all_game: "Complete All Game Quests",
+        complete_all_tasks: "Complete All Quests",
         processing_queue: "Processing Queue",
         remaining: "remaining",
         pending_claim_reminder: "{count} quest(s) completed and awaiting claim in Discord.",
@@ -202,7 +204,8 @@ export default {
         activity_checkpoint_max: "Checkpoint Interval Max",
         activity_checkpoint_unit: "seconds",
         activity_cdp_required: "Activity quests require CDP mode. Enable CDP in the Discord Client Integration section above.",
-        debug_unlock_hint: "You are {steps} steps away from being a developer."
+        debug_unlock_hint: "You are {steps} steps away from being a developer.",
+        debug_already_unlocked: "Developer mode enabled"
     },
     version: {
         update_available: "A new version is available!",
@@ -261,6 +264,11 @@ export default {
         accept_quests_desc: "Accept {count} quests? This action will enroll you in these quests.",
         complete_quests_title: "Complete Video Quests",
         complete_quests_desc: "Add {count} video quests to the completion queue? This will process them one by one.",
+        complete_game_title: "Complete Game Quests",
+        complete_game_desc: "Add {count} game quests to the completion queue? This will process them one by one.",
+        complete_all_title: "Complete All Tasks",
+        complete_all_desc: "Add {count} tasks to the completion queue? This will process them one by one.",
+        activity_excluded_notice: "Activity quests require manual interaction and will not be auto-completed.",
         cancel: "Cancel",
         accept: "Accept",
         start: "Start",

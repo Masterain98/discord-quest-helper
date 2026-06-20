@@ -37,12 +37,15 @@ const superPropsMode = ref<SuperPropertiesModeInfo | null>(null)
 const retryingMode = ref(false)
 
 // Debug mode unlock (tap version 7 times like Android developer options)
-const debugModeEnabled = ref(false)
+const debugModeEnabled = ref(localStorage.getItem('debugMode') === 'true')
 const versionTapCount = ref(0)
 const lastTapTime = ref(0)
 const showDebugUnlockHint = ref(false)
 
 function handleVersionTap() {
+  // Already unlocked — nothing to do, hint shows "already unlocked" state via template
+  if (debugModeEnabled.value) return
+
   const now = Date.now()
   // Reset counter if more than 2 seconds since last tap
   if (now - lastTapTime.value > 2000) {
@@ -51,12 +54,12 @@ function handleVersionTap() {
   }
   lastTapTime.value = now
   versionTapCount.value++
-  
+
   // Show hint when getting close
   if (versionTapCount.value >= 4 && versionTapCount.value < 7) {
     showDebugUnlockHint.value = true
   }
-  
+
   if (versionTapCount.value >= 7) {
     debugModeEnabled.value = true
     localStorage.setItem('debugMode', 'true')
@@ -71,6 +74,42 @@ const emit = defineEmits<{
   'navigate-to-home': []
   'debug-unlocked': []
 }>()
+
+// --- Logo bubble-rise animation on version click ---
+interface LogoBubble {
+  id: number
+  style: Record<string, string>
+}
+const logoBubbles = ref<LogoBubble[]>([])
+let bubbleId = 0
+
+function handleVersionTapWithBubble(_e: MouseEvent) {
+  // Spawn 1-2 bubbles rising from the click point
+  const count = 1 + Math.floor(Math.random() * 2)
+  for (let i = 0; i < count; i++) {
+    bubbleId++
+    const drift = (Math.random() - 0.5) * 60 // -30px..30px horizontal drift
+    const rise = 70 + Math.random() * 50 // 70px..120px rise distance
+    const scale = 0.7 + Math.random() * 0.6 // 0.7..1.3 end scale
+    const duration = 1100 + Math.random() * 500 // 1.1s..1.6s
+    logoBubbles.value.push({
+      id: bubbleId,
+      style: {
+        '--bubble-drift': `${drift}px`,
+        '--bubble-rise': `-${rise}px`,
+        '--bubble-scale': `${scale}`,
+        animationDuration: `${duration}ms`,
+        animationDelay: `${i * 80}ms`,
+      },
+    })
+  }
+  handleVersionTap()
+}
+
+function removeBubble(id: number) {
+  const idx = logoBubbles.value.findIndex(b => b.id === id)
+  if (idx !== -1) logoBubbles.value.splice(idx, 1)
+}
 
 async function loadSuperPropsMode() {
   try {
@@ -755,12 +794,22 @@ async function exportLogs() {
            </CardHeader>
            <CardContent class="text-sm text-muted-foreground space-y-2">
               <p class="flex items-center flex-wrap gap-2">
-                <span 
-                  class="select-none cursor-pointer active:scale-95 transition-transform" 
-                  @click="handleVersionTap"
+                <span
+                  class="relative select-none cursor-pointer active:scale-95 transition-transform"
+                  @click="handleVersionTapWithBubble"
                   title="Version Info"
                 >
                   Discord Quest Helper v{{ versionStore.currentVersion }}
+                  <!-- Logo bubble-rise animation -->
+                  <img
+                    v-for="bubble in logoBubbles"
+                    :key="bubble.id"
+                    src="/icons/logo.png"
+                    alt=""
+                    class="pointer-events-none absolute left-1/2 bottom-0 w-8 h-8 -ml-4 logo-bubble"
+                    :style="bubble.style"
+                    @animationend="removeBubble(bubble.id)"
+                  />
                 </span>
                 <Badge v-if="versionStore.isLatest" variant="outline" class="gap-1 text-green-600 border-green-600/50">
                   <CheckCircle2 class="w-3 h-3" />
@@ -769,10 +818,14 @@ async function exportLogs() {
                 <span v-else-if="versionStore.isChecking" class="text-xs text-muted-foreground">
                   {{ t('settings.version_checking') }}
                 </span>
-                
+
                 <!-- Debug Unlock Hint -->
-                <span v-if="showDebugUnlockHint" class="text-xs text-primary font-medium animate-pulse ml-2">
-                  You are {{ 7 - versionTapCount }} steps away from being a developer.
+                <span v-if="debugModeEnabled" class="text-xs text-green-600 dark:text-green-400 font-medium ml-2 inline-flex items-center gap-1">
+                  <CheckCircle2 class="w-3 h-3" />
+                  {{ t('settings.debug_already_unlocked') }}
+                </span>
+                <span v-else-if="showDebugUnlockHint" class="text-xs text-primary font-medium animate-pulse ml-2">
+                  {{ t('settings.debug_unlock_hint', { steps: 7 - versionTapCount }) }}
                 </span>
               </p>
              <p>
@@ -857,3 +910,27 @@ async function exportLogs() {
     </div>
   </div>
 </template>
+
+<style scoped>
+@keyframes logoBubbleRise {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 0) scale(0.5);
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--bubble-drift)), var(--bubble-rise)) scale(var(--bubble-scale));
+  }
+}
+
+.logo-bubble {
+  animation-name: logoBubbleRise;
+  animation-timing-function: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  animation-fill-mode: forwards;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.15));
+  z-index: 50;
+}
+</style>

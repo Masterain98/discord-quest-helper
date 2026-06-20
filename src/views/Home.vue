@@ -39,9 +39,9 @@
                 {{ activeFilterCount }}
               </Badge>
             </Button>
-            <Button 
+            <Button
               @click="refreshQuests"
-              :disabled="questsStore.loading || !authStore.user"
+              :disabled="questsStore.loading || !authStore.user || isBatchAccepting"
               class="gap-2 flex-1 sm:flex-none"
             >
               <RotateCw :class="cn('w-4 h-4', questsStore.loading && 'animate-spin')" />
@@ -61,24 +61,6 @@
           <span>{{ t('home.enrollment_blocked_until', { time: formatBlockedUntil(questsStore.questEnrollmentBlockedUntil) }) }}</span>
         </div>
 
-        <div
-          v-if="questsStore.showOrbsBalance"
-          class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-muted/30 p-3"
-        >
-          <div class="flex items-center gap-2 text-sm">
-            <img src="/icons/orbs.png" alt="" class="h-5 w-5 object-contain" />
-            <span class="text-muted-foreground">{{ t('home.current_orbs') }}:</span>
-            <span class="font-semibold">{{ questsStore.orbsBalance == null ? t('home.orbs_not_loaded') : questsStore.orbsBalance.toLocaleString() }}</span>
-            <span v-if="questsStore.orbsBalanceFetchedAt" class="text-xs text-muted-foreground">
-              {{ t('home.orbs_updated_at', { time: new Date(questsStore.orbsBalanceFetchedAt).toLocaleTimeString() }) }}
-            </span>
-          </div>
-          <Button variant="outline" size="sm" class="gap-2" @click="refreshOrbsBalance" :disabled="questsStore.orbsBalanceLoading || !authStore.user">
-            <RotateCw :class="cn('h-3.5 w-3.5', questsStore.orbsBalanceLoading && 'animate-spin')" />
-            {{ t('general.refresh') }}
-          </Button>
-        </div>
-        
         <!-- Filter Panel -->
         <Card v-if="showFilters" class="animate-in slide-in-from-top-2 duration-200">
           <CardHeader class="pb-3">
@@ -220,21 +202,53 @@
         
         <!-- Actions & Queue Status -->
         <div class="flex flex-wrap gap-3 items-center" v-if="!questsStore.loading">
-           <Button 
+          <Button
             v-if="unenrolledCount > 0"
             @click="handleAcceptAll"
-            class="bg-green-600 hover:bg-green-700 text-white"
+            :disabled="isBatchAccepting"
+            class="bg-green-600 hover:bg-green-700 text-white gap-2"
           >
+            <Check class="w-4 h-4" />
             {{ t('home.accept_all') }} ({{ unenrolledCount }})
           </Button>
 
-          <Button 
-            v-if="enrolledVideoCount > 0 && !questsStore.isQueueRunning"
-            @click="handleCompleteAllVideo"
-            variant="secondary"
+          <div
+            v-if="hasAnyCompleteOption && !questsStore.isQueueRunning"
+            class="flex flex-wrap gap-2 items-center p-1.5 rounded-xl bg-muted/50 border border-border/60 shadow-sm"
           >
-            {{ t('home.complete_all_video') }} ({{ enrolledVideoCount }})
-          </Button>
+            <Button
+              v-if="enrolledAllCount > 0"
+              @click="handleCompleteAllTasks"
+              :disabled="isBatchAccepting"
+              variant="default"
+              class="gap-2 shadow-sm"
+            >
+              <Sparkles class="w-4 h-4" />
+              {{ t('home.complete_all_tasks') }} ({{ enrolledAllCount }})
+            </Button>
+
+            <Button
+              v-if="enrolledVideoCount > 0"
+              @click="handleCompleteAllVideo"
+              :disabled="isBatchAccepting"
+              variant="secondary"
+              class="gap-2"
+            >
+              <MonitorPlay class="w-4 h-4" />
+              {{ t('home.complete_all_video') }} ({{ enrolledVideoCount }})
+            </Button>
+
+            <Button
+              v-if="enrolledGameCount > 0"
+              @click="handleCompleteAllGame"
+              :disabled="isBatchAccepting"
+              variant="secondary"
+              class="gap-2"
+            >
+              <Gamepad2 class="w-4 h-4" />
+              {{ t('home.complete_all_game') }} ({{ enrolledGameCount }})
+            </Button>
+          </div>
 
           <div v-if="questsStore.isQueueRunning" class="flex items-center gap-3 px-4 py-2 bg-secondary/50 rounded-md text-sm border border-secondary">
              <span class="relative flex h-2.5 w-2.5">
@@ -289,38 +303,38 @@
             :show-developer-details="props.debugModeEnabled"
           >
             <template #actions>
-              <Button 
+              <Button
                 v-if="!quest.user_status?.enrolled_at"
                 @click="acceptQuest(quest)"
-                :disabled="acceptingQuest === quest.id"
+                :disabled="acceptingQuest === quest.id || acceptingAllQuestIds.has(quest.id)"
               >
-                {{ acceptingQuest === quest.id ? 'Accepting...' : 'Accept Quest' }}
+                {{ (acceptingQuest === quest.id || acceptingAllQuestIds.has(quest.id)) ? 'Accepting...' : 'Accept Quest' }}
               </Button>
-              
-              <Button 
+
+              <Button
                 v-else-if="questsStore.activeQuestId === quest.id"
                 @click="questsStore.stop()"
                 variant="destructive"
-                :disabled="questsStore.stopping"
+                :disabled="questsStore.stopping || isBatchAccepting"
               >
                 <Loader2 v-if="questsStore.stopping" class="w-4 h-4 mr-2 animate-spin" />
                 Stop
               </Button>
 
-              <Button 
+              <Button
                 v-else-if="!quest.user_status?.completed_at && canStartQuest(quest)"
                 @click="startQuest(quest)"
                 variant="default"
-                :disabled="questsStore.activeQuestId !== null || startingQuestId !== null"
+                :disabled="questsStore.activeQuestId !== null || startingQuestId !== null || isBatchAccepting"
               >
                 <Loader2 v-if="startingQuestId === quest.id" class="w-4 h-4 mr-2 animate-spin" />
                 {{ getStartButtonText(quest) }}
               </Button>
-              
+
               <Button
                 v-else-if="quest.user_status?.completed_at && !quest.user_status?.claimed_at"
                 variant="outline"
-                :disabled="claimingQuest === quest.id"
+                :disabled="claimingQuest === quest.id || isBatchAccepting"
                 @click="claimReward(quest)"
               >
                 <Loader2 v-if="claimingQuest === quest.id" class="w-4 h-4 mr-2 animate-spin" />
@@ -445,7 +459,7 @@
           </div>
         </div>
         <DialogFooter>
-          <Button variant="ghost" @click="showCustomExeDialog = false">{{ t('dialog.cancel') }}</Button>
+          <Button variant="ghost" @click="cancelCustomExeDialog">{{ t('dialog.cancel') }}</Button>
           <Button @click="submitCustomExeAndStartPlay" :disabled="!customExeInput.trim()">{{ t('dialog.confirm') }}</Button>
         </DialogFooter>
       </DialogContent>
@@ -500,6 +514,71 @@
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <!-- Batch Complete Confirmation Dialog -->
+    <AlertDialog :open="showBatchCompleteDialog" @update:open="showBatchCompleteDialog = $event">
+      <AlertDialogContent class="max-w-[600px]">
+        <AlertDialogHeader>
+          <AlertDialogTitle>
+            {{ batchCompleteType === 'game' ? t('dialog.complete_game_title') : t('dialog.complete_all_title') }}
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            <div class="space-y-4 my-4">
+              <p>
+                {{ batchCompleteType === 'game'
+                  ? t('dialog.complete_game_desc', { count: pendingBatchCompleteQuests.length })
+                  : t('dialog.complete_all_desc', { count: pendingBatchCompleteQuests.length })
+                }}
+              </p>
+              <p v-if="batchCompleteType === 'all'" class="text-xs text-muted-foreground italic">
+                {{ t('dialog.activity_excluded_notice') }}
+              </p>
+              <div class="border rounded-md p-3 bg-secondary/20 max-h-[300px] overflow-y-auto space-y-2 text-xs">
+                 <div v-for="q in pendingBatchCompleteQuests" :key="q.id" class="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1">
+                    <span class="font-medium truncate text-foreground">{{ q.config.messages.quest_name }}</span>
+                    <span :class="cn('font-mono', getExpiryColor(q.config.expires_at))">
+                      {{ getExpiryText(q.config.expires_at) }}
+                    </span>
+                    <span class="text-xs text-muted-foreground col-span-2 truncate">
+                      {{ q.config.messages.game_title }} • {{ getQuestType(q) === 'video' ? t('filter.video') : t('filter.play') }} • ID: {{ q.id }}
+                    </span>
+                 </div>
+              </div>
+            </div>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>{{ t('dialog.cancel') }}</AlertDialogCancel>
+          <AlertDialogAction @click="confirmBatchComplete">{{ t('dialog.start') }}</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+
+    <!-- Batch Exe Selection Dialog -->
+    <Dialog :open="showBatchExeSelectDialog" @update:open="cancelBatchExeSelect">
+      <DialogContent class="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{{ t('home.exe_select_title') }}</DialogTitle>
+          <DialogDescription>
+            {{ t('home.exe_select_desc', { game: batchExeSelectGameName }) }}
+          </DialogDescription>
+        </DialogHeader>
+        <div class="flex flex-col gap-2 max-h-64 overflow-y-auto py-2">
+          <Button
+            v-for="exe in batchExeSelectOptions"
+            :key="exe"
+            variant="outline"
+            class="justify-start font-mono text-sm"
+            @click="selectBatchExe(exe)"
+          >
+            {{ exe }}
+          </Button>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" @click="cancelBatchExeSelect">{{ t('dialog.cancel') }}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>
 
@@ -539,7 +618,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
-import { RotateCw, Filter, AlertCircle, Loader2, ArrowUpCircle, ExternalLink, Check, Search, Gift } from 'lucide-vue-next'
+import { RotateCw, Filter, AlertCircle, Loader2, ArrowUpCircle, ExternalLink, Check, Search, Gift, MonitorPlay, Gamepad2, Sparkles } from 'lucide-vue-next'
 import { Input } from '@/components/ui/input'
 import { useI18n } from 'vue-i18n'
 import { open } from '@tauri-apps/plugin-shell'
@@ -588,6 +667,9 @@ const searchQuery = ref('')
 const acceptingQuest = ref<string | null>(null)
 const claimingQuest = ref<string | null>(null)
 
+// Batch accept state — tracks IDs of quests being accepted in "Accept All" flow
+const acceptingAllQuestIds = ref<Set<string>>(new Set())
+
 // Loading state for the Start button (fetching detectable games, etc.)
 const startingQuestId = ref<string | null>(null)
 
@@ -596,6 +678,18 @@ const showAcceptAllDialog = ref(false)
 const showCompleteAllDialog = ref(false)
 const pendingAcceptQuests = ref<Quest[]>([])
 const pendingCompleteQuests = ref<Quest[]>([])
+
+// Batch complete dialog state (parameterized for video/game/all)
+const showBatchCompleteDialog = ref(false)
+const batchCompleteType = ref<'video' | 'game' | 'all'>('all')
+const pendingBatchCompleteQuests = ref<Quest[]>([])
+
+// Exe pre-selection state for batch game quests
+const batchExeSelections = ref<Map<string, string>>(new Map())
+const showBatchExeSelectDialog = ref(false)
+const batchExeSelectOptions = ref<string[]>([])
+const batchExeSelectGameName = ref('')
+const batchExeSelectResolve = ref<((exe: string | null) => void) | null>(null)
 
 // Exe selection dialog state (for play quests with multiple win32 executables)
 const showExeSelectDialog = ref(false)
@@ -714,9 +808,6 @@ async function refreshQuests() {
   await questsStore.fetchQuests(false, true)
 }
 
-async function refreshOrbsBalance() {
-  await questsStore.fetchOrbsBalance(true)
-}
 
 function formatBlockedUntil(value: string): string {
   return new Date(value).toLocaleString()
@@ -855,6 +946,31 @@ const enrolledVideoCount = computed(() => {
   }).length
 })
 
+const enrolledGameCount = computed(() => {
+  return filteredQuests.value.filter(q => {
+     const questType = getQuestType(q)
+     const isGame = questType === 'stream' // stream kind = play/game quests
+     const isEnrolled = !!q.user_status
+     const isCompleted = !!q.user_status?.completed_at
+     return isEnrolled && !isCompleted && isGame
+  }).length
+})
+
+const enrolledAllCount = computed(() => {
+  return filteredQuests.value.filter(q => {
+     const questType = getQuestType(q)
+     // Exclude activity (requires manual interaction)
+     if (questType === 'activity') return false
+     const isEnrolled = !!q.user_status
+     const isCompleted = !!q.user_status?.completed_at
+     return isEnrolled && !isCompleted
+  }).length
+})
+
+const isBatchAccepting = computed(() => acceptingAllQuestIds.value.size > 0)
+
+const hasAnyCompleteOption = computed(() => enrolledAllCount.value > 0 || enrolledVideoCount.value > 0 || enrolledGameCount.value > 0)
+
 function handleAcceptAll() {
   const toAccept = filteredQuests.value.filter(q => {
     // Check if not enrolled
@@ -874,9 +990,37 @@ function handleAcceptAll() {
 }
 
 async function confirmAcceptAll() {
-  await questsStore.acceptAllQuests(pendingAcceptQuests.value.map(q => q.id))
+  const questIds = pendingAcceptQuests.value.map(q => q.id)
   showAcceptAllDialog.value = false
   pendingAcceptQuests.value = []
+
+  // Track accepting state per-quest instead of global loading
+  for (const id of questIds) {
+    acceptingAllQuestIds.value.add(id)
+  }
+  acceptingAllQuestIds.value = new Set(acceptingAllQuestIds.value) // trigger reactivity
+
+  let successCount = 0
+  let failCount = 0
+  for (const id of questIds) {
+    try {
+      await acceptQuestApi(id)
+      questsStore.updateQuestEnrollment(id, new Date().toISOString())
+      successCount++
+    } catch (e) {
+      console.error(`Failed to accept quest ${id}:`, e)
+      failCount++
+    } finally {
+      acceptingAllQuestIds.value.delete(id)
+      acceptingAllQuestIds.value = new Set(acceptingAllQuestIds.value) // trigger reactivity
+    }
+    // Small delay to be nice to API
+    await new Promise(r => setTimeout(r, 500))
+  }
+
+  if (failCount > 0) {
+    alert(`Accepted ${successCount} quests, failed ${failCount}`)
+  }
 }
 
 function handleCompleteAllVideo() {
@@ -907,6 +1051,147 @@ function confirmCompleteAll() {
   pendingCompleteQuests.value = []
 }
 
+function handleCompleteAllGame() {
+  const toComplete = filteredQuests.value.filter(q => {
+     const questType = getQuestType(q)
+     const isGame = questType === 'stream'
+     const isEnrolled = !!q.user_status
+     const isCompleted = !!q.user_status?.completed_at
+     if (q.config.expires_at) {
+       const expires = new Date(q.config.expires_at)
+       if (expires < new Date()) return false
+     }
+     return isEnrolled && !isCompleted && isGame
+  })
+  if (toComplete.length === 0) return
+  pendingBatchCompleteQuests.value = toComplete
+  batchCompleteType.value = 'game'
+  showBatchCompleteDialog.value = true
+}
+
+function handleCompleteAllTasks() {
+  const toComplete = filteredQuests.value.filter(q => {
+     const questType = getQuestType(q)
+     if (questType === 'activity') return false
+     const isEnrolled = !!q.user_status
+     const isCompleted = !!q.user_status?.completed_at
+     if (q.config.expires_at) {
+       const expires = new Date(q.config.expires_at)
+       if (expires < new Date()) return false
+     }
+     return isEnrolled && !isCompleted
+  })
+  if (toComplete.length === 0) return
+  pendingBatchCompleteQuests.value = toComplete
+  batchCompleteType.value = 'all'
+  showBatchCompleteDialog.value = true
+}
+
+async function confirmBatchComplete() {
+  const quests = [...pendingBatchCompleteQuests.value]
+  showBatchCompleteDialog.value = false
+  pendingBatchCompleteQuests.value = []
+
+  // Separate game quests that need exe pre-selection (simulate mode only)
+  const gameQuests = quests.filter(q => getQuestType(q) === 'stream')
+  const needExePreselection = questsStore.gameQuestMode === 'simulate' && gameQuests.length > 0
+
+  if (needExePreselection) {
+    try {
+      await preselectExesForGameQuests(gameQuests)
+    } catch {
+      // User cancelled or error — abort batch
+      return
+    }
+  }
+
+  // Add all quests to queue with pre-selected exe names
+  quests.forEach(q => {
+    const exeName = batchExeSelections.value.get(q.id)
+    questsStore.addToQueue(q, exeName)
+  })
+  questsStore.startQueue()
+  batchExeSelections.value = new Map()
+}
+
+/**
+ * Pre-select executables for all game quests in a batch.
+ * Shows selection dialogs sequentially for games that have multiple win32 executables.
+ * For games with no known executables, shows a custom input dialog.
+ * Results are stored in batchExeSelections map.
+ * Resolves when all selections are done, rejects if user cancels any.
+ */
+async function preselectExesForGameQuests(gameQuests: Quest[]): Promise<void> {
+  const gamesList = await questsStore.getDetectableGames()
+
+  for (const quest of gameQuests) {
+    const appId = quest.config.application?.id
+    if (!appId) continue
+
+    const game = gamesList.find(g => g.id === appId)
+    if (!game) continue
+
+    const winExes = game.executables.filter(e => e.os === 'win32')
+
+    if (winExes.length > 1) {
+      // Multiple executables — show selection dialog
+      const selected = await showBatchExeSelectDialogAsync(winExes.map(e => e.name), game.name)
+      if (selected === null) throw new Error('User cancelled')
+      batchExeSelections.value.set(quest.id, selected)
+    } else if (winExes.length === 0) {
+      // No known executables — show custom input dialog
+      const custom = await showBatchCustomExeDialogAsync(game.name)
+      if (custom === null) throw new Error('User cancelled')
+      batchExeSelections.value.set(quest.id, custom)
+    } else {
+      // Exactly one executable — auto-select
+      batchExeSelections.value.set(quest.id, winExes[0].name)
+    }
+  }
+}
+
+/** Show exe selection dialog and return selected exe name, or null if cancelled */
+function showBatchExeSelectDialogAsync(options: string[], gameName: string): Promise<string | null> {
+  return new Promise(resolve => {
+    batchExeSelectOptions.value = options
+    batchExeSelectGameName.value = gameName
+    batchExeSelectResolve.value = resolve
+    showBatchExeSelectDialog.value = true
+  })
+}
+
+/** Show custom exe input dialog and return entered name, or null if cancelled */
+function showBatchCustomExeDialogAsync(gameName: string): Promise<string | null> {
+  return new Promise(resolve => {
+    customExeGameName.value = gameName
+    customExeInput.value = ''
+    // Reuse existing custom exe dialog with a different resolve
+    batchExeSelectResolve.value = resolve
+    showCustomExeDialog.value = true
+  })
+}
+
+function selectBatchExe(exeName: string) {
+  showBatchExeSelectDialog.value = false
+  batchExeSelectResolve.value?.(exeName)
+  batchExeSelectResolve.value = null
+}
+
+function cancelBatchExeSelect() {
+  showBatchExeSelectDialog.value = false
+  batchExeSelectResolve.value?.(null)
+  batchExeSelectResolve.value = null
+}
+
+function cancelCustomExeDialog() {
+  showCustomExeDialog.value = false
+  // If in batch pre-selection mode, resolve with null to cancel
+  if (batchExeSelectResolve.value) {
+    batchExeSelectResolve.value(null)
+    batchExeSelectResolve.value = null
+  }
+}
+
 async function selectExeAndStartPlay(exeName: string) {
   showExeSelectDialog.value = false
   if (!pendingPlayQuest.value) return
@@ -923,6 +1208,15 @@ async function submitCustomExeAndStartPlay() {
   const exeName = customExeInput.value.trim()
   if (!exeName) return
   showCustomExeDialog.value = false
+
+  // Batch mode — resolve the pre-selection promise
+  if (batchExeSelectResolve.value) {
+    batchExeSelectResolve.value(exeName)
+    batchExeSelectResolve.value = null
+    return
+  }
+
+  // Single quest mode
   if (!pendingPlayQuest.value) return
   const { quest, secondsNeeded, initialProgress } = pendingPlayQuest.value
   pendingPlayQuest.value = null
