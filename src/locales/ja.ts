@@ -64,6 +64,7 @@ export default {
         orbs_updated_at: "{time} に更新",
         enrollment_blocked_until: "クエスト登録は {time} までブロックされています。",
         claim_reward: "報酬を受け取る",
+        claim_navigated: "Discord をクエストページに移動しました。Discord で報酬を受け取ってください。",
         // Activity quest dialog
         activity_launch_title: "Activity クエストを起動",
         activity_launch_desc: "このクエストでは Discord Activity の起動が必要です。次の手順を行います：",

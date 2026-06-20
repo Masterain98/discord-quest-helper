@@ -64,6 +64,7 @@ export default {
         orbs_updated_at: "Updated {time}",
         enrollment_blocked_until: "Quest enrollment is blocked until {time}.",
         claim_reward: "Claim Reward",
+        claim_navigated: "Discord has been redirected to the quest page. Please claim your reward there.",
         // Activity quest dialog
         activity_launch_title: "Launch Activity Quest",
         activity_launch_desc: "This quest requires launching a Discord Activity. The following steps will be performed:",

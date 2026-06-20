@@ -64,6 +64,7 @@ export default {
         orbs_updated_at: "更新時間 {time}",
         enrollment_blocked_until: "任務註冊已被封鎖至 {time}。",
         claim_reward: "領取獎勵",
+        claim_navigated: "Discord 已跳轉到對應任務頁面，請在 Discord 中領取獎勵。",
         // Activity quest dialog
         activity_launch_title: "啟動 Activity 任務",
         activity_launch_desc: "此任務需要啟動 Discord Activity。將執行以下步驟：",

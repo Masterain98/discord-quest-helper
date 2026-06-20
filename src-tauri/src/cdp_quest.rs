@@ -1989,12 +1989,18 @@ fn js_navigate_spa(target_path: &str) -> String {
 (async () => {{
     try {{
         const targetPath = {safe_path};
-        const currentPath = () => window.location.pathname + window.location.search + window.location.hash;
+        const currentFull = () => window.location.pathname + window.location.search + window.location.hash;
+        const currentBase = () => window.location.pathname + window.location.search;
         const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-        if (currentPath() === targetPath) {{
+        if (currentFull() === targetPath) {{
             return JSON.stringify({{ success: true, method: "already-there" }});
         }}
+
+        // If already on the same page (same pathname+search) but different hash,
+        // force a re-navigation by going away first then coming back.
+        const targetBase = targetPath.split('#')[0];
+        const needsReroute = currentBase() === targetBase && targetPath.includes('#');
 
         let wpRequire = null;
         try {{
@@ -2035,19 +2041,33 @@ fn js_navigate_spa(target_path: &str) -> String {
             return null;
         }}
 
-        const router = findRouter();
-        if (router) {{
+        async function navigateWithRouter(router, path) {{
             const methods = ["transitionTo", "replaceWith", "navigate"];
             for (const method of methods) {{
                 if (typeof router[method] === "function") {{
                     try {{
-                        await Promise.resolve(router[method](targetPath));
+                        await Promise.resolve(router[method](path));
                         await sleep(500);
-                        if (currentPath() === targetPath) {{
-                            return JSON.stringify({{ success: true, method: "router." + method }});
-                        }}
+                        if (currentFull() === path) return true;
                     }} catch (e) {{}}
                 }}
+            }}
+            return false;
+        }}
+
+        const router = findRouter();
+
+        if (needsReroute && router) {{
+            // Navigate away to force a clean re-render, then navigate to target
+            await navigateWithRouter(router, "/channels/@me");
+            await sleep(300);
+            const ok = await navigateWithRouter(router, targetPath);
+            if (ok) return JSON.stringify({{ success: true, method: "router.reroute" }});
+        }}
+
+        if (router) {{
+            if (await navigateWithRouter(router, targetPath)) {{
+                return JSON.stringify({{ success: true, method: "router.direct" }});
             }}
         }}
 

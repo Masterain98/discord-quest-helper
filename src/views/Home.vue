@@ -331,16 +331,23 @@
                 {{ getStartButtonText(quest) }}
               </Button>
 
-              <Button
-                v-else-if="quest.user_status?.completed_at && !quest.user_status?.claimed_at"
-                :disabled="claimingQuest === quest.id || isBatchAccepting"
-                class="bg-green-600 hover:bg-green-700 text-white gap-1.5"
-                @click="claimReward(quest)"
-              >
-                <Loader2 v-if="claimingQuest === quest.id" class="w-4 h-4 animate-spin" />
-                <Gift v-else class="w-4 h-4" />
-                {{ t('home.claim_reward') }}
-              </Button>
+              <div v-else-if="quest.user_status?.completed_at && !quest.user_status?.claimed_at" class="relative -mt-1 mb-1">
+                <Button
+                  :disabled="claimingQuest === quest.id || isBatchAccepting"
+                  class="bg-green-600 hover:bg-green-700 text-white gap-1.5"
+                  @click="claimReward(quest)"
+                >
+                  <Loader2 v-if="claimingQuest === quest.id" class="w-4 h-4 animate-spin" />
+                  <Gift v-else class="w-4 h-4" />
+                  {{ t('home.claim_reward') }}
+                </Button>
+                <span
+                  v-if="claimedNoticeQuestId === quest.id"
+                  class="absolute top-full right-0 mt-1.5 whitespace-nowrap text-[11px] text-green-600 dark:text-green-400 notice-fade"
+                >
+                  {{ t('home.claim_navigated') }}
+                </span>
+              </div>
                <span v-else-if="quest.user_status?.completed_at" class="text-sm font-medium text-green-500 self-center px-2">
                 {{ t('home.completed') }}
               </span>
@@ -667,6 +674,8 @@ const searchQuery = ref('')
 // Accepting quest state
 const acceptingQuest = ref<string | null>(null)
 const claimingQuest = ref<string | null>(null)
+const claimedNoticeQuestId = ref<string | null>(null)
+let claimedNoticeTimer: ReturnType<typeof setTimeout> | null = null
 
 // Batch accept state — tracks IDs of quests being accepted in "Accept All" flow
 const acceptingAllQuestIds = ref<Set<string>>(new Set())
@@ -1418,6 +1427,10 @@ async function claimReward(quest: Quest) {
       // Navigate to the quest page in Discord client so user can claim there
       const questPath = `/quest-home#${encodeURIComponent(quest.id)}`
       await navigateDiscordSpa(questPath, questsStore.cdpPort)
+      // Show brief inline notice near the button
+      if (claimedNoticeTimer) clearTimeout(claimedNoticeTimer)
+      claimedNoticeQuestId.value = quest.id
+      claimedNoticeTimer = setTimeout(() => { claimedNoticeQuestId.value = null }, 4000)
     } else {
       // Fallback: try API claim when CDP is not available
       await claimQuestReward(quest.id)
@@ -1433,6 +1446,18 @@ async function claimReward(quest: Quest) {
 </script>
 
 <style scoped>
+/* Claim notice: fade in, stay, then fade out */
+@keyframes noticeLifecycle {
+  0% { opacity: 0; transform: translateY(-4px); }
+  10% { opacity: 1; transform: translateY(0); }
+  75% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-2px); }
+}
+
+.notice-fade {
+  animation: noticeLifecycle 4s ease forwards;
+}
+
 /* Quest list leave animation */
 .quest-list-leave-active {
   transition: opacity 0.35s ease, transform 0.35s ease;

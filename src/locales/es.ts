@@ -64,6 +64,7 @@ export default {
         orbs_updated_at: "Actualizado {time}",
         enrollment_blocked_until: "La inscripción en misiones está bloqueada hasta {time}.",
         claim_reward: "Reclamar recompensa",
+        claim_navigated: "Discord ha sido redirigido a la página de la misión. Reclama tu recompensa allí.",
         // Activity quest dialog
         activity_launch_title: "Iniciar misión de Activity",
         activity_launch_desc: "Esta misión requiere iniciar una Activity de Discord. Se realizarán los siguientes pasos:",

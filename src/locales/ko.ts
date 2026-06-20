@@ -64,6 +64,7 @@ export default {
         orbs_updated_at: "{time} 업데이트",
         enrollment_blocked_until: "퀘스트 등록이 {time}까지 차단되었습니다.",
         claim_reward: "보상 받기",
+        claim_navigated: "Discord가 퀘스트 페이지로 이동되었습니다. Discord에서 보상을 수령하세요.",
         // Activity quest dialog
         activity_launch_title: "Activity 퀘스트 시작",
         activity_launch_desc: "이 퀘스트는 Discord Activity를 실행해야 합니다. 다음 단계를 진행합니다:",

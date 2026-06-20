@@ -64,6 +64,7 @@ export default {
         orbs_updated_at: "Обновлено {time}",
         enrollment_blocked_until: "Регистрация на квесты заблокирована до {time}.",
         claim_reward: "Получить награду",
+        claim_navigated: "Discord перенаправлен на страницу квеста. Получите награду в Discord.",
         // Activity quest dialog
         activity_launch_title: "Запуск Activity-квеста",
         activity_launch_desc: "Для этого квеста нужно запустить Discord Activity. Будут выполнены следующие шаги:",
