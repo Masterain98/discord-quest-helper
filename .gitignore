@@ -48,3 +48,4 @@ discord-quest-helper-v*.zip
 *.exe
 *.msi
 *.txt
+/private-scripts/*

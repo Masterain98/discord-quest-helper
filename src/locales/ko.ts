@@ -55,7 +55,21 @@ export default {
         orbs_not_loaded: "로딩 중...",
         orbs_updated_at: "{time} 업데이트",
         enrollment_blocked_until: "퀘스트 등록이 {time}까지 차단되었습니다.",
-        claim_reward: "보상 받기"
+        claim_reward: "보상 받기",
+        // Activity quest dialog
+        activity_launch_title: "Activity 퀘스트 시작",
+        activity_launch_desc: "이 퀘스트는 Discord Activity를 실행해야 합니다. 다음 단계를 진행합니다:",
+        activity_launch_step1: "Discord에서 퀘스트 페이지로 이동",
+        activity_launch_step2: "Discord에서 'Launch Quest'를 클릭하여 Activity 열기",
+        activity_launch_step3: "Discord의 승인 안내를 완료",
+        activity_launch_step4: "여기로 돌아와 '퀘스트 시작'을 클릭하여 시작",
+        activity_launch_confirm: "Discord에서 Activity를 실행했습니다",
+        activity_launch_start: "퀘스트 시작",
+        activity_launch_cancel: "취소",
+        activity_launch_navigate: "Discord에서 퀘스트 열기",
+        activity_launch_navigate_desc: "클릭하면 Discord를 이 퀘스트 페이지로 이동하고 포커스를 Discord로 전환합니다",
+        activity_navigate_error: "Discord의 퀘스트 페이지로 이동하지 못했습니다. Discord를 직접 열고 퀘스트 페이지로 이동하세요.",
+        activity_cdp_required: "Activity 퀘스트에는 CDP 모드가 필요합니다. 설정에서 CDP를 활성화하세요."
     },
     quest: {
         progress: "진행률",
@@ -180,6 +194,13 @@ export default {
         video_config_cdp_notice: "CDP 모드에서는 이 설정이 사용되지 않습니다. CDP 모드는 Discord 내부 API를 통해 진행 상황을 전송합니다.",
         cdp_banner_connected: "CDP 연결됨 - 작업은 CDP 모드로 완료됩니다",
         cdp_banner_disconnected: "CDP 연결 안됨 - 디버그 플래그로 Discord를 시작하세요",
+        // Activity quest settings
+        activity_quest_title: "Activity 퀘스트 구성",
+        activity_quest_desc: "Activity 유형 퀘스트의 타이밍을 구성합니다. 이 퀘스트는 Discord의 Activity iframe 안에서 실행되며 CDP 모드가 필요합니다.",
+        activity_checkpoint_min: "체크포인트 최소 간격",
+        activity_checkpoint_max: "체크포인트 최대 간격",
+        activity_checkpoint_unit: "초",
+        activity_cdp_required: "Activity 퀘스트에는 CDP 모드가 필요합니다. 위의 Discord 클라이언트 통합 섹션에서 CDP를 활성화하세요.",
         debug_unlock_hint: "{steps}번 더 탭하면 개발자가 됩니다."
     },
     version: {

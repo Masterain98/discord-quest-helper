@@ -450,6 +450,56 @@
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <!-- Activity Quest Launch Dialog -->
+    <Dialog :open="showActivityLaunchDialog" @update:open="showActivityLaunchDialog = $event">
+      <DialogContent class="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{{ t('home.activity_launch_title') }}</DialogTitle>
+          <DialogDescription>
+            {{ t('home.activity_launch_desc') }}
+          </DialogDescription>
+        </DialogHeader>
+        <div class="space-y-4 py-2">
+          <div class="space-y-3 text-sm">
+            <div class="flex items-start gap-3">
+              <div class="flex-shrink-0 w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-medium">1</div>
+              <p>{{ t('home.activity_launch_step1') }}</p>
+            </div>
+            <div class="flex items-start gap-3">
+              <div class="flex-shrink-0 w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-medium">2</div>
+              <p>{{ t('home.activity_launch_step2') }}</p>
+            </div>
+            <div class="flex items-start gap-3">
+              <div class="flex-shrink-0 w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-medium">3</div>
+              <p>{{ t('home.activity_launch_step3') }}</p>
+            </div>
+            <div class="flex items-start gap-3">
+              <div class="flex-shrink-0 w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-medium">4</div>
+              <p>{{ t('home.activity_launch_step4') }}</p>
+            </div>
+          </div>
+          <div v-if="activityLaunchError" class="p-3 bg-destructive/10 text-destructive rounded-md text-sm border border-destructive/20">
+            {{ activityLaunchError }}
+          </div>
+        </div>
+        <DialogFooter class="flex gap-2">
+          <Button
+            variant="outline"
+            @click="navigateActivityQuestInDiscord"
+            :disabled="activityNavigatingToDiscord"
+          >
+            <Loader2 v-if="activityNavigatingToDiscord" class="mr-2 h-4 w-4 animate-spin" />
+            <ExternalLink v-else class="mr-2 h-4 w-4" />
+            {{ t('home.activity_launch_navigate') }}
+          </Button>
+          <Button variant="ghost" @click="cancelActivityLaunch">{{ t('home.activity_launch_cancel') }}</Button>
+          <Button @click="confirmActivityLaunch">
+            {{ t('home.activity_launch_start') }}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>
 
@@ -462,7 +512,11 @@ import { useVersionStore } from '@/stores/version'
 import QuestCard from '@/components/QuestCard.vue'
 import QuestProgress from '@/components/QuestProgress.vue'
 import type { Quest } from '@/api/tauri'
-import { acceptQuest as acceptQuestApi, claimQuestReward } from '@/api/tauri'
+import {
+  acceptQuest as acceptQuestApi,
+  claimQuestReward,
+  navigateDiscordSpa,
+} from '@/api/tauri'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -553,6 +607,13 @@ const pendingPlayQuest = ref<{ quest: Quest, secondsNeeded: number, initialProgr
 const showCustomExeDialog = ref(false)
 const customExeGameName = ref('')
 const customExeInput = ref('')
+
+// Activity quest launch dialog state
+const showActivityLaunchDialog = ref(false)
+const activityLaunchQuest = ref<Quest | null>(null)
+const activityLaunchError = ref<string | null>(null)
+const activityNavigatingToDiscord = ref(false)
+
 // localStorage key for filters
 const FILTERS_STORAGE_KEY = 'questHelper_filters'
 
@@ -974,8 +1035,16 @@ async function startQuest(quest: Quest) {
     const gameName = quest.config.messages.game_title || quest.config.messages.quest_name
     alert(`Stream quests require you to stream "${gameName}" on Discord.\n\nPlease:\n1. Start a stream in a Discord voice channel\n2. Use "Game Simulator" to simulate running the game\n3. Discord will track your streaming progress`)
   } else if (isActivityQuest) {
-    // Activity quest - needs special handling (Discord Activity)
-    alert('Activity quests require launching a Discord Activity. Please complete in Discord client.')
+    // Activity quest - requires CDP mode
+    if (!questsStore.cdpAvailable) {
+      alert(t('home.activity_cdp_required'))
+      return
+    }
+    // Show the activity launch dialog
+    activityLaunchQuest.value = quest
+    activityLaunchError.value = null
+    showActivityLaunchDialog.value = true
+    return // Wait for user to confirm in dialog
   } else {
     // Unknown type - show warning
     alert(`Unknown quest type: ${taskTypes.join(', ') || 'none'}\n\nPlease check the quest requirements in Discord.`)
@@ -1001,6 +1070,48 @@ async function acceptQuest(quest: Quest) {
   } finally {
     acceptingQuest.value = null
   }
+}
+
+// Activity quest launch dialog handlers
+async function navigateActivityQuestInDiscord() {
+  const quest = activityLaunchQuest.value
+  if (!quest || activityNavigatingToDiscord.value) return
+
+  const questPath = `/quest-home#${encodeURIComponent(quest.id)}`
+  activityLaunchError.value = null
+  activityNavigatingToDiscord.value = true
+
+  try {
+    await navigateDiscordSpa(questPath, questsStore.cdpPort)
+  } catch (error) {
+    console.error('Failed to navigate Discord to quest page:', error)
+    activityLaunchError.value = t('home.activity_navigate_error')
+  } finally {
+    activityNavigatingToDiscord.value = false
+  }
+}
+
+async function confirmActivityLaunch() {
+  const quest = activityLaunchQuest.value
+  if (!quest) return
+
+  showActivityLaunchDialog.value = false
+  startingQuestId.value = quest.id
+  try {
+    await questsStore.startActivity(quest)
+  } catch (e) {
+    alert(`Failed to start activity quest: ${e}`)
+  } finally {
+    startingQuestId.value = null
+    activityLaunchQuest.value = null
+  }
+}
+
+function cancelActivityLaunch() {
+  showActivityLaunchDialog.value = false
+  activityLaunchQuest.value = null
+  activityLaunchError.value = null
+  activityNavigatingToDiscord.value = false
 }
 
 async function claimReward(quest: Quest) {

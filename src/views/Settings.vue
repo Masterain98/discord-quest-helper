@@ -423,6 +423,52 @@ async function exportLogs() {
         </CardContent>
       </Card>
 
+      <!-- Activity Quest Configuration -->
+      <Card>
+        <CardHeader>
+          <CardTitle>{{ t('settings.activity_quest_title') }}</CardTitle>
+          <CardDescription>{{ t('settings.activity_quest_desc') }}</CardDescription>
+        </CardHeader>
+        <CardContent class="space-y-4">
+          <!-- CDP required notice -->
+          <div v-if="!questsStore.cdpAvailable" class="flex items-start gap-2.5 rounded-md border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-500">
+            <AlertTriangle class="w-4 h-4 mt-0.5 shrink-0" />
+            <span>{{ t('settings.activity_cdp_required') }}</span>
+          </div>
+          <div class="grid grid-cols-2 gap-4">
+            <div class="space-y-2">
+              <Label>{{ t('settings.activity_checkpoint_min') }}</Label>
+              <div class="flex items-center gap-2">
+                <Input
+                  type="number"
+                  v-model.number="questsStore.activityCheckpointMin"
+                  min="30"
+                  max="600"
+                  class="w-24"
+                />
+                <span class="text-sm text-muted-foreground">{{ t('settings.activity_checkpoint_unit') }}</span>
+              </div>
+              <p class="text-xs text-muted-foreground">30 - 600</p>
+            </div>
+
+            <div class="space-y-2">
+              <Label>{{ t('settings.activity_checkpoint_max') }}</Label>
+              <div class="flex items-center gap-2">
+                <Input
+                  type="number"
+                  v-model.number="questsStore.activityCheckpointMax"
+                  min="60"
+                  max="900"
+                  class="w-24"
+                />
+                <span class="text-sm text-muted-foreground">{{ t('settings.activity_checkpoint_unit') }}</span>
+              </div>
+              <p class="text-xs text-muted-foreground">60 - 900</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       <!-- Display Options -->
       <Card>
         <CardHeader>

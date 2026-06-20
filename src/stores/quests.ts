@@ -42,7 +42,7 @@ export const useQuestsStore = defineStore('quests', () => {
   const orbsBalanceError = ref<string | null>(null)
 
   const activeQuestId = ref<string | null>(null)
-  const activeQuestType = ref<'video' | 'stream' | 'game' | null>(null)
+  const activeQuestType = ref<'video' | 'stream' | 'game' | 'activity' | null>(null)
   const activeQuestProgress = ref(0)
   const activeQuestTargetDuration = ref(0)
 
@@ -101,6 +101,23 @@ export const useQuestsStore = defineStore('quests', () => {
   const savedShowOrbsBalance = localStorage.getItem(STORAGE_SHOW_ORBS_BALANCE_KEY)
   const showOrbsBalance = ref(savedShowOrbsBalance === null ? true : savedShowOrbsBalance === 'true')
 
+  // Activity quest checkpoint interval (seconds) - min/max time between checkpoints
+  const STORAGE_ACTIVITY_CHECKPOINT_MIN_KEY = 'questHelper_activityCheckpointMin'
+  const savedCheckpointMin = localStorage.getItem(STORAGE_ACTIVITY_CHECKPOINT_MIN_KEY)
+  let initialCheckpointMin = savedCheckpointMin ? parseInt(savedCheckpointMin) : 180
+  if (isNaN(initialCheckpointMin) || initialCheckpointMin < 30 || initialCheckpointMin > 600) {
+    initialCheckpointMin = 180
+  }
+  const activityCheckpointMin = ref(initialCheckpointMin)
+
+  const STORAGE_ACTIVITY_CHECKPOINT_MAX_KEY = 'questHelper_activityCheckpointMax'
+  const savedCheckpointMax = localStorage.getItem(STORAGE_ACTIVITY_CHECKPOINT_MAX_KEY)
+  let initialCheckpointMax = savedCheckpointMax ? parseInt(savedCheckpointMax) : 300
+  if (isNaN(initialCheckpointMax) || initialCheckpointMax < 60 || initialCheckpointMax > 900) {
+    initialCheckpointMax = 300
+  }
+  const activityCheckpointMax = ref(initialCheckpointMax)
+
   // Persist speed changes to localStorage
   watch(speedMultiplier, (newSpeed) => {
     localStorage.setItem(STORAGE_SPEED_KEY, String(newSpeed))
@@ -132,6 +149,23 @@ export const useQuestsStore = defineStore('quests', () => {
       fetchOrbsBalance().catch(err => {
         console.warn('Background Orbs balance fetch failed:', err)
       })
+    }
+  })
+
+  // Persist activity checkpoint interval changes
+  watch(activityCheckpointMin, (newMin) => {
+    localStorage.setItem(STORAGE_ACTIVITY_CHECKPOINT_MIN_KEY, String(newMin))
+    // Ensure max >= min
+    if (activityCheckpointMax.value < newMin) {
+      activityCheckpointMax.value = newMin
+    }
+  })
+
+  watch(activityCheckpointMax, (newMax) => {
+    localStorage.setItem(STORAGE_ACTIVITY_CHECKPOINT_MAX_KEY, String(newMax))
+    // Ensure min <= max
+    if (activityCheckpointMin.value > newMax) {
+      activityCheckpointMin.value = newMax
     }
   })
 
@@ -472,6 +506,63 @@ export const useQuestsStore = defineStore('quests', () => {
         } catch { }
         activeGameExe.value = null
       }
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function startActivity(quest: Quest) {
+    loading.value = true
+    error.value = null
+    try {
+      // Activity quests require CDP mode
+      if (!cdpAvailable.value) {
+        throw new Error('Activity quests require CDP mode. Please start Discord with --remote-debugging-port and enable CDP in Settings.')
+      }
+
+      // Get checkpoint count from task config (default 3)
+      const tasks = quest.config.task_config_v2?.tasks ?? quest.config.task_config?.tasks
+      const activityTask = tasks ? Object.values(tasks).find(t =>
+        t.type?.includes('ACTIVITY') || t.type?.includes('ACHIEVEMENT')
+      ) : null
+      const checkpointCount = activityTask?.target || 3
+
+      // Generate random checkpoint times within [min, max] range
+      const min = activityCheckpointMin.value
+      const max = activityCheckpointMax.value
+      const checkpointTimes: number[] = []
+      for (let i = 0; i < checkpointCount; i++) {
+        checkpointTimes.push(Math.floor(Math.random() * (max - min + 1)) + min)
+      }
+      const totalSeconds = checkpointTimes.reduce((sum, t) => sum + t, 0)
+
+      console.log(`Starting activity quest via CDP: ${checkpointCount} checkpoints, times=[${checkpointTimes.join(', ')}], total=${totalSeconds}s`)
+
+      const appId = quest.config.application?.id || ''
+      const appName = quest.config.application?.name || quest.config.messages?.quest_name || 'Activity'
+
+      await startCdpQuest(
+        quest.id,
+        'activity',
+        appId,
+        appName,
+        totalSeconds,
+        0,
+        cdpPort.value,
+        checkpointTimes
+      )
+
+      activeQuestId.value = quest.id
+      activeQuestType.value = 'activity'
+      activeQuestProgress.value = 0
+      activeQuestTargetDuration.value = totalSeconds
+
+      startProgressSimulation(1.0)
+      setupListeners()
+
+    } catch (e) {
+      error.value = e as string
       throw e
     } finally {
       loading.value = false
@@ -853,6 +944,8 @@ export const useQuestsStore = defineStore('quests', () => {
     orbsBalanceLoading,
     orbsBalanceError,
     showOrbsBalance,
+    activityCheckpointMin,
+    activityCheckpointMax,
     activeQuestId,
     activeQuestType,
     activeQuestProgress,
@@ -874,6 +967,7 @@ export const useQuestsStore = defineStore('quests', () => {
     startVideo,
     startStream,
     startPlay,
+    startActivity,
     stop,
     setSpeedMultiplier,
     acceptQuest: acceptQuestWrapper,

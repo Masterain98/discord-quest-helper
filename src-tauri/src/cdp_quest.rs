@@ -1889,6 +1889,353 @@ pub async fn complete_video_quest_via_cdp(
     }
 }
 
+/// Generate JS to dispatch an event on the Activity iframe's bridge.
+fn js_dispatch_message_event(event_type: &str, payload_json: &str) -> String {
+    let safe_type = serde_json::to_string(event_type).unwrap_or_else(|_| "\"\"".to_string());
+    let safe_payload = if payload_json.is_empty() {
+        "null".to_string()
+    } else {
+        payload_json.to_string()
+    };
+
+    format!(
+        r#"JSON.stringify((function() {{ try {{ var payload = {payload}; var evt = new MessageEvent("message", {{ data: {{ type: {type}, payload: payload }}, origin: window.location.origin }}); window.dispatchEvent(evt); return {{ success: true, dispatched: {type}, payload: payload }}; }} catch(e) {{ return {{ success: false, error: String(e) }}; }} }})())"#,
+        type = safe_type,
+        payload = safe_payload
+    )
+}
+
+/// Generate JS to call Discord SDK commands inside the activity iframe.
+fn js_init_activity_quest(quest_id: &str) -> String {
+    let safe_quest_id = serde_json::to_string(quest_id).unwrap_or_else(|_| "\"\"".to_string());
+    format!(r#"
+(async () => {{
+    try {{
+        const questId = {safe_quest_id};
+        const sdk = window.discordSDK;
+        if (!sdk || !sdk.commands) {{
+            return JSON.stringify({{ success: false, error: "Discord SDK not found in iframe" }});
+        }}
+
+        try {{
+            await sdk.commands.setActivity({{
+                activity: {{
+                    state: "Playing",
+                    details: "Completing Quest"
+                }}
+            }});
+        }} catch(e) {{
+            console.warn("[DQH] setActivity failed:", e);
+        }}
+
+        try {{
+            await sdk.commands.questStartTimer({{ quest_id: questId }});
+        }} catch(e) {{
+            console.warn("[DQH] questStartTimer failed:", e);
+        }}
+
+        let questInfo = null;
+        try {{
+            questInfo = await sdk.commands.getQuest();
+        }} catch(e) {{
+            console.warn("[DQH] getQuest failed:", e);
+        }}
+
+        return JSON.stringify({{
+            success: true,
+            questId: questId,
+            questInfo: questInfo
+        }});
+    }} catch (e) {{
+        return JSON.stringify({{ success: false, error: String(e) }});
+    }}
+}})()
+"#)
+}
+
+/// Generate JS to check quest completion status inside the activity iframe.
+fn js_check_activity_quest_status() -> String {
+    r#"
+(async () => {
+    try {
+        const sdk = window.discordSDK;
+        if (!sdk || !sdk.commands) {
+            return JSON.stringify({ success: false, error: "Discord SDK not found" });
+        }
+
+        const quest = await sdk.commands.getQuest();
+        if (!quest) {
+            return JSON.stringify({ success: false, error: "No quest data" });
+        }
+
+        return JSON.stringify({
+            success: true,
+            questId: quest.quest_id,
+            enrolledAt: quest.enrolled_at,
+            completedAt: quest.completed_at,
+            completed: !!quest.completed_at
+        });
+    } catch (e) {
+        return JSON.stringify({ success: false, error: String(e) });
+    }
+})()
+"#.to_string()
+}
+
+/// Generate JS to navigate Discord's SPA to a specific path.
+fn js_navigate_spa(target_path: &str) -> String {
+    let safe_path = serde_json::to_string(target_path).unwrap_or_else(|_| "\"\"".to_string());
+    format!(r#"
+(async () => {{
+    try {{
+        const targetPath = {safe_path};
+        const currentPath = () => window.location.pathname + window.location.search + window.location.hash;
+        const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+        if (currentPath() === targetPath) {{
+            return JSON.stringify({{ success: true, method: "already-there" }});
+        }}
+
+        let wpRequire = null;
+        try {{
+            if (typeof webpackChunkdiscord_app !== "undefined") {{
+                wpRequire = webpackChunkdiscord_app.push([[Symbol()], {{}}, r => r]);
+                webpackChunkdiscord_app.pop();
+            }}
+        }} catch (_) {{}}
+
+        function findRouter() {{
+            if (!wpRequire || !wpRequire.c) return null;
+            const seen = new Set();
+            const inspect = value => {{
+                if (!value || (typeof value !== "object" && typeof value !== "function") || seen.has(value)) return null;
+                seen.add(value);
+                if (typeof value.transitionTo === "function" && (
+                    typeof value.replaceWith === "function"
+                    || typeof value.navigate === "function"
+                    || typeof value.back === "function"
+                )) return value;
+                if (value.router && typeof value.router.transitionTo === "function") return value.router;
+                return null;
+            }};
+            for (const m of Object.values(wpRequire.c)) {{
+                try {{
+                    const exp = m?.exports;
+                    if (!exp) continue;
+                    const direct = inspect(exp);
+                    if (direct) return direct;
+                    for (const key of Object.keys(exp)) {{
+                        try {{
+                            const result = inspect(exp[key]);
+                            if (result) return result;
+                        }} catch(e) {{}}
+                    }}
+                }} catch(e) {{}}
+            }}
+            return null;
+        }}
+
+        const router = findRouter();
+        if (router) {{
+            const methods = ["transitionTo", "replaceWith", "navigate"];
+            for (const method of methods) {{
+                if (typeof router[method] === "function") {{
+                    try {{
+                        await Promise.resolve(router[method](targetPath));
+                        await sleep(500);
+                        if (currentPath() === targetPath) {{
+                            return JSON.stringify({{ success: true, method: "router." + method }});
+                        }}
+                    }} catch (e) {{}}
+                }}
+            }}
+        }}
+
+        try {{
+            history.pushState(history.state, "", targetPath);
+            window.dispatchEvent(new PopStateEvent("popstate", {{ state: history.state }}));
+            window.dispatchEvent(new Event("locationchange"));
+            document.dispatchEvent(new Event("locationchange"));
+            await sleep(500);
+            return JSON.stringify({{ success: true, method: "history.pushState" }});
+        }} catch (e) {{
+            return JSON.stringify({{ success: false, error: "All navigation methods failed", details: String(e) }});
+        }}
+    }} catch (e) {{
+        return JSON.stringify({{ success: false, error: String(e) }});
+    }}
+}})()
+"#)
+}
+
+/// Navigate Discord's SPA to a specific path and bring Discord to the front.
+pub async fn navigate_discord_spa(port: u16, target_path: &str) -> Result<()> {
+    use crate::logger::{log, LogCategory, LogLevel};
+
+    let js = js_navigate_spa(target_path);
+    let summary = cdp_execute_json_on_all_targets(port, &js, true, 15, "SPA navigation").await?;
+
+    log_partial_target_failures("SPA navigation", &summary.target_failures);
+
+    let parsed = summary
+        .successful_results
+        .first()
+        .context("SPA navigation returned no successful target results")?;
+
+    let success = parsed.get("success").and_then(|s| s.as_bool()).unwrap_or(false);
+    let method = parsed.get("method").and_then(|m| m.as_str()).unwrap_or("unknown");
+
+    if success {
+        log(LogLevel::Info, LogCategory::TokenExtraction,
+            &format!("Discord SPA navigation successful (method={})", method), None);
+        cdp_client::bring_primary_discord_target_to_front(port)
+            .await
+            .context("Failed to bring Discord window to front after SPA navigation")?;
+        Ok(())
+    } else {
+        let error = parsed.get("error").and_then(|e| e.as_str()).unwrap_or("Unknown error");
+        anyhow::bail!("Discord SPA navigation failed: {} (method={})", error, method)
+    }
+}
+
+/// Complete an ACHIEVEMENT_IN_ACTIVITY quest via CDP.
+pub async fn complete_activity_quest_via_cdp(
+    port: u16,
+    quest_id: String,
+    checkpoint_times: Vec<u32>,
+    app_handle: tauri::AppHandle,
+    mut cancel_rx: tokio::sync::mpsc::Receiver<()>,
+) -> Result<()> {
+    use crate::logger::{log, LogCategory, LogLevel};
+
+    let total_checkpoints = checkpoint_times.len();
+    let total_seconds: u32 = checkpoint_times.iter().sum();
+
+    if total_checkpoints == 0 || total_seconds == 0 {
+        anyhow::bail!("Activity quest requires at least one checkpoint interval");
+    }
+
+    log(LogLevel::Info, LogCategory::TokenExtraction,
+        &format!("CDP activity quest: quest_id={}, checkpoints={}, total={}s, times={:?}",
+            quest_id, total_checkpoints, total_seconds, checkpoint_times), None);
+
+    let iframe_target = cdp_client::find_activity_iframe_target(port).await
+        .context("Failed to find activity iframe target")?;
+
+    let ws_url = iframe_target.web_socket_debugger_url
+        .context("Activity iframe target has no WebSocket URL")?;
+
+    log(LogLevel::Info, LogCategory::TokenExtraction,
+        &format!("CDP activity quest: found iframe target '{}' url='{}'",
+            iframe_target.title, iframe_target.url), None);
+
+    let init_js = js_init_activity_quest(&quest_id);
+    let init_result = cdp_client::execute_js_on_target(&ws_url, &init_js, true, 15).await
+        .context("Failed to initialize activity quest via CDP")?;
+
+    log(LogLevel::Info, LogCategory::TokenExtraction,
+        &format!("CDP activity quest init result: {}", init_result), None);
+
+    let init_parsed: serde_json::Value = serde_json::from_str(&init_result).unwrap_or_default();
+    if init_parsed.get("success") != Some(&serde_json::json!(true)) {
+        let error = init_parsed.get("error")
+            .and_then(|e| e.as_str())
+            .unwrap_or("Unknown init error");
+        anyhow::bail!("Activity quest init failed: {}", error);
+    }
+
+    let _ = app_handle.emit("quest-progress", 0.0f64);
+
+    let mut elapsed_secs = 0u32;
+    for (i, checkpoint_secs) in checkpoint_times.iter().enumerate() {
+        let is_last = i == total_checkpoints - 1;
+        let checkpoint_num = i + 1;
+
+        log(LogLevel::Info, LogCategory::TokenExtraction,
+            &format!("CDP activity quest: waiting for checkpoint {}/{} ({}s)",
+                checkpoint_num, total_checkpoints, checkpoint_secs), None);
+
+        tokio::select! {
+            _ = sleep(Duration::from_secs(*checkpoint_secs as u64)) => {},
+            _ = cancel_rx.recv() => {
+                log(LogLevel::Info, LogCategory::TokenExtraction, "CDP activity quest cancelled", None);
+                let _ = app_handle.emit("quest-stopped", ());
+                return Ok(());
+            }
+        }
+
+        elapsed_secs += checkpoint_secs;
+        let progress_pct = if is_last {
+            100.0
+        } else {
+            ((elapsed_secs as f64) / (total_seconds as f64) * 100.0).min(99.0)
+        };
+        let _ = app_handle.emit("quest-progress", progress_pct);
+
+        if is_last {
+            log(LogLevel::Info, LogCategory::TokenExtraction,
+                "CDP activity quest: dispatching quest-completed event", None);
+
+            let completed_payload = serde_json::json!({
+                "quest_id": quest_id.as_str(),
+                "completed": true
+            }).to_string();
+            let completed_js = js_dispatch_message_event("quest-completed", &completed_payload);
+            match cdp_client::execute_js_on_target(&ws_url, &completed_js, false, 10).await {
+                Ok(result) => log(LogLevel::Info, LogCategory::TokenExtraction,
+                    &format!("CDP activity quest: quest-completed dispatch result: {}", result), None),
+                Err(e) => log(LogLevel::Warn, LogCategory::TokenExtraction,
+                    &format!("CDP activity quest: quest-completed dispatch failed: {}", e), None),
+            }
+        } else {
+            log(LogLevel::Info, LogCategory::TokenExtraction,
+                &format!("CDP activity quest: checkpoint {}/{} reached, dispatching progress step {} (ui={:.1}%)",
+                    checkpoint_num, total_checkpoints, checkpoint_num, progress_pct), None);
+
+            let progress_payload = checkpoint_num.to_string();
+            let progress_js = js_dispatch_message_event("quest-progress", &progress_payload);
+            match cdp_client::execute_js_on_target(&ws_url, &progress_js, false, 10).await {
+                Ok(result) => log(LogLevel::Info, LogCategory::TokenExtraction,
+                    &format!("CDP activity quest: quest-progress dispatch result: {}", result), None),
+                Err(e) => log(LogLevel::Warn, LogCategory::TokenExtraction,
+                    &format!("CDP activity quest: quest-progress dispatch failed: {}", e), None),
+            }
+        }
+    }
+
+    log(LogLevel::Info, LogCategory::TokenExtraction,
+        "CDP activity quest: verifying completion...", None);
+
+    let verify_js = js_check_activity_quest_status();
+    match cdp_client::execute_js_on_target(&ws_url, &verify_js, true, 15).await {
+        Ok(result) => {
+            let parsed: serde_json::Value = serde_json::from_str(&result).unwrap_or_default();
+            let completed = parsed.get("completed").and_then(|c| c.as_bool()).unwrap_or(false);
+            let completed_at = parsed.get("completedAt").and_then(|c| c.as_str()).unwrap_or("null");
+
+            log(LogLevel::Info, LogCategory::TokenExtraction,
+                &format!("CDP activity quest verification: completed={}, completedAt={}", completed, completed_at), None);
+
+            if completed {
+                let _ = app_handle.emit("quest-progress", 100.0f64);
+                let _ = app_handle.emit("quest-complete", ());
+            } else {
+                let _ = app_handle.emit("quest-error",
+                    "Activity quest completed but server has not confirmed. Please check quest status in Discord.".to_string());
+            }
+        }
+        Err(e) => {
+            log(LogLevel::Warn, LogCategory::TokenExtraction,
+                &format!("CDP activity quest verification failed: {}", e), None);
+            let _ = app_handle.emit("quest-progress", 100.0f64);
+            let _ = app_handle.emit("quest-complete", ());
+        }
+    }
+
+    log(LogLevel::Info, LogCategory::TokenExtraction, "CDP activity quest finished", None);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

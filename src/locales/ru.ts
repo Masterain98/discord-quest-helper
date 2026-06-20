@@ -55,7 +55,21 @@ export default {
         orbs_not_loaded: "Загрузка...",
         orbs_updated_at: "Обновлено {time}",
         enrollment_blocked_until: "Регистрация на квесты заблокирована до {time}.",
-        claim_reward: "Получить награду"
+        claim_reward: "Получить награду",
+        // Activity quest dialog
+        activity_launch_title: "Запуск Activity-квеста",
+        activity_launch_desc: "Для этого квеста нужно запустить Discord Activity. Будут выполнены следующие шаги:",
+        activity_launch_step1: "Перейти на страницу квеста в Discord",
+        activity_launch_step2: "Нажмите 'Launch Quest' в Discord, чтобы открыть Activity",
+        activity_launch_step3: "Завершите все запросы авторизации в Discord",
+        activity_launch_step4: "Вернитесь сюда и нажмите «Начать квест»",
+        activity_launch_confirm: "Я запустил Activity в Discord",
+        activity_launch_start: "Начать квест",
+        activity_launch_cancel: "Отмена",
+        activity_launch_navigate: "Открыть квест в Discord",
+        activity_launch_navigate_desc: "Нажмите, чтобы открыть страницу этого квеста в Discord и вернуть фокус в Discord",
+        activity_navigate_error: "Не удалось перейти на страницу квеста в Discord. Откройте Discord вручную и перейдите на страницу квестов.",
+        activity_cdp_required: "Для Activity-квестов требуется режим CDP. Включите CDP в настройках."
     },
     quest: {
         progress: "Прогресс",
@@ -180,6 +194,13 @@ export default {
         video_config_cdp_notice: "В режиме CDP эти настройки не используются. CDP отправляет прогресс напрямую через внутренний API Discord.",
         cdp_banner_connected: "CDP подключён — задачи будут выполняться через CDP",
         cdp_banner_disconnected: "CDP не подключён — запустите Discord с флагом отладки",
+        // Activity quest settings
+        activity_quest_title: "Настройки Activity-квестов",
+        activity_quest_desc: "Настройте тайминги для квестов типа Activity. Эти квесты выполняются внутри Activity iframe Discord и требуют режим CDP.",
+        activity_checkpoint_min: "Минимальный интервал checkpoint",
+        activity_checkpoint_max: "Максимальный интервал checkpoint",
+        activity_checkpoint_unit: "секунд",
+        activity_cdp_required: "Для Activity-квестов требуется режим CDP. Включите CDP в разделе интеграции клиента Discord выше.",
         debug_unlock_hint: "Ещё {steps} нажатий до статуса разработчика."
     },
     version: {
