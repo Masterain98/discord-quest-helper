@@ -482,12 +482,12 @@ async function exportLogs() {
                   type="number"
                   v-model.number="questsStore.activityCheckpointMin"
                   min="30"
-                  max="600"
+                  :max="questsStore.activityCheckpointMax"
                   class="w-24"
                 />
                 <span class="text-sm text-muted-foreground">{{ t('settings.activity_checkpoint_unit') }}</span>
               </div>
-              <p class="text-xs text-muted-foreground">30 - 600</p>
+              <p class="text-xs text-muted-foreground">30 - {{ questsStore.activityCheckpointMax }}</p>
             </div>
 
             <div class="space-y-2">
@@ -496,13 +496,13 @@ async function exportLogs() {
                 <Input
                   type="number"
                   v-model.number="questsStore.activityCheckpointMax"
-                  min="60"
+                  :min="questsStore.activityCheckpointMin"
                   max="900"
                   class="w-24"
                 />
                 <span class="text-sm text-muted-foreground">{{ t('settings.activity_checkpoint_unit') }}</span>
               </div>
-              <p class="text-xs text-muted-foreground">60 - 900</p>
+              <p class="text-xs text-muted-foreground">{{ questsStore.activityCheckpointMin }} - 900</p>
             </div>
           </div>
         </CardContent>
