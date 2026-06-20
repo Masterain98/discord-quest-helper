@@ -323,5 +323,10 @@ export default {
         last_load_duration: "Последняя загрузка отладки завершилась за {ms} мс",
         load_failed: "Не удалось загрузить отладочную информацию",
         fetch: "Получить"
+    },
+    user: {
+        nitro: "Nitro",
+        nitro_classic: "Nitro Classic",
+        nitro_basic: "Nitro Basic"
     }
 }

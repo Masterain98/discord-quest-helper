@@ -323,5 +323,10 @@ export default {
         last_load_duration: "上次偵錯資訊載入耗時 {ms}ms",
         load_failed: "偵錯資訊載入失敗",
         fetch: "取得"
+    },
+    user: {
+        nitro: "Nitro",
+        nitro_classic: "Nitro Classic",
+        nitro_basic: "Nitro Basic"
     }
 }

@@ -2,6 +2,7 @@
 import { computed, ref, watch, onUnmounted } from 'vue'
 import type { Quest } from '@/api/tauri'
 import { useQuestsStore } from '@/stores/quests'
+import { useAuthStore } from '@/stores/auth'
 import QuestDeveloperDetails from '@/components/QuestDeveloperDetails.vue'
 import QuestTaskBadges from '@/components/QuestTaskBadges.vue'
 import {
@@ -28,6 +29,7 @@ const props = defineProps<{
 }>()
 
 const questsStore = useQuestsStore()
+const authStore = useAuthStore()
 const copiedQuestId = ref(false)
 
 // Check if this quest is currently active
@@ -85,7 +87,7 @@ const statusClass = computed(() => {
   return 'border-sky-400/60 bg-sky-500/10 text-sky-600 dark:text-sky-400' // In Progress
 })
 
-const rewardViews = computed(() => getQuestRewardViews(props.quest))
+const rewardViews = computed(() => getQuestRewardViews(props.quest, authStore.user?.premium_type))
 const inGameRewards = computed(() => rewardViews.value.filter(reward => reward.kind === 'ingame' && reward.asset))
 const discordRewards = computed(() => rewardViews.value.filter(reward => reward.kind !== 'ingame' || !reward.asset))
 

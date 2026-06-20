@@ -324,5 +324,10 @@ export default {
         last_load_duration: "上次调试信息加载耗时 {ms}ms",
         load_failed: "调试信息加载失败",
         fetch: "获取"
+    },
+    user: {
+        nitro: "Nitro",
+        nitro_classic: "Nitro Classic",
+        nitro_basic: "Nitro Basic"
     }
 }

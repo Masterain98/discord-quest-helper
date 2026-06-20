@@ -7,6 +7,8 @@ export interface DiscordUser {
   discriminator: string
   avatar: string | null
   global_name: string | null
+  /** Nitro subscription type: 0=None, 1=Nitro Classic, 2=Nitro, 3=Nitro Basic */
+  premium_type?: number | null
 }
 
 export interface Quest {

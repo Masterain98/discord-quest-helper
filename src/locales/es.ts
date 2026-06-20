@@ -323,5 +323,10 @@ export default {
         last_load_duration: "La última carga de depuración terminó en {ms}ms",
         load_failed: "Error al cargar información de depuración",
         fetch: "Obtener"
+    },
+    user: {
+        nitro: "Nitro",
+        nitro_classic: "Nitro Classic",
+        nitro_basic: "Nitro Basic"
     }
 }

@@ -324,5 +324,10 @@ export default {
         last_load_duration: "Last debug load finished in {ms}ms",
         load_failed: "Debug load failed",
         fetch: "Fetch"
+    },
+    user: {
+        nitro: "Nitro",
+        nitro_classic: "Nitro Classic",
+        nitro_basic: "Nitro Basic"
     }
 }

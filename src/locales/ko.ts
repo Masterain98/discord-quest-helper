@@ -323,5 +323,10 @@ export default {
         last_load_duration: "마지막 디버그 로드는 {ms}ms 만에 완료되었습니다",
         load_failed: "디버그 정보 로드 실패",
         fetch: "가져오기"
+    },
+    user: {
+        nitro: "Nitro",
+        nitro_classic: "Nitro Classic",
+        nitro_basic: "Nitro Basic"
     }
 }

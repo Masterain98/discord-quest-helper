@@ -321,5 +321,10 @@ export default {
         last_load_duration: "前回のデバッグ読み込みは {ms}ms で完了しました",
         load_failed: "デバッグ情報の読み込みに失敗しました",
         fetch: "取得"
+    },
+    user: {
+        nitro: "Nitro",
+        nitro_classic: "Nitro Classic",
+        nitro_basic: "Nitro Basic"
     }
 }
