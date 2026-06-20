@@ -328,5 +328,18 @@ export default {
         nitro: "Nitro",
         nitro_classic: "Nitro Classic",
         nitro_basic: "Nitro Basic"
+    },
+    header: {
+        toggle_theme: "테마 전환",
+        change_language: "언어 변경",
+        mode: {
+            cdp_connected: "CDP 연결됨",
+            cdp_disconnected: "CDP 연결 안 됨",
+            simulate: "시뮬레이션 모드",
+            heartbeat: "하트비트 모드",
+            open_settings: "설정 열기",
+            fix_in_settings: "설정에서 수정",
+            change_mode: "모드 변경"
+        }
     }
 }

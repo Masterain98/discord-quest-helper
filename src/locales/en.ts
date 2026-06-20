@@ -329,5 +329,18 @@ export default {
         nitro: "Nitro",
         nitro_classic: "Nitro Classic",
         nitro_basic: "Nitro Basic"
+    },
+    header: {
+        toggle_theme: "Toggle theme",
+        change_language: "Change language",
+        mode: {
+            cdp_connected: "CDP Connected",
+            cdp_disconnected: "CDP Disconnected",
+            simulate: "Simulate Mode",
+            heartbeat: "Heartbeat Mode",
+            open_settings: "Open Settings",
+            fix_in_settings: "Fix in Settings",
+            change_mode: "Change Mode"
+        }
     }
 }

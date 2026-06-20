@@ -329,5 +329,18 @@ export default {
         nitro: "Nitro",
         nitro_classic: "Nitro Classic",
         nitro_basic: "Nitro Basic"
+    },
+    header: {
+        toggle_theme: "切换主题",
+        change_language: "切换语言",
+        mode: {
+            cdp_connected: "CDP 已连接",
+            cdp_disconnected: "CDP 未连接",
+            simulate: "模拟模式",
+            heartbeat: "心跳模式",
+            open_settings: "打开设置",
+            fix_in_settings: "前往设置修复",
+            change_mode: "切换模式"
+        }
     }
 }

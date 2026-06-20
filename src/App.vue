@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import UserStatus from './components/UserStatus.vue'
 import Home from './views/Home.vue'
 import GameSimulator from './views/GameSimulator.vue'
 import Settings from './views/Settings.vue'
@@ -9,11 +8,12 @@ import TitleBar from './components/TitleBar.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useAuthStore } from '@/stores/auth'
-import { useQuestsStore } from '@/stores/quests'
 import { useVersionStore } from '@/stores/version'
 import type { ExtractedAccount } from '@/api/tauri'
 import { useI18n } from 'vue-i18n'
-import { Moon, Sun, Loader2, Languages, AlertTriangle, Wifi } from 'lucide-vue-next'
+import { Moon, Sun, Loader2, Languages } from 'lucide-vue-next'
+import AccountMenu from './components/AccountMenu.vue'
+import QuestModeIndicator from './components/QuestModeIndicator.vue'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,7 +24,6 @@ import {
 const { t, locale } = useI18n()
 const currentTab = ref<'home' | 'game' | 'settings' | 'debug'>('home')
 const authStore = useAuthStore()
-const questsStore = useQuestsStore()
 
 // Theme Logic
 const isDark = ref(true) // Default to dark
@@ -166,20 +165,22 @@ onMounted(() => {
           </div>
         </div>
         
-        <div class="flex flex-col items-end gap-1 select-none">
-          <div class="flex items-center gap-2">
-           <UserStatus v-if="authStore.user" />
-           
-           <!-- Theme Toggle -->
-           <Button variant="ghost" size="icon" @click="toggleTheme" title="Toggle Theme">
-             <Moon v-if="isDark" class="w-5 h-5" />
-             <Sun v-else class="w-5 h-5" />
-           </Button>
+        <div class="flex items-center gap-2 select-none">
+          <QuestModeIndicator
+            v-if="authStore.user"
+            @open-settings="currentTab = 'settings'"
+          />
 
-           <!-- Language Toggle -->
-           <DropdownMenu>
+          <!-- Theme Toggle -->
+          <Button variant="ghost" size="icon" @click="toggleTheme" :title="t('header.toggle_theme')">
+            <Moon v-if="isDark" class="w-5 h-5" />
+            <Sun v-else class="w-5 h-5" />
+          </Button>
+
+          <!-- Language Toggle -->
+          <DropdownMenu>
             <DropdownMenuTrigger as-child>
-              <Button variant="ghost" size="icon" title="Change Language">
+              <Button variant="ghost" size="icon" :title="t('header.change_language')">
                 <Languages class="w-5 h-5" />
               </Button>
             </DropdownMenuTrigger>
@@ -193,61 +194,8 @@ onMounted(() => {
               <DropdownMenuItem @click="setLanguage('es')">Español</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          </div>
-          
-          <!-- CDP Status Banner -->
-          <div v-if="authStore.user" class="relative group">
-            <div 
-              v-if="questsStore.gameQuestMode === 'cdp' && questsStore.cdpAvailable" 
-              class="flex items-center gap-1.5 text-xs text-green-500 bg-green-500/10 border border-green-500/20 px-2.5 py-1 rounded-md cursor-pointer hover:bg-green-500/15 transition-colors"
-              @click="currentTab = 'settings'"
-            >
-              <Wifi class="w-3.5 h-3.5 shrink-0" />
-              <span>{{ t('settings.cdp_banner_connected') }}</span>
-            </div>
-            <div 
-              v-else-if="questsStore.gameQuestMode === 'cdp' && !questsStore.cdpAvailable" 
-              class="flex items-center gap-1.5 text-xs text-amber-500 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-md cursor-pointer hover:bg-amber-500/15 transition-colors"
-              @click="currentTab = 'settings'"
-            >
-              <AlertTriangle class="w-3.5 h-3.5 shrink-0" />
-              <span>{{ t('settings.cdp_banner_disconnected') }}</span>
-            </div>
-            <div 
-              v-else
-              class="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/40 border border-border px-2.5 py-1 rounded-md cursor-pointer hover:bg-muted/60 transition-colors"
-              @click="currentTab = 'settings'"
-            >
-              <span>{{ questsStore.gameQuestMode === 'heartbeat' ? t('settings.mode_heartbeat') : t('settings.mode_simulate') }}</span>
-            </div>
-            <!-- Hover tooltip -->
-            <div class="absolute right-0 top-full mt-2 z-50 hidden group-hover:block w-64 rounded-md border border-border bg-popover text-popover-foreground shadow-md p-3 text-xs pointer-events-none">
-              <template v-if="questsStore.gameQuestMode === 'cdp'">
-                <p class="font-semibold mb-1.5">{{ t('settings.tooltip_cdp_title') }}</p>
-                <ul class="space-y-1 list-disc list-inside text-muted-foreground">
-                  <li>{{ t('settings.tooltip_cdp_1') }}</li>
-                  <li>{{ t('settings.tooltip_cdp_2') }}</li>
-                  <li>{{ t('settings.tooltip_cdp_3') }}</li>
-                </ul>
-              </template>
-              <template v-else-if="questsStore.gameQuestMode === 'simulate'">
-                <p class="font-semibold mb-1.5">{{ t('settings.tooltip_simulate_title') }}</p>
-                <ul class="space-y-1 list-disc list-inside text-muted-foreground">
-                  <li>{{ t('settings.tooltip_simulate_1') }}</li>
-                  <li>{{ t('settings.tooltip_simulate_2') }}</li>
-                  <li>{{ t('settings.tooltip_simulate_3') }}</li>
-                </ul>
-              </template>
-              <template v-else>
-                <p class="font-semibold mb-1.5">{{ t('settings.tooltip_heartbeat_title') }}</p>
-                <ul class="space-y-1 list-disc list-inside text-muted-foreground">
-                  <li>{{ t('settings.tooltip_heartbeat_1') }}</li>
-                  <li>{{ t('settings.tooltip_heartbeat_2') }}</li>
-                  <li>{{ t('settings.tooltip_heartbeat_3') }}</li>
-                </ul>
-              </template>
-            </div>
-          </div>
+
+          <AccountMenu v-if="authStore.user" @logout="authStore.logout" />
         </div>
       </header>
       
