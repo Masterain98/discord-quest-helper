@@ -39,6 +39,7 @@ const icon = computed(() => {
     case 'claim': return Gift
     case 'run': return PlayCircle
     case 'accept': return CheckCircle2
+    case 'done': return CheckCircle2
     case 'error': return AlertCircle
     default: return RefreshCw
   }
@@ -50,6 +51,7 @@ const toneClass = computed(() => {
     case 'active':
     case 'queue': return 'border-violet-500/30 bg-violet-500/10'
     case 'claim': return 'border-emerald-500/30 bg-emerald-500/10'
+    case 'done': return 'border-emerald-500/30 bg-emerald-500/10'
     case 'error': return 'border-destructive/30 bg-destructive/10'
     default: return 'border-primary/30 bg-primary/10'
   }
