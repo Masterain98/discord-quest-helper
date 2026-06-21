@@ -8,13 +8,16 @@ import TitleBar from './components/TitleBar.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useAuthStore } from '@/stores/auth'
+import { useQuestsStore } from '@/stores/quests'
 import { useVersionStore } from '@/stores/version'
 import type { ExtractedAccount } from '@/api/tauri'
 import { useI18n } from 'vue-i18n'
-import { Moon, Sun, Loader2, Languages } from 'lucide-vue-next'
+import { Moon, Sun, Loader2, Languages, RotateCw } from 'lucide-vue-next'
 import AccountMenu from './components/AccountMenu.vue'
 import QuestModeIndicator from './components/QuestModeIndicator.vue'
 import Toaster from './components/Toaster.vue'
+import { cn } from '@/lib/utils'
+import { persistSettingsSection } from '@/composables/useSettingsNavigation'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,6 +28,7 @@ import {
 const { t, locale } = useI18n()
 const currentTab = ref<'home' | 'game' | 'settings' | 'debug'>('home')
 const authStore = useAuthStore()
+const questsStore = useQuestsStore()
 
 // Theme Logic
 const isDark = ref(true) // Default to dark
@@ -160,6 +164,11 @@ function handleAppNavigate(e: Event) {
     currentTab.value = tab
   }
 }
+
+function openSettingsSection(section: 'discord_integration' | 'quest_behavior' | 'advanced' | 'account') {
+  persistSettingsSection(section)
+  currentTab.value = 'settings'
+}
 </script>
 
 <template>
@@ -184,7 +193,7 @@ function handleAppNavigate(e: Event) {
         <div class="flex items-center gap-2 select-none">
           <QuestModeIndicator
             v-if="authStore.user"
-            @open-settings="currentTab = 'settings'"
+            @open-settings="openSettingsSection('discord_integration')"
           />
 
           <!-- Theme Toggle -->
@@ -215,32 +224,55 @@ function handleAppNavigate(e: Event) {
         </div>
       </header>
       
-      <div class="mb-8 flex gap-2 border-b border-border pb-4 select-none">
-        <Button 
-          :variant="currentTab === 'home' ? 'secondary' : 'ghost'"
-          @click="currentTab = 'home'"
+      <div class="mb-8 flex items-center gap-2 border-b border-border pb-4 select-none">
+        <div class="flex gap-2">
+          <Button
+            :variant="currentTab === 'home' ? 'secondary' : 'ghost'"
+            @click="currentTab = 'home'"
+          >
+            {{ t('nav.home') }}
+          </Button>
+           <Button
+            :variant="currentTab === 'game' ? 'secondary' : 'ghost'"
+            @click="currentTab = 'game'"
+          >
+            {{ t('nav.game_simulator') }}
+          </Button>
+           <Button
+            :variant="currentTab === 'settings' ? 'secondary' : 'ghost'"
+            @click="currentTab = 'settings'"
+          >
+            {{ t('nav.settings') }}
+          </Button>
+          <Button
+            v-if="debugModeEnabled"
+            :variant="currentTab === 'debug' ? 'secondary' : 'ghost'"
+            @click="currentTab = 'debug'"
+          >
+            {{ t('nav.debug') }}
+          </Button>
+        </div>
+
+        <!-- Orbs Balance (compact, right-aligned) -->
+        <div
+          v-if="authStore.user && questsStore.showOrbsBalance"
+          class="ml-auto flex shrink-0 items-center gap-1.5 rounded-md border bg-card px-2.5 py-1.5 text-xs"
         >
-          {{ t('nav.home') }}
-        </Button>
-         <Button 
-          :variant="currentTab === 'game' ? 'secondary' : 'ghost'"
-          @click="currentTab = 'game'"
-        >
-          {{ t('nav.game_simulator') }}
-        </Button>
-         <Button 
-          :variant="currentTab === 'settings' ? 'secondary' : 'ghost'"
-          @click="currentTab = 'settings'"
-        >
-          {{ t('nav.settings') }}
-        </Button>
-        <Button 
-          v-if="debugModeEnabled"
-          :variant="currentTab === 'debug' ? 'secondary' : 'ghost'"
-          @click="currentTab = 'debug'"
-        >
-          {{ t('nav.debug') }}
-        </Button>
+          <img src="/icons/orbs.png" alt="" class="h-4 w-4 object-contain" />
+          <span class="text-muted-foreground">{{ t('home.current_orbs') }}:</span>
+          <span class="font-semibold">
+            {{ questsStore.orbsBalance == null ? '—' : questsStore.orbsBalance.toLocaleString() }}
+          </span>
+          <Button
+            variant="ghost"
+            size="icon"
+            class="h-5 w-5"
+            @click="questsStore.fetchOrbsBalance(true)"
+            :disabled="questsStore.orbsBalanceLoading || !authStore.user"
+          >
+            <RotateCw :class="cn('h-3 w-3', questsStore.orbsBalanceLoading && 'animate-spin')" />
+          </Button>
+        </div>
       </div>
       
       <main class="fade-in flex-1">

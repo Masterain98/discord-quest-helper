@@ -22,245 +22,173 @@
       </Button>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <div class="lg:col-span-2 space-y-6">
-        <!-- Toolbar -->
-        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <h2 class="text-2xl font-bold tracking-tight select-none">{{ t('home.available_quests') }}</h2>
-          <div class="flex gap-2 w-full sm:w-auto">
-            <Button 
-              variant="outline"
-              @click="showFilters = !showFilters"
-              :class="cn('gap-2 flex-1 sm:flex-none', hasActiveFilters && 'border-primary text-primary')"
-            >
-              <Filter class="w-4 h-4" />
-              <span>{{ t('home.filters') }}</span>
-              <Badge v-if="activeFilterCount > 0" variant="secondary" class="ml-1 h-5 px-1.5">
-                {{ activeFilterCount }}
-              </Badge>
-            </Button>
-            <Button
-              @click="refreshQuests"
-              :disabled="questsStore.loading || !authStore.user || isBatchAccepting"
-              class="gap-2 flex-1 sm:flex-none"
-            >
-              <RotateCw :class="cn('w-4 h-4', questsStore.loading && 'animate-spin')" />
-              {{ t('general.refresh') }}
-            </Button>
-          </div>
+    <div class="space-y-6">
+      <div class="space-y-6">
+        <div class="space-y-2">
+          <h2 class="text-2xl font-bold tracking-tight select-none">{{ t('home.dashboard_title') }}</h2>
+          <p class="text-sm text-muted-foreground">{{ t('home.dashboard_desc') }}</p>
         </div>
 
-        <div
-          v-if="
-            questsStore.questEnrollmentBlockedUntil &&
-            new Date(questsStore.questEnrollmentBlockedUntil).getTime() > Date.now()
-          "
-          class="flex items-center gap-2 rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-700 dark:text-yellow-300"
-        >
-          <AlertCircle class="h-4 w-4 shrink-0" />
-          <span>{{ t('home.enrollment_blocked_until', { time: formatBlockedUntil(questsStore.questEnrollmentBlockedUntil) }) }}</span>
-        </div>
+        <HomeStatusSummary
+          :to-accept="questBuckets.toAccept.length"
+          :ready-to-run="questBuckets.readyToRun.length"
+          :running="runningCount"
+          :ready-to-claim="questBuckets.readyToClaim.length"
+          :attention-needed="questBuckets.attentionNeeded.length"
+          @select="selectPreset"
+        />
 
-        <!-- Filter Panel -->
+        <NextBestActionPanel
+          :state="nextBestAction.state"
+          :title="nextBestAction.title"
+          :description="nextBestAction.description"
+          :primary-label="nextBestAction.primaryLabel"
+          :secondary-label="nextBestAction.secondaryLabel"
+          :primary-disabled="nextBestAction.primaryDisabled"
+          :secondary-disabled="nextBestAction.secondaryDisabled"
+          :busy="nextActionBusy"
+          @primary="handleNextPrimary"
+          @secondary="handleNextSecondary"
+        />
+
+        <QuestViewTabs
+          :selected="selectedPreset"
+          :counts="viewCounts"
+          @update:selected="selectPreset"
+        />
+
+        <QuestListHeader
+          v-model:query="searchQuery"
+          :result-count="filteredQuests.length"
+          :active-filter-count="activeFilterCount"
+          :show-filters="showFilters"
+          :loading="questsStore.loading"
+          :refresh-disabled="questsStore.loading || !authStore.user || isBatchAccepting"
+          :batch-disabled="isBatchAccepting || questsStore.isQueueRunning"
+          :accept-count="unenrolledCount"
+          :complete-all-count="enrolledAllCount"
+          :video-count="enrolledVideoCount"
+          :game-count="enrolledGameCount"
+          @toggle-filters="showFilters = !showFilters"
+          @refresh="refreshQuests"
+          @accept-all="handleAcceptAll"
+          @complete-all="handleCompleteAllTasks"
+          @complete-video="handleCompleteAllVideo"
+          @complete-game="handleCompleteAllGame"
+        />
+
         <Card v-if="showFilters" class="animate-in slide-in-from-top-2 duration-200">
           <CardHeader class="pb-3">
-            <div class="flex justify-between items-center">
-              <CardTitle class="text-base">{{ t('home.filters') }}</CardTitle>
-              <Button 
-                variant="ghost" 
-                size="sm" 
+            <div class="flex justify-between items-center gap-3">
+              <CardTitle class="text-base">{{ t('home.advanced_filters') }}</CardTitle>
+              <Button
+                variant="ghost"
+                size="sm"
                 @click="clearFilters"
                 :disabled="!hasActiveFilters"
                 class="h-8 text-xs text-muted-foreground hover:text-foreground"
               >
-                {{ t('general.clear_all') }}
+                {{ t('home.reset_advanced_filters') }}
               </Button>
             </div>
           </CardHeader>
-          <CardContent class="space-y-4">
-            <!-- Search Input -->
-            <div class="relative">
-              <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input 
-                v-model="searchQuery" 
-                type="text" 
-                :placeholder="t('home.search_placeholder')" 
-                class="pl-9"
-              />
-            </div>
-            
+          <CardContent class="space-y-5">
             <div class="grid gap-6 md:grid-cols-2">
-              <!-- Status Filters -->
-              <div class="space-y-3">
-                <h4 class="text-sm font-medium text-muted-foreground">{{ t('filter.status') }}</h4>
-                <div class="flex flex-wrap gap-2">
-                  <button 
-                    v-for="(label, key) in statusFilterOptions"
-                    :key="key"
-                    @click="filters.status[key] = !filters.status[key]"
-                    :class="cn(
-                      'inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full border transition-colors',
-                      filters.status[key] 
-                        ? 'border-green-600 text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-950/30' 
-                        : 'border-border bg-background hover:bg-accent hover:text-accent-foreground'
-                    )"
-                  >
-                    <Check v-if="filters.status[key]" class="h-3.5 w-3.5" />
-                    {{ label }}
-                  </button>
-                </div>
-              </div>
-
-              <!-- Type Filters -->
               <div class="space-y-3">
                 <h4 class="text-sm font-medium text-muted-foreground">{{ t('filter.type') }}</h4>
                 <div class="flex flex-wrap gap-2">
-                  <button 
-                    @click="filters.questType.watch = !filters.questType.watch"
+                  <button
+                    @click="advancedFilters.types.video = !advancedFilters.types.video"
                     :class="cn(
-                      'inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full border transition-colors',
-                      filters.questType.watch 
-                        ? 'border-green-600 text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-950/30' 
+                      'inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium transition-colors',
+                      advancedFilters.types.video
+                        ? 'border-primary bg-primary/10 text-primary'
                         : 'border-border bg-background hover:bg-accent hover:text-accent-foreground'
                     )"
                   >
-                    <Check v-if="filters.questType.watch" class="h-3.5 w-3.5" />
-                    🎬 {{ t('filter.watch') }}
+                    🎬 {{ t('filter.video') }}
                   </button>
-                  <button 
-                    @click="filters.questType.play = !filters.questType.play"
+                  <button
+                    @click="advancedFilters.types.play = !advancedFilters.types.play"
                     :class="cn(
-                      'inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full border transition-colors',
-                      filters.questType.play 
-                        ? 'border-green-600 text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-950/30' 
+                      'inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium transition-colors',
+                      advancedFilters.types.play
+                        ? 'border-primary bg-primary/10 text-primary'
                         : 'border-border bg-background hover:bg-accent hover:text-accent-foreground'
                     )"
                   >
-                    <Check v-if="filters.questType.play" class="h-3.5 w-3.5" />
                     🎮 {{ t('filter.play') }}
                   </button>
-                  <button 
-                    @click="filters.questType.activity = !filters.questType.activity"
+                  <button
+                    @click="advancedFilters.types.activity = !advancedFilters.types.activity"
                     :class="cn(
-                      'inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full border transition-colors',
-                      filters.questType.activity 
-                        ? 'border-green-600 text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-950/30' 
+                      'inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium transition-colors',
+                      advancedFilters.types.activity
+                        ? 'border-primary bg-primary/10 text-primary'
                         : 'border-border bg-background hover:bg-accent hover:text-accent-foreground'
                     )"
                   >
-                    <Check v-if="filters.questType.activity" class="h-3.5 w-3.5" />
                     🎯 {{ t('filter.activity') }}
                   </button>
                 </div>
               </div>
 
-              <!-- Reward Filters -->
-              <div class="space-y-3 md:col-span-2">
+              <div class="space-y-3">
                 <h4 class="text-sm font-medium text-muted-foreground">{{ t('filter.reward') }}</h4>
                 <div class="flex flex-wrap gap-2">
-                  <button 
-                    @click="filters.rewards.orbs = !filters.rewards.orbs"
+                  <button
+                    @click="advancedFilters.rewards.orbs = !advancedFilters.rewards.orbs"
                     :class="cn(
-                      'inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full border transition-colors',
-                      filters.rewards.orbs 
-                        ? 'border-green-600 text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-950/30' 
+                      'inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium transition-colors',
+                      advancedFilters.rewards.orbs
+                        ? 'border-primary bg-primary/10 text-primary'
                         : 'border-border bg-background hover:bg-accent hover:text-accent-foreground'
                     )"
                   >
-                    <Check v-if="filters.rewards.orbs" class="h-3.5 w-3.5" />
                     💎 {{ t('filter.orbs') }}
                   </button>
-                  <button 
-                    @click="filters.rewards.avatarDecoration = !filters.rewards.avatarDecoration"
+                  <button
+                    @click="advancedFilters.rewards.avatarDecoration = !advancedFilters.rewards.avatarDecoration"
                     :class="cn(
-                      'inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full border transition-colors',
-                      filters.rewards.avatarDecoration 
-                        ? 'border-green-600 text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-950/30' 
+                      'inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium transition-colors',
+                      advancedFilters.rewards.avatarDecoration
+                        ? 'border-primary bg-primary/10 text-primary'
                         : 'border-border bg-background hover:bg-accent hover:text-accent-foreground'
                     )"
                   >
-                    <Check v-if="filters.rewards.avatarDecoration" class="h-3.5 w-3.5" />
                     🌟 {{ t('filter.decoration') }}
                   </button>
-                  <button 
-                    @click="filters.rewards.ingame = !filters.rewards.ingame"
+                  <button
+                    @click="advancedFilters.rewards.ingame = !advancedFilters.rewards.ingame"
                     :class="cn(
-                      'inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full border transition-colors',
-                      filters.rewards.ingame 
-                        ? 'border-green-600 text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-950/30' 
+                      'inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium transition-colors',
+                      advancedFilters.rewards.ingame
+                        ? 'border-primary bg-primary/10 text-primary'
                         : 'border-border bg-background hover:bg-accent hover:text-accent-foreground'
                     )"
                   >
-                    <Check v-if="filters.rewards.ingame" class="h-3.5 w-3.5" />
                     🎁 {{ t('filter.in_game') }}
                   </button>
                 </div>
               </div>
             </div>
+
+            <label class="flex items-start gap-3 rounded-lg border border-border p-3">
+              <input
+                v-model="advancedFilters.includeExpired"
+                type="checkbox"
+                class="mt-1 h-4 w-4 accent-primary"
+              />
+              <span class="min-w-0 flex-1">
+                <span class="text-sm font-medium">{{ t('home.include_expired') }}</span>
+                <span class="mt-1 block text-xs text-muted-foreground">
+                  {{ t('home.include_expired_desc') }}
+                </span>
+              </span>
+            </label>
           </CardContent>
         </Card>
-        
-        <!-- Actions & Queue Status -->
-        <div class="flex flex-wrap gap-3 items-center" v-if="!questsStore.loading">
-          <Button
-            v-if="unenrolledCount > 0"
-            @click="handleAcceptAll"
-            :disabled="isBatchAccepting"
-            class="bg-green-600 hover:bg-green-700 text-white gap-2"
-          >
-            <Check class="w-4 h-4" />
-            {{ t('home.accept_all') }} ({{ unenrolledCount }})
-          </Button>
 
-          <div
-            v-if="hasAnyCompleteOption && !questsStore.isQueueRunning"
-            class="flex flex-wrap gap-2 items-center p-1.5 rounded-xl bg-muted/50 border border-border/60 shadow-sm"
-          >
-            <Button
-              v-if="enrolledAllCount > 0"
-              @click="handleCompleteAllTasks"
-              :disabled="isBatchAccepting"
-              variant="default"
-              class="gap-2 shadow-sm"
-            >
-              <Sparkles class="w-4 h-4" />
-              {{ t('home.complete_all_tasks') }} ({{ enrolledAllCount }})
-            </Button>
-
-            <Button
-              v-if="enrolledVideoCount > 0"
-              @click="handleCompleteAllVideo"
-              :disabled="isBatchAccepting"
-              variant="secondary"
-              class="gap-2"
-            >
-              <MonitorPlay class="w-4 h-4" />
-              {{ t('home.complete_all_video') }} ({{ enrolledVideoCount }})
-            </Button>
-
-            <Button
-              v-if="enrolledGameCount > 0"
-              @click="handleCompleteAllGame"
-              :disabled="isBatchAccepting"
-              variant="secondary"
-              class="gap-2"
-            >
-              <Gamepad2 class="w-4 h-4" />
-              {{ t('home.complete_all_game') }} ({{ enrolledGameCount }})
-            </Button>
-          </div>
-
-          <div v-if="questsStore.isQueueRunning" class="flex items-center gap-3 px-4 py-2 bg-secondary/50 rounded-md text-sm border border-secondary">
-             <span class="relative flex h-2.5 w-2.5">
-              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
-              <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-primary"></span>
-            </span>
-             <span class="text-muted-foreground">{{ t('home.processing_queue') }}: {{ questsStore.questQueue.length }} {{ t('home.remaining') }}...</span>
-             <Button variant="link" class="h-auto p-0 text-destructive" @click="questsStore.clearQueue">{{ t('general.stop') }}</Button>
-          </div>
-        </div>
-        
-        <!-- Content Area -->
         <div v-if="!authStore.user" class="text-center py-12">
            <p class="text-muted-foreground">{{ t('general.login_prompt') }}</p>
         </div>
@@ -269,98 +197,101 @@
           {{ t('general.loading') }}
         </div>
         
-        <div v-else-if="questsStore.error" class="p-4 rounded-md bg-destructive/10 text-destructive flex gap-2 items-center">
-          <AlertCircle class="w-4 h-4" />
-          Error: {{ questsStore.error }}
-        </div>
-        
-        <div v-else-if="filteredQuests.length === 0" class="text-center py-12">
-          <p class="text-muted-foreground">{{ t('home.no_quests_match') }}</p>
-          <Button variant="link" @click="clearFilters" v-if="hasActiveFilters">{{ t('home.clear_filters') }}</Button>
+        <div v-else-if="filteredQuests.length === 0" class="rounded-lg border border-dashed p-8 text-center">
+          <p class="font-medium">{{ emptyStateText }}</p>
+          <div class="mt-3 flex justify-center gap-2">
+            <Button v-if="hasActiveFilters" variant="outline" @click="clearFilters">
+              {{ t('home.reset_filters') }}
+            </Button>
+            <Button v-else-if="selectedPreset !== 'recommended'" variant="outline" @click="backToRecommended">
+              {{ t('home.back_to_recommended') }}
+            </Button>
+            <Button variant="ghost" @click="refreshQuests">
+              {{ t('general.refresh') }}
+            </Button>
+          </div>
         </div>
 
         <template v-else>
-        <!-- Pending Claim Reminder -->
-        <div
-          v-if="showPendingClaimBanner"
-          class="flex items-center justify-between gap-3 p-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10"
-        >
-          <div class="flex items-center gap-2 text-sm text-yellow-700 dark:text-yellow-300">
-            <Gift class="w-4 h-4 shrink-0" />
-            <span>{{ t('home.pending_claim_reminder', { count: pendingClaimCount }) }}</span>
-          </div>
-          <Button size="sm" variant="outline" class="shrink-0 border-yellow-500/40 text-yellow-700 dark:text-yellow-300 hover:bg-yellow-500/10" @click="showPendingClaimFilter">
-            {{ t('home.view_pending_claim') }}
-          </Button>
-        </div>
-
-        <TransitionGroup name="quest-list" tag="div" class="space-y-4">
-          <QuestCard 
-            v-for="quest in filteredQuests" 
-            :key="quest.id"
-            :quest="quest"
-            :quest-type="getQuestType(quest)"
-            :show-developer-details="props.debugModeEnabled"
+          <div
+            v-if="showPendingClaimBanner"
+            class="flex items-center justify-between gap-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3"
           >
-            <template #actions>
-              <Button
-                v-if="!quest.user_status?.enrolled_at"
-                @click="acceptQuest(quest)"
-                :disabled="acceptingQuest === quest.id || acceptingAllQuestIds.has(quest.id)"
-              >
-                {{ (acceptingQuest === quest.id || acceptingAllQuestIds.has(quest.id)) ? t('home.accepting') : t('home.accept_quest') }}
-              </Button>
+            <div class="flex items-center gap-2 text-sm text-yellow-700 dark:text-yellow-300">
+              <Gift class="w-4 h-4 shrink-0" />
+              <span>{{ t('home.pending_claim_reminder', { count: pendingClaimCount }) }}</span>
+            </div>
+            <Button size="sm" variant="outline" class="shrink-0 border-yellow-500/40 text-yellow-700 hover:bg-yellow-500/10 dark:text-yellow-300" @click="showPendingClaimFilter">
+              {{ t('home.view_pending_claim') }}
+            </Button>
+          </div>
 
-              <Button
-                v-else-if="questsStore.activeQuestId === quest.id"
-                @click="questsStore.stop()"
-                variant="destructive"
-                :disabled="questsStore.stopping || isBatchAccepting"
-              >
-                <Loader2 v-if="questsStore.stopping" class="w-4 h-4 mr-2 animate-spin" />
-                {{ t('home.stop') }}
-              </Button>
-
-              <Button
-                v-else-if="!quest.user_status?.completed_at && canStartQuest(quest)"
-                @click="startQuest(quest)"
-                variant="default"
-                :disabled="questsStore.activeQuestId !== null || startingQuestId !== null || isBatchAccepting"
-              >
-                <Loader2 v-if="startingQuestId === quest.id" class="w-4 h-4 mr-2 animate-spin" />
-                {{ getStartButtonText(quest) }}
-              </Button>
-
-              <div v-else-if="quest.user_status?.completed_at && !quest.user_status?.claimed_at" class="relative -mt-1 mb-1">
+          <TransitionGroup name="quest-list" tag="div" class="space-y-3">
+            <QuestCard
+              v-for="quest in filteredQuests"
+              :key="quest.id"
+              :quest="quest"
+              :quest-type="getQuestType(quest)"
+              :show-developer-details="props.debugModeEnabled"
+              density="compact"
+            >
+              <template #actions>
                 <Button
-                  :disabled="claimingQuest === quest.id || isBatchAccepting"
-                  class="bg-green-600 hover:bg-green-700 text-white gap-1.5"
-                  @click="claimReward(quest)"
+                  v-if="!quest.user_status?.enrolled_at"
+                  @click="acceptQuest(quest)"
+                  :disabled="acceptingQuest === quest.id || acceptingAllQuestIds.has(quest.id)"
                 >
-                  <Loader2 v-if="claimingQuest === quest.id" class="w-4 h-4 animate-spin" />
-                  <Gift v-else class="w-4 h-4" />
-                  {{ t('home.claim_reward') }}
+                  {{ (acceptingQuest === quest.id || acceptingAllQuestIds.has(quest.id)) ? t('home.accepting') : t('home.accept_quest') }}
                 </Button>
-                <span
-                  v-if="claimedNoticeQuestId === quest.id"
-                  class="absolute top-full right-0 mt-1.5 whitespace-nowrap text-[11px] text-green-600 dark:text-green-400 notice-fade"
+
+                <Button
+                  v-else-if="questsStore.activeQuestId === quest.id"
+                  @click="questsStore.stop()"
+                  variant="destructive"
+                  :disabled="questsStore.stopping || isBatchAccepting"
                 >
-                  {{ t('home.claim_navigated') }}
+                  <Loader2 v-if="questsStore.stopping" class="w-4 h-4 mr-2 animate-spin" />
+                  {{ t('home.stop') }}
+                </Button>
+
+                <Button
+                  v-else-if="!quest.user_status?.completed_at && canStartQuest(quest)"
+                  @click="startQuest(quest)"
+                  variant="default"
+                  :disabled="questsStore.activeQuestId !== null || startingQuestId !== null || isBatchAccepting"
+                >
+                  <Loader2 v-if="startingQuestId === quest.id" class="w-4 h-4 mr-2 animate-spin" />
+                  {{ getStartButtonText(quest) }}
+                </Button>
+
+                <div v-else-if="quest.user_status?.completed_at && !quest.user_status?.claimed_at" class="relative -mt-1 mb-1">
+                  <Button
+                    :disabled="claimingQuest === quest.id || isBatchAccepting"
+                    class="bg-green-600 hover:bg-green-700 text-white gap-1.5"
+                    @click="claimReward(quest)"
+                  >
+                    <Loader2 v-if="claimingQuest === quest.id" class="w-4 h-4 animate-spin" />
+                    <Gift v-else class="w-4 h-4" />
+                    {{ t('home.claim_reward') }}
+                  </Button>
+                  <span
+                    v-if="claimedNoticeQuestId === quest.id"
+                    class="absolute top-full right-0 mt-1.5 whitespace-nowrap text-[11px] text-green-600 dark:text-green-400 notice-fade"
+                  >
+                    {{ t('home.claim_navigated') }}
+                  </span>
+                </div>
+                 <span v-else-if="quest.user_status?.completed_at" class="self-center px-2 text-sm font-medium text-green-500">
+                  {{ t('home.completed') }}
                 </span>
-              </div>
-               <span v-else-if="quest.user_status?.completed_at" class="text-sm font-medium text-green-500 self-center px-2">
-                {{ t('home.completed') }}
-              </span>
-            </template>
-          </QuestCard>
-        </TransitionGroup>
+              </template>
+            </QuestCard>
+          </TransitionGroup>
         </template>
       </div>
-      
-      <div class="lg:col-span-1">
-        <QuestProgress />
-      </div>
     </div>
+
+    <QuestProgress />
 
     <!-- Accept All Confirmation Dialog -->
     <AlertDialog :open="showAcceptAllDialog" @update:open="showAcceptAllDialog = $event">
@@ -403,7 +334,8 @@
                       {{ getExpiryText(q.config.expires_at) }}
                     </span>
                     <span class="text-xs text-muted-foreground col-span-2 truncate">
-                      {{ q.config.messages.game_title }} • ID: {{ q.id }}
+                      {{ q.config.messages.game_title }}
+                      <template v-if="props.debugModeEnabled"> • ID: {{ q.id }}</template>
                     </span>
                  </div>
               </div>
@@ -548,7 +480,8 @@
                       {{ getExpiryText(q.config.expires_at) }}
                     </span>
                     <span class="text-xs text-muted-foreground col-span-2 truncate">
-                      {{ q.config.messages.game_title }} • {{ getQuestType(q) === 'video' ? t('filter.video') : t('filter.play') }} • ID: {{ q.id }}
+                      {{ q.config.messages.game_title }} • {{ getQuestType(q) === 'video' ? t('filter.video') : t('filter.play') }}
+                      <template v-if="props.debugModeEnabled"> • ID: {{ q.id }}</template>
                     </span>
                  </div>
               </div>
@@ -596,6 +529,10 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useQuestsStore } from '@/stores/quests'
 import { useVersionStore } from '@/stores/version'
+import HomeStatusSummary from '@/components/home/HomeStatusSummary.vue'
+import NextBestActionPanel, { type NextBestActionState } from '@/components/home/NextBestActionPanel.vue'
+import QuestListHeader from '@/components/home/QuestListHeader.vue'
+import QuestViewTabs from '@/components/home/QuestViewTabs.vue'
 import QuestCard from '@/components/QuestCard.vue'
 import QuestProgress from '@/components/QuestProgress.vue'
 import type { Quest } from '@/api/tauri'
@@ -606,7 +543,6 @@ import {
 } from '@/api/tauri'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -626,7 +562,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
-import { RotateCw, Filter, AlertCircle, Loader2, ArrowUpCircle, ExternalLink, Check, Search, Gift, MonitorPlay, Gamepad2, Sparkles } from 'lucide-vue-next'
+import { ArrowUpCircle, ExternalLink, Gift, Loader2 } from 'lucide-vue-next'
 import { Input } from '@/components/ui/input'
 import { useI18n } from 'vue-i18n'
 import { open } from '@tauri-apps/plugin-shell'
@@ -643,6 +579,14 @@ import {
 import { getQuestRewardCategory } from '@/utils/questRewards'
 import { useToastStore } from '@/stores/toast'
 import { navigateToTab } from '@/utils/navigate'
+import {
+  emptyAdvancedQuestFilters,
+  getRecommendedQuests,
+  isQuestExpired,
+  type AdvancedQuestFilters,
+  type QuestViewPreset,
+  useHomeQuestState,
+} from '@/composables/useHomeQuestState'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
@@ -661,18 +605,51 @@ async function openUpdatePage() {
   }
 }
 
-const statusFilterOptions = computed(() => ({
-  notAccepted: t('filter.not_accepted'),
-  inProgress: t('filter.in_progress'),
-  pendingClaim: t('filter.pending_claim'),
-  completed: t('filter.claimed')
-}))
+const VIEW_PRESET_STORAGE_KEY = 'questHelper_viewPreset'
+const ADVANCED_FILTERS_STORAGE_KEY = 'questHelper_advancedFilters'
+const viewPresetOptions: QuestViewPreset[] = ['recommended', 'to_accept', 'ready_to_run', 'ready_to_claim', 'completed', 'all']
 
-// Show/hide filter panel
+function readSavedPreset(): QuestViewPreset {
+  const savedPreset = localStorage.getItem(VIEW_PRESET_STORAGE_KEY)
+  return viewPresetOptions.includes(savedPreset as QuestViewPreset) ? savedPreset as QuestViewPreset : 'recommended'
+}
+
+function readSavedAdvancedFilters(): AdvancedQuestFilters {
+  const defaults = emptyAdvancedQuestFilters()
+  const savedRaw = localStorage.getItem(ADVANCED_FILTERS_STORAGE_KEY)
+  if (!savedRaw) return defaults
+
+  try {
+    const saved = JSON.parse(savedRaw) as Partial<AdvancedQuestFilters>
+    return {
+      query: typeof saved.query === 'string' ? saved.query : defaults.query,
+      types: { ...defaults.types, ...saved.types },
+      rewards: { ...defaults.rewards, ...saved.rewards },
+      includeExpired: saved.includeExpired ?? defaults.includeExpired,
+    }
+  } catch {
+    return defaults
+  }
+}
+
+const selectedPreset = ref<QuestViewPreset>(readSavedPreset())
+const advancedFilters = ref<AdvancedQuestFilters>(readSavedAdvancedFilters())
 const showFilters = ref(false)
 
-// Search query for quest keyword search
-const searchQuery = ref('')
+const searchQuery = computed({
+  get: () => advancedFilters.value.query,
+  set: (value: string) => {
+    advancedFilters.value.query = value
+  },
+})
+
+watch(selectedPreset, (preset) => {
+  localStorage.setItem(VIEW_PRESET_STORAGE_KEY, preset)
+})
+
+watch(advancedFilters, (newFilters) => {
+  localStorage.setItem(ADVANCED_FILTERS_STORAGE_KEY, JSON.stringify(newFilters))
+}, { deep: true })
 
 // Accepting quest state
 const acceptingQuest = ref<string | null>(null)
@@ -721,79 +698,44 @@ const activityLaunchQuest = ref<Quest | null>(null)
 const activityLaunchError = ref<string | null>(null)
 const activityNavigatingToDiscord = ref(false)
 
-// localStorage key for filters
-const FILTERS_STORAGE_KEY = 'questHelper_filters'
-
-// Load saved filters from localStorage
-const defaultFilters = {
-  rewards: {
-    orbs: false,
-    avatarDecoration: false,
-    ingame: false
-  },
-  questType: {
-    play: false,
-    watch: false,
-    activity: false
-  },
-  status: {
-    notAccepted: true,
-    inProgress: true,
-    pendingClaim: false,
-    completed: false
-  }
-}
-
-const savedFiltersRaw = localStorage.getItem(FILTERS_STORAGE_KEY)
-const savedFilters = savedFiltersRaw ? JSON.parse(savedFiltersRaw) : null
-
-// Filter state - use saved or default
-const filters = ref(savedFilters || defaultFilters)
-
-// Persist filter changes to localStorage
-watch(filters, (newFilters) => {
-  localStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify(newFilters))
-}, { deep: true })
-
-const hasActiveFilters = computed(() => {
-  return filters.value.rewards.orbs || 
-         filters.value.rewards.avatarDecoration || 
-         filters.value.rewards.ingame ||
-         filters.value.questType.play ||
-         filters.value.questType.watch ||
-         filters.value.questType.activity ||
-         filters.value.status.notAccepted ||
-         filters.value.status.inProgress ||
-         filters.value.status.pendingClaim ||
-         filters.value.status.completed
-})
-
 const activeFilterCount = computed(() => {
   let count = 0
-  if (filters.value.rewards.orbs) count++
-  if (filters.value.rewards.avatarDecoration) count++
-  if (filters.value.rewards.ingame) count++
-  if (filters.value.questType.play) count++
-  if (filters.value.questType.watch) count++
-  if (filters.value.questType.activity) count++
-  if (filters.value.status.notAccepted) count++
-  if (filters.value.status.inProgress) count++
-  if (filters.value.status.pendingClaim) count++
-  if (filters.value.status.completed) count++
+  if (advancedFilters.value.query.trim()) count++
+  if (advancedFilters.value.types.video) count++
+  if (advancedFilters.value.types.play) count++
+  if (advancedFilters.value.types.activity) count++
+  if (advancedFilters.value.rewards.orbs) count++
+  if (advancedFilters.value.rewards.avatarDecoration) count++
+  if (advancedFilters.value.rewards.ingame) count++
+  if (advancedFilters.value.includeExpired) count++
   return count
 })
 
+const hasActiveFilters = computed(() => activeFilterCount.value > 0)
+
 function clearFilters() {
-  filters.value.rewards.orbs = false
-  filters.value.rewards.avatarDecoration = false
-  filters.value.rewards.ingame = false
-  filters.value.questType.play = false
-  filters.value.questType.watch = false
-  filters.value.questType.activity = false
-  filters.value.status.notAccepted = false
-  filters.value.status.inProgress = false
-  filters.value.status.pendingClaim = false
-  filters.value.status.completed = false
+  advancedFilters.value = emptyAdvancedQuestFilters()
+}
+
+function backToRecommended() {
+  selectedPreset.value = 'recommended'
+  clearFilters()
+}
+
+const { buckets: questBuckets, recommendedQuests } = useHomeQuestState(
+  computed(() => questsStore.quests),
+  {
+    activeQuestId: computed(() => questsStore.activeQuestId),
+    questQueue: computed(() => questsStore.questQueue),
+    blockedUntil: computed(() => questsStore.questEnrollmentBlockedUntil),
+    cdpAvailable: computed(() => questsStore.cdpAvailable),
+  }
+)
+
+const runningCount = computed(() => (questBuckets.value.active ? 1 : 0) + questBuckets.value.queued.length)
+
+function selectPreset(preset: QuestViewPreset) {
+  selectedPreset.value = preset
 }
 
 onMounted(() => {
@@ -847,15 +789,10 @@ function getRewardType(quest: Quest): 'orbs' | 'avatar' | 'ingame' {
   return getQuestRewardCategory(quest)
 }
 
-// Filtered quests based on filter state
 // Quests completed but not yet claimed (across the full store, not filtered)
 // Excludes expired quests to align with filteredQuests visibility rules
 const pendingClaimCount = computed(() =>
-  questsStore.quests.filter(q => {
-    if (!q.user_status?.completed_at || q.user_status?.claimed_at) return false
-    if (q.config.expires_at && new Date(q.config.expires_at) < new Date()) return false
-    return true
-  }).length
+  questBuckets.value.readyToClaim.length
 )
 
 // Show banner only when pending-claim quests exist but aren't visible in the current filtered view
@@ -865,27 +802,61 @@ const showPendingClaimBanner = computed(() => {
 })
 
 function showPendingClaimFilter() {
-  filters.value.status.pendingClaim = true
-  showFilters.value = true
+  selectedPreset.value = 'ready_to_claim'
 }
 
-const filteredQuests = computed(() => { 
-  // Global filter: Hide expired quests (unless claimed)
-  let quests = questsStore.quests.filter(q => {
-    // Always show if claimed (history)
-    if (q.user_status?.claimed_at) return true
-    
-    // Check expiry
-    if (q.config.expires_at) {
-      const expires = new Date(q.config.expires_at)
-      if (expires < new Date()) return false
-    }
+function visibleQuest(quest: Quest): boolean {
+  if (advancedFilters.value.includeExpired) return true
+  return !isQuestExpired(quest) || !!quest.user_status?.claimed_at
+}
+
+function sortByExpiry(a: Quest, b: Quest): number {
+  const aTime = a.config.expires_at ? new Date(a.config.expires_at).getTime() : Number.MAX_SAFE_INTEGER
+  const bTime = b.config.expires_at ? new Date(b.config.expires_at).getTime() : Number.MAX_SAFE_INTEGER
+  return aTime - bTime
+}
+
+function uniqueQuests(quests: Quest[]): Quest[] {
+  const seen = new Set<string>()
+  return quests.filter(quest => {
+    if (seen.has(quest.id)) return false
+    seen.add(quest.id)
     return true
   })
-  
-  // Apply search filter if search query is provided
-  if (searchQuery.value.trim()) {
-    const query = searchQuery.value.toLowerCase().trim()
+}
+
+function questsForPreset(preset: QuestViewPreset): Quest[] {
+  switch (preset) {
+    case 'to_accept':
+      return questBuckets.value.toAccept
+    case 'ready_to_run':
+      return questBuckets.value.readyToRun
+    case 'ready_to_claim':
+      return questBuckets.value.readyToClaim
+    case 'completed':
+      return questBuckets.value.completed
+    case 'all':
+      return questsStore.quests
+    case 'recommended':
+    default:
+      return recommendedQuests.value
+  }
+}
+
+const viewCounts = computed<Record<QuestViewPreset, number>>(() => ({
+  recommended: getRecommendedQuests(questBuckets.value).filter(visibleQuest).length,
+  to_accept: questBuckets.value.toAccept.filter(visibleQuest).length,
+  ready_to_run: questBuckets.value.readyToRun.filter(visibleQuest).length,
+  ready_to_claim: questBuckets.value.readyToClaim.filter(visibleQuest).length,
+  completed: questBuckets.value.completed.filter(visibleQuest).length,
+  all: questsStore.quests.filter(visibleQuest).length,
+}))
+
+const filteredQuests = computed(() => {
+  let quests = uniqueQuests(questsForPreset(selectedPreset.value)).filter(visibleQuest)
+
+  const query = advancedFilters.value.query.toLowerCase().trim()
+  if (query) {
     quests = quests.filter(q => {
       const questName = q.config.messages?.quest_name?.toLowerCase() || ''
       const gameTitle = q.config.messages?.game_title?.toLowerCase() || ''
@@ -893,59 +864,33 @@ const filteredQuests = computed(() => {
     })
   }
 
-  // If no filters are active, show all valid quests EXCEPT activity (default hidden)
-  if (!hasActiveFilters.value) {
-    return quests.filter(q => getQuestType(q) !== 'activity')
-  }
-  
-  return quests.filter(quest => {
-    // Quest type filter (if any quest type filter is active)
-    const questTypeFiltersActive = filters.value.questType.play || filters.value.questType.watch || filters.value.questType.activity
-    if (questTypeFiltersActive) {
+  const typeFiltersActive = advancedFilters.value.types.video || advancedFilters.value.types.play || advancedFilters.value.types.activity
+  if (typeFiltersActive) {
+    quests = quests.filter(quest => {
       const questType = getQuestType(quest)
-      const matchPlay = filters.value.questType.play && questType === 'stream'
-      const matchWatch = filters.value.questType.watch && questType === 'video'
-      const matchActivity = filters.value.questType.activity && questType === 'activity'
-      if (!matchPlay && !matchWatch && !matchActivity) return false
-    }
-    
-    // Reward type filter (if any reward filter is active)
-    const rewardFiltersActive = filters.value.rewards.orbs || 
-                                 filters.value.rewards.avatarDecoration || 
-                                 filters.value.rewards.ingame
-    if (rewardFiltersActive) {
+      return (advancedFilters.value.types.video && questType === 'video')
+        || (advancedFilters.value.types.play && questType === 'stream')
+        || (advancedFilters.value.types.activity && questType === 'activity')
+    })
+  }
+
+  const rewardFiltersActive = advancedFilters.value.rewards.orbs ||
+    advancedFilters.value.rewards.avatarDecoration ||
+    advancedFilters.value.rewards.ingame
+  if (rewardFiltersActive) {
+    quests = quests.filter(quest => {
       const rewardType = getRewardType(quest)
-      const matchOrbs = filters.value.rewards.orbs && rewardType === 'orbs'
-      const matchAvatar = filters.value.rewards.avatarDecoration && rewardType === 'avatar'
-      const matchIngame = filters.value.rewards.ingame && rewardType === 'ingame'
-      if (!matchOrbs && !matchAvatar && !matchIngame) return false
-    }
-    
-    // Status filter (if any status filter is active)
-    const statusFiltersActive = filters.value.status.notAccepted || 
-                                 filters.value.status.inProgress || 
-                                 filters.value.status.pendingClaim ||
-                                 filters.value.status.completed
-    if (statusFiltersActive) {
-      const isNotAccepted = !quest.user_status || !quest.user_status.enrolled_at
-      const isCompleted = !!quest.user_status?.completed_at
-      const isClaimed = isCompleted && !!quest.user_status?.claimed_at
-      const isPendingClaim = isCompleted && !quest.user_status?.claimed_at
-      const isInProgress = !isNotAccepted && !isCompleted
-      
-      const matchNotAccepted = filters.value.status.notAccepted && isNotAccepted
-      const matchInProgress = filters.value.status.inProgress && isInProgress
-      const matchPendingClaim = filters.value.status.pendingClaim && isPendingClaim
-      const matchCompleted = filters.value.status.completed && isClaimed
-      if (!matchNotAccepted && !matchInProgress && !matchPendingClaim && !matchCompleted) return false
-    }
-    
-    return true
-  })
+      return (advancedFilters.value.rewards.orbs && rewardType === 'orbs')
+        || (advancedFilters.value.rewards.avatarDecoration && rewardType === 'avatar')
+        || (advancedFilters.value.rewards.ingame && rewardType === 'ingame')
+    })
+  }
+
+  return quests.sort(sortByExpiry)
 })
 
 const unenrolledCount = computed(() => {
-  return filteredQuests.value.filter(q => !q.user_status).length
+  return filteredQuests.value.filter(q => !q.user_status?.enrolled_at && !isQuestExpired(q)).length
 })
 
 const enrolledVideoCount = computed(() => {
@@ -953,9 +898,9 @@ const enrolledVideoCount = computed(() => {
      // Strict check: Must be a VIDEO quest as determined by task config
      // Previous check only looked for stream duration, which let "Play" quests through
      const isVideo = getQuestType(q) === 'video'
-     const isEnrolled = !!q.user_status
+     const isEnrolled = !!q.user_status?.enrolled_at
      const isCompleted = !!q.user_status?.completed_at
-     return isEnrolled && !isCompleted && isVideo
+     return isEnrolled && !isCompleted && isVideo && !isQuestExpired(q)
   }).length
 })
 
@@ -963,9 +908,9 @@ const enrolledGameCount = computed(() => {
   return filteredQuests.value.filter(q => {
      const questType = getQuestType(q)
      const isGame = questType === 'stream' // stream kind = play/game quests
-     const isEnrolled = !!q.user_status
+     const isEnrolled = !!q.user_status?.enrolled_at
      const isCompleted = !!q.user_status?.completed_at
-     return isEnrolled && !isCompleted && isGame
+     return isEnrolled && !isCompleted && isGame && !isQuestExpired(q)
   }).length
 })
 
@@ -974,20 +919,211 @@ const enrolledAllCount = computed(() => {
      const questType = getQuestType(q)
      // Exclude activity (requires manual interaction)
      if (questType === 'activity') return false
-     const isEnrolled = !!q.user_status
+     const isEnrolled = !!q.user_status?.enrolled_at
      const isCompleted = !!q.user_status?.completed_at
-     return isEnrolled && !isCompleted
+     return isEnrolled && !isCompleted && !isQuestExpired(q)
   }).length
 })
 
 const isBatchAccepting = computed(() => acceptingAllQuestIds.value.size > 0)
 
-const hasAnyCompleteOption = computed(() => enrolledAllCount.value > 0 || enrolledVideoCount.value > 0 || enrolledGameCount.value > 0)
+type HomeNextAction = {
+  state: NextBestActionState
+  title: string
+  description: string
+  primaryLabel: string
+  secondaryLabel?: string
+  primaryDisabled?: boolean
+  secondaryDisabled?: boolean
+  targetQuest?: Quest
+}
+
+const recommendedRunQuest = computed(() => questBuckets.value.readyToRun[0] ?? null)
+const recommendedAcceptQuest = computed(() => questBuckets.value.toAccept[0] ?? null)
+const recommendedClaimQuest = computed(() => questBuckets.value.readyToClaim[0] ?? null)
+
+const nextBestAction = computed<HomeNextAction>(() => {
+  if (questsStore.error) {
+    return {
+      state: 'error',
+      title: t('home.next_error_title'),
+      description: questsStore.error,
+      primaryLabel: t('general.refresh'),
+    }
+  }
+
+  if (questBuckets.value.blockedUntil) {
+    return {
+      state: 'blocked',
+      title: t('home.next_blocked_title'),
+      description: t('home.next_blocked_desc', { time: formatBlockedUntil(questBuckets.value.blockedUntil) }),
+      primaryLabel: t('general.refresh'),
+      secondaryLabel: t('home.view_current_quests'),
+      primaryDisabled: questsStore.loading,
+    }
+  }
+
+  if (questBuckets.value.active) {
+    return {
+      state: 'active',
+      title: t('home.next_active_title', { name: questBuckets.value.active.config.messages.quest_name }),
+      description: t('home.next_active_desc'),
+      primaryLabel: t('home.stop'),
+      primaryDisabled: questsStore.stopping,
+      targetQuest: questBuckets.value.active,
+    }
+  }
+
+  if (questsStore.isQueueRunning || questBuckets.value.queued.length > 0) {
+    return {
+      state: 'queue',
+      title: t('home.next_queue_title', { count: questBuckets.value.queued.length }),
+      description: t('home.next_queue_desc'),
+      primaryLabel: t('home.stop_queue'),
+    }
+  }
+
+  if (recommendedClaimQuest.value) {
+    return {
+      state: 'claim',
+      title: t('home.next_claim_title', { count: questBuckets.value.readyToClaim.length }),
+      description: t('home.next_claim_desc', { name: recommendedClaimQuest.value.config.messages.quest_name }),
+      primaryLabel: t('home.claim_reward'),
+      secondaryLabel: t('home.view_all_ready_to_claim'),
+      primaryDisabled: claimingQuest.value === recommendedClaimQuest.value.id,
+      targetQuest: recommendedClaimQuest.value,
+    }
+  }
+
+  if (recommendedRunQuest.value) {
+    return {
+      state: 'run',
+      title: t('home.next_run_title', { count: questBuckets.value.readyToRun.length }),
+      description: t('home.next_run_desc', { name: recommendedRunQuest.value.config.messages.quest_name }),
+      primaryLabel: getStartButtonText(recommendedRunQuest.value),
+      secondaryLabel: enrolledAllCount.value > 1 ? t('home.complete_all_recommended') : t('home.view_all_ready'),
+      primaryDisabled: questsStore.activeQuestId !== null || startingQuestId.value !== null || isBatchAccepting.value,
+      targetQuest: recommendedRunQuest.value,
+    }
+  }
+
+  if (recommendedAcceptQuest.value) {
+    return {
+      state: 'accept',
+      title: t('home.next_accept_title', { count: questBuckets.value.toAccept.length }),
+      description: t('home.next_accept_desc', { name: recommendedAcceptQuest.value.config.messages.quest_name }),
+      primaryLabel: questBuckets.value.toAccept.length > 1 ? t('home.accept_all_safe') : t('home.accept_quest'),
+      secondaryLabel: t('home.view_to_accept'),
+      primaryDisabled: isBatchAccepting.value || acceptingQuest.value === recommendedAcceptQuest.value.id,
+      targetQuest: recommendedAcceptQuest.value,
+    }
+  }
+
+  if (questsStore.quests.length === 0) {
+    return {
+      state: 'empty',
+      title: t('home.next_empty_title'),
+      description: t('home.next_empty_desc'),
+      primaryLabel: t('general.refresh'),
+      primaryDisabled: questsStore.loading,
+    }
+  }
+
+  return {
+    state: 'done',
+    title: t('home.next_done_title'),
+    description: t('home.next_done_desc'),
+    primaryLabel: t('general.refresh'),
+    secondaryLabel: selectedPreset.value === 'all' ? undefined : t('home.view_all'),
+    primaryDisabled: questsStore.loading,
+  }
+})
+
+const nextActionBusy = computed(() => {
+  const quest = nextBestAction.value.targetQuest
+  if (!quest) return questsStore.loading || questsStore.stopping
+  return startingQuestId.value === quest.id ||
+    acceptingQuest.value === quest.id ||
+    acceptingAllQuestIds.value.has(quest.id) ||
+    claimingQuest.value === quest.id ||
+    questsStore.stopping
+})
+
+function handleNextPrimary() {
+  const action = nextBestAction.value
+
+  if (action.state === 'active') {
+    questsStore.stop()
+    return
+  }
+
+  if (action.state === 'queue') {
+    questsStore.clearQueue()
+    return
+  }
+
+  if (action.state === 'claim' && action.targetQuest) {
+    claimReward(action.targetQuest)
+    return
+  }
+
+  if (action.state === 'run' && action.targetQuest) {
+    startQuest(action.targetQuest)
+    return
+  }
+
+  if (action.state === 'accept') {
+    if (questBuckets.value.toAccept.length > 1) handleAcceptAll()
+    else if (action.targetQuest) acceptQuest(action.targetQuest)
+    return
+  }
+
+  refreshQuests()
+}
+
+function handleNextSecondary() {
+  const action = nextBestAction.value
+  if (action.state === 'claim') {
+    selectedPreset.value = 'ready_to_claim'
+    return
+  }
+
+  if (action.state === 'run') {
+    if (enrolledAllCount.value > 1) handleCompleteAllTasks()
+    else selectedPreset.value = 'ready_to_run'
+    return
+  }
+
+  if (action.state === 'accept') {
+    selectedPreset.value = 'to_accept'
+    return
+  }
+
+  selectedPreset.value = 'all'
+}
+
+const emptyStateText = computed(() => {
+  if (hasActiveFilters.value) return t('home.empty_filtered')
+  switch (selectedPreset.value) {
+    case 'recommended':
+      return t('home.empty_recommended')
+    case 'to_accept':
+      return t('home.empty_to_accept')
+    case 'ready_to_run':
+      return t('home.empty_ready_to_run')
+    case 'ready_to_claim':
+      return t('home.empty_ready_to_claim')
+    case 'completed':
+      return t('home.empty_completed')
+    default:
+      return t('home.no_quests_match')
+  }
+})
 
 function handleAcceptAll() {
   const toAccept = filteredQuests.value.filter(q => {
     // Check if not enrolled
-    if (q.user_status) return false
+    if (q.user_status?.enrolled_at) return false
     
     // Check expiration explicitly
     if (q.config.expires_at) {
@@ -1039,7 +1175,7 @@ async function confirmAcceptAll() {
 function handleCompleteAllVideo() {
   const toComplete = filteredQuests.value.filter(q => {
      const isVideo = getQuestType(q) === 'video'
-     const isEnrolled = !!q.user_status
+     const isEnrolled = !!q.user_status?.enrolled_at
      const isCompleted = !!q.user_status?.completed_at
      
      // Check expiration explicitly
@@ -1068,7 +1204,7 @@ function handleCompleteAllGame() {
   const toComplete = filteredQuests.value.filter(q => {
      const questType = getQuestType(q)
      const isGame = questType === 'stream'
-     const isEnrolled = !!q.user_status
+     const isEnrolled = !!q.user_status?.enrolled_at
      const isCompleted = !!q.user_status?.completed_at
      if (q.config.expires_at) {
        const expires = new Date(q.config.expires_at)
@@ -1086,7 +1222,7 @@ function handleCompleteAllTasks() {
   const toComplete = filteredQuests.value.filter(q => {
      const questType = getQuestType(q)
      if (questType === 'activity') return false
-     const isEnrolled = !!q.user_status
+     const isEnrolled = !!q.user_status?.enrolled_at
      const isCompleted = !!q.user_status?.completed_at
      if (q.config.expires_at) {
        const expires = new Date(q.config.expires_at)
@@ -1216,7 +1352,7 @@ async function selectExeAndStartPlay(exeName: string) {
     toast.error({
       title: t('toast.failed_start_game'),
       description: String(e),
-      actions: [{ label: t('toast.open_settings'), onClick: () => navigateToTab('settings') }],
+      actions: [{ label: t('toast.open_settings'), onClick: () => navigateToTab('settings', 'quest_behavior') }],
     })
   }
 }
@@ -1243,7 +1379,7 @@ async function submitCustomExeAndStartPlay() {
     toast.error({
       title: t('toast.failed_start_game'),
       description: String(e),
-      actions: [{ label: t('toast.open_settings'), onClick: () => navigateToTab('settings') }],
+      actions: [{ label: t('toast.open_settings'), onClick: () => navigateToTab('settings', 'quest_behavior') }],
     })
   }
 }
@@ -1346,7 +1482,7 @@ async function startQuest(quest: Quest) {
         toast.error({
           title: t('toast.failed_start_game'),
           description: String(e),
-          actions: [{ label: t('toast.open_settings'), onClick: () => navigateToTab('settings') }],
+          actions: [{ label: t('toast.open_settings'), onClick: () => navigateToTab('settings', 'quest_behavior') }],
         })
     }
   } else if (isStreamQuest) {
@@ -1362,7 +1498,7 @@ async function startQuest(quest: Quest) {
     if (!questsStore.cdpAvailable) {
       toast.warning({
         title: t('toast.activity_cdp_required'),
-        actions: [{ label: t('toast.open_settings'), onClick: () => navigateToTab('settings') }],
+        actions: [{ label: t('toast.open_settings'), onClick: () => navigateToTab('settings', 'discord_integration') }],
       })
       return
     }
