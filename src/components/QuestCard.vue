@@ -14,8 +14,7 @@ import {
   CardFooter,
 } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Clock, Gift, MonitorPlay, Gamepad2, Activity, Copy, Check } from 'lucide-vue-next'
+import { Clock, Gift, MonitorPlay, Gamepad2, Activity } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { firstProgressValue, firstTargetTask, formatDuration, getQuestKind } from '@/utils/questTasks'
 import { getQuestRewardViews, type QuestRewardView } from '@/utils/questRewards'
@@ -30,7 +29,6 @@ const props = defineProps<{
 
 const questsStore = useQuestsStore()
 const authStore = useAuthStore()
-const copiedQuestId = ref(false)
 
 // Check if this quest is currently active
 const isActiveQuest = computed(() => questsStore.activeQuestId === props.quest.id)
@@ -95,19 +93,6 @@ function formatDate(dateStr: string): string {
   if (!dateStr) return 'N/A'
   const date = new Date(dateStr)
   return date.toLocaleDateString()
-}
-
-const shortQuestId = computed(() => {
-  const id = props.quest.id
-  return id.length > 14 ? `${id.slice(0, 6)}...${id.slice(-4)}` : id
-})
-
-async function copyQuestId() {
-  await navigator.clipboard.writeText(props.quest.id)
-  copiedQuestId.value = true
-  setTimeout(() => {
-    copiedQuestId.value = false
-  }, 1500)
 }
 
 function rewardKey(reward: QuestRewardView): string {
@@ -214,20 +199,6 @@ const activeTimeText = computed(() => {
                  <Activity v-else class="w-3 h-3 mr-1" />
                  {{ questType === 'video' ? t('filter.video') : (questType === 'activity' ? t('filter.activity') : t('filter.stream_play')) }}
               </Badge>
-              <Badge variant="outline" class="mb-1 max-w-full gap-1 font-mono text-[10px]" :title="quest.id">
-                <span class="hidden sm:inline">ID {{ quest.id }}</span>
-                <span class="sm:hidden">ID {{ shortQuestId }}</span>
-              </Badge>
-              <Button
-                variant="ghost"
-                size="icon"
-                class="mb-1 h-6 w-6"
-                :title="copiedQuestId ? 'Copied' : 'Copy quest ID'"
-                @click="copyQuestId"
-              >
-                <Check v-if="copiedQuestId" class="h-3 w-3 text-green-500" />
-                <Copy v-else class="h-3 w-3" />
-              </Button>
             </div>
             <CardTitle class="text-xl text-primary">{{ quest.config.messages.quest_name }}</CardTitle>
             <CardDescription>{{ quest.config.messages.game_title }}</CardDescription>
