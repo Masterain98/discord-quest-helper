@@ -85,6 +85,10 @@ export default {
         required: "требуется {duration}",
         expires: "Истекает",
         na: "Нет",
+        no_expiry: "Без срока",
+        expired: "Истёк",
+        time_left_days: "{date} (осталось {days}д {hours}ч)",
+        time_left_hours: "{date} (осталось {hours}ч)",
         in_game_rewards: "Внутриигровые награды",
         discord_rewards: "Награды Discord",
         active_progress: "Прогресс текущего квеста",
@@ -353,5 +357,24 @@ export default {
             fix_in_settings: "Исправить в настройках",
             change_mode: "Сменить режим"
         }
+    },
+    toast: {
+        success: "Успешно",
+        error: "Ошибка",
+        warning: "Внимание",
+        info: "Уведомление",
+        close: "Закрыть",
+        retry: "Повторить",
+        open_settings: "Настройки",
+        known: "Понятно",
+        failed_accept: "Не удалось принять квест",
+        failed_accept_batch: "Принято {success} квестов, не удалось {fail}",
+        failed_start_game: "Не удалось запустить симулятор игры",
+        failed_start_activity: "Не удалось запустить Activity квест",
+        failed_claim: "Не удалось получить награду",
+        unknown_quest_type: "Неизвестный тип квеста: {types}",
+        activity_cdp_required: "Для Activity квестов требуется режим CDP",
+        stream_quest_title: "Стрим-квест",
+        stream_quest_desc: "Стрим-квесты требуют ручной трансляции игры в Discord. Начните трансляцию в голосовом канале, затем используйте симулятор игр."
     }
 }

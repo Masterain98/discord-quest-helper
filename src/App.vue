@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import Home from './views/Home.vue'
 import GameSimulator from './views/GameSimulator.vue'
 import Settings from './views/Settings.vue'
@@ -14,6 +14,7 @@ import { useI18n } from 'vue-i18n'
 import { Moon, Sun, Loader2, Languages } from 'lucide-vue-next'
 import AccountMenu from './components/AccountMenu.vue'
 import QuestModeIndicator from './components/QuestModeIndicator.vue'
+import Toaster from './components/Toaster.vue'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -137,14 +138,28 @@ onMounted(() => {
     isDark.value = window.matchMedia('(prefers-color-scheme: dark)').matches
   }
   updateTheme()
-  
+
   // Restore debug mode state
   debugModeEnabled.value = localStorage.getItem('debugMode') === 'true'
-  
+
   // Check for updates
   const versionStore = useVersionStore()
   versionStore.initialize()
+
+  // Listen for tab navigation events from toast actions
+  window.addEventListener('app:navigate', handleAppNavigate)
 })
+
+onUnmounted(() => {
+  window.removeEventListener('app:navigate', handleAppNavigate)
+})
+
+function handleAppNavigate(e: Event) {
+  const tab = (e as CustomEvent<string>).detail
+  if (tab === 'home' || tab === 'game' || tab === 'settings' || tab === 'debug') {
+    currentTab.value = tab
+  }
+}
 </script>
 
 <template>
@@ -332,6 +347,7 @@ onMounted(() => {
 
     </div>
     </div>
+    <Toaster />
   </div>
 </template>
 

@@ -85,6 +85,10 @@ export default {
         required: "{duration} 必要",
         expires: "期限",
         na: "なし",
+        no_expiry: "期限なし",
+        expired: "期限切れ",
+        time_left_days: "{date}（残り {days}日 {hours}時間）",
+        time_left_hours: "{date}（残り {hours}時間）",
         in_game_rewards: "ゲーム内報酬",
         discord_rewards: "Discord報酬",
         active_progress: "アクティブなクエスト進捗",
@@ -351,5 +355,24 @@ export default {
             fix_in_settings: "設定で修正",
             change_mode: "モード切替"
         }
+    },
+    toast: {
+        success: "成功",
+        error: "エラー",
+        warning: "警告",
+        info: "お知らせ",
+        close: "閉じる",
+        retry: "再試行",
+        open_settings: "設定を開く",
+        known: "了解",
+        failed_accept: "クエストの受け入れに失敗しました",
+        failed_accept_batch: "{success} 件のクエストを受け入れ、{fail} 件が失敗しました",
+        failed_start_game: "ゲームシミュレーターの起動に失敗しました",
+        failed_start_activity: "Activity クエストの開始に失敗しました",
+        failed_claim: "報酬の受け取りに失敗しました",
+        unknown_quest_type: "不明なクエストタイプ: {types}",
+        activity_cdp_required: "Activity クエストには CDP モードが必要です",
+        stream_quest_title: "配信クエスト",
+        stream_quest_desc: "配信クエストは Discord で手動でゲームを配信する必要があります。ボイスチャンネルで配信を開始し、ゲームシミュレーターでゲームをシミュレートしてください。"
     }
 }

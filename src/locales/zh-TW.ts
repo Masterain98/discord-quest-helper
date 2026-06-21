@@ -85,6 +85,10 @@ export default {
         required: "需要 {duration}",
         expires: "到期",
         na: "無",
+        no_expiry: "無過期時間",
+        expired: "已過期",
+        time_left_days: "{date}（剩餘 {days}天 {hours}小時）",
+        time_left_hours: "{date}（剩餘 {hours}小時）",
         in_game_rewards: "遊戲內獎勵",
         discord_rewards: "Discord 獎勵",
         active_progress: "當前任務進度",
@@ -353,5 +357,24 @@ export default {
             fix_in_settings: "前往設定修復",
             change_mode: "切換模式"
         }
+    },
+    toast: {
+        success: "成功",
+        error: "錯誤",
+        warning: "警告",
+        info: "提示",
+        close: "關閉",
+        retry: "重試",
+        open_settings: "前往設定",
+        known: "知道了",
+        failed_accept: "接受任務失敗",
+        failed_accept_batch: "已接受 {success} 個任務，{fail} 個失敗",
+        failed_start_game: "啟動遊戲模擬失敗",
+        failed_start_activity: "啟動 Activity 任務失敗",
+        failed_claim: "領取獎勵失敗",
+        unknown_quest_type: "未知任務類型：{types}",
+        activity_cdp_required: "Activity 任務需要 CDP 模式",
+        stream_quest_title: "直播任務",
+        stream_quest_desc: "直播任務需要你在 Discord 中手動直播遊戲。請在語音頻道中開始直播，然後使用遊戲模擬器模擬運行遊戲。"
     }
 }

@@ -85,6 +85,10 @@ export default {
         required: "{duration} required",
         expires: "Expires",
         na: "N/A",
+        no_expiry: "No Expiry",
+        expired: "EXPIRED",
+        time_left_days: "{date} ({days}d {hours}h left)",
+        time_left_hours: "{date} ({hours}h left)",
         in_game_rewards: "In-Game Rewards",
         discord_rewards: "Discord Rewards",
         active_progress: "Active Quest Progress",
@@ -354,5 +358,24 @@ export default {
             fix_in_settings: "Fix in Settings",
             change_mode: "Change Mode"
         }
+    },
+    toast: {
+        success: "Success",
+        error: "Error",
+        warning: "Warning",
+        info: "Notice",
+        close: "Close",
+        retry: "Retry",
+        open_settings: "Settings",
+        known: "Got it",
+        failed_accept: "Failed to accept quest",
+        failed_accept_batch: "Accepted {success} quests, failed {fail}",
+        failed_start_game: "Failed to start game simulator",
+        failed_start_activity: "Failed to start activity quest",
+        failed_claim: "Failed to claim reward",
+        unknown_quest_type: "Unknown quest type: {types}",
+        activity_cdp_required: "Activity quests require CDP mode",
+        stream_quest_title: "Stream quest",
+        stream_quest_desc: "Stream quests require you to stream the game on Discord manually. Start a stream in a voice channel, then use the Game Simulator to simulate the game."
     }
 }

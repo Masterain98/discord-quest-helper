@@ -85,6 +85,10 @@ export default {
         required: "需要 {duration}",
         expires: "过期时间",
         na: "无",
+        no_expiry: "无过期时间",
+        expired: "已过期",
+        time_left_days: "{date}（剩余 {days}天 {hours}小时）",
+        time_left_hours: "{date}（剩余 {hours}小时）",
         in_game_rewards: "游戏内奖励",
         discord_rewards: "Discord 奖励",
         active_progress: "当前任务进度",
@@ -354,5 +358,24 @@ export default {
             fix_in_settings: "前往设置修复",
             change_mode: "切换模式"
         }
+    },
+    toast: {
+        success: "成功",
+        error: "错误",
+        warning: "警告",
+        info: "提示",
+        close: "关闭",
+        retry: "重试",
+        open_settings: "前往设置",
+        known: "知道了",
+        failed_accept: "接受任务失败",
+        failed_accept_batch: "已接受 {success} 个任务，{fail} 个失败",
+        failed_start_game: "启动游戏模拟失败",
+        failed_start_activity: "启动 Activity 任务失败",
+        failed_claim: "领取奖励失败",
+        unknown_quest_type: "未知任务类型：{types}",
+        activity_cdp_required: "Activity 任务需要 CDP 模式",
+        stream_quest_title: "直播任务",
+        stream_quest_desc: "直播任务需要你在 Discord 中手动直播游戏。请在语音频道中开始直播，然后使用游戏模拟器模拟运行游戏。"
     }
 }

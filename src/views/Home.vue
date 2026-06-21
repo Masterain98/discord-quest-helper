@@ -262,7 +262,7 @@
         
         <!-- Content Area -->
         <div v-if="!authStore.user" class="text-center py-12">
-           <p class="text-muted-foreground">Please login to view quests</p>
+           <p class="text-muted-foreground">{{ t('general.login_prompt') }}</p>
         </div>
 
         <div v-else-if="questsStore.loading" class="text-center py-12 text-muted-foreground">
@@ -374,7 +374,7 @@
                 <div v-for="quest in pendingAcceptQuests" :key="quest.id" class="flex justify-between items-center gap-4">
                   <span class="font-medium truncate flex-1">{{ quest.config.messages.quest_name }}</span>
                   <span class="text-muted-foreground whitespace-nowrap font-mono">
-                    {{ quest.config.expires_at ? new Date(quest.config.expires_at).toLocaleString() : 'No Expiry' }}
+                    {{ quest.config.expires_at ? new Date(quest.config.expires_at).toLocaleString() : t('quest.no_expiry') }}
                   </span>
                 </div>
               </div>
@@ -641,11 +641,14 @@ import {
   isVideoTask,
 } from '@/utils/questTasks'
 import { getQuestRewardCategory } from '@/utils/questRewards'
+import { useToastStore } from '@/stores/toast'
+import { navigateToTab } from '@/utils/navigate'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
 const questsStore = useQuestsStore()
 const versionStore = useVersionStore()
+const toast = useToastStore()
 
 const props = defineProps<{
   debugModeEnabled?: boolean
@@ -1029,7 +1032,7 @@ async function confirmAcceptAll() {
   }
 
   if (failCount > 0) {
-    alert(`Accepted ${successCount} quests, failed ${failCount}`)
+    toast.error({ title: t('toast.failed_accept_batch', { success: successCount, fail: failCount }) })
   }
 }
 
@@ -1210,7 +1213,11 @@ async function selectExeAndStartPlay(exeName: string) {
   try {
     await questsStore.startPlay(quest, secondsNeeded, initialProgress, exeName)
   } catch (e) {
-    alert(`Failed to start game simulator: ${e}\n\nPlease try using the Game Simulator tab manually.`)
+    toast.error({
+      title: t('toast.failed_start_game'),
+      description: String(e),
+      actions: [{ label: t('toast.open_settings'), onClick: () => navigateToTab('settings') }],
+    })
   }
 }
 
@@ -1233,7 +1240,11 @@ async function submitCustomExeAndStartPlay() {
   try {
     await questsStore.startPlay(quest, secondsNeeded, initialProgress, exeName)
   } catch (e) {
-    alert(`Failed to start game simulator: ${e}\n\nPlease try using the Game Simulator tab manually.`)
+    toast.error({
+      title: t('toast.failed_start_game'),
+      description: String(e),
+      actions: [{ label: t('toast.open_settings'), onClick: () => navigateToTab('settings') }],
+    })
   }
 }
 
@@ -1249,20 +1260,20 @@ function getExpiryColor(dateStr: string | null | undefined): string {
 }
 
 function getExpiryText(dateStr: string | null | undefined): string {
-  if (!dateStr) return 'No Expiry'
+  if (!dateStr) return t('quest.no_expiry')
   const expires = new Date(dateStr)
   const now = new Date()
   const diff = expires.getTime() - now.getTime()
-  
+
   const dateText = expires.toLocaleString()
-  
-  if (diff < 0) return `${dateText} (EXPIRED)`
-  
+
+  if (diff < 0) return `${dateText} (${t('quest.expired')})`
+
   const days = Math.floor(diff / (1000 * 60 * 60 * 24))
   const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
-  
-  if (days > 0) return `${dateText} (${days}d ${hours}h left)`
-  return `${dateText} (${hours}h left)`
+
+  if (days > 0) return t('quest.time_left_days', { date: dateText, days, hours })
+  return t('quest.time_left_hours', { date: dateText, hours })
 }
 
 function canStartQuest(quest: Quest): boolean {
@@ -1332,16 +1343,27 @@ async function startQuest(quest: Quest) {
         }
         await questsStore.startPlay(quest, secondsNeeded, initialProgress)
     } catch (e) {
-        alert(`Failed to start game simulator: ${e}\n\nPlease try using the Game Simulator tab manually.`)
+        toast.error({
+          title: t('toast.failed_start_game'),
+          description: String(e),
+          actions: [{ label: t('toast.open_settings'), onClick: () => navigateToTab('settings') }],
+        })
     }
   } else if (isStreamQuest) {
     // Stream quests require actually streaming a game
-    const gameName = quest.config.messages.game_title || quest.config.messages.quest_name
-    alert(`Stream quests require you to stream "${gameName}" on Discord.\n\nPlease:\n1. Start a stream in a Discord voice channel\n2. Use "Game Simulator" to simulate running the game\n3. Discord will track your streaming progress`)
+    toast.info({
+      title: t('toast.stream_quest_title'),
+      description: t('toast.stream_quest_desc'),
+      duration: 0,
+      actions: [{ label: t('toast.known'), onClick: () => {} }],
+    })
   } else if (isActivityQuest) {
     // Activity quest - requires CDP mode
     if (!questsStore.cdpAvailable) {
-      alert(t('home.activity_cdp_required'))
+      toast.warning({
+        title: t('toast.activity_cdp_required'),
+        actions: [{ label: t('toast.open_settings'), onClick: () => navigateToTab('settings') }],
+      })
       return
     }
     // Show the activity launch dialog
@@ -1351,7 +1373,7 @@ async function startQuest(quest: Quest) {
     return // Wait for user to confirm in dialog
   } else {
     // Unknown type - show warning
-    alert(`Unknown quest type: ${taskTypes.join(', ') || 'none'}\n\nPlease check the quest requirements in Discord.`)
+    toast.error({ title: t('toast.unknown_quest_type', { types: taskTypes.join(', ') || 'none' }) })
   }
   } finally {
     startingQuestId.value = null
@@ -1370,7 +1392,11 @@ async function acceptQuest(quest: Quest) {
     questsStore.updateQuestEnrollment(quest.id, now)
   } catch (error) {
     console.error('Failed to accept quest:', error)
-    alert(`Failed to accept quest: ${error}`)
+    toast.error({
+      title: t('toast.failed_accept'),
+      description: String(error),
+      actions: [{ label: t('toast.retry'), onClick: () => acceptQuest(quest) }],
+    })
   } finally {
     acceptingQuest.value = null
   }
@@ -1404,7 +1430,7 @@ async function confirmActivityLaunch() {
   try {
     await questsStore.startActivity(quest)
   } catch (e) {
-    alert(`Failed to start activity quest: ${e}`)
+    toast.error({ title: t('toast.failed_start_activity'), description: String(e) })
   } finally {
     startingQuestId.value = null
     activityLaunchQuest.value = null
@@ -1438,7 +1464,7 @@ async function claimReward(quest: Quest) {
     }
   } catch (error) {
     console.error('Failed to claim quest reward:', error)
-    alert(`Failed to claim reward: ${error}`)
+    toast.error({ title: t('toast.failed_claim'), description: String(error) })
   } finally {
     claimingQuest.value = null
   }

@@ -85,6 +85,10 @@ export default {
         required: "{duration} 필요",
         expires: "만료",
         na: "없음",
+        no_expiry: "만료 없음",
+        expired: "만료됨",
+        time_left_days: "{date}（{days}일 {hours}시간 남음）",
+        time_left_hours: "{date}（{hours}시간 남음）",
         in_game_rewards: "게임 내 보상",
         discord_rewards: "Discord 보상",
         active_progress: "현재 진행 상황",
@@ -353,5 +357,24 @@ export default {
             fix_in_settings: "설정에서 수정",
             change_mode: "모드 변경"
         }
+    },
+    toast: {
+        success: "성공",
+        error: "오류",
+        warning: "경고",
+        info: "알림",
+        close: "닫기",
+        retry: "재시도",
+        open_settings: "설정 열기",
+        known: "알겠습니다",
+        failed_accept: "퀘스트 수락 실패",
+        failed_accept_batch: "{success}개 퀘스트 수락, {fail}개 실패",
+        failed_start_game: "게임 시뮬레이터 시작 실패",
+        failed_start_activity: "Activity 퀘스트 시작 실패",
+        failed_claim: "보상 수령 실패",
+        unknown_quest_type: "알 수 없는 퀘스트 유형: {types}",
+        activity_cdp_required: "Activity 퀘스트에는 CDP 모드가 필요합니다",
+        stream_quest_title: "스트리밍 퀘스트",
+        stream_quest_desc: "스트리밍 퀘스트는 Discord에서 수동으로 게임을 스트리밍해야 합니다. 음성 채널에서 스트리밍을 시작한 후 게임 시뮬레이터로 게임을 시뮬레이션하세요."
     }
 }

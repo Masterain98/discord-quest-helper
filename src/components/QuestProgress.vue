@@ -138,7 +138,7 @@ const progressBarStyle = computed(() => {
           class="w-full"
           @click="handleStop"
         >
-          {{ t('home.stop_quest') }}
+          {{ t('home.stop') }}
         </Button>
       </div>
       

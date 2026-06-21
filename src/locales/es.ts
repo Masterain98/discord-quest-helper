@@ -85,6 +85,10 @@ export default {
         required: "{duration} necesario",
         expires: "Expira",
         na: "N/D",
+        no_expiry: "Sin expiración",
+        expired: "EXPIRADO",
+        time_left_days: "{date} ({days}d {hours}h restantes)",
+        time_left_hours: "{date} ({hours}h restantes)",
         in_game_rewards: "Recompensas del juego",
         discord_rewards: "Recompensas de Discord",
         active_progress: "Progreso de misión activa",
@@ -353,5 +357,24 @@ export default {
             fix_in_settings: "Corregir en ajustes",
             change_mode: "Cambiar modo"
         }
+    },
+    toast: {
+        success: "Éxito",
+        error: "Error",
+        warning: "Advertencia",
+        info: "Aviso",
+        close: "Cerrar",
+        retry: "Reintentar",
+        open_settings: "Ajustes",
+        known: "Entendido",
+        failed_accept: "Error al aceptar misión",
+        failed_accept_batch: "Aceptadas {success} misiones, fallaron {fail}",
+        failed_start_game: "Error al iniciar el simulador de juego",
+        failed_start_activity: "Error al iniciar misión Activity",
+        failed_claim: "Error al reclamar recompensa",
+        unknown_quest_type: "Tipo de misión desconocido: {types}",
+        activity_cdp_required: "Las misiones Activity requieren modo CDP",
+        stream_quest_title: "Misión de transmisión",
+        stream_quest_desc: "Las misiones de transmisión requieren transmitir el juego manualmente en Discord. Inicia una transmisión en un canal de voz, luego usa el simulador de juego."
     }
 }
