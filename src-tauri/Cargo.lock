@@ -774,8 +774,10 @@ dependencies = [
  "discord-sdk",
  "flate2",
  "futures-util",
+ "ico 0.4.0",
  "once_cell",
  "pbkdf2",
+ "png 0.18.1",
  "rand 0.10.1",
  "regex",
  "reqwest",
@@ -1735,6 +1737,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f31827a206f56af32e590ba56d5d2d085f558508192593743f16b2306495269f"
 dependencies = [
  "cc",
+]
+
+[[package]]
+name = "ico"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cc50b891e4acf8fe0e71ef88ec43ad82ee07b3810ad09de10f1d01f072ed4b98"
+dependencies = [
+ "byteorder",
+ "png 0.17.16",
 ]
 
 [[package]]
@@ -4200,7 +4212,7 @@ checksum = "e4a0319528a025a38c4078e7dae2c446f4e63620ddb0659a643ede1cb38f90e9"
 dependencies = [
  "base64 0.22.1",
  "brotli",
- "ico",
+ "ico 0.5.0",
  "json-patch",
  "plist",
  "png 0.17.16",

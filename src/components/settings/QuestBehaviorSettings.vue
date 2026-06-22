@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useQuestsStore } from '@/stores/quests'
+import { navigateToTab } from '@/utils/navigate'
 import AdvancedDisclosure from './AdvancedDisclosure.vue'
 import SettingRow from './SettingRow.vue'
 
@@ -37,15 +38,14 @@ const questsStore = useQuestsStore()
           </button>
 
           <button
-            @click="questsStore.cdpAvailable ? questsStore.gameQuestMode = 'cdp' : null"
-            :disabled="!questsStore.cdpAvailable"
+            @click="questsStore.cdpAvailable ? questsStore.gameQuestMode = 'cdp' : navigateToTab('settings', 'discord_integration')"
             :class="[
               'rounded-lg border-2 p-4 text-left transition-all',
               questsStore.gameQuestMode === 'cdp'
                 ? 'border-green-500 bg-green-500/5'
                 : questsStore.cdpAvailable
                   ? 'border-border hover:border-green-500/50'
-                  : 'cursor-not-allowed border-border opacity-50',
+                  : 'border-border opacity-50 hover:opacity-70',
             ]"
           >
             <div class="flex items-center gap-2 font-medium">

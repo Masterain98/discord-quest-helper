@@ -377,8 +377,17 @@ fn parse_app_version(name: &std::ffi::OsStr) -> Vec<u32> {
 }
 
 #[cfg(target_os = "windows")]
+fn no_window_cmd(program: &str) -> Command {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let mut cmd = Command::new(program);
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    cmd
+}
+
+#[cfg(target_os = "windows")]
 fn is_discord_running_platform(channel: Option<DiscordChannel>) -> Result<bool, String> {
-    let output = Command::new("tasklist")
+    let output = no_window_cmd("tasklist")
         .args(["/FO", "CSV", "/NH"])
         .output()
         .map_err(|e| format!("Could not execute tasklist: {}", e))?;
@@ -394,7 +403,7 @@ fn is_discord_running_platform(channel: Option<DiscordChannel>) -> Result<bool, 
 #[cfg(target_os = "windows")]
 fn terminate_discord_processes_platform(channel: Option<DiscordChannel>) -> Result<(), String> {
     for name in process_names_for(channel) {
-        let output = Command::new("taskkill")
+        let output = no_window_cmd("taskkill")
             .args(["/IM", &name, "/T", "/F"])
             .output()
             .map_err(|e| format!("Could not execute taskkill for {}: {}", name, e))?;

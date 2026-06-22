@@ -193,7 +193,7 @@ function openSettingsSection(section: 'discord_integration' | 'quest_behavior' |
         <div class="flex items-center gap-2 select-none">
           <QuestModeIndicator
             v-if="authStore.user"
-            @open-settings="openSettingsSection('discord_integration')"
+            @open-settings="openSettingsSection('quest_behavior')"
           />
 
           <!-- Theme Toggle -->

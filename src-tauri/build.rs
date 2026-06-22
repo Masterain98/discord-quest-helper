@@ -1,6 +1,53 @@
 use std::fs;
 use std::path::Path;
 
+#[cfg(target_os = "windows")]
+fn is_png_newer(png_path: &Path, ico_path: &Path) -> bool {
+    fs::metadata(png_path)
+        .and_then(|p| fs::metadata(ico_path).map(|i| p.modified().ok() > i.modified().ok()))
+        .unwrap_or(true)
+}
+
+#[cfg(target_os = "windows")]
+fn convert_png_to_ico(png_path: &Path, ico_path: &Path) {
+    use std::io::BufReader;
+
+    let file = match fs::File::open(png_path) {
+        Ok(f) => f,
+        Err(_) => return,
+    };
+    let reader = BufReader::new(file);
+    let decoder = png::Decoder::new(reader);
+    let mut reader = match decoder.read_info() {
+        Ok(r) => r,
+        Err(_) => return,
+    };
+    let mut buf = vec![0u8; reader.output_buffer_size().unwrap_or(0)];
+    let info = match reader.next_frame(&mut buf) {
+        Ok(i) => i,
+        Err(_) => return,
+    };
+    buf.truncate(info.buffer_size());
+
+    let mut icon_dir = ico::IconDir::new(ico::ResourceType::Icon);
+    let icon_image = ico::IconImage::from_rgba_data(info.width, info.height, buf);
+
+    match ico::IconDirEntry::encode(&icon_image) {
+        Ok(entry) => {
+            icon_dir.add_entry(entry);
+            let file = match fs::File::create(ico_path) {
+                Ok(f) => f,
+                Err(_) => return,
+            };
+            let _ = icon_dir.write(file);
+            println!("cargo:warning=Converted launcher-logo.png to ICO");
+        }
+        Err(e) => {
+            println!("cargo:warning=Failed to encode ICO: {}", e);
+        }
+    }
+}
+
 fn main() {
     // Ensure the data/ directory exists
     let data_dir = Path::new("data");
@@ -67,6 +114,20 @@ fn main() {
     ));
     if !launcher_path.exists() {
         fs::write(&launcher_path, b"").expect("Failed to create CDP launcher placeholder");
+    }
+
+    // Note: Launcher icon is managed by the build-cdp-launcher.js script
+    // which uses Resource Hacker or similar tool to set the icon after compilation.
+    // The ICO file is pre-generated from launcher-logo.png for that purpose.
+    #[cfg(target_os = "windows")]
+    {
+        let ico_path = Path::new("../public/icons/launcher-logo.ico");
+        let png_path = Path::new("../public/icons/launcher-logo.png");
+
+        // Convert PNG to ICO if needed (for use by external tools)
+        if png_path.exists() && (!ico_path.exists() || is_png_newer(png_path, ico_path)) {
+            convert_png_to_ico(png_path, ico_path);
+        }
     }
 
     // Tell Cargo to re-run build script if the data copy changes

@@ -14,6 +14,8 @@ path = "src/bin/discord-cdp-launcher.rs"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+ico = "0.4"
+png = "0.18"
 
 [dependencies]
 tauri = { version = "2.11", features = [] }
@@ -45,6 +47,9 @@ tauri-plugin-dialog = "2"
 windows = { version = "0.62", features = [
     "Win32_Security_Cryptography",
     "Win32_Foundation",
+    "Win32_Globalization",
+    "Win32_UI_HiDpi",
+    "Win32_UI_WindowsAndMessaging",
     "Storage_Streams",
 ] }
 windows-registry = "0.6"

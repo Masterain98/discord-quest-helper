@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { Check, Link2, Loader2, Play, RotateCcw, Wifi, WifiOff } from 'lucide-vue-next'
+import { Check, Link2, Loader2, Play, Wifi, WifiOff } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -36,15 +36,15 @@ const cdpChecking = ref(false)
 const cdpFetching = ref(false)
 const cdpFetchSuccess = ref(false)
 const cdpFetchError = ref('')
-const cdpLaunching = ref(false)
-const cdpRestarting = ref(false)
+const cdpActionBusy = ref(false)
 const cdpLaunchSuccess = ref('')
 const cdpLaunchError = ref('')
 const shortcutCreating = ref(false)
 const shortcutSuccess = ref(false)
 const shortcutError = ref('')
-const restartDialogOpen = ref(false)
-const pendingAction = ref<'launch' | 'restart' | null>(null)
+const cdpDialogOpen = ref(false)
+const discordWasRunning = ref(false)
+const discordWasConnected = ref(false)
 
 async function checkCdp() {
   cdpChecking.value = true
@@ -97,52 +97,33 @@ function resetLaunchMessage() {
   cdpLaunchError.value = ''
 }
 
-async function requestLaunchDiscordCdp() {
+async function requestCdpAction() {
   resetLaunchMessage()
+  cdpActionBusy.value = true
   try {
     const running = await isDiscordRunning('auto')
-    if (running && !cdpStatus.value?.connected) {
-      pendingAction.value = 'launch'
-      restartDialogOpen.value = true
-      return
-    }
-    await performLaunch(false)
-  } catch (e) {
-    cdpLaunchError.value = String(e)
-    setTimeout(() => { cdpLaunchError.value = '' }, 6000)
-  }
-}
-
-async function requestRestartDiscordCdp() {
-  resetLaunchMessage()
-  try {
-    const running = await isDiscordRunning('auto')
+    discordWasRunning.value = running
+    discordWasConnected.value = !!cdpStatus.value?.connected
     if (running) {
-      pendingAction.value = 'restart'
-      restartDialogOpen.value = true
+      cdpDialogOpen.value = true
       return
     }
     await performLaunch(false)
   } catch (e) {
     cdpLaunchError.value = String(e)
     setTimeout(() => { cdpLaunchError.value = '' }, 6000)
+  } finally {
+    cdpActionBusy.value = false
   }
 }
 
-async function confirmRestartDiscordCdp() {
-  const action = pendingAction.value
-  restartDialogOpen.value = false
-  pendingAction.value = null
-  if (!action) return
+async function confirmCdpAction() {
+  cdpDialogOpen.value = false
   await performLaunch(true)
 }
 
 async function performLaunch(restart: boolean) {
-  if (restart) {
-    cdpRestarting.value = true
-  } else {
-    cdpLaunching.value = true
-  }
+  cdpActionBusy.value = true
   resetLaunchMessage()
 
   try {
@@ -158,8 +139,7 @@ async function performLaunch(restart: boolean) {
     cdpLaunchError.value = String(e)
     setTimeout(() => { cdpLaunchError.value = '' }, 8000)
   } finally {
-    cdpLaunching.value = false
-    cdpRestarting.value = false
+    cdpActionBusy.value = false
   }
 }
 
@@ -167,18 +147,20 @@ onMounted(checkCdp)
 </script>
 
 <template>
-  <AlertDialog :open="restartDialogOpen" @update:open="restartDialogOpen = $event">
+  <AlertDialog :open="cdpDialogOpen" @update:open="cdpDialogOpen = $event">
     <AlertDialogContent class="max-w-[520px]">
       <AlertDialogHeader>
-        <AlertDialogTitle>{{ t('settings.cdp_restart_confirm_title') }}</AlertDialogTitle>
+        <AlertDialogTitle>
+          {{ discordWasConnected ? t('settings.cdp_dialog_title_connected') : t('settings.cdp_dialog_title_disconnected') }}
+        </AlertDialogTitle>
         <AlertDialogDescription>
-          {{ t('settings.cdp_restart_confirm_desc') }}
+          {{ discordWasConnected ? t('settings.cdp_dialog_desc_connected') : t('settings.cdp_dialog_desc_disconnected') }}
         </AlertDialogDescription>
       </AlertDialogHeader>
       <AlertDialogFooter>
-        <AlertDialogCancel @click="pendingAction = null">{{ t('dialog.cancel') }}</AlertDialogCancel>
-        <AlertDialogAction @click="confirmRestartDiscordCdp">
-          {{ t('settings.cdp_restart_confirm_action') }}
+        <AlertDialogCancel>{{ t('dialog.cancel') }}</AlertDialogCancel>
+        <AlertDialogAction @click="confirmCdpAction">
+          {{ t('settings.cdp_dialog_confirm') }}
         </AlertDialogAction>
       </AlertDialogFooter>
     </AlertDialogContent>
@@ -216,15 +198,10 @@ onMounted(checkCdp)
         <p class="text-sm font-medium">{{ t('settings.integration_setup') }}</p>
         <p class="text-sm text-muted-foreground">{{ t('settings.cdp_launch_desc') }}</p>
         <div class="flex flex-wrap items-center gap-2">
-          <Button variant="secondary" @click="requestLaunchDiscordCdp" :disabled="cdpLaunching || cdpRestarting">
-            <Loader2 v-if="cdpLaunching" class="mr-2 h-4 w-4 animate-spin" />
+          <Button variant="secondary" @click="requestCdpAction" :disabled="cdpActionBusy">
+            <Loader2 v-if="cdpActionBusy" class="mr-2 h-4 w-4 animate-spin" />
             <Play v-else class="mr-2 h-4 w-4" />
             {{ t('settings.cdp_launch') }}
-          </Button>
-          <Button variant="outline" @click="requestRestartDiscordCdp" :disabled="cdpLaunching || cdpRestarting">
-            <Loader2 v-if="cdpRestarting" class="mr-2 h-4 w-4 animate-spin" />
-            <RotateCcw v-else class="mr-2 h-4 w-4" />
-            {{ t('settings.cdp_restart') }}
           </Button>
           <span v-if="cdpLaunchSuccess" class="flex items-center gap-1 text-sm text-green-500">
             <Check class="h-4 w-4" /> {{ cdpLaunchSuccess }}
