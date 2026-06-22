@@ -1,6 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2.0.0",
   "productName": "Discord Quest Helper",
+  "mainBinaryName": "discord-quest-helper",
   "version": "0.1.0",
   "identifier": "com.masterain.discord-quest-helper",
   "build": {
@@ -29,6 +30,9 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "externalBin": [
+      "binaries/discord-cdp-launcher-sidecar"
+    ],
     "icon": [
       "icons/icon.ico"
     ],

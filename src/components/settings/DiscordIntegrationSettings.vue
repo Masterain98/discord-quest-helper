@@ -1,13 +1,31 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { Check, Link2, Loader2, Wifi, WifiOff } from 'lucide-vue-next'
+import { Check, Link2, Loader2, Play, RotateCcw, Wifi, WifiOff } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useQuestsStore } from '@/stores/quests'
-import { checkCdpStatus, createDiscordDebugShortcut, fetchSuperPropertiesCdp, type CdpStatus } from '@/api/tauri'
+import {
+  checkCdpStatus,
+  createDiscordCdpLauncherShortcut,
+  fetchSuperPropertiesCdp,
+  isDiscordRunning,
+  launchDiscordCdp,
+  restartDiscordCdp,
+  type CdpStatus
+} from '@/api/tauri'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from '@/components/ui/alert-dialog'
 import AdvancedDisclosure from './AdvancedDisclosure.vue'
 
 const { t } = useI18n()
@@ -18,9 +36,15 @@ const cdpChecking = ref(false)
 const cdpFetching = ref(false)
 const cdpFetchSuccess = ref(false)
 const cdpFetchError = ref('')
+const cdpLaunching = ref(false)
+const cdpRestarting = ref(false)
+const cdpLaunchSuccess = ref('')
+const cdpLaunchError = ref('')
 const shortcutCreating = ref(false)
 const shortcutSuccess = ref(false)
 const shortcutError = ref('')
+const restartDialogOpen = ref(false)
+const pendingAction = ref<'launch' | 'restart' | null>(null)
 
 async function checkCdp() {
   cdpChecking.value = true
@@ -57,7 +81,7 @@ async function createShortcut() {
   shortcutSuccess.value = false
   shortcutError.value = ''
   try {
-    await createDiscordDebugShortcut(questsStore.cdpPort)
+    await createDiscordCdpLauncherShortcut(questsStore.cdpPort, 'auto')
     shortcutSuccess.value = true
     setTimeout(() => { shortcutSuccess.value = false }, 3000)
   } catch (e) {
@@ -68,10 +92,98 @@ async function createShortcut() {
   }
 }
 
+function resetLaunchMessage() {
+  cdpLaunchSuccess.value = ''
+  cdpLaunchError.value = ''
+}
+
+async function requestLaunchDiscordCdp() {
+  resetLaunchMessage()
+  try {
+    const running = await isDiscordRunning('auto')
+    if (running && !cdpStatus.value?.connected) {
+      pendingAction.value = 'launch'
+      restartDialogOpen.value = true
+      return
+    }
+    await performLaunch(false)
+  } catch (e) {
+    cdpLaunchError.value = String(e)
+    setTimeout(() => { cdpLaunchError.value = '' }, 6000)
+  }
+}
+
+async function requestRestartDiscordCdp() {
+  resetLaunchMessage()
+  try {
+    const running = await isDiscordRunning('auto')
+    if (running) {
+      pendingAction.value = 'restart'
+      restartDialogOpen.value = true
+      return
+    }
+    await performLaunch(false)
+  } catch (e) {
+    cdpLaunchError.value = String(e)
+    setTimeout(() => { cdpLaunchError.value = '' }, 6000)
+  }
+}
+
+async function confirmRestartDiscordCdp() {
+  const action = pendingAction.value
+  restartDialogOpen.value = false
+  pendingAction.value = null
+  if (!action) return
+  await performLaunch(true)
+}
+
+async function performLaunch(restart: boolean) {
+  if (restart) {
+    cdpRestarting.value = true
+  } else {
+    cdpLaunching.value = true
+  }
+  resetLaunchMessage()
+
+  try {
+    const result = restart
+      ? await restartDiscordCdp(questsStore.cdpPort, 'auto')
+      : await launchDiscordCdp(questsStore.cdpPort, 'auto')
+    cdpLaunchSuccess.value = result.cdp_connected
+      ? t('settings.cdp_launch_success')
+      : t('settings.cdp_launch_started')
+    setTimeout(() => { cdpLaunchSuccess.value = '' }, 5000)
+    await checkCdp()
+  } catch (e) {
+    cdpLaunchError.value = String(e)
+    setTimeout(() => { cdpLaunchError.value = '' }, 8000)
+  } finally {
+    cdpLaunching.value = false
+    cdpRestarting.value = false
+  }
+}
+
 onMounted(checkCdp)
 </script>
 
 <template>
+  <AlertDialog :open="restartDialogOpen" @update:open="restartDialogOpen = $event">
+    <AlertDialogContent class="max-w-[520px]">
+      <AlertDialogHeader>
+        <AlertDialogTitle>{{ t('settings.cdp_restart_confirm_title') }}</AlertDialogTitle>
+        <AlertDialogDescription>
+          {{ t('settings.cdp_restart_confirm_desc') }}
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+      <AlertDialogFooter>
+        <AlertDialogCancel @click="pendingAction = null">{{ t('dialog.cancel') }}</AlertDialogCancel>
+        <AlertDialogAction @click="confirmRestartDiscordCdp">
+          {{ t('settings.cdp_restart_confirm_action') }}
+        </AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
+  </AlertDialog>
+
   <Card>
     <CardHeader>
       <CardTitle>{{ t('settings.cdp_title') }}</CardTitle>
@@ -102,6 +214,27 @@ onMounted(checkCdp)
 
       <div class="space-y-3 rounded-lg border border-border p-4">
         <p class="text-sm font-medium">{{ t('settings.integration_setup') }}</p>
+        <p class="text-sm text-muted-foreground">{{ t('settings.cdp_launch_desc') }}</p>
+        <div class="flex flex-wrap items-center gap-2">
+          <Button variant="secondary" @click="requestLaunchDiscordCdp" :disabled="cdpLaunching || cdpRestarting">
+            <Loader2 v-if="cdpLaunching" class="mr-2 h-4 w-4 animate-spin" />
+            <Play v-else class="mr-2 h-4 w-4" />
+            {{ t('settings.cdp_launch') }}
+          </Button>
+          <Button variant="outline" @click="requestRestartDiscordCdp" :disabled="cdpLaunching || cdpRestarting">
+            <Loader2 v-if="cdpRestarting" class="mr-2 h-4 w-4 animate-spin" />
+            <RotateCcw v-else class="mr-2 h-4 w-4" />
+            {{ t('settings.cdp_restart') }}
+          </Button>
+          <span v-if="cdpLaunchSuccess" class="flex items-center gap-1 text-sm text-green-500">
+            <Check class="h-4 w-4" /> {{ cdpLaunchSuccess }}
+          </span>
+          <span v-if="cdpLaunchError" class="text-sm text-red-500">{{ cdpLaunchError }}</span>
+        </div>
+      </div>
+
+      <div class="space-y-3 rounded-lg border border-border p-4">
+        <p class="text-sm font-medium">{{ t('settings.cdp_shortcut_title') }}</p>
         <p class="text-sm text-muted-foreground">{{ t('settings.cdp_shortcut_desc') }}</p>
         <div class="flex flex-wrap items-center gap-2">
           <Button variant="outline" @click="createShortcut" :disabled="shortcutCreating">

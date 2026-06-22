@@ -19,7 +19,6 @@ const MAIN_APP_PREFIX: &str = "svc_";
 /// Flag indicating if current process is running in stealth mode
 static IS_STEALTH_MODE: AtomicBool = AtomicBool::new(false);
 
-
 /// Generate random hexadecimal string
 fn generate_random_suffix(length: usize) -> String {
     use rand::RngExt;
@@ -45,11 +44,10 @@ pub fn is_stealth_mode() -> bool {
     IS_STEALTH_MODE.load(Ordering::Relaxed)
 }
 
-
 /// Generate a random window title that looks like a system process
 pub fn generate_stealth_window_title() -> String {
     use rand::RngExt;
-    
+
     // Pool of system-like window title patterns
     let patterns = [
         "Windows Update",
@@ -63,10 +61,10 @@ pub fn generate_stealth_window_title() -> String {
         "System",
         "Host Process",
     ];
-    
+
     let mut rng = rand::rng();
     let pattern = patterns[rng.random_range(0..patterns.len())];
-    
+
     // Optionally add a random suffix
     if rng.random_bool(0.5) {
         let suffix = generate_random_suffix(4);

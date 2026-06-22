@@ -1,30 +1,30 @@
 // Prevents additional console window on Windows in release
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod discord_api;
-mod discord_gateway;
-mod game_simulator;
-mod models;
-mod quest_completer;
-mod super_properties;
-mod token_extractor;
-mod logger;
 mod cdp_client;
 mod cdp_quest;
+mod discord_api;
+pub mod discord_cdp_launcher;
+mod discord_gateway;
+mod game_simulator;
+mod logger;
+mod models;
+mod quest_completer;
 mod stealth;
+mod super_properties;
+mod token_extractor;
 
 use discord_api::DiscordApiClient;
 use models::*;
-use std::sync::Mutex;
-use tauri::{Emitter, Listener, Manager, State};
-use super_properties::XSuperPropertiesManager;
 use once_cell::sync::Lazy;
+use std::sync::Mutex;
+use super_properties::XSuperPropertiesManager;
+use tauri::{Emitter, Listener, Manager, State};
 
 /// Global X-Super-Properties manager (session-level)
 /// Automatically generates key validation fields, fetches latest version info from Discord after login
-static SUPER_PROPERTIES_MANAGER: Lazy<Mutex<XSuperPropertiesManager>> = Lazy::new(|| {
-    Mutex::new(XSuperPropertiesManager::new())
-});
+static SUPER_PROPERTIES_MANAGER: Lazy<Mutex<XSuperPropertiesManager>> =
+    Lazy::new(|| Mutex::new(XSuperPropertiesManager::new()));
 
 /// Global state: Discord API client
 struct AppState {
@@ -35,74 +35,111 @@ struct AppState {
 /// Auto-detect Discord tokens (returns all valid accounts found)
 #[tauri::command]
 async fn auto_detect_token(_state: State<'_, AppState>) -> Result<Vec<ExtractedAccount>, String> {
-    use crate::logger::{log, LogLevel, LogCategory};
-    
-    log(LogLevel::Info, LogCategory::TokenExtraction, "Starting auto token detection", None);
-    
+    use crate::logger::{log, LogCategory, LogLevel};
+
+    log(
+        LogLevel::Info,
+        LogCategory::TokenExtraction,
+        "Starting auto token detection",
+        None,
+    );
+
     // Extract tokens
-    let tokens = token_extractor::extract_tokens()
-        .map_err(|e| {
-            log(LogLevel::Error, LogCategory::TokenExtraction, "Token extraction failed", Some(&e.to_string()));
-            format!("Token extraction failed: {}", e)
-        })?;
-    
-    log(LogLevel::Info, LogCategory::TokenExtraction, &format!("Extracted {} potential tokens", tokens.len()), None);
+    let tokens = token_extractor::extract_tokens().map_err(|e| {
+        log(
+            LogLevel::Error,
+            LogCategory::TokenExtraction,
+            "Token extraction failed",
+            Some(&e.to_string()),
+        );
+        format!("Token extraction failed: {}", e)
+    })?;
+
+    log(
+        LogLevel::Info,
+        LogCategory::TokenExtraction,
+        &format!("Extracted {} potential tokens", tokens.len()),
+        None,
+    );
 
     let mut valid_accounts = Vec::new();
     let mut last_error = String::new();
-    
-    log(LogLevel::Debug, LogCategory::TokenExtraction, 
-        &format!("Validating {} tokens", tokens.len()), None);
+
+    log(
+        LogLevel::Debug,
+        LogCategory::TokenExtraction,
+        &format!("Validating {} tokens", tokens.len()),
+        None,
+    );
 
     for (index, token) in tokens.iter().enumerate() {
-        log(LogLevel::Debug, LogCategory::TokenExtraction, 
-            &format!("Validating token {}/{}", index + 1, tokens.len()), None);
+        log(
+            LogLevel::Debug,
+            LogCategory::TokenExtraction,
+            &format!("Validating token {}/{}", index + 1, tokens.len()),
+            None,
+        );
         // Create API client
         if let Ok(client) = DiscordApiClient::new(token.clone()) {
             // Validate token
             match client.get_current_user().await {
                 Ok(user) => {
-                    log(LogLevel::Info, LogCategory::TokenExtraction, 
-                        &format!("Token {} validated successfully", index + 1), None);
+                    log(
+                        LogLevel::Info,
+                        LogCategory::TokenExtraction,
+                        &format!("Token {} validated successfully", index + 1),
+                        None,
+                    );
                     valid_accounts.push(ExtractedAccount {
                         token: token.clone(),
                         user,
                     });
                 }
                 Err(e) => {
-                    log(LogLevel::Warn, LogCategory::TokenExtraction, 
-                        &format!("Token {} validation failed", index + 1), Some(&e.to_string()));
+                    log(
+                        LogLevel::Warn,
+                        LogCategory::TokenExtraction,
+                        &format!("Token {} validation failed", index + 1),
+                        Some(&e.to_string()),
+                    );
                     last_error = format!("Token validation failed: {}", e);
                     // Continue to next token
                 }
             }
         }
     }
-    
-    log(LogLevel::Info, LogCategory::TokenExtraction, 
-        &format!("Token detection complete: {} valid accounts found", valid_accounts.len()), None);
+
+    log(
+        LogLevel::Info,
+        LogCategory::TokenExtraction,
+        &format!(
+            "Token detection complete: {} valid accounts found",
+            valid_accounts.len()
+        ),
+        None,
+    );
 
     if valid_accounts.is_empty() {
-        return Err(if !last_error.is_empty() { 
-            format!("No valid accounts found. Last error: {}", last_error) 
-        } else { 
-            "No valid accounts found".to_string() 
+        return Err(if !last_error.is_empty() {
+            format!("No valid accounts found. Last error: {}", last_error)
+        } else {
+            "No valid accounts found".to_string()
         });
     }
 
     // Sort accounts? Maybe by username? Or keep order.
-    
+
     Ok(valid_accounts)
 }
 
 /// Login with provided token
 #[tauri::command]
 async fn set_token(token: String, state: State<'_, AppState>) -> Result<DiscordUser, String> {
-    use crate::logger::{log, LogLevel, LogCategory};
-    
+    use crate::logger::{log, LogCategory, LogLevel};
+
     // Create API client
-    let client = DiscordApiClient::new(token)
-        .map_err(|e| format!("Failed to create API client: {}", e))?;
+    let client =
+        DiscordApiClient::new(token).map_err(|e| format!("Failed to create API client: {}", e))?;
 
     // Validate token
     let user = client
@@ -111,23 +148,46 @@ async fn set_token(token: String, state: State<'_, AppState>) -> Result<DiscordU
         .map_err(|e| format!("Failed to validate token: {}", e))?;
 
     // Fetch latest build_number and client info before returning (so frontend await can rely on completion)
-    
+
     // Priority 1: Try CDP
     let mut cdp_success = false;
     let cdp_port = cdp_client::DEFAULT_CDP_PORT;
 
-    log(LogLevel::Info, LogCategory::TokenExtraction, 
-        &format!("Attempting to fetch SuperProperties via CDP on port {}", cdp_port), None);
+    log(
+        LogLevel::Info,
+        LogCategory::TokenExtraction,
+        &format!(
+            "Attempting to fetch SuperProperties via CDP on port {}",
+            cdp_port
+        ),
+        None,
+    );
 
     if let Ok(cdp_result) = cdp_client::fetch_super_properties_via_cdp(cdp_port).await {
-        log(LogLevel::Info, LogCategory::TokenExtraction, 
-            &format!("Successfully fetched SuperProperties via CDP. Build: {}", cdp_result.decoded.get("client_build_number").and_then(|v| v.as_u64()).unwrap_or(0)), None);
+        log(
+            LogLevel::Info,
+            LogCategory::TokenExtraction,
+            &format!(
+                "Successfully fetched SuperProperties via CDP. Build: {}",
+                cdp_result
+                    .decoded
+                    .get("client_build_number")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0)
+            ),
+            None,
+        );
         if let Ok(mut manager) = SUPER_PROPERTIES_MANAGER.lock() {
             manager.set_from_cdp(&cdp_result.base64, &cdp_result.decoded);
         }
         cdp_success = true;
     } else {
-        log(LogLevel::Debug, LogCategory::TokenExtraction, "CDP fetch failed, falling back to JS scraping", None);
+        log(
+            LogLevel::Debug,
+            LogCategory::TokenExtraction,
+            "CDP fetch failed, falling back to JS scraping",
+            None,
+        );
     }
 
     // Priority 2: Remote JS (Fallback)
@@ -135,32 +195,54 @@ async fn set_token(token: String, state: State<'_, AppState>) -> Result<DiscordU
         // Get build_number
         match token_extractor::fetch_build_number_from_discord().await {
             Ok(build_number) => {
-                log(LogLevel::Info, LogCategory::TokenExtraction, 
-                    &format!("Successfully fetched build number from JS: {}", build_number), None);
+                log(
+                    LogLevel::Info,
+                    LogCategory::TokenExtraction,
+                    &format!(
+                        "Successfully fetched build number from JS: {}",
+                        build_number
+                    ),
+                    None,
+                );
                 if let Ok(mut manager) = SUPER_PROPERTIES_MANAGER.lock() {
                     manager.set_from_remote_js(build_number);
                 }
             }
             Err(e) => {
-                log(LogLevel::Warn, LogCategory::TokenExtraction, 
-                    &format!("Failed to fetch build number from JS: {}", e), None);
+                log(
+                    LogLevel::Warn,
+                    LogCategory::TokenExtraction,
+                    &format!("Failed to fetch build number from JS: {}", e),
+                    None,
+                );
             }
         }
     }
-    
+
     // Get client info (native_build_number and version)
     match token_extractor::fetch_discord_client_info().await {
         Ok(info) => {
-            log(LogLevel::Info, LogCategory::TokenExtraction, 
-                &format!("Successfully fetched client info: version={}, native_build={}", 
-                    info.client_version(), info.native_build_number), None);
+            log(
+                LogLevel::Info,
+                LogCategory::TokenExtraction,
+                &format!(
+                    "Successfully fetched client info: version={}, native_build={}",
+                    info.client_version(),
+                    info.native_build_number
+                ),
+                None,
+            );
             if let Ok(mut manager) = SUPER_PROPERTIES_MANAGER.lock() {
                 manager.set_client_info(info.client_version(), info.native_build_number);
             }
         }
         Err(e) => {
-            log(LogLevel::Warn, LogCategory::TokenExtraction, 
-                &format!("Failed to fetch client info: {}", e), None);
+            log(
+                LogLevel::Warn,
+                LogCategory::TokenExtraction,
+                &format!("Failed to fetch client info: {}", e),
+                None,
+            );
         }
     }
 
@@ -188,7 +270,10 @@ async fn get_quests(state: State<'_, AppState>) -> Result<serde_json::Value, Str
         .map_err(|e| format!("Failed to get quest list: {}", e))?;
 
     // Return the "quests" array directly
-    Ok(quests.get("quests").cloned().unwrap_or(serde_json::Value::Array(vec![])))
+    Ok(quests
+        .get("quests")
+        .cloned()
+        .unwrap_or(serde_json::Value::Array(vec![])))
 }
 
 /// Get full quest list response, preserving excluded quests and enrollment block status.
@@ -399,38 +484,59 @@ async fn start_cdp_quest(
         let result = match quest_type_clone.as_str() {
             "play" => {
                 cdp_quest::complete_play_quest_via_cdp(
-                    cdp_port, quest_id, application_id, application_name,
-                    seconds_needed, initial_progress,
+                    cdp_port,
+                    quest_id,
+                    application_id,
+                    application_name,
+                    seconds_needed,
+                    initial_progress,
                     client,
-                    app_handle.clone(), cancel_rx,
-                ).await
+                    app_handle.clone(),
+                    cancel_rx,
+                )
+                .await
             }
             "stream" => {
                 cdp_quest::complete_stream_quest_via_cdp(
-                    cdp_port, quest_id, application_id,
-                    seconds_needed, initial_progress,
+                    cdp_port,
+                    quest_id,
+                    application_id,
+                    seconds_needed,
+                    initial_progress,
                     client,
-                    app_handle.clone(), cancel_rx,
-                ).await
+                    app_handle.clone(),
+                    cancel_rx,
+                )
+                .await
             }
             "video" => {
                 cdp_quest::complete_video_quest_via_cdp(
-                    cdp_port, quest_id, seconds_needed, initial_progress,
-                    app_handle.clone(), cancel_rx,
-                ).await
+                    cdp_port,
+                    quest_id,
+                    seconds_needed,
+                    initial_progress,
+                    app_handle.clone(),
+                    cancel_rx,
+                )
+                .await
             }
             "activity" => {
                 let times = checkpoint_times
                     .filter(|v| !v.is_empty())
                     .unwrap_or_else(|| vec![180, 180, 180]);
                 cdp_quest::complete_activity_quest_via_cdp(
-                    cdp_port, quest_id, times,
-                    app_handle.clone(), cancel_rx,
-                ).await
+                    cdp_port,
+                    quest_id,
+                    times,
+                    app_handle.clone(),
+                    cancel_rx,
+                )
+                .await
             }
-            _ => {
-                Err(anyhow::anyhow!("Unknown CDP quest type: {}", quest_type_clone))
-            }
+            _ => Err(anyhow::anyhow!(
+                "Unknown CDP quest type: {}",
+                quest_type_clone
+            )),
         };
 
         if let Err(e) = result {
@@ -453,7 +559,7 @@ async fn stop_quest_internal(state: &State<'_, AppState>) {
         let mut quest_state = state.quest_state.lock().unwrap();
         quest_state.take()
     };
-    
+
     if let Some(quest) = quest {
         let _ = quest.cancel_flag.send(()).await;
         println!("Quest stopped");
@@ -526,19 +632,19 @@ async fn fetch_detectable_games(state: State<'_, AppState>) -> Result<Vec<Detect
 
     const API_BASE: &str = "https://discord.com/api/v9";
     let games_url = format!("{}/applications/detectable", API_BASE);
-    let apps_url  = format!("{}/applications/non-games/detectable", API_BASE);
+    let apps_url = format!("{}/applications/non-games/detectable", API_BASE);
 
-    let (games_res, apps_res) = tokio::join!(
-        http.get(&games_url).send(),
-        http.get(&apps_url).send()
-    );
+    let (games_res, apps_res) =
+        tokio::join!(http.get(&games_url).send(), http.get(&apps_url).send());
 
     let mut all_items: Vec<DetectableGame> = Vec::new();
 
     if let Ok(resp) = games_res {
         if resp.status().is_success() {
             if let Ok(mut list) = resp.json::<Vec<DetectableGame>>().await {
-                for g in &mut list { g.type_name = Some("Game".to_string()); }
+                for g in &mut list {
+                    g.type_name = Some("Game".to_string());
+                }
                 all_items.extend(list);
             }
         }
@@ -547,7 +653,9 @@ async fn fetch_detectable_games(state: State<'_, AppState>) -> Result<Vec<Detect
     if let Ok(resp) = apps_res {
         if resp.status().is_success() {
             if let Ok(mut list) = resp.json::<Vec<DetectableGame>>().await {
-                for a in &mut list { a.type_name = Some("App".to_string()); }
+                for a in &mut list {
+                    a.type_name = Some("App".to_string());
+                }
                 all_items.extend(list);
             }
         }
@@ -558,7 +666,10 @@ async fn fetch_detectable_games(state: State<'_, AppState>) -> Result<Vec<Detect
 
 /// Accept quest
 #[tauri::command]
-async fn accept_quest(quest_id: String, state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+async fn accept_quest(
+    quest_id: String,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
     let client = {
         let guard = state.client.lock().unwrap();
         guard
@@ -576,7 +687,9 @@ async fn accept_quest(quest_id: String, state: State<'_, AppState>) -> Result<se
 }
 
 #[tauri::command]
-async fn get_virtual_currency_balance(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+async fn get_virtual_currency_balance(
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
     let client = {
         let guard = state.client.lock().unwrap();
         guard
@@ -592,7 +705,10 @@ async fn get_virtual_currency_balance(state: State<'_, AppState>) -> Result<serd
 }
 
 #[tauri::command]
-async fn get_quest_decision_debug(placement: u64, state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+async fn get_quest_decision_debug(
+    placement: u64,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
     let client = {
         let guard = state.client.lock().unwrap();
         guard
@@ -608,7 +724,11 @@ async fn get_quest_decision_debug(placement: u64, state: State<'_, AppState>) ->
 }
 
 #[tauri::command]
-async fn get_quest_decisions_debug(placement: u64, num: u64, state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+async fn get_quest_decisions_debug(
+    placement: u64,
+    num: u64,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
     let client = {
         let guard = state.client.lock().unwrap();
         guard
@@ -661,7 +781,7 @@ fn connect_to_discord_rpc(handle: tauri::AppHandle, activity_json: String, actio
     let event_connecting = "client_connecting";
     let event_connected = "client_connected";
     let event_disconnect = "event_disconnect";
-    
+
     let activity = runner::parse_activity_json(&activity_json).unwrap();
 
     let connecting_payload = serde_json::json!({
@@ -680,7 +800,7 @@ fn connect_to_discord_rpc(handle: tauri::AppHandle, activity_json: String, actio
             .unwrap_or_else(|e| eprintln!("Failed to emit event: {}", e));
 
         let client_result = runner::set_activity(activity_json).await;
-            
+
         match client_result {
             Ok(client) => {
                 let connected_payload = serde_json::json!({
@@ -711,7 +831,7 @@ fn connect_to_discord_rpc(handle: tauri::AppHandle, activity_json: String, actio
                         }
                     });
                 });
-            },
+            }
             Err(e) => {
                 println!("Failed to set activity: {}", e);
             }
@@ -772,11 +892,11 @@ pub fn ensure_stealth_and_run() {
             let cleanup_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 stealth::cleanup_on_exit();
             }));
-            
+
             if cleanup_result.is_err() {
                 eprintln!("[Stealth] Error: panic occurred during cleanup in panic hook");
             }
-            
+
             // Do NOT reset flag - if we panicked, we don't want to try cleaning up again
             // CLEANUP_IN_PROGRESS.store(false, Ordering::SeqCst);
         }
@@ -832,7 +952,10 @@ pub fn run() {
                     let stealth_title = stealth::generate_stealth_window_title();
                     println!("[Stealth] Setting window title to: {}", stealth_title);
                     if let Err(err) = window.set_title(&stealth_title) {
-                        eprintln!("[Stealth] Failed to set window title to '{}': {}", stealth_title, err);
+                        eprintln!(
+                            "[Stealth] Failed to set window title to '{}': {}",
+                            stealth_title, err
+                        );
                     }
                 }
             }
@@ -865,6 +988,11 @@ pub fn run() {
             get_runner_info,
             check_cdp_status,
             fetch_super_properties_cdp,
+            is_discord_running,
+            launch_discord_cdp,
+            restart_discord_cdp,
+            install_discord_cdp_launcher,
+            create_discord_cdp_launcher_shortcut,
             create_discord_debug_shortcut,
             get_super_properties_mode,
             auto_fetch_super_properties,
@@ -917,7 +1045,8 @@ async fn force_video_progress(
             .clone()
     };
 
-    client.update_video_progress(&quest_id, timestamp)
+    client
+        .update_video_progress(&quest_id, timestamp)
         .await
         .map_err(|e| format!("Failed to force video progress: {}", e))?;
 
@@ -952,23 +1081,28 @@ async fn check_cdp_status(port: Option<u16>) -> cdp_client::CdpStatus {
 
 /// Fetch SuperProperties via CDP
 #[tauri::command]
-async fn fetch_super_properties_cdp(port: Option<u16>) -> Result<cdp_client::CdpSuperProperties, String> {
+async fn fetch_super_properties_cdp(
+    port: Option<u16>,
+) -> Result<cdp_client::CdpSuperProperties, String> {
     let port = port.unwrap_or(cdp_client::DEFAULT_CDP_PORT);
     let result = cdp_client::fetch_super_properties_via_cdp(port)
         .await
         .map_err(|e| e.to_string())?;
-    
+
     // Update global SuperProperties Manager
     if let Ok(mut manager) = SUPER_PROPERTIES_MANAGER.lock() {
         manager.set_from_cdp(&result.base64, &result.decoded);
     }
-    
+
     Ok(result)
 }
 
 /// Capture Discord API request headers via CDP Network interception
 #[tauri::command]
-async fn capture_discord_headers_cdp(port: Option<u16>, duration_secs: Option<u64>) -> Result<cdp_client::CdpCapturedHeaders, String> {
+async fn capture_discord_headers_cdp(
+    port: Option<u16>,
+    duration_secs: Option<u64>,
+) -> Result<cdp_client::CdpCapturedHeaders, String> {
     let port = port.unwrap_or(cdp_client::DEFAULT_CDP_PORT);
     let duration = duration_secs.unwrap_or(30);
     let captured = cdp_client::capture_discord_headers_via_cdp(port, duration)
@@ -1001,19 +1135,30 @@ fn get_super_properties_mode() -> serde_json::Value {
 /// Auto-fetch SuperProperties with fallback: CDP -> Remote JS -> Default
 #[tauri::command]
 async fn auto_fetch_super_properties(cdp_port: Option<u16>) -> serde_json::Value {
-    use crate::logger::{log, LogLevel, LogCategory};
-    
+    use crate::logger::{log, LogCategory, LogLevel};
+
     let port = cdp_port.unwrap_or(cdp_client::DEFAULT_CDP_PORT);
-    
+
     // Priority 1: Try CDP
-    log(LogLevel::Info, LogCategory::TokenExtraction, 
-        &format!("Auto-fetching SuperProperties, trying CDP on port {}", port), None);
-    
+    log(
+        LogLevel::Info,
+        LogCategory::TokenExtraction,
+        &format!("Auto-fetching SuperProperties, trying CDP on port {}", port),
+        None,
+    );
+
     if let Ok(cdp_result) = cdp_client::fetch_super_properties_via_cdp(port).await {
         if let Ok(mut manager) = SUPER_PROPERTIES_MANAGER.lock() {
             manager.set_from_cdp(&cdp_result.base64, &cdp_result.decoded);
-            log(LogLevel::Info, LogCategory::TokenExtraction, 
-                &format!("SuperProperties obtained via CDP. Build: {:?}", manager.get_build_number()), None);
+            log(
+                LogLevel::Info,
+                LogCategory::TokenExtraction,
+                &format!(
+                    "SuperProperties obtained via CDP. Build: {:?}",
+                    manager.get_build_number()
+                ),
+                None,
+            );
             return serde_json::json!({
                 "success": true,
                 "mode": "cdp",
@@ -1021,16 +1166,27 @@ async fn auto_fetch_super_properties(cdp_port: Option<u16>) -> serde_json::Value
             });
         }
     }
-    
-    log(LogLevel::Debug, LogCategory::TokenExtraction, 
-        "CDP failed, falling back to Remote JS", None);
-    
+
+    log(
+        LogLevel::Debug,
+        LogCategory::TokenExtraction,
+        "CDP failed, falling back to Remote JS",
+        None,
+    );
+
     // Priority 2: Try Remote JS
     if let Ok(build_number) = token_extractor::fetch_build_number_from_discord().await {
         if let Ok(mut manager) = SUPER_PROPERTIES_MANAGER.lock() {
             manager.set_from_remote_js(build_number);
-            log(LogLevel::Info, LogCategory::TokenExtraction, 
-                &format!("SuperProperties obtained via Remote JS. Build: {}", build_number), None);
+            log(
+                LogLevel::Info,
+                LogCategory::TokenExtraction,
+                &format!(
+                    "SuperProperties obtained via Remote JS. Build: {}",
+                    build_number
+                ),
+                None,
+            );
             return serde_json::json!({
                 "success": true,
                 "mode": "remote_js",
@@ -1038,17 +1194,21 @@ async fn auto_fetch_super_properties(cdp_port: Option<u16>) -> serde_json::Value
             });
         }
     }
-    
-    log(LogLevel::Warn, LogCategory::TokenExtraction, 
-        "All fetch methods failed, using default values", None);
-    
+
+    log(
+        LogLevel::Warn,
+        LogCategory::TokenExtraction,
+        "All fetch methods failed, using default values",
+        None,
+    );
+
     // Priority 3: Use default values
     let build_number = if let Ok(manager) = SUPER_PROPERTIES_MANAGER.lock() {
         manager.get_build_number()
     } else {
         None
     };
-    
+
     serde_json::json!({
         "success": false,
         "mode": "default",
@@ -1063,187 +1223,352 @@ async fn retry_super_properties(cdp_port: Option<u16>) -> serde_json::Value {
     if let Ok(mut manager) = SUPER_PROPERTIES_MANAGER.lock() {
         manager.reset();
     }
-    
+
     // Retry fetch
     auto_fetch_super_properties(cdp_port).await
 }
 
-/// Create Discord debug shortcut on desktop
 #[tauri::command]
-async fn create_discord_debug_shortcut(port: Option<u16>) -> Result<String, String> {
+fn is_discord_running(channel: Option<String>) -> Result<bool, String> {
+    let channel = discord_cdp_launcher::parse_discord_channel(channel.as_deref())?;
+    discord_cdp_launcher::is_discord_running(channel)
+}
+
+#[tauri::command]
+async fn launch_discord_cdp(
+    port: Option<u16>,
+    channel: Option<String>,
+) -> Result<discord_cdp_launcher::LaunchResult, String> {
+    let channel = discord_cdp_launcher::parse_discord_channel(channel.as_deref())?;
+    discord_cdp_launcher::launch_discord_with_cdp(discord_cdp_launcher::LaunchOptions {
+        port: port.unwrap_or(cdp_client::DEFAULT_CDP_PORT),
+        channel,
+        restart_existing: false,
+        ..Default::default()
+    })
+    .await
+}
+
+#[tauri::command]
+async fn restart_discord_cdp(
+    port: Option<u16>,
+    channel: Option<String>,
+) -> Result<discord_cdp_launcher::LaunchResult, String> {
+    let channel = discord_cdp_launcher::parse_discord_channel(channel.as_deref())?;
+    discord_cdp_launcher::restart_discord_with_cdp(discord_cdp_launcher::LaunchOptions {
+        port: port.unwrap_or(cdp_client::DEFAULT_CDP_PORT),
+        channel,
+        restart_existing: true,
+        ..Default::default()
+    })
+    .await
+}
+
+#[tauri::command]
+async fn install_discord_cdp_launcher(app_handle: tauri::AppHandle) -> Result<String, String> {
+    install_discord_cdp_launcher_internal(&app_handle)
+        .await
+        .map(|path| path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+async fn create_discord_cdp_launcher_shortcut(
+    app_handle: tauri::AppHandle,
+    port: Option<u16>,
+    channel: Option<String>,
+) -> Result<String, String> {
+    let channel = discord_cdp_launcher::parse_discord_channel(channel.as_deref())?;
     let port = port.unwrap_or(cdp_client::DEFAULT_CDP_PORT);
-    create_discord_shortcut_internal(port).await
+    create_discord_cdp_launcher_shortcut_internal(&app_handle, port, channel).await
+}
+
+/// Backward compatible command name. It now creates a long-lived CDP launcher shortcut.
+#[tauri::command]
+async fn create_discord_debug_shortcut(
+    app_handle: tauri::AppHandle,
+    port: Option<u16>,
+) -> Result<String, String> {
+    create_discord_cdp_launcher_shortcut_internal(
+        &app_handle,
+        port.unwrap_or(cdp_client::DEFAULT_CDP_PORT),
+        None,
+    )
+    .await
+}
+
+async fn install_discord_cdp_launcher_internal(
+    app_handle: &tauri::AppHandle,
+) -> Result<std::path::PathBuf, String> {
+    use std::fs;
+
+    let source = find_bundled_cdp_launcher(app_handle)?;
+    let target = stable_cdp_launcher_path()?;
+
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create CDP launcher directory: {}", e))?;
+    }
+
+    if source != target {
+        fs::copy(&source, &target).map_err(|e| {
+            format!(
+                "Failed to install CDP launcher to stable path from '{}' to '{}': {}",
+                source.display(),
+                target.display(),
+                e
+            )
+        })?;
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o755))
+            .map_err(|e| format!("Failed to mark CDP launcher executable: {}", e))?;
+    }
+
+    Ok(target)
+}
+
+fn stable_cdp_launcher_path() -> Result<std::path::PathBuf, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let local_appdata = std::env::var_os("LOCALAPPDATA")
+            .ok_or_else(|| "Could not get LOCALAPPDATA".to_string())?;
+        return Ok(std::path::PathBuf::from(local_appdata)
+            .join("DiscordQuestHelper")
+            .join("DiscordCdpLauncher.exe"));
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let home = std::env::var_os("HOME").ok_or_else(|| "Could not get HOME".to_string())?;
+        return Ok(std::path::PathBuf::from(home)
+            .join("Library")
+            .join("Application Support")
+            .join("Discord Quest Helper")
+            .join("discord-cdp-launcher"));
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        Err("Discord CDP launcher is only supported on Windows and macOS.".to_string())
+    }
+}
+
+fn find_bundled_cdp_launcher(app_handle: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    let mut candidate_dirs = Vec::new();
+
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            candidate_dirs.push(parent.to_path_buf());
+            candidate_dirs.push(parent.join("binaries"));
+            candidate_dirs.push(parent.join("../Resources"));
+        }
+    }
+
+    if let Ok(resource_dir) = app_handle.path().resource_dir() {
+        candidate_dirs.push(resource_dir.clone());
+        candidate_dirs.push(resource_dir.join("binaries"));
+    }
+
+    if let Ok(cwd) = std::env::current_dir() {
+        candidate_dirs.push(cwd.join("src-tauri").join("binaries"));
+        candidate_dirs.push(cwd.join("src-tauri").join("target").join("release"));
+        candidate_dirs.push(cwd.join("src-tauri").join("target").join("debug"));
+        candidate_dirs.push(cwd.join("target").join("release"));
+        candidate_dirs.push(cwd.join("target").join("debug"));
+    }
+
+    for dir in candidate_dirs {
+        for name in cdp_launcher_binary_names() {
+            let candidate = dir.join(name);
+            if candidate.exists() {
+                return Ok(candidate);
+            }
+        }
+    }
+
+    Err(
+        "Failed to find bundled CDP launcher. Run `npm run build:cdp-launcher` and try again."
+            .to_string(),
+    )
+}
+
+fn cdp_launcher_binary_names() -> Vec<&'static str> {
+    #[cfg(target_os = "windows")]
+    {
+        return vec![
+            "discord-cdp-launcher.exe",
+            "discord-cdp-launcher-sidecar.exe",
+            "discord-cdp-launcher-x86_64-pc-windows-msvc.exe",
+            "discord-cdp-launcher-aarch64-pc-windows-msvc.exe",
+            "discord-cdp-launcher-sidecar-x86_64-pc-windows-msvc.exe",
+            "discord-cdp-launcher-sidecar-aarch64-pc-windows-msvc.exe",
+        ];
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        return vec![
+            "discord-cdp-launcher",
+            "discord-cdp-launcher-sidecar",
+            "discord-cdp-launcher-aarch64-apple-darwin",
+            "discord-cdp-launcher-x86_64-apple-darwin",
+            "discord-cdp-launcher-sidecar-aarch64-apple-darwin",
+            "discord-cdp-launcher-sidecar-x86_64-apple-darwin",
+        ];
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        Vec::new()
+    }
+}
+
+async fn create_discord_cdp_launcher_shortcut_internal(
+    app_handle: &tauri::AppHandle,
+    port: u16,
+    channel: Option<discord_cdp_launcher::DiscordChannel>,
+) -> Result<String, String> {
+    let launcher_path = install_discord_cdp_launcher_internal(app_handle).await?;
+    create_platform_cdp_launcher_shortcut(&launcher_path, port, channel)
 }
 
 #[cfg(target_os = "windows")]
-async fn create_discord_shortcut_internal(port: u16) -> Result<String, String> {
-    use std::process::Command;
+fn create_platform_cdp_launcher_shortcut(
+    launcher_path: &std::path::Path,
+    port: u16,
+    channel: Option<discord_cdp_launcher::DiscordChannel>,
+) -> Result<String, String> {
     use std::path::PathBuf;
-    
-    // Find Discord executable
-    let discord_exe = find_discord_executable()
-        .ok_or_else(|| "Could not find Discord installation".to_string())?;
-    
-    // Get desktop path
+    use std::process::Command;
+
     let desktop = std::env::var("USERPROFILE")
         .map(|p| PathBuf::from(p).join("Desktop"))
         .map_err(|_| "Could not get desktop path".to_string())?;
-    
-    let shortcut_path = desktop.join("Discord (Debug Mode).lnk");
-    
-    // Create shortcut using PowerShell with single-quoted strings for safety
-    // Escape embedded single quotes by doubling them
-    let shortcut_path_ps = shortcut_path.to_string_lossy().replace('\'', "''");
-    let discord_exe_ps = discord_exe.to_string_lossy().replace('\'', "''");
-    
+
+    let shortcut_path = desktop.join("Discord CDP Launcher.lnk");
+    let legacy_shortcut_path = desktop.join("Discord (Debug Mode).lnk");
+    let launcher_dir = launcher_path
+        .parent()
+        .ok_or_else(|| "Could not get launcher directory".to_string())?;
+    let channel_arg = channel.map(|c| c.as_str()).unwrap_or("auto");
+    let args = format!("--port {} --channel {} --wait-cdp", port, channel_arg);
+
+    let shortcut_path_ps = ps_single_quote(&shortcut_path.to_string_lossy());
+    let legacy_shortcut_path_ps = ps_single_quote(&legacy_shortcut_path.to_string_lossy());
+    let launcher_path_ps = ps_single_quote(&launcher_path.to_string_lossy());
+    let launcher_dir_ps = ps_single_quote(&launcher_dir.to_string_lossy());
+    let args_ps = ps_single_quote(&args);
+
     let ps_script = format!(
         r#"
-$WshShell = New-Object -comObject WScript.Shell
-$Shortcut = $WshShell.CreateShortcut('{}')
-$Shortcut.TargetPath = '{}'
-$Shortcut.Arguments = "--remote-debugging-port={} --remote-allow-origins=*"
-$Shortcut.Description = "Discord with DevTools Protocol enabled for Quest Helper"
-$Shortcut.Save()
+$ErrorActionPreference = 'Stop'
+$WshShell = New-Object -ComObject WScript.Shell
+function Set-CdpShortcut($Path) {{
+  $Shortcut = $WshShell.CreateShortcut($Path)
+  $Shortcut.TargetPath = '{launcher_path}'
+  $Shortcut.Arguments = '{args}'
+  $Shortcut.WorkingDirectory = '{launcher_dir}'
+  $Shortcut.Description = 'Launch Discord with CDP enabled for Discord Quest Helper'
+  $Shortcut.IconLocation = '{launcher_path},0'
+  $Shortcut.Save()
+}}
+Set-CdpShortcut '{shortcut_path}'
+if (Test-Path -LiteralPath '{legacy_shortcut_path}') {{
+  Set-CdpShortcut '{legacy_shortcut_path}'
+}}
 "#,
-        shortcut_path_ps,
-        discord_exe_ps,
-        port
+        launcher_path = launcher_path_ps,
+        args = args_ps,
+        launcher_dir = launcher_dir_ps,
+        shortcut_path = shortcut_path_ps,
+        legacy_shortcut_path = legacy_shortcut_path_ps,
     );
-    
-    // Use a temporary file for the script to avoid issues with special characters in arguments
-    let temp_dir = std::env::temp_dir();
-    let script_path = temp_dir.join(format!("discord_shortcut_{}.ps1", uuid::Uuid::new_v4()));
-    
+
+    let script_path = std::env::temp_dir().join(format!(
+        "discord_cdp_launcher_shortcut_{}.ps1",
+        uuid::Uuid::new_v4()
+    ));
     std::fs::write(&script_path, &ps_script)
         .map_err(|e| format!("Failed to write temporary PowerShell script: {}", e))?;
-        
-    let output = Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", &script_path.to_string_lossy()])
-        .output();
-        
-    // Clean up temporary script
-    let _ = std::fs::remove_file(&script_path);
 
+    let output = Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            &script_path.to_string_lossy(),
+        ])
+        .output();
+
+    let _ = std::fs::remove_file(&script_path);
     let output = output.map_err(|e| format!("Failed to execute PowerShell: {}", e))?;
-    
+
     if output.status.success() {
         Ok(shortcut_path.to_string_lossy().to_string())
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(format!("Failed to create shortcut: {}", stderr))
+        Err(format!(
+            "Failed to create desktop shortcut: {}",
+            stderr.trim()
+        ))
     }
 }
 
 #[cfg(target_os = "windows")]
-fn find_discord_executable() -> Option<std::path::PathBuf> {
-    use std::path::PathBuf;
-    
-    let local_appdata = std::env::var("LOCALAPPDATA").ok()?;
-    let base = PathBuf::from(local_appdata);
-    
-    // Map channel folder to executable name
-    let channels = [
-        ("Discord", "Discord.exe"),
-        ("DiscordPTB", "DiscordPTB.exe"),
-        ("DiscordCanary", "DiscordCanary.exe"),
-    ];
-    
-    for (channel, exe_name) in channels {
-        let channel_path = base.join(channel);
-        
-        // Find latest app-* directory
-        if let Ok(entries) = std::fs::read_dir(&channel_path) {
-            let mut app_dirs: Vec<_> = entries
-                .filter_map(|e| e.ok())
-                .filter(|e| {
-                    e.file_name()
-                        .to_string_lossy()
-                        .starts_with("app-")
-                })
-                .collect();
-            // Sort by version number (extract numeric parts for proper ordering)
-            // e.g., "app-1.0.9219" -> parse version numerically
-            app_dirs.sort_by(|a, b| {
-                let extract_version = |name: &std::ffi::OsStr| -> Vec<u32> {
-                    name.to_string_lossy()
-                        .strip_prefix("app-")
-                        .unwrap_or("")
-                        .split('.')
-                        .filter_map(|s| s.parse().ok())
-                        .collect()
-                };
-                let va = extract_version(&a.file_name());
-                let vb = extract_version(&b.file_name());
-                vb.cmp(&va) // Descending order (latest first)
-            });
-            
-            if let Some(latest) = app_dirs.first() {
-                let exe_path = latest.path().join(exe_name);
-                if exe_path.exists() {
-                    return Some(exe_path);
-                }
-            }
-        }
-        
-        // Check root directory directly
-        let direct_exe = channel_path.join(exe_name);
-        if direct_exe.exists() {
-            return Some(direct_exe);
-        }
-    }
-    
-    None
+fn ps_single_quote(value: &str) -> String {
+    value.replace('\'', "''")
 }
 
 #[cfg(target_os = "macos")]
-async fn create_discord_shortcut_internal(port: u16) -> Result<String, String> {
-    // macOS: Create a shell script or suggest terminal command
-    let home = std::env::var("HOME").map_err(|_| "Could not get HOME")?;
-    let desktop = format!("{}/Desktop", home);
-    let script_path = format!("{}/Discord Debug Mode.command", desktop);
-    
-    let discord_path = find_discord_executable_macos()
-        .ok_or_else(|| "Could not find Discord installation".to_string())?;
-    
+fn create_platform_cdp_launcher_shortcut(
+    launcher_path: &std::path::Path,
+    port: u16,
+    channel: Option<discord_cdp_launcher::DiscordChannel>,
+) -> Result<String, String> {
+    use std::io::Write;
+    use std::os::unix::fs::PermissionsExt;
+
+    let home = std::env::var_os("HOME").ok_or_else(|| "Could not get HOME".to_string())?;
+    let desktop = std::path::PathBuf::from(home).join("Desktop");
+    let script_path = desktop.join("Discord CDP Launcher.command");
+    let legacy_script_path = desktop.join("Discord Debug Mode.command");
+    let channel_arg = channel.map(|c| c.as_str()).unwrap_or("auto");
+
     let script_content = format!(
-        r#"#!/bin/bash
-# Discord with DevTools Protocol enabled for Quest Helper
-"{}" --remote-debugging-port={} --remote-allow-origins=*
-"#,
-        discord_path, port
+        "#!/bin/bash\n\"{}\" --port {} --channel {} --wait-cdp\n",
+        launcher_path.display(),
+        port,
+        channel_arg
     );
-    
-    std::fs::write(&script_path, script_content)
-        .map_err(|e| format!("Failed to write script: {}", e))?;
-    
-    // Make executable
-    std::process::Command::new("chmod")
-        .args(["+x", &script_path])
-        .output()
-        .map_err(|e| format!("Failed to make script executable: {}", e))?;
-    
-    Ok(script_path)
-}
 
-#[cfg(target_os = "macos")]
-fn find_discord_executable_macos() -> Option<String> {
-    let paths = [
-        "/Applications/Discord.app/Contents/MacOS/Discord",
-        "/Applications/Discord Canary.app/Contents/MacOS/Discord",
-        "/Applications/Discord PTB.app/Contents/MacOS/Discord",
-    ];
-    
-    for path in paths {
-        if std::path::Path::new(path).exists() {
-            return Some(path.to_string());
+    std::fs::write(&script_path, &script_content)
+        .map_err(|e| format!("Failed to write launcher command: {}", e))?;
+    std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755))
+        .map_err(|e| format!("Failed to mark launcher command executable: {}", e))?;
+
+    if legacy_script_path.exists() {
+        if let Ok(mut file) = std::fs::File::create(&legacy_script_path) {
+            let _ = file.write_all(script_content.as_bytes());
+            let _ = std::fs::set_permissions(
+                &legacy_script_path,
+                std::fs::Permissions::from_mode(0o755),
+            );
         }
     }
-    
-    None
+
+    Ok(script_path.to_string_lossy().to_string())
 }
 
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-async fn create_discord_shortcut_internal(_port: u16) -> Result<String, String> {
-    Err("Shortcut creation is only supported on Windows and macOS".to_string())
+fn create_platform_cdp_launcher_shortcut(
+    _launcher_path: &std::path::Path,
+    _port: u16,
+    _channel: Option<discord_cdp_launcher::DiscordChannel>,
+) -> Result<String, String> {
+    Err("Shortcut creation is only supported on Windows and macOS.".to_string())
 }
-

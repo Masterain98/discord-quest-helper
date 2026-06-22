@@ -1,6 +1,5 @@
 pub use discord_sdk as ds;
 
-
 /// Application identifier for "Andy's Test App" used in the Discord SDK's
 /// examples.
 pub struct Client {
