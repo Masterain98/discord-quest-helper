@@ -52,7 +52,7 @@ fn main() {
             "unknown".to_string()
         }
     });
-    let launcher_ext = if cfg!(target_os = "windows") {
+    let launcher_ext = if target_triple.contains("-windows-") {
         ".exe"
     } else {
         ""

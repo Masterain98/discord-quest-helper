@@ -21,6 +21,9 @@ pub async fn complete_video_quest(
 ) -> Result<()> {
     // Progress control parameters (based on power0matin research)
     // Speed: how many seconds to advance per update (configurable)
+    if speed_multiplier <= 0.0 {
+        anyhow::bail!("speed_multiplier must be greater than 0");
+    }
     let speed = speed_multiplier;
     // Interval: how often to send updates (in real seconds)
     let interval = heartbeat_interval;
@@ -179,7 +182,7 @@ pub async fn complete_game_quest_via_heartbeat(
 
         // Send heartbeat
         match client
-            .send_game_heartbeat(&quest_id, &application_id, false)
+            .send_game_heartbeat(&quest_id, &application_id, is_last)
             .await
         {
             Ok(completed) => {

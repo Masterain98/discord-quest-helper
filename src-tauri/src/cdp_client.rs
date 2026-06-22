@@ -186,7 +186,9 @@ async fn get_cdp_targets(port: u16) -> Result<Vec<CdpTarget>> {
         .get(&url)
         .send()
         .await
-        .context("Failed to connect to CDP endpoint")?;
+        .context("Failed to connect to CDP endpoint")?
+        .error_for_status()
+        .context("CDP endpoint returned non-success status")?;
 
     let targets: Vec<CdpTarget> = response
         .json()

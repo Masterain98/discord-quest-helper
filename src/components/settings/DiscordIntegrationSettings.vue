@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { Check, Link2, Loader2, Play, Wifi, WifiOff } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { Button } from '@/components/ui/button'
@@ -33,6 +33,11 @@ const questsStore = useQuestsStore()
 
 const cdpStatus = ref<CdpStatus | null>(null)
 const cdpChecking = ref(false)
+
+// Dynamic button label: show "Restart" when CDP is already connected
+const cdpPrimaryLabelKey = computed(() =>
+  cdpStatus.value?.connected ? 'settings.cdp_restart' : 'settings.cdp_launch'
+)
 const cdpFetching = ref(false)
 const cdpFetchSuccess = ref(false)
 const cdpFetchError = ref('')
@@ -118,6 +123,7 @@ async function requestCdpAction() {
 }
 
 async function confirmCdpAction() {
+  if (cdpActionBusy.value) return
   cdpDialogOpen.value = false
   await performLaunch(true)
 }
@@ -159,7 +165,7 @@ onMounted(checkCdp)
       </AlertDialogHeader>
       <AlertDialogFooter>
         <AlertDialogCancel>{{ t('dialog.cancel') }}</AlertDialogCancel>
-        <AlertDialogAction @click="confirmCdpAction">
+        <AlertDialogAction :disabled="cdpActionBusy" @click="confirmCdpAction">
           {{ t('settings.cdp_dialog_confirm') }}
         </AlertDialogAction>
       </AlertDialogFooter>
@@ -201,7 +207,7 @@ onMounted(checkCdp)
           <Button variant="secondary" @click="requestCdpAction" :disabled="cdpActionBusy">
             <Loader2 v-if="cdpActionBusy" class="mr-2 h-4 w-4 animate-spin" />
             <Play v-else class="mr-2 h-4 w-4" />
-            {{ t('settings.cdp_launch') }}
+            {{ t(cdpPrimaryLabelKey) }}
           </Button>
           <span v-if="cdpLaunchSuccess" class="flex items-center gap-1 text-sm text-green-500">
             <Check class="h-4 w-4" /> {{ cdpLaunchSuccess }}

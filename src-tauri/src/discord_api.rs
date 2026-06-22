@@ -294,22 +294,19 @@ impl DiscordApiClient {
         {
             use base64::Engine as _;
             use crate::logger::{log, LogCategory, LogLevel};
-            // Decode to verify content
-            if let Ok(decoded) = base64::engine::general_purpose::STANDARD.decode(&super_props) {
-                if let Ok(s) = String::from_utf8(decoded) {
-                    // Truncate for logging if too long, but show enough to verify structure
-                    let preview = if s.len() > 100 {
-                        format!("{}...", &s[..100])
-                    } else {
-                        s
-                    };
-                    log(
-                        LogLevel::Debug,
-                        LogCategory::Api,
-                        &format!("Injecting X-Super-Properties: {}", preview),
-                        None,
-                    );
-                }
+            // Decode only to validate shape; avoid logging decoded payload contents
+            if base64::engine::general_purpose::STANDARD
+                .decode(&super_props)
+                .ok()
+                .and_then(|d| String::from_utf8(d).ok())
+                .is_some()
+            {
+                log(
+                    LogLevel::Debug,
+                    LogCategory::Api,
+                    &format!("Injecting X-Super-Properties (base64_len={})", super_props.len()),
+                    None,
+                );
             }
         }
 

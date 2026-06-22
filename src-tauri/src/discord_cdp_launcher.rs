@@ -1,4 +1,3 @@
-use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
@@ -231,7 +230,7 @@ async fn wait_until_discord_exits(
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
 
-    Err("Discord is running but could not be terminated. Please close Discord manually and try again."
+    Err("Discord did not exit within the timeout. Please close Discord manually and try again."
         .to_string())
 }
 
@@ -495,16 +494,15 @@ fn terminate_discord_processes_platform(channel: Option<DiscordChannel>) -> Resu
 
     std::thread::sleep(Duration::from_secs(3));
 
+    // pkill -x is idempotent: exit code 1 means no matching process (already exited)
     for name in process_names_for(channel) {
-        if is_discord_running(Some(channel_from_process_name(&name)))? {
-            let output = Command::new("pkill")
-                .args(["-x", &name])
-                .output()
-                .map_err(|e| format!("Could not execute pkill for {}: {}", name, e))?;
-            if !output.status.success() && output.status.code() != Some(1) {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                return Err(format!("Failed to terminate {}: {}", name, stderr.trim()));
-            }
+        let output = Command::new("pkill")
+            .args(["-x", &name])
+            .output()
+            .map_err(|e| format!("Could not execute pkill for {}: {}", name, e))?;
+        if !output.status.success() && output.status.code() != Some(1) {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("Failed to terminate {}: {}", name, stderr.trim()));
         }
     }
 

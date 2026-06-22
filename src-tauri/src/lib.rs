@@ -1258,7 +1258,6 @@ async fn restart_discord_cdp(
     discord_cdp_launcher::restart_discord_with_cdp(discord_cdp_launcher::LaunchOptions {
         port: port.unwrap_or(cdp_client::DEFAULT_CDP_PORT),
         channel,
-        restart_existing: true,
         ..Default::default()
     })
     .await
@@ -1395,7 +1394,12 @@ fn find_bundled_cdp_launcher(app_handle: &tauri::AppHandle) -> Result<std::path:
         for name in &names {
             let candidate = dir.join(name);
             if candidate.exists() {
-                return Ok(candidate);
+                // Reject empty placeholder files (created by build.rs for fresh checkouts)
+                match std::fs::metadata(&candidate) {
+                    Ok(m) if m.len() == 0 => continue,
+                    Err(_) => continue,
+                    _ => return Ok(candidate),
+                }
             }
         }
     }
@@ -1406,7 +1410,7 @@ fn find_bundled_cdp_launcher(app_handle: &tauri::AppHandle) -> Result<std::path:
         .collect();
     Err(format!(
         "Failed to find bundled CDP launcher (names: {:?}, searched: {:?}). \
-         Run `npm run build:cdp-launcher` and try again.",
+         Run `pnpm build:cdp-launcher` and try again.",
         names, searched
     ))
 }
@@ -1548,9 +1552,14 @@ fn create_platform_cdp_launcher_shortcut(
     let legacy_script_path = desktop.join("Discord Debug Mode.command");
     let channel_arg = channel.map(|c| c.as_str()).unwrap_or("auto");
 
+    // Use single quotes to prevent shell metacharacter expansion ($, `, \, ")
+    fn shell_single_quote(value: &str) -> String {
+        format!("'{}'", value.replace('\'', "'\\''"))
+    }
+
     let script_content = format!(
-        "#!/bin/bash\n\"{}\" --port {} --channel {} --wait-cdp\n",
-        launcher_path.display(),
+        "#!/bin/bash\n{} --port {} --channel {} --wait-cdp\n",
+        shell_single_quote(&launcher_path.to_string_lossy()),
         port,
         channel_arg
     );

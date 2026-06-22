@@ -251,9 +251,13 @@ fn parse_args(args: Vec<String>) -> Result<CliOptions, String> {
                 let value = args
                     .get(i)
                     .ok_or_else(|| "--port requires a value".to_string())?;
-                options.port = value
+                let parsed = value
                     .parse::<u16>()
                     .map_err(|_| format!("Invalid --port value: {}", value))?;
+                if parsed == 0 {
+                    return Err("--port must be between 1 and 65535".to_string());
+                }
+                options.port = parsed;
             }
             "--channel" => {
                 i += 1;

