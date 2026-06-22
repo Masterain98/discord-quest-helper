@@ -165,6 +165,13 @@ function handleAppNavigate(e: Event) {
   }
 }
 
+function handleDebugDisabled() {
+  debugModeEnabled.value = false
+  if (currentTab.value === 'debug') {
+    currentTab.value = 'settings'
+  }
+}
+
 function openSettingsSection(section: 'discord_integration' | 'quest_behavior' | 'advanced' | 'account') {
   persistSettingsSection(section)
   currentTab.value = 'settings'
@@ -370,6 +377,7 @@ function openSettingsSection(section: 'discord_integration' | 'quest_behavior' |
           v-else-if="currentTab === 'settings'" 
           @navigate-to-home="currentTab = 'home'" 
           @debug-unlocked="debugModeEnabled = true; currentTab = 'debug'"
+          @debug-disabled="handleDebugDisabled"
         />
         
         <!-- Debug - no login required -->

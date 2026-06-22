@@ -8,11 +8,21 @@ import { mkdir } from '@tauri-apps/plugin-fs'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useQuestsStore } from '@/stores/quests'
 import { getSuperPropertiesMode, retrySuperProperties, type SuperPropertiesModeInfo } from '@/api/tauri'
+import { nextTick } from 'vue'
 import SettingRow from './SettingRow.vue'
+import { navigateToTab } from '@/utils/navigate'
+
+function goToPortSection() {
+  navigateToTab('settings', 'discord_integration')
+  nextTick(() => {
+    setTimeout(() => {
+      document.getElementById('custom-port-section')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 100)
+  })
+}
 
 const { t } = useI18n()
 const questsStore = useQuestsStore()
@@ -78,13 +88,12 @@ onMounted(async () => {
     <CardContent class="space-y-5">
       <div class="rounded-lg border px-4">
         <SettingRow :label="t('settings.cdp_port')" :description="t('settings.cdp_port_hint')">
-          <Input
-            type="number"
-            v-model.number="questsStore.cdpPort"
-            min="1024"
-            max="65535"
-            class="w-32"
-          />
+          <div class="flex items-center gap-2">
+            <Badge variant="outline" class="font-mono">{{ questsStore.cdpPort }}</Badge>
+            <Button variant="ghost" size="sm" @click="goToPortSection">
+              {{ t('settings.edit_port') }}
+            </Button>
+          </div>
         </SettingRow>
 
         <SettingRow :label="t('settings.super_props_mode')" :description="t('settings.super_props_mode_desc')">

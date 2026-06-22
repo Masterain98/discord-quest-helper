@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { Check, Link2, Loader2, Play, Wifi, WifiOff } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -11,10 +12,12 @@ import {
   checkCdpStatus,
   createDiscordCdpLauncherShortcut,
   fetchSuperPropertiesCdp,
+  getDebugInfo,
   isDiscordRunning,
   launchDiscordCdp,
   restartDiscordCdp,
-  type CdpStatus
+  type CdpStatus,
+  type DebugInfo
 } from '@/api/tauri'
 import {
   AlertDialog,
@@ -50,6 +53,8 @@ const shortcutError = ref('')
 const cdpDialogOpen = ref(false)
 const discordWasRunning = ref(false)
 const discordWasConnected = ref(false)
+const debugInfo = ref<DebugInfo | null>(null)
+const debugInfoLoading = ref(false)
 
 async function checkCdp() {
   cdpChecking.value = true
@@ -64,6 +69,17 @@ async function checkCdp() {
   }
 }
 
+async function loadDebugInfo() {
+  debugInfoLoading.value = true
+  try {
+    debugInfo.value = await getDebugInfo()
+  } catch (e) {
+    console.error('Failed to load debug info:', e)
+  } finally {
+    debugInfoLoading.value = false
+  }
+}
+
 async function fetchCdpSuperProperties() {
   cdpFetching.value = true
   cdpFetchSuccess.value = false
@@ -73,6 +89,7 @@ async function fetchCdpSuperProperties() {
     cdpFetchSuccess.value = true
     setTimeout(() => { cdpFetchSuccess.value = false }, 5000)
     await checkCdp()
+    await loadDebugInfo()
   } catch (e) {
     cdpFetchError.value = String(e)
     setTimeout(() => { cdpFetchError.value = '' }, 5000)
@@ -149,7 +166,10 @@ async function performLaunch(restart: boolean) {
   }
 }
 
-onMounted(checkCdp)
+onMounted(() => {
+  checkCdp()
+  loadDebugInfo()
+})
 </script>
 
 <template>
@@ -231,21 +251,73 @@ onMounted(checkCdp)
         </div>
       </div>
 
-      <div v-if="cdpStatus?.connected" class="space-y-2">
-        <div class="flex flex-wrap items-center gap-3">
-          <Button variant="secondary" @click="fetchCdpSuperProperties" :disabled="cdpFetching">
-            <Loader2 v-if="cdpFetching" class="mr-2 h-4 w-4 animate-spin" />
-            <Link2 v-else class="mr-2 h-4 w-4" />
-            {{ t('settings.cdp_fetch') }}
-          </Button>
-          <span v-if="cdpFetchSuccess" class="flex items-center gap-1 text-sm text-green-500">
-            <Check class="h-4 w-4" /> {{ t('settings.cdp_fetch_success') }}
-          </span>
-          <span v-if="cdpFetchError" class="text-sm text-red-500">{{ cdpFetchError }}</span>
+      <AdvancedDisclosure
+        :title="t('settings.client_emulation')"
+        :description="t('settings.client_emulation_desc')"
+        default-open
+      >
+        <div class="space-y-3">
+          <div v-if="cdpStatus?.connected" class="flex flex-wrap items-center gap-3">
+            <Button variant="secondary" size="sm" @click="fetchCdpSuperProperties" :disabled="cdpFetching">
+              <Loader2 v-if="cdpFetching" class="mr-2 h-4 w-4 animate-spin" />
+              <Link2 v-else class="mr-2 h-4 w-4" />
+              {{ t('settings.cdp_sync') }}
+            </Button>
+            <span v-if="cdpFetchSuccess" class="flex items-center gap-1 text-sm text-green-500">
+              <Check class="h-4 w-4" /> {{ t('settings.cdp_sync_success') }}
+            </span>
+            <span v-if="cdpFetchError" class="text-sm text-red-500">{{ cdpFetchError }}</span>
+          </div>
+          <template v-if="debugInfo">
+            <div class="flex items-center gap-2">
+              <Badge
+                :variant="debugInfo.source?.includes('CDP') ? 'default' : (debugInfo.source?.includes('Remote') ? 'secondary' : 'outline')"
+                :class="[
+                  debugInfo.source?.includes('CDP') && 'bg-green-500 text-white',
+                  debugInfo.source?.includes('Remote') && 'bg-yellow-500 text-black',
+                  !debugInfo.source?.includes('CDP') && !debugInfo.source?.includes('Remote') && 'border-red-500/50 bg-red-500/20 text-red-500',
+                ]"
+              >
+                {{ debugInfo.source }}
+              </Badge>
+              <span class="text-xs text-muted-foreground">{{ t('settings.super_props_mode') }}</span>
+            </div>
+            <div class="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-muted-foreground">{{ t('settings.field_client_build_number') }}</span>
+                <span class="font-mono font-semibold">{{ debugInfo.super_properties?.client_build_number }}</span>
+              </div>
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-muted-foreground">{{ t('settings.field_client_version') }}</span>
+                <span class="font-mono">{{ debugInfo.super_properties?.client_version ?? '—' }}</span>
+              </div>
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-muted-foreground">{{ t('settings.field_native_build_number') }}</span>
+                <span class="font-mono">{{ debugInfo.super_properties?.native_build_number ?? '—' }}</span>
+              </div>
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-muted-foreground">{{ t('settings.field_os') }}</span>
+                <span class="font-mono">{{ debugInfo.super_properties?.os }} {{ debugInfo.super_properties?.os_version }}</span>
+              </div>
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-muted-foreground">{{ t('settings.field_browser') }}</span>
+                <span class="font-mono">{{ debugInfo.super_properties?.browser }}</span>
+              </div>
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-muted-foreground">{{ t('settings.field_release_channel') }}</span>
+                <span class="font-mono">{{ debugInfo.super_properties?.release_channel }}</span>
+              </div>
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-muted-foreground">{{ t('settings.field_system_locale') }}</span>
+                <span class="font-mono">{{ debugInfo.super_properties?.system_locale }}</span>
+              </div>
+            </div>
+          </template>
         </div>
-      </div>
+      </AdvancedDisclosure>
 
       <AdvancedDisclosure
+        id="custom-port-section"
         :title="t('settings.custom_port')"
         :description="t('settings.custom_port_desc')"
         default-open

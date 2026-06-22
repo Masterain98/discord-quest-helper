@@ -1,8 +1,18 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { CheckCircle2, Link2 } from 'lucide-vue-next'
+import { CheckCircle2, Link2, XCircle } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { open } from '@tauri-apps/plugin-shell'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -14,9 +24,11 @@ const versionStore = useVersionStore()
 
 const emit = defineEmits<{
   debugUnlocked: []
+  debugDisabled: []
 }>()
 
 const debugModeEnabled = ref(localStorage.getItem('debugMode') === 'true')
+const disableDialogOpen = ref(false)
 const versionTapCount = ref(0)
 const lastTapTime = ref(0)
 const showDebugUnlockHint = ref(false)
@@ -83,6 +95,12 @@ function handleVersionTapWithBubble() {
   handleVersionTap()
 }
 
+function confirmDisableDebugMode() {
+  debugModeEnabled.value = false
+  localStorage.removeItem('debugMode')
+  emit('debugDisabled')
+}
+
 function removeBubble(id: number) {
   const idx = logoBubbles.value.findIndex(bubble => bubble.id === id)
   if (idx !== -1) logoBubbles.value.splice(idx, 1)
@@ -91,6 +109,21 @@ function removeBubble(id: number) {
 
 <template>
   <div class="grid gap-6 xl:grid-cols-2">
+    <AlertDialog :open="disableDialogOpen" @update:open="disableDialogOpen = $event">
+      <AlertDialogContent class="max-w-[480px]">
+        <AlertDialogHeader>
+          <AlertDialogTitle>{{ t('settings.disable_debug_confirm_title') }}</AlertDialogTitle>
+          <AlertDialogDescription>{{ t('settings.disable_debug_confirm_desc') }}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>{{ t('dialog.cancel') }}</AlertDialogCancel>
+          <AlertDialogAction @click="confirmDisableDebugMode">
+            {{ t('settings.disable_developer_mode') }}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+
     <Card>
       <CardHeader>
         <CardTitle>{{ t('settings.about') }}</CardTitle>
@@ -124,6 +157,10 @@ function removeBubble(id: number) {
             <CheckCircle2 class="h-3 w-3" />
             {{ t('settings.debug_already_unlocked') }}
           </span>
+          <Button v-if="debugModeEnabled" variant="ghost" size="sm" class="h-6 gap-1 px-2 text-xs text-destructive" @click="disableDialogOpen = true">
+            <XCircle class="h-3 w-3" />
+            {{ t('settings.disable_developer_mode') }}
+          </Button>
           <span v-else-if="showDebugUnlockHint" class="animate-pulse text-xs font-medium text-primary">
             {{ t('settings.debug_unlock_hint', { steps: 7 - versionTapCount }) }}
           </span>

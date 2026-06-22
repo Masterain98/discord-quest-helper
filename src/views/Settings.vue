@@ -20,6 +20,7 @@ const { selectedSection, setSection } = useSettingsNavigation()
 const emit = defineEmits<{
   'navigate-to-home': []
   'debug-unlocked': []
+  'debug-disabled': []
 }>()
 
 onMounted(() => {
@@ -54,6 +55,7 @@ onMounted(() => {
         <AboutSettings
           v-else
           @debug-unlocked="emit('debug-unlocked')"
+          @debug-disabled="emit('debug-disabled')"
         />
       </div>
     </div>
