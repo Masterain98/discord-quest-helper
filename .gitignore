@@ -26,6 +26,7 @@ dist-ssr
 # Tauri
 src-tauri/target
 src-runner/target
+src-cdp-launcher/target
 *.pdb
 
 # Platform-specific runner executables (only keep .exe for Windows, macOS version is built locally)

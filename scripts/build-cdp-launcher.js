@@ -1,5 +1,5 @@
 import { execFileSync } from 'child_process';
-import { copyFileSync, existsSync, mkdirSync, statSync, unlinkSync, writeFileSync } from 'fs';
+import { copyFileSync, existsSync, mkdirSync, statSync, writeFileSync } from 'fs';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -8,6 +8,7 @@ const __dirname = dirname(__filename);
 
 const rootDir = resolve(__dirname, '..');
 const tauriDir = join(rootDir, 'src-tauri');
+const launcherDir = join(rootDir, 'src-cdp-launcher');
 const binariesDir = join(tauriDir, 'binaries');
 
 function rustHostTriple() {
@@ -35,14 +36,14 @@ if (!existsSync(destExe)) {
 
 console.log(`Building discord-cdp-launcher for ${targetTriple}...`);
 
-execFileSync('cargo', ['build', '--release', '--bin', 'discord-cdp-launcher', ...targetArgs], {
-  cwd: tauriDir,
+execFileSync('cargo', ['build', '--release', ...targetArgs], {
+  cwd: launcherDir,
   stdio: 'inherit',
 });
 
 const targetDir = targetArgs.length > 0
-  ? join(tauriDir, 'target', targetTriple, 'release')
-  : join(tauriDir, 'target', 'release');
+  ? join(launcherDir, 'target', targetTriple, 'release')
+  : join(launcherDir, 'target', 'release');
 
 const sourceExe = join(targetDir, exeName);
 if (!existsSync(sourceExe)) {
@@ -53,10 +54,3 @@ copyFileSync(sourceExe, destExe);
 
 const size = statSync(destExe).size;
 console.log(`Copied launcher to ${destExe} (${size} bytes).`);
-
-try {
-  unlinkSync(sourceExe);
-  console.log(`Removed temporary build output ${sourceExe}.`);
-} catch (error) {
-  console.warn(`Could not remove temporary launcher output: ${error.message}`);
-}

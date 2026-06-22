@@ -1,7 +1,6 @@
 use crate::models::*;
 use anyhow::{Context, Result};
 use arc_swap::ArcSwap;
-use base64::Engine;
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE, REFERER, USER_AGENT};
 use reqwest::{Method, RequestBuilder};
 use std::collections::hash_map::DefaultHasher;
@@ -293,6 +292,7 @@ impl DiscordApiClient {
         // Log the generated properties for audit purposes
         #[cfg(debug_assertions)]
         {
+            use base64::Engine as _;
             use crate::logger::{log, LogCategory, LogLevel};
             // Decode to verify content
             if let Ok(decoded) = base64::engine::general_purpose::STANDARD.decode(&super_props) {
@@ -1072,6 +1072,8 @@ mod tests {
 
     #[test]
     fn request_injects_user_agent_matching_x_super_properties() {
+        use base64::Engine as _;
+
         let client = DiscordApiClient::new("test-token".to_string()).unwrap();
         let request = client
             .request(Method::GET, "https://discord.com/api/v9/quests/@me")

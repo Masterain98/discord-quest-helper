@@ -8,14 +8,8 @@ default-run = "discord-quest-helper"
 name = "discord_quest_helper_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
-[[bin]]
-name = "discord-cdp-launcher"
-path = "src/bin/discord-cdp-launcher.rs"
-
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
-ico = "0.4"
-png = "0.18"
 
 [dependencies]
 tauri = { version = "2.11", features = [] }
