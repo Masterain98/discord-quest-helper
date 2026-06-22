@@ -743,28 +743,51 @@ fn terminate_discord_processes_platform(_channel: Option<DiscordChannel>) -> Res
 }
 
 #[cfg(target_os = "windows")]
-fn enable_dpi_awareness() {
-    use windows::Win32::UI::HiDpi::{
-        SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
-    };
+mod win32 {
+    //! Hand-written Win32 FFI bindings — avoids pulling in the `windows` crate
+    //! for just three simple API calls.
 
+    // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+    pub const DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2: isize = -4;
+
+    pub const MB_OK: u32 = 0x0000_0000;
+    pub const MB_YESNO: u32 = 0x0000_0004;
+    pub const MB_ICONQUESTION: u32 = 0x0000_0020;
+    pub const MB_ICONINFORMATION: u32 = 0x0000_0040;
+    pub const IDYES: i32 = 6;
+
+    #[link(name = "user32")]
+    extern "system" {
+        pub fn SetProcessDpiAwarenessContext(value: isize) -> i32;
+        pub fn GetUserDefaultUILanguage() -> u16;
+        pub fn MessageBoxW(
+            hwnd: *mut core::ffi::c_void,
+            text: *const u16,
+            caption: *const u16,
+            r#type: u32,
+        ) -> i32;
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn enable_dpi_awareness() {
     unsafe {
-        let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+        let _ = win32::SetProcessDpiAwarenessContext(
+            win32::DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+        );
     }
 }
 
 #[cfg(target_os = "windows")]
 fn get_system_lang_id() -> u16 {
-    use windows::Win32::Globalization::GetUserDefaultUILanguage;
-
-    unsafe { GetUserDefaultUILanguage() & 0x3FF }
+    unsafe { win32::GetUserDefaultUILanguage() & 0x3FF }
 }
 
 fn get_strings() -> &'static Strings {
     #[cfg(target_os = "windows")]
     {
         let lang_id = get_system_lang_id();
-        let full_id = unsafe { windows::Win32::Globalization::GetUserDefaultUILanguage() };
+        let full_id = unsafe { win32::GetUserDefaultUILanguage() };
 
         match lang_id {
             0x04 => {
@@ -798,37 +821,31 @@ fn to_wide(value: &str) -> Vec<u16> {
 
 #[cfg(target_os = "windows")]
 fn show_info_dialog(title: &str, message: &str) {
-    use windows::core::PCWSTR;
-    use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONINFORMATION, MB_OK};
-
     let title_w = to_wide(title);
     let message_w = to_wide(message);
 
     unsafe {
-        MessageBoxW(
-            None,
-            PCWSTR(message_w.as_ptr()),
-            PCWSTR(title_w.as_ptr()),
-            MB_OK | MB_ICONINFORMATION,
+        win32::MessageBoxW(
+            core::ptr::null_mut(),
+            message_w.as_ptr(),
+            title_w.as_ptr(),
+            win32::MB_OK | win32::MB_ICONINFORMATION,
         );
     }
 }
 
 #[cfg(target_os = "windows")]
 fn show_confirm_dialog(title: &str, message: &str) -> bool {
-    use windows::core::PCWSTR;
-    use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, IDYES, MB_ICONQUESTION, MB_YESNO};
-
     let title_w = to_wide(title);
     let message_w = to_wide(message);
 
     unsafe {
-        MessageBoxW(
-            None,
-            PCWSTR(message_w.as_ptr()),
-            PCWSTR(title_w.as_ptr()),
-            MB_YESNO | MB_ICONQUESTION,
-        ) == IDYES
+        win32::MessageBoxW(
+            core::ptr::null_mut(),
+            message_w.as_ptr(),
+            title_w.as_ptr(),
+            win32::MB_YESNO | win32::MB_ICONQUESTION,
+        ) == win32::IDYES
     }
 }
 

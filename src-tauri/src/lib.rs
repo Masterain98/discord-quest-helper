@@ -1304,6 +1304,16 @@ async fn install_discord_cdp_launcher_internal(
     let source = find_bundled_cdp_launcher(app_handle)?;
     let target = stable_cdp_launcher_path()?;
 
+    let source_size = fs::metadata(&source)
+        .map(|m| m.len())
+        .unwrap_or(0);
+    println!(
+        "[cdp-launcher-install] source='{}' ({} bytes), target='{}'",
+        source.display(),
+        source_size,
+        target.display()
+    );
+
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent)
             .map_err(|e| format!("Failed to create CDP launcher directory: {}", e))?;
@@ -1357,31 +1367,32 @@ fn stable_cdp_launcher_path() -> Result<std::path::PathBuf, String> {
 }
 
 fn find_bundled_cdp_launcher(app_handle: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    let names = cdp_launcher_binary_names();
     let mut candidate_dirs = Vec::new();
 
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(parent) = exe.parent() {
-            candidate_dirs.push(parent.to_path_buf());
-            candidate_dirs.push(parent.join("binaries"));
-            candidate_dirs.push(parent.join("../Resources"));
-        }
+    // Dev mode: cwd-based paths (cwd is typically the repo root during `tauri dev`)
+    if let Ok(cwd) = std::env::current_dir() {
+        candidate_dirs.push(cwd.join("src-tauri").join("binaries"));
+        candidate_dirs.push(cwd.join("binaries"));
     }
 
+    // Release / packaged mode: resource_dir and exe-relative paths
     if let Ok(resource_dir) = app_handle.path().resource_dir() {
         candidate_dirs.push(resource_dir.clone());
         candidate_dirs.push(resource_dir.join("binaries"));
     }
 
-    if let Ok(cwd) = std::env::current_dir() {
-        candidate_dirs.push(cwd.join("src-tauri").join("binaries"));
-        candidate_dirs.push(cwd.join("src-tauri").join("target").join("release"));
-        candidate_dirs.push(cwd.join("src-tauri").join("target").join("debug"));
-        candidate_dirs.push(cwd.join("target").join("release"));
-        candidate_dirs.push(cwd.join("target").join("debug"));
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            candidate_dirs.push(parent.to_path_buf());
+            candidate_dirs.push(parent.join("binaries"));
+            #[cfg(target_os = "macos")]
+            candidate_dirs.push(parent.join("../Resources"));
+        }
     }
 
-    for dir in candidate_dirs {
-        for name in cdp_launcher_binary_names() {
+    for dir in &candidate_dirs {
+        for name in &names {
             let candidate = dir.join(name);
             if candidate.exists() {
                 return Ok(candidate);
@@ -1389,35 +1400,33 @@ fn find_bundled_cdp_launcher(app_handle: &tauri::AppHandle) -> Result<std::path:
         }
     }
 
-    Err(
-        "Failed to find bundled CDP launcher. Run `npm run build:cdp-launcher` and try again."
-            .to_string(),
-    )
+    let searched: Vec<String> = candidate_dirs
+        .iter()
+        .map(|d| d.display().to_string())
+        .collect();
+    Err(format!(
+        "Failed to find bundled CDP launcher (names: {:?}, searched: {:?}). \
+         Run `npm run build:cdp-launcher` and try again.",
+        names, searched
+    ))
 }
 
 fn cdp_launcher_binary_names() -> Vec<&'static str> {
     #[cfg(target_os = "windows")]
     {
-        return vec![
-            "discord-cdp-launcher.exe",
-            "discord-cdp-launcher-sidecar.exe",
-            "discord-cdp-launcher-x86_64-pc-windows-msvc.exe",
-            "discord-cdp-launcher-aarch64-pc-windows-msvc.exe",
-            "discord-cdp-launcher-sidecar-x86_64-pc-windows-msvc.exe",
-            "discord-cdp-launcher-sidecar-aarch64-pc-windows-msvc.exe",
-        ];
+        return vec!["discord-cdp-launcher-sidecar-x86_64-pc-windows-msvc.exe"];
     }
 
     #[cfg(target_os = "macos")]
     {
-        return vec![
-            "discord-cdp-launcher",
-            "discord-cdp-launcher-sidecar",
-            "discord-cdp-launcher-aarch64-apple-darwin",
-            "discord-cdp-launcher-x86_64-apple-darwin",
-            "discord-cdp-launcher-sidecar-aarch64-apple-darwin",
-            "discord-cdp-launcher-sidecar-x86_64-apple-darwin",
-        ];
+        #[cfg(target_arch = "aarch64")]
+        {
+            return vec!["discord-cdp-launcher-sidecar-aarch64-apple-darwin"];
+        }
+        #[cfg(target_arch = "x86_64")]
+        {
+            return vec!["discord-cdp-launcher-sidecar-x86_64-apple-darwin"];
+        }
     }
 
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]

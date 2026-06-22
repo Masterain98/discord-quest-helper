@@ -1,5 +1,5 @@
 import { execFileSync } from 'child_process';
-import { copyFileSync, existsSync, mkdirSync, statSync, writeFileSync } from 'fs';
+import { copyFileSync, existsSync, mkdirSync, statSync, unlinkSync, writeFileSync } from 'fs';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -29,6 +29,25 @@ const targetArgs = process.env.CARGO_BUILD_TARGET || process.env.TAURI_TARGET_TR
   : [];
 
 mkdirSync(binariesDir, { recursive: true });
+
+// Remove stale legacy binaries that could shadow the correct sidecar
+// in find_bundled_cdp_launcher()'s search path.
+const stalePatterns = [
+  'discord-cdp-launcher.exe',
+  'discord-cdp-launcher-sidecar.exe',
+  'discord-cdp-launcher',
+  'discord-cdp-launcher-sidecar',
+];
+for (const target of ['release', 'debug']) {
+  const targetDir = join(tauriDir, 'target', target);
+  for (const name of stalePatterns) {
+    const stale = join(targetDir, name);
+    if (existsSync(stale)) {
+      try { unlinkSync(stale); console.log(`Removed stale legacy binary: ${stale}`); } catch {}
+    }
+  }
+}
+
 const destExe = join(binariesDir, `discord-cdp-launcher-sidecar-${targetTriple}${exeExt}`);
 if (!existsSync(destExe)) {
   writeFileSync(destExe, '');

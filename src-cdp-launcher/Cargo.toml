@@ -6,14 +6,6 @@ build = "build.rs"
 
 [dependencies]
 
-[target.'cfg(windows)'.dependencies]
-windows = { version = "0.62", default-features = false, features = [
-    "Win32_Foundation",
-    "Win32_Globalization",
-    "Win32_UI_HiDpi",
-    "Win32_UI_WindowsAndMessaging",
-] }
-
 [profile.release]
 opt-level = "z"
 lto = true
