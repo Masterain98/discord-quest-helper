@@ -1,6 +1,5 @@
 use discord_sdk::activity::ActivityBuilder;
 
-
 use crate::rpc::{self, Client};
 use serde::Deserialize;
 

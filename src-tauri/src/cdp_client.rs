@@ -1,13 +1,13 @@
 //! CDP (Chrome DevTools Protocol) client for communicating with Discord
-//! 
+//!
 //! Discord client based on Electron (Chromium), supports CDP protocol.
 //! After starting Discord with the --remote-debugging-port parameter, it can communicate with the client via WebSocket.
 
 use anyhow::{Context, Result};
+use futures_util::{future::join_all, SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
-use futures_util::{future::join_all, SinkExt, StreamExt};
 
 /// Default CDP debugging port
 pub const DEFAULT_CDP_PORT: u16 = 9223;
@@ -79,7 +79,7 @@ pub struct CapturedRequest {
 ///
 /// FRAGILE: This code relies on Discord's internal webpack module structure.
 /// The webpackChunkdiscord_app.push trick is used to access Discord's module system.
-/// 
+///
 /// This approach may break if Discord:
 /// - Changes their webpack chunking mechanism
 /// - Renames the global variable
@@ -180,37 +180,36 @@ async fn get_cdp_targets(port: u16) -> Result<Vec<CdpTarget>> {
         .connect_timeout(Duration::from_secs(2))
         .timeout(Duration::from_secs(3))
         .build()?;
-    
+
     let url = format!("http://127.0.0.1:{}/json", port);
     let response = client
         .get(&url)
         .send()
         .await
-        .context("Failed to connect to CDP endpoint")?;
-    
+        .context("Failed to connect to CDP endpoint")?
+        .error_for_status()
+        .context("CDP endpoint returned non-success status")?;
+
     let targets: Vec<CdpTarget> = response
         .json()
         .await
         .context("Failed to parse CDP targets")?;
-    
+
     Ok(targets)
 }
 
 /// Select Discord main window target (skip updater)
 fn pick_discord_target(targets: &[CdpTarget]) -> Option<&CdpTarget> {
     // Prioritize targets with type "page" and title containing "Discord" (but not "updater")
-    let pages: Vec<_> = targets
-        .iter()
-        .filter(|t| t.target_type == "page")
-        .collect();
-    
+    let pages: Vec<_> = targets.iter().filter(|t| t.target_type == "page").collect();
+
     // Find Discord main application
     for target in &pages {
         if is_discord_target(target) {
             return Some(target);
         }
     }
-    
+
     // Fallback: return the first page
     pages.first().copied()
 }
@@ -237,8 +236,8 @@ fn select_discord_targets<'a>(targets: &'a [CdpTarget]) -> Vec<&'a CdpTarget> {
 
     // Fallback: keep old behavior if detection fails and use the best single target.
     if selected_targets.is_empty() {
-        if let Some(target) = pick_discord_target(targets)
-            .filter(|t| t.web_socket_debugger_url.is_some())
+        if let Some(target) =
+            pick_discord_target(targets).filter(|t| t.web_socket_debugger_url.is_some())
         {
             selected_targets.push(target);
         }
@@ -255,7 +254,11 @@ pub async fn get_primary_discord_target(port: u16) -> Result<CdpTarget> {
         .context("No Discord target found")
 }
 
-pub async fn navigate_primary_discord_target(port: u16, url: &str, timeout_secs: u64) -> Result<()> {
+pub async fn navigate_primary_discord_target(
+    port: u16,
+    url: &str,
+    timeout_secs: u64,
+) -> Result<()> {
     use crate::logger::{log, LogCategory, LogLevel};
 
     let target = get_primary_discord_target(port).await?;
@@ -269,9 +272,7 @@ pub async fn navigate_primary_discord_target(port: u16, url: &str, timeout_secs:
         LogCategory::TokenExtraction,
         &format!(
             "navigate_primary_discord_target: from={} to={} timeout={}s",
-            target.url,
-            url,
-            timeout_secs
+            target.url, url, timeout_secs
         ),
         None,
     );
@@ -291,7 +292,10 @@ pub async fn bring_primary_discord_target_to_front(port: u16) -> Result<()> {
     log(
         LogLevel::Debug,
         LogCategory::TokenExtraction,
-        &format!("bring_primary_discord_target_to_front: target_url={}", target.url),
+        &format!(
+            "bring_primary_discord_target_to_front: target_url={}",
+            target.url
+        ),
         None,
     );
 
@@ -330,37 +334,58 @@ pub async fn execute_js_via_primary_discord_target(
 
 /// Get SuperProperties via CDP
 pub async fn fetch_super_properties_via_cdp(port: u16) -> Result<CdpSuperProperties> {
-    use crate::logger::{log, LogLevel, LogCategory};
-    
-    log(LogLevel::Info, LogCategory::TokenExtraction, 
-        &format!("Attempting to fetch SuperProperties via CDP on port {}", port), None);
-    
+    use crate::logger::{log, LogCategory, LogLevel};
+
+    log(
+        LogLevel::Info,
+        LogCategory::TokenExtraction,
+        &format!(
+            "Attempting to fetch SuperProperties via CDP on port {}",
+            port
+        ),
+        None,
+    );
+
     // Get targets
     let targets = get_cdp_targets(port).await?;
-    log(LogLevel::Debug, LogCategory::TokenExtraction, 
-        &format!("Found {} CDP targets", targets.len()), None);
-    
-    let target = pick_discord_target(&targets)
-        .context("No Discord target found")?;
-    
+    log(
+        LogLevel::Debug,
+        LogCategory::TokenExtraction,
+        &format!("Found {} CDP targets", targets.len()),
+        None,
+    );
+
+    let target = pick_discord_target(&targets).context("No Discord target found")?;
+
     let ws_url = target
         .web_socket_debugger_url
         .as_ref()
         .context("Target has no WebSocket URL")?;
-    
-    log(LogLevel::Debug, LogCategory::TokenExtraction, 
-        &format!("Connecting to CDP target: {} (URL: {})", target.title, ws_url), None);
-    
+
+    log(
+        LogLevel::Debug,
+        LogCategory::TokenExtraction,
+        &format!(
+            "Connecting to CDP target: {} (URL: {})",
+            target.title, ws_url
+        ),
+        None,
+    );
+
     // Establish WebSocket connection
     let (ws_stream, _) = connect_async(ws_url)
         .await
         .context("Failed to connect to CDP WebSocket")?;
-    
-    log(LogLevel::Debug, LogCategory::TokenExtraction, 
-        "WebSocket connection established", None);
-    
+
+    log(
+        LogLevel::Debug,
+        LogCategory::TokenExtraction,
+        "WebSocket connection established",
+        None,
+    );
+
     let (mut write, mut read) = ws_stream.split();
-    
+
     // Send Runtime.evaluate request
     let request = serde_json::json!({
         "id": 1,
@@ -371,26 +396,41 @@ pub async fn fetch_super_properties_via_cdp(port: u16) -> Result<CdpSuperPropert
             "awaitPromise": false
         }
     });
-    
-    log(LogLevel::Debug, LogCategory::TokenExtraction, 
-        "Sending Runtime.evaluate request", None);
-    
+
+    log(
+        LogLevel::Debug,
+        LogCategory::TokenExtraction,
+        "Sending Runtime.evaluate request",
+        None,
+    );
+
     write
         .send(Message::Text(request.to_string().into()))
         .await
         .context("Failed to send CDP request")?;
-    
-    log(LogLevel::Debug, LogCategory::TokenExtraction, 
-        "Request sent, waiting for response...", None);
-    
+
+    log(
+        LogLevel::Debug,
+        LogCategory::TokenExtraction,
+        "Request sent, waiting for response...",
+        None,
+    );
+
     // Read response
     let response = tokio::time::timeout(Duration::from_secs(10), async {
         while let Some(msg) = read.next().await {
             match msg {
                 Ok(Message::Text(text)) => {
-                    log(LogLevel::Debug, LogCategory::TokenExtraction, 
-                        &format!("Received message: {}...", &text.chars().take(200).collect::<String>()), None);
-                    
+                    log(
+                        LogLevel::Debug,
+                        LogCategory::TokenExtraction,
+                        &format!(
+                            "Received message: {}...",
+                            &text.chars().take(200).collect::<String>()
+                        ),
+                        None,
+                    );
+
                     if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
                         if json.get("id") == Some(&serde_json::json!(1)) {
                             return Ok(json);
@@ -398,30 +438,46 @@ pub async fn fetch_super_properties_via_cdp(port: u16) -> Result<CdpSuperPropert
                     }
                 }
                 Ok(other) => {
-                    log(LogLevel::Debug, LogCategory::TokenExtraction, 
-                        &format!("Received non-text message: {:?}", other), None);
+                    log(
+                        LogLevel::Debug,
+                        LogCategory::TokenExtraction,
+                        &format!("Received non-text message: {:?}", other),
+                        None,
+                    );
                     continue;
                 }
                 Err(e) => {
-                    log(LogLevel::Error, LogCategory::TokenExtraction, 
-                        &format!("WebSocket error: {}", e), None);
+                    log(
+                        LogLevel::Error,
+                        LogCategory::TokenExtraction,
+                        &format!("WebSocket error: {}", e),
+                        None,
+                    );
                     return Err(anyhow::anyhow!("WebSocket error: {}", e));
                 }
             }
         }
-        log(LogLevel::Error, LogCategory::TokenExtraction, 
-            "WebSocket closed unexpectedly", None);
+        log(
+            LogLevel::Error,
+            LogCategory::TokenExtraction,
+            "WebSocket closed unexpectedly",
+            None,
+        );
         Err(anyhow::anyhow!("WebSocket closed unexpectedly"))
     })
     .await
     .context("CDP request timed out (10s)")??;
-    
-    log(LogLevel::Debug, LogCategory::TokenExtraction, 
-        "Received valid CDP response", None);
-    
+
+    log(
+        LogLevel::Debug,
+        LogCategory::TokenExtraction,
+        "Received valid CDP response",
+        None,
+    );
+
     // Close connection
     let _ = write.close().await;
-    
+
     // Parse response
     let result_value = response
         .get("result")
@@ -429,27 +485,48 @@ pub async fn fetch_super_properties_via_cdp(port: u16) -> Result<CdpSuperPropert
         .and_then(|r| r.get("value"))
         .and_then(|v| v.as_str())
         .context("Invalid CDP response structure")?;
-    
-    log(LogLevel::Debug, LogCategory::TokenExtraction, 
-        &format!("JavaScript returned: {}...", &result_value.chars().take(100).collect::<String>()), None);
-    
-    let parsed: serde_json::Value = serde_json::from_str(result_value)
-        .context("Failed to parse JavaScript result")?;
-    
+
+    log(
+        LogLevel::Debug,
+        LogCategory::TokenExtraction,
+        &format!(
+            "JavaScript returned: {}...",
+            &result_value.chars().take(100).collect::<String>()
+        ),
+        None,
+    );
+
+    let parsed: serde_json::Value =
+        serde_json::from_str(result_value).context("Failed to parse JavaScript result")?;
+
     // Check for errors
     if let Some(error) = parsed.get("error") {
-        log(LogLevel::Error, LogCategory::TokenExtraction, 
-            &format!("JavaScript error: {}", error), None);
+        log(
+            LogLevel::Error,
+            LogCategory::TokenExtraction,
+            &format!("JavaScript error: {}", error),
+            None,
+        );
         anyhow::bail!("JavaScript error: {}", error);
     }
-    
-    let super_props: CdpSuperProperties = serde_json::from_value(parsed)
-        .context("Failed to parse SuperProperties")?;
-    
-    log(LogLevel::Info, LogCategory::TokenExtraction, 
-        &format!("Successfully fetched SuperProperties via CDP. Build number: {}", 
-            super_props.decoded.get("client_build_number").and_then(|v| v.as_u64()).unwrap_or(0)), None);
-    
+
+    let super_props: CdpSuperProperties =
+        serde_json::from_value(parsed).context("Failed to parse SuperProperties")?;
+
+    log(
+        LogLevel::Info,
+        LogCategory::TokenExtraction,
+        &format!(
+            "Successfully fetched SuperProperties via CDP. Build number: {}",
+            super_props
+                .decoded
+                .get("client_build_number")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0)
+        ),
+        None,
+    );
+
     Ok(super_props)
 }
 
@@ -457,25 +534,38 @@ pub async fn fetch_super_properties_via_cdp(port: u16) -> Result<CdpSuperPropert
 ///
 /// Enables CDP Network domain, listens for ALL outgoing requests for `duration_secs`,
 /// and collects all headers with statistics.
-pub async fn capture_discord_headers_via_cdp(port: u16, duration_secs: u64) -> Result<CdpCapturedHeaders> {
-    use crate::logger::{log, LogLevel, LogCategory};
+pub async fn capture_discord_headers_via_cdp(
+    port: u16,
+    duration_secs: u64,
+) -> Result<CdpCapturedHeaders> {
+    use crate::logger::{log, LogCategory, LogLevel};
     use std::collections::HashMap;
 
     let duration_secs = duration_secs.min(120).max(5); // clamp 5..120
 
-    log(LogLevel::Info, LogCategory::TokenExtraction,
-        &format!("Capturing all request headers via CDP Network on port {} for {}s", port, duration_secs), None);
+    log(
+        LogLevel::Info,
+        LogCategory::TokenExtraction,
+        &format!(
+            "Capturing all request headers via CDP Network on port {} for {}s",
+            port, duration_secs
+        ),
+        None,
+    );
 
     let targets = get_cdp_targets(port).await?;
-    let target = pick_discord_target(&targets)
-        .context("No Discord target found")?;
+    let target = pick_discord_target(&targets).context("No Discord target found")?;
     let ws_url = target
         .web_socket_debugger_url
         .as_ref()
         .context("Target has no WebSocket URL")?;
 
-    log(LogLevel::Debug, LogCategory::TokenExtraction,
-        &format!("Connecting to CDP target: {}", target.title), None);
+    log(
+        LogLevel::Debug,
+        LogCategory::TokenExtraction,
+        &format!("Connecting to CDP target: {}", target.title),
+        None,
+    );
 
     let (ws_stream, _) = connect_async(ws_url)
         .await
@@ -493,8 +583,12 @@ pub async fn capture_discord_headers_via_cdp(port: u16, duration_secs: u64) -> R
         .await
         .context("Failed to send Network.enable")?;
 
-    log(LogLevel::Debug, LogCategory::TokenExtraction,
-        "Network.enable sent, collecting all requests...", None);
+    log(
+        LogLevel::Debug,
+        LogCategory::TokenExtraction,
+        "Network.enable sent, collecting all requests...",
+        None,
+    );
 
     let mut requests: Vec<CapturedRequest> = Vec::new();
     let mut header_key_counts: HashMap<String, usize> = HashMap::new();
@@ -513,7 +607,9 @@ pub async fn capture_discord_headers_via_cdp(port: u16, duration_secs: u64) -> R
                         Err(_) => continue,
                     };
 
-                    if json.get("method").and_then(|v| v.as_str()) != Some("Network.requestWillBeSent") {
+                    if json.get("method").and_then(|v| v.as_str())
+                        != Some("Network.requestWillBeSent")
+                    {
                         continue;
                     }
 
@@ -525,8 +621,16 @@ pub async fn capture_discord_headers_via_cdp(port: u16, duration_secs: u64) -> R
                         Some(r) => r,
                         None => continue,
                     };
-                    let url = request.get("url").and_then(|u| u.as_str()).unwrap_or("").to_string();
-                    let method = request.get("method").and_then(|m| m.as_str()).unwrap_or("GET").to_string();
+                    let url = request
+                        .get("url")
+                        .and_then(|u| u.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let method = request
+                        .get("method")
+                        .and_then(|m| m.as_str())
+                        .unwrap_or("GET")
+                        .to_string();
 
                     let headers_obj = match request.get("headers").and_then(|h| h.as_object()) {
                         Some(h) => h,
@@ -564,8 +668,12 @@ pub async fn capture_discord_headers_via_cdp(port: u16, duration_secs: u64) -> R
                     });
                 }
                 Err(e) => {
-                    log(LogLevel::Warn, LogCategory::TokenExtraction,
-                        &format!("WebSocket error during capture: {}", e), None);
+                    log(
+                        LogLevel::Warn,
+                        LogCategory::TokenExtraction,
+                        &format!("WebSocket error during capture: {}", e),
+                        None,
+                    );
                     break;
                 }
                 _ => continue,
@@ -580,11 +688,21 @@ pub async fn capture_discord_headers_via_cdp(port: u16, duration_secs: u64) -> R
         "method": "Network.disable",
         "params": {}
     });
-    let _ = write.send(Message::Text(disable_request.to_string().into())).await;
+    let _ = write
+        .send(Message::Text(disable_request.to_string().into()))
+        .await;
     let _ = write.close().await;
 
-    log(LogLevel::Info, LogCategory::TokenExtraction,
-        &format!("Capture complete. {} requests collected in {}s", requests.len(), duration_secs), None);
+    log(
+        LogLevel::Info,
+        LogCategory::TokenExtraction,
+        &format!(
+            "Capture complete. {} requests collected in {}s",
+            requests.len(),
+            duration_secs
+        ),
+        None,
+    );
 
     Ok(CdpCapturedHeaders {
         total_requests: requests.len(),
@@ -605,7 +723,7 @@ pub async fn execute_js_via_all_discord_targets(
     await_promise: bool,
     timeout_secs: u64,
 ) -> Result<Vec<CdpTargetExecutionResult>> {
-    use crate::logger::{log, LogLevel, LogCategory};
+    use crate::logger::{log, LogCategory, LogLevel};
 
     let targets = get_cdp_targets(port).await?;
 
@@ -615,8 +733,15 @@ pub async fn execute_js_via_all_discord_targets(
         anyhow::bail!("No CDP page targets found");
     }
 
-    log(LogLevel::Debug, LogCategory::TokenExtraction,
-        &format!("execute_js_via_all_discord_targets: running on {} target(s)", selected_targets.len()), None);
+    log(
+        LogLevel::Debug,
+        LogCategory::TokenExtraction,
+        &format!(
+            "execute_js_via_all_discord_targets: running on {} target(s)",
+            selected_targets.len()
+        ),
+        None,
+    );
 
     // Execute all target evaluations concurrently. Each task still respects per-target
     // timeout via execute_js_via_ws().
@@ -655,7 +780,9 @@ pub async fn find_activity_iframe_target(port: u16) -> Result<CdpTarget> {
             && t.web_socket_debugger_url.is_some()
     });
 
-    iframe_target.cloned().context("No activity iframe target found. Make sure the Activity is launched in Discord.")
+    iframe_target
+        .cloned()
+        .context("No activity iframe target found. Make sure the Activity is launched in Discord.")
 }
 
 /// Execute JavaScript on a specific CDP target via its WebSocket URL.
@@ -674,7 +801,7 @@ async fn execute_js_via_ws(
     await_promise: bool,
     timeout_secs: u64,
 ) -> Result<String> {
-    use crate::logger::{log, LogLevel, LogCategory};
+    use crate::logger::{log, LogCategory, LogLevel};
 
     let (ws_stream, _) = connect_async(ws_url)
         .await
@@ -720,7 +847,8 @@ async fn execute_js_via_ws(
     // Check for CDP-level errors (e.g., method not found, invalid params)
     if let Some(error) = response.get("error") {
         let code = error.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
-        let message = error.get("message")
+        let message = error
+            .get("message")
             .and_then(|m| m.as_str())
             .unwrap_or("Unknown CDP error");
         anyhow::bail!("CDP error (code {}): {}", code, message);
@@ -729,8 +857,12 @@ async fn execute_js_via_ws(
     // Extract the result value from the CDP response
     // For successful evaluations: response.result.result.value (string)
     // For exceptions: response.result.exceptionDetails
-    if let Some(exception) = response.get("result").and_then(|r| r.get("exceptionDetails")) {
-        let text = exception.get("text")
+    if let Some(exception) = response
+        .get("result")
+        .and_then(|r| r.get("exceptionDetails"))
+    {
+        let text = exception
+            .get("text")
             .and_then(|t| t.as_str())
             .unwrap_or("Unknown JS exception");
         anyhow::bail!("JavaScript exception: {}", text);
@@ -749,16 +881,30 @@ async fn execute_js_via_ws(
             } else {
                 // No value field — check if type is "undefined"
                 let rtype = r.get("type").and_then(|t| t.as_str()).unwrap_or("");
-                log(LogLevel::Warn, LogCategory::TokenExtraction,
-                    &format!("CDP result has no value field. type={}, full result: {}", 
-                        rtype, serde_json::to_string(r).unwrap_or_default()), None);
+                log(
+                    LogLevel::Warn,
+                    LogCategory::TokenExtraction,
+                    &format!(
+                        "CDP result has no value field. type={}, full result: {}",
+                        rtype,
+                        serde_json::to_string(r).unwrap_or_default()
+                    ),
+                    None,
+                );
                 None
             }
         })
         .unwrap_or_default();
 
-    log(LogLevel::Debug, LogCategory::TokenExtraction,
-        &format!("execute_js_via_cdp result: {}...", &result_value.chars().take(200).collect::<String>()), None);
+    log(
+        LogLevel::Debug,
+        LogCategory::TokenExtraction,
+        &format!(
+            "execute_js_via_cdp result: {}...",
+            &result_value.chars().take(200).collect::<String>()
+        ),
+        None,
+    );
 
     Ok(result_value)
 }
@@ -787,12 +933,19 @@ async fn navigate_target_via_ws(ws_url: &str, url: &str, timeout_secs: u64) -> R
                     if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
                         if json.get("id") == Some(&serde_json::json!(1)) {
                             if let Some(error) = json.get("error") {
-                                let code = error.get("code").and_then(|value| value.as_i64()).unwrap_or(0);
+                                let code = error
+                                    .get("code")
+                                    .and_then(|value| value.as_i64())
+                                    .unwrap_or(0);
                                 let message = error
                                     .get("message")
                                     .and_then(|value| value.as_str())
                                     .unwrap_or("Unknown CDP error");
-                                return Err(anyhow::anyhow!("CDP error (code {}): {}", code, message));
+                                return Err(anyhow::anyhow!(
+                                    "CDP error (code {}): {}",
+                                    code,
+                                    message
+                                ));
                             }
 
                             return Ok(());
@@ -804,7 +957,9 @@ async fn navigate_target_via_ws(ws_url: &str, url: &str, timeout_secs: u64) -> R
             }
         }
 
-        Err(anyhow::anyhow!("WebSocket closed before Page.enable acknowledgement"))
+        Err(anyhow::anyhow!(
+            "WebSocket closed before Page.enable acknowledgement"
+        ))
     })
     .await
     .context("CDP Page.enable timed out")??;
@@ -831,12 +986,19 @@ async fn navigate_target_via_ws(ws_url: &str, url: &str, timeout_secs: u64) -> R
                     if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
                         if json.get("id") == Some(&serde_json::json!(2)) {
                             if let Some(error) = json.get("error") {
-                                let code = error.get("code").and_then(|value| value.as_i64()).unwrap_or(0);
+                                let code = error
+                                    .get("code")
+                                    .and_then(|value| value.as_i64())
+                                    .unwrap_or(0);
                                 let message = error
                                     .get("message")
                                     .and_then(|value| value.as_str())
                                     .unwrap_or("Unknown CDP error");
-                                return Err(anyhow::anyhow!("CDP error (code {}): {}", code, message));
+                                return Err(anyhow::anyhow!(
+                                    "CDP error (code {}): {}",
+                                    code,
+                                    message
+                                ));
                             }
 
                             if let Some(error_text) = json
@@ -844,7 +1006,10 @@ async fn navigate_target_via_ws(ws_url: &str, url: &str, timeout_secs: u64) -> R
                                 .and_then(|value| value.get("errorText"))
                                 .and_then(|value| value.as_str())
                             {
-                                return Err(anyhow::anyhow!("Page.navigate failed: {}", error_text));
+                                return Err(anyhow::anyhow!(
+                                    "Page.navigate failed: {}",
+                                    error_text
+                                ));
                             }
 
                             navigation_acknowledged = true;
@@ -869,7 +1034,9 @@ async fn navigate_target_via_ws(ws_url: &str, url: &str, timeout_secs: u64) -> R
         if navigation_acknowledged {
             Ok(())
         } else {
-            Err(anyhow::anyhow!("WebSocket closed before Page.navigate acknowledgement"))
+            Err(anyhow::anyhow!(
+                "WebSocket closed before Page.navigate acknowledgement"
+            ))
         }
     })
     .await
@@ -904,12 +1071,19 @@ async fn bring_target_to_front_via_ws(ws_url: &str, timeout_secs: u64) -> Result
                     if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
                         if json.get("id") == Some(&serde_json::json!(1)) {
                             if let Some(error) = json.get("error") {
-                                let code = error.get("code").and_then(|value| value.as_i64()).unwrap_or(0);
+                                let code = error
+                                    .get("code")
+                                    .and_then(|value| value.as_i64())
+                                    .unwrap_or(0);
                                 let message = error
                                     .get("message")
                                     .and_then(|value| value.as_str())
                                     .unwrap_or("Unknown CDP error");
-                                return Err(anyhow::anyhow!("CDP error (code {}): {}", code, message));
+                                return Err(anyhow::anyhow!(
+                                    "CDP error (code {}): {}",
+                                    code,
+                                    message
+                                ));
                             }
 
                             return Ok(());
@@ -921,10 +1095,15 @@ async fn bring_target_to_front_via_ws(ws_url: &str, timeout_secs: u64) -> Result
             }
         }
 
-        Err(anyhow::anyhow!("WebSocket closed before Page.bringToFront acknowledgement"))
+        Err(anyhow::anyhow!(
+            "WebSocket closed before Page.bringToFront acknowledgement"
+        ))
     })
     .await
-    .context(format!("CDP Page.bringToFront timed out ({}s)", timeout_secs))??;
+    .context(format!(
+        "CDP Page.bringToFront timed out ({}s)",
+        timeout_secs
+    ))??;
 
     let _ = write.close().await;
 
@@ -953,7 +1132,7 @@ mod tests {
             web_socket_debugger_url: ws,
         }
     }
-    
+
     #[test]
     fn test_pick_discord_target() {
         let targets = vec![
@@ -972,7 +1151,7 @@ mod tests {
                 web_socket_debugger_url: Some("ws://...".to_string()),
             },
         ];
-        
+
         let picked = pick_discord_target(&targets);
         assert!(picked.is_some());
         assert_eq!(picked.unwrap().id, "2");
@@ -1024,13 +1203,12 @@ mod tests {
         assert_eq!(fallback[0].url, "https://example.com/a");
 
         let with_missing_ws = vec![
-            mk_target_opt_ws(
+            mk_target_opt_ws("page", "Discord Main", "https://discord.com/app", None),
+            mk_target(
                 "page",
-                "Discord Main",
-                "https://discord.com/app",
-                None,
+                "Discord Secondary",
+                "https://discordapp.com/channels/@me",
             ),
-            mk_target("page", "Discord Secondary", "https://discordapp.com/channels/@me"),
         ];
         let filtered = select_discord_targets(&with_missing_ws);
         assert_eq!(filtered.len(), 1);

@@ -34,12 +34,45 @@ fn main() {
     // Ensure runner-version.txt exists (placeholder if not built yet)
     let version_info_path = data_dir.join("runner-version.txt");
     if !version_info_path.exists() {
-        fs::write(&version_info_path, "not-built\n\n").expect("Failed to create runner-version.txt placeholder");
+        fs::write(&version_info_path, "not-built\n\n")
+            .expect("Failed to create runner-version.txt placeholder");
+    }
+
+    // Tauri validates bundle.externalBin paths during the build script, so a
+    // fresh checkout needs a placeholder before scripts/build-cdp-launcher.js
+    // replaces it with the real launcher.
+    let target_triple = std::env::var("TARGET").unwrap_or_else(|_| {
+        if cfg!(target_os = "windows") {
+            "x86_64-pc-windows-msvc".to_string()
+        } else if cfg!(target_os = "macos") && cfg!(target_arch = "aarch64") {
+            "aarch64-apple-darwin".to_string()
+        } else if cfg!(target_os = "macos") {
+            "x86_64-apple-darwin".to_string()
+        } else {
+            "unknown".to_string()
+        }
+    });
+    let launcher_ext = if target_triple.contains("-windows-") {
+        ".exe"
+    } else {
+        ""
+    };
+    let binaries_dir = Path::new("binaries");
+    if !binaries_dir.exists() {
+        fs::create_dir_all(binaries_dir).expect("Failed to create binaries directory");
+    }
+    let launcher_path = binaries_dir.join(format!(
+        "discord-cdp-launcher-sidecar-{}{}",
+        target_triple, launcher_ext
+    ));
+    if !launcher_path.exists() {
+        fs::write(&launcher_path, b"").expect("Failed to create CDP launcher placeholder");
     }
 
     // Tell Cargo to re-run build script if the data copy changes
     println!("cargo:rerun-if-changed=data/{}", runner_exe_name);
     println!("cargo:rerun-if-changed=data/runner-version.txt");
+    println!("cargo:rerun-if-changed={}", launcher_path.display());
 
     tauri_build::build()
 }

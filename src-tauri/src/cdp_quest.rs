@@ -8,7 +8,6 @@
 //! (https://gist.github.com/aamiaa/204cd9d42013ded9faf646fae7f89fbb).
 //! This is a clean-room Rust/CDP reimplementation; no source code was copied.
 
-
 use anyhow::{Context, Result};
 use std::time::Duration;
 use tauri::Emitter;
@@ -161,9 +160,10 @@ const JS_INIT_QUEST_MODULES: &str = r#"
 /// then dispatches `RUNNING_GAMES_CHANGE` so Discord's heartbeat system picks it up.
 fn js_spoof_play_game(app_id: &str, app_name: &str) -> String {
     // Safely escape values for embedding in JS string literals
-    let safe_app_id = serde_json::to_string(app_id).unwrap_or_else(|_| "\"\"" .to_string());
-    let safe_app_name = serde_json::to_string(app_name).unwrap_or_else(|_| "\"\"" .to_string());
-    format!(r#"
+    let safe_app_id = serde_json::to_string(app_id).unwrap_or_else(|_| "\"\"".to_string());
+    let safe_app_name = serde_json::to_string(app_name).unwrap_or_else(|_| "\"\"".to_string());
+    format!(
+        r#"
 (async () => {{
     try {{
         const dqh = window.__dqh_cdp;
@@ -325,7 +325,8 @@ fn js_spoof_play_game(app_id: &str, app_name: &str) -> String {
         return JSON.stringify({{ success: false, error: String(e) }});
     }}
 }})()
-"#)
+"#
+    )
 }
 
 /// Generate JS to spoof streaming metadata in ApplicationStreamingStore.
@@ -334,7 +335,8 @@ fn js_spoof_play_game(app_id: &str, app_name: &str) -> String {
 /// the user is streaming the specified application.
 fn js_spoof_stream(app_id: &str) -> String {
     let safe_app_id = serde_json::to_string(app_id).unwrap_or_else(|_| "\"\"".to_string());
-    format!(r#"
+    format!(
+        r#"
 (() => {{
     try {{
         const dqh = window.__dqh_cdp;
@@ -376,7 +378,8 @@ fn js_spoof_stream(app_id: &str) -> String {
         return JSON.stringify({{ success: false, error: String(e) }});
     }}
 }})()
-"#)
+"#
+    )
 }
 
 /// Generate JS for video quest completion (fire-and-forget pattern).
@@ -392,7 +395,8 @@ fn js_spoof_stream(app_id: &str) -> String {
 /// Mirrors the gist's time-bound approach: Discord validates that the
 /// submitted timestamp doesn't exceed `(now - enrolledAt) + maxFuture`.
 fn js_start_video_quest(quest_id: &str, seconds_needed: u32, initial_seconds: f64) -> String {
-    format!(r#"
+    format!(
+        r#"
 (() => {{
     try {{
         const dqh = window.__dqh_cdp;
@@ -534,7 +538,11 @@ fn js_start_video_quest(quest_id: &str, seconds_needed: u32, initial_seconds: f6
         return JSON.stringify({{ success: false, error: String(e) }});
     }}
 }})()
-"#, quest_id = quest_id, seconds_needed = seconds_needed, initial_seconds = initial_seconds)
+"#,
+        quest_id = quest_id,
+        seconds_needed = seconds_needed,
+        initial_seconds = initial_seconds
+    )
 }
 
 /// Generate JS to query quest progress.
@@ -546,7 +554,8 @@ fn js_start_video_quest(quest_id: &str, seconds_needed: u32, initial_seconds: f6
 /// 3. Heartbeat subscription data (`_lastProgress`)
 /// 4. QuestsStore fallback (may be stale)
 fn js_query_progress(quest_id: &str) -> String {
-    format!(r#"
+    format!(
+        r#"
 (async () => {{
     try {{
         const dqh = window.__dqh_cdp;
@@ -632,7 +641,9 @@ fn js_query_progress(quest_id: &str) -> String {
         return JSON.stringify({{ success: false, error: String(e) }});
     }}
 }})()
-"#, quest_id = quest_id)
+"#,
+        quest_id = quest_id
+    )
 }
 
 /// JavaScript: Cleanup spoofed store functions, restoring originals.
@@ -758,9 +769,11 @@ fn build_quest_route_warmup_plan(current_url: &str) -> Option<QuestRouteWarmupPl
 
 fn js_warmup_quest_route(plan: &QuestRouteWarmupPlan) -> String {
     let warmup_url = serde_json::to_string(&plan.warmup_url).unwrap_or_else(|_| "\"\"".to_string());
-    let restore_url = serde_json::to_string(&plan.restore_url).unwrap_or_else(|_| "\"\"".to_string());
+    let restore_url =
+        serde_json::to_string(&plan.restore_url).unwrap_or_else(|_| "\"\"".to_string());
 
-    format!(r#"
+    format!(
+        r#"
 (async () => {{
     try {{
         const warmupUrl = new URL({warmup_url}, window.location.href);
@@ -931,11 +944,17 @@ fn js_warmup_quest_route(plan: &QuestRouteWarmupPlan) -> String {
         return JSON.stringify({{ success: false, error: String(e) }});
     }}
 }})()
-"#, dwell_ms = QUEST_WARMUP_DWELL_MS, restore_settle_ms = QUEST_WARMUP_RESTORE_SETTLE_MS)
+"#,
+        dwell_ms = QUEST_WARMUP_DWELL_MS,
+        restore_settle_ms = QUEST_WARMUP_RESTORE_SETTLE_MS
+    )
 }
 
 fn cdp_result_succeeded(parsed: &serde_json::Value) -> bool {
-    parsed.get("success").and_then(|value| value.as_bool()).unwrap_or(false)
+    parsed
+        .get("success")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false)
 }
 
 fn summarize_target_failures(failures: &[String]) -> String {
@@ -943,7 +962,12 @@ fn summarize_target_failures(failures: &[String]) -> String {
         return "no target details".to_string();
     }
 
-    let sample = failures.iter().take(3).cloned().collect::<Vec<_>>().join(" | ");
+    let sample = failures
+        .iter()
+        .take(3)
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(" | ");
     if failures.len() > 3 {
         format!("{} | ... +{} more", sample, failures.len() - 3)
     } else {
@@ -978,9 +1002,12 @@ async fn cdp_execute_json_on_all_targets(
     timeout_secs: u64,
     operation: &str,
 ) -> Result<CdpJsonExecutionSummary> {
-    let results = cdp_client::execute_js_via_all_discord_targets(port, js_code, await_promise, timeout_secs)
-        .await
-        .with_context(|| format!("Failed to execute CDP {} across Discord targets", operation))?;
+    let results =
+        cdp_client::execute_js_via_all_discord_targets(port, js_code, await_promise, timeout_secs)
+            .await
+            .with_context(|| {
+                format!("Failed to execute CDP {} across Discord targets", operation)
+            })?;
 
     let total_targets = results.len();
     let mut successful_results = Vec::new();
@@ -1051,7 +1078,10 @@ async fn cdp_warmup_quest_route(port: u16) {
             log(
                 LogLevel::Warn,
                 LogCategory::TokenExtraction,
-                &format!("CDP quest route warmup skipped: unable to inspect primary target: {}", err),
+                &format!(
+                    "CDP quest route warmup skipped: unable to inspect primary target: {}",
+                    err
+                ),
                 None,
             );
             return;
@@ -1064,7 +1094,10 @@ async fn cdp_warmup_quest_route(port: u16) {
             log(
                 LogLevel::Warn,
                 LogCategory::TokenExtraction,
-                &format!("CDP quest route warmup skipped: unsupported target URL {}", primary_target.url),
+                &format!(
+                    "CDP quest route warmup skipped: unsupported target URL {}",
+                    primary_target.url
+                ),
                 None,
             );
             return;
@@ -1085,7 +1118,14 @@ async fn cdp_warmup_quest_route(port: u16) {
     );
 
     let spa_warmup_js = js_warmup_quest_route(&plan);
-    match cdp_client::execute_js_via_primary_discord_target(port, &spa_warmup_js, true, QUEST_WARMUP_NAV_TIMEOUT_SECS).await {
+    match cdp_client::execute_js_via_primary_discord_target(
+        port,
+        &spa_warmup_js,
+        true,
+        QUEST_WARMUP_NAV_TIMEOUT_SECS,
+    )
+    .await
+    {
         Ok(raw) => {
             if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&raw) {
                 if cdp_result_succeeded(&parsed) {
@@ -1118,7 +1158,10 @@ async fn cdp_warmup_quest_route(port: u16) {
                 log(
                     LogLevel::Warn,
                     LogCategory::TokenExtraction,
-                    &format!("CDP quest route warmup SPA attempt returned non-JSON result: {}", raw),
+                    &format!(
+                        "CDP quest route warmup SPA attempt returned non-JSON result: {}",
+                        raw
+                    ),
                     None,
                 );
             }
@@ -1133,11 +1176,20 @@ async fn cdp_warmup_quest_route(port: u16) {
         }
     }
 
-    if let Err(err) = cdp_client::navigate_primary_discord_target(port, &plan.warmup_url, QUEST_WARMUP_NAV_TIMEOUT_SECS).await {
+    if let Err(err) = cdp_client::navigate_primary_discord_target(
+        port,
+        &plan.warmup_url,
+        QUEST_WARMUP_NAV_TIMEOUT_SECS,
+    )
+    .await
+    {
         log(
             LogLevel::Warn,
             LogCategory::TokenExtraction,
-            &format!("CDP quest route warmup failed while navigating to {}: {}", plan.warmup_url, err),
+            &format!(
+                "CDP quest route warmup failed while navigating to {}: {}",
+                plan.warmup_url, err
+            ),
             None,
         );
         return;
@@ -1145,11 +1197,20 @@ async fn cdp_warmup_quest_route(port: u16) {
 
     sleep(Duration::from_millis(QUEST_WARMUP_DWELL_MS)).await;
 
-    if let Err(err) = cdp_client::navigate_primary_discord_target(port, &plan.restore_url, QUEST_WARMUP_NAV_TIMEOUT_SECS).await {
+    if let Err(err) = cdp_client::navigate_primary_discord_target(
+        port,
+        &plan.restore_url,
+        QUEST_WARMUP_NAV_TIMEOUT_SECS,
+    )
+    .await
+    {
         log(
             LogLevel::Warn,
             LogCategory::TokenExtraction,
-            &format!("CDP quest route warmup failed while restoring {}: {}", plan.restore_url, err),
+            &format!(
+                "CDP quest route warmup failed while restoring {}: {}",
+                plan.restore_url, err
+            ),
             None,
         );
         return;
@@ -1162,8 +1223,7 @@ async fn cdp_warmup_quest_route(port: u16) {
         LogCategory::TokenExtraction,
         &format!(
             "CDP quest route warmup completed via {} and restored to {}",
-            plan.warmup_url,
-            plan.restore_url
+            plan.warmup_url, plan.restore_url
         ),
         None,
     );
@@ -1171,19 +1231,33 @@ async fn cdp_warmup_quest_route(port: u16) {
 
 /// Initialize Discord webpack modules via CDP.
 async fn cdp_init_modules(port: u16) -> Result<()> {
-    use crate::logger::{log, LogLevel, LogCategory};
+    use crate::logger::{log, LogCategory, LogLevel};
 
-    let summary = cdp_execute_json_on_all_targets(port, JS_INIT_QUEST_MODULES, true, 60, "module initialization").await?;
+    let summary = cdp_execute_json_on_all_targets(
+        port,
+        JS_INIT_QUEST_MODULES,
+        true,
+        60,
+        "module initialization",
+    )
+    .await?;
 
     log_partial_target_failures("module initialization", &summary.target_failures);
 
     let cached_targets = summary
         .successful_results
         .iter()
-        .filter(|parsed| parsed.get("cached").and_then(|value| value.as_bool()).unwrap_or(false))
+        .filter(|parsed| {
+            parsed
+                .get("cached")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false)
+        })
         .count();
 
-    log(LogLevel::Info, LogCategory::TokenExtraction,
+    log(
+        LogLevel::Info,
+        LogCategory::TokenExtraction,
         &format!(
             "CDP modules initialized on {}/{} target(s) (cached on {})",
             summary.successful_results.len(),
@@ -1198,13 +1272,14 @@ async fn cdp_init_modules(port: u16) -> Result<()> {
 
 /// Cleanup spoofed stores via CDP.
 async fn cdp_cleanup(port: u16) {
-    use crate::logger::{log, LogLevel, LogCategory};
+    use crate::logger::{log, LogCategory, LogLevel};
 
     // Try cleanup up to 2 times — CDP connection can be flaky
     for attempt in 1..=2 {
         let mut cleanup_success_count = 0usize;
 
-        match cdp_client::execute_js_via_all_discord_targets(port, JS_CLEANUP_SPOOF, false, 5).await {
+        match cdp_client::execute_js_via_all_discord_targets(port, JS_CLEANUP_SPOOF, false, 5).await
+        {
             Ok(results) => {
                 let mut error_count = 0usize;
 
@@ -1247,7 +1322,9 @@ async fn cdp_cleanup(port: u16) {
                 }
 
                 if cleanup_success_count == 0 {
-                    log(LogLevel::Warn, LogCategory::TokenExtraction,
+                    log(
+                        LogLevel::Warn,
+                        LogCategory::TokenExtraction,
                         &format!(
                             "CDP cleanup had no successful target (attempt {}, failed_targets={})",
                             attempt, error_count
@@ -1257,13 +1334,24 @@ async fn cdp_cleanup(port: u16) {
                 }
             }
             Err(e) => {
-                log(LogLevel::Warn, LogCategory::TokenExtraction,
-                    &format!("CDP cleanup request failed (attempt {}): {}", attempt, e), None);
+                log(
+                    LogLevel::Warn,
+                    LogCategory::TokenExtraction,
+                    &format!("CDP cleanup request failed (attempt {}): {}", attempt, e),
+                    None,
+                );
             }
         }
 
         // Verify cleanup state across all page targets.
-        match cdp_client::execute_js_via_all_discord_targets(port, JS_VERIFY_CLEANUP_STATE, false, 5).await {
+        match cdp_client::execute_js_via_all_discord_targets(
+            port,
+            JS_VERIFY_CLEANUP_STATE,
+            false,
+            5,
+        )
+        .await
+        {
             Ok(results) => {
                 let mut verify_checked = 0usize;
                 let mut verify_dirty = 0usize;
@@ -1299,13 +1387,32 @@ async fn cdp_cleanup(port: u16) {
                     }
 
                     verify_checked += 1;
-                    let dqh_present = parsed.get("dqhPresent").and_then(|v| v.as_bool()).unwrap_or(false);
-                    let spoof_active = parsed.get("spoofActive").and_then(|v| v.as_bool()).unwrap_or(false);
-                    let fake_game_present = parsed.get("fakeGamePresent").and_then(|v| v.as_bool()).unwrap_or(false);
-                    let has_dispatch_hook = parsed.get("hasDispatchHook").and_then(|v| v.as_bool()).unwrap_or(false);
-                    let broad_patch_count = parsed.get("broadPatchCount").and_then(|v| v.as_u64()).unwrap_or(0);
+                    let dqh_present = parsed
+                        .get("dqhPresent")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    let spoof_active = parsed
+                        .get("spoofActive")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    let fake_game_present = parsed
+                        .get("fakeGamePresent")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    let has_dispatch_hook = parsed
+                        .get("hasDispatchHook")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    let broad_patch_count = parsed
+                        .get("broadPatchCount")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
 
-                    let target_dirty = dqh_present || spoof_active || fake_game_present || has_dispatch_hook || broad_patch_count > 0;
+                    let target_dirty = dqh_present
+                        || spoof_active
+                        || fake_game_present
+                        || has_dispatch_hook
+                        || broad_patch_count > 0;
                     if target_dirty {
                         verify_dirty += 1;
                         log(LogLevel::Warn, LogCategory::TokenExtraction,
@@ -1345,8 +1452,15 @@ async fn cdp_cleanup(port: u16) {
                 );
             }
             Err(e) => {
-                log(LogLevel::Warn, LogCategory::TokenExtraction,
-                    &format!("CDP cleanup verify request failed (attempt {}): {}", attempt, e), None);
+                log(
+                    LogLevel::Warn,
+                    LogCategory::TokenExtraction,
+                    &format!(
+                        "CDP cleanup verify request failed (attempt {}): {}",
+                        attempt, e
+                    ),
+                    None,
+                );
             }
         }
 
@@ -1355,15 +1469,19 @@ async fn cdp_cleanup(port: u16) {
         }
     }
 
-    log(LogLevel::Error, LogCategory::TokenExtraction,
-        "CDP cleanup failed after all retries — spoof may still be active in Discord!", None);
+    log(
+        LogLevel::Error,
+        LogCategory::TokenExtraction,
+        "CDP cleanup failed after all retries — spoof may still be active in Discord!",
+        None,
+    );
 }
 
 /// Poll quest progress via CDP. Uses direct API call for fresh data.
 ///
 /// Returns `(progress_seconds, completed)`.
 async fn cdp_poll_progress(port: u16, quest_id: &str) -> Result<(f64, bool)> {
-    use crate::logger::{log, LogLevel, LogCategory};
+    use crate::logger::{log, LogCategory, LogLevel};
 
     let js = js_query_progress(quest_id);
     let summary = cdp_execute_json_on_all_targets(port, &js, true, 15, "progress query").await?;
@@ -1371,12 +1489,24 @@ async fn cdp_poll_progress(port: u16, quest_id: &str) -> Result<(f64, bool)> {
         .successful_results
         .first()
         .context("CDP progress query returned no successful target results")?;
-    let mut best_progress = parsed.get("progress").and_then(|value| value.as_f64()).unwrap_or(0.0);
-    let mut best_completed = parsed.get("completed").and_then(|value| value.as_bool()).unwrap_or(false);
+    let mut best_progress = parsed
+        .get("progress")
+        .and_then(|value| value.as_f64())
+        .unwrap_or(0.0);
+    let mut best_completed = parsed
+        .get("completed")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
 
     for candidate in summary.successful_results.iter().skip(1) {
-        let candidate_progress = candidate.get("progress").and_then(|value| value.as_f64()).unwrap_or(0.0);
-        let candidate_completed = candidate.get("completed").and_then(|value| value.as_bool()).unwrap_or(false);
+        let candidate_progress = candidate
+            .get("progress")
+            .and_then(|value| value.as_f64())
+            .unwrap_or(0.0);
+        let candidate_completed = candidate
+            .get("completed")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
 
         let is_better = (!best_completed && candidate_completed)
             || (best_completed == candidate_completed && candidate_progress > best_progress);
@@ -1388,17 +1518,26 @@ async fn cdp_poll_progress(port: u16, quest_id: &str) -> Result<(f64, bool)> {
         }
     }
 
-    let source = parsed.get("source")
+    let source = parsed
+        .get("source")
         .and_then(|s| s.as_str())
         .unwrap_or("unknown");
 
     // Log video JS errors if present
     if let Some(err) = parsed.get("error").and_then(|e| e.as_str()) {
-        log(LogLevel::Warn, LogCategory::TokenExtraction,
-            &format!("CDP progress source: {} (JS error: {})", source, err), None);
+        log(
+            LogLevel::Warn,
+            LogCategory::TokenExtraction,
+            &format!("CDP progress source: {} (JS error: {})", source, err),
+            None,
+        );
     } else {
-        log(LogLevel::Debug, LogCategory::TokenExtraction,
-            &format!("CDP progress source: {}", source), None);
+        log(
+            LogLevel::Debug,
+            LogCategory::TokenExtraction,
+            &format!("CDP progress source: {}", source),
+            None,
+        );
     }
 
     // Log game-detection diagnostics (present for "store" source in play quests)
@@ -1407,30 +1546,59 @@ async fn cdp_poll_progress(port: u16, quest_id: &str) -> Result<(f64, bool)> {
             log(LogLevel::Warn, LogCategory::TokenExtraction,
                 "CDP game diag: RunningGameStore.getRunningGames() returns 0 games — spoof patch may not be active", None);
         } else {
-            log(LogLevel::Debug, LogCategory::TokenExtraction,
-                &format!("CDP game diag: RunningGameStore returns {} game(s)", n), None);
+            log(
+                LogLevel::Debug,
+                LogCategory::TokenExtraction,
+                &format!("CDP game diag: RunningGameStore returns {} game(s)", n),
+                None,
+            );
         }
     }
     if let Some(fail_info) = parsed.get("diagHeartbeatFailure").and_then(|v| v.as_str()) {
-        log(LogLevel::Warn, LogCategory::TokenExtraction,
-            &format!("CDP game diag: QUESTS_SEND_HEARTBEAT_FAILURE event received: {}", fail_info), None);
+        log(
+            LogLevel::Warn,
+            LogCategory::TokenExtraction,
+            &format!(
+                "CDP game diag: QUESTS_SEND_HEARTBEAT_FAILURE event received: {}",
+                fail_info
+            ),
+            None,
+        );
     }
-    let hb_count = parsed.get("diagHeartbeatCount").and_then(|v| v.as_u64()).unwrap_or(0);
-    let hb_progress = parsed.get("diagHeartbeatProgress").and_then(|v| v.as_f64()).unwrap_or(0.0);
+    let hb_count = parsed
+        .get("diagHeartbeatCount")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let hb_progress = parsed
+        .get("diagHeartbeatProgress")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0);
     if hb_count > 0 || hb_progress > 0.0 {
-        log(LogLevel::Debug, LogCategory::TokenExtraction,
-            &format!("CDP game diag: heartbeat subscription fired {} times, lastProgress={:.0}", hb_count, hb_progress), None);
+        log(
+            LogLevel::Debug,
+            LogCategory::TokenExtraction,
+            &format!(
+                "CDP game diag: heartbeat subscription fired {} times, lastProgress={:.0}",
+                hb_count, hb_progress
+            ),
+            None,
+        );
     }
-    let intercept_count = parsed.get("diagInterceptCount").and_then(|v| v.as_u64()).unwrap_or(0);
+    let intercept_count = parsed
+        .get("diagInterceptCount")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
     if intercept_count > 0 {
         log(LogLevel::Info, LogCategory::TokenExtraction,
             &format!("CDP game diag: dispatch interceptor caught {} native scanner events (fake game re-injected)", intercept_count), None);
     }
 
-    let progress = parsed.get("progress")
+    let progress = parsed
+        .get("progress")
         .and_then(|p| p.as_f64())
         .unwrap_or(0.0);
-    let completed = parsed.get("completed")
+    let completed = parsed
+        .get("completed")
         .and_then(|c| c.as_bool())
         .unwrap_or(false);
 
@@ -1455,10 +1623,17 @@ pub async fn complete_play_quest_via_cdp(
     app_handle: tauri::AppHandle,
     mut cancel_rx: tokio::sync::mpsc::Receiver<()>,
 ) -> Result<()> {
-    use crate::logger::{log, LogLevel, LogCategory};
+    use crate::logger::{log, LogCategory, LogLevel};
 
-    log(LogLevel::Info, LogCategory::TokenExtraction,
-        &format!("CDP play quest: quest_id={}, app_id={}, app_name={}", quest_id, app_id, app_name), None);
+    log(
+        LogLevel::Info,
+        LogCategory::TokenExtraction,
+        &format!(
+            "CDP play quest: quest_id={}, app_id={}, app_name={}",
+            quest_id, app_id, app_name
+        ),
+        None,
+    );
 
     // Defensive pre-cleanup: prevent stale spoof state from a previous run from leaking
     // into the new quest session.
@@ -1466,32 +1641,51 @@ pub async fn complete_play_quest_via_cdp(
     cdp_warmup_quest_route(port).await;
 
     // 1. Init modules
-    cdp_init_modules(port).await
+    cdp_init_modules(port)
+        .await
         .context("Failed to initialize CDP modules for play quest")?;
 
     // 2. Spoof running game
     let js = js_spoof_play_game(&app_id, &app_name);
-    let spoof_summary = match cdp_execute_json_on_all_targets(port, &js, true, 15, "play quest spoof").await {
-        Ok(summary) => summary,
-        Err(err) => {
-            cdp_cleanup(port).await;
-            return Err(err);
-        }
-    };
+    let spoof_summary =
+        match cdp_execute_json_on_all_targets(port, &js, true, 15, "play quest spoof").await {
+            Ok(summary) => summary,
+            Err(err) => {
+                cdp_cleanup(port).await;
+                return Err(err);
+            }
+        };
 
     log_partial_target_failures("play quest spoof", &spoof_summary.target_failures);
 
     let parsed = spoof_summary
         .successful_results
         .iter()
-        .max_by_key(|value| value.get("patchCount").and_then(|patches| patches.as_u64()).unwrap_or(0))
+        .max_by_key(|value| {
+            value
+                .get("patchCount")
+                .and_then(|patches| patches.as_u64())
+                .unwrap_or(0)
+        })
         .context("CDP play quest spoof returned no successful target result")?;
 
-    let patch_count = parsed.get("patchCount").and_then(|p| p.as_u64()).unwrap_or(1);
-    let exe_name = parsed.get("exeName").and_then(|e| e.as_str()).unwrap_or("?");
-    let all_exes = parsed.get("allExeNames")
+    let patch_count = parsed
+        .get("patchCount")
+        .and_then(|p| p.as_u64())
+        .unwrap_or(1);
+    let exe_name = parsed
+        .get("exeName")
+        .and_then(|e| e.as_str())
+        .unwrap_or("?");
+    let all_exes = parsed
+        .get("allExeNames")
         .and_then(|a| a.as_array())
-        .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>().join(", "))
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
         .unwrap_or_default();
     log(LogLevel::Info, LogCategory::TokenExtraction,
         &format!(
@@ -1507,7 +1701,11 @@ pub async fn complete_play_quest_via_cdp(
 
     // 3. Poll progress using Rust API client (reliable) with CDP fallback
     let poll_interval = Duration::from_secs(15);
-    let initial_pct = if seconds_needed > 0 { (initial_progress / seconds_needed as f64) * 100.0 } else { 0.0 };
+    let initial_pct = if seconds_needed > 0 {
+        (initial_progress / seconds_needed as f64) * 100.0
+    } else {
+        0.0
+    };
     let _ = app_handle.emit("quest-progress", initial_pct);
 
     loop {
@@ -1525,13 +1723,24 @@ pub async fn complete_play_quest_via_cdp(
         let poll_result = if let Some(ref api_client) = client {
             match api_client.get_quest_progress(&quest_id).await {
                 Ok((progress_secs, completed)) => {
-                    log(LogLevel::Debug, LogCategory::TokenExtraction,
-                        &format!("CDP play quest poll (API): {:.0}/{}s completed={}", progress_secs, seconds_needed, completed), None);
+                    log(
+                        LogLevel::Debug,
+                        LogCategory::TokenExtraction,
+                        &format!(
+                            "CDP play quest poll (API): {:.0}/{}s completed={}",
+                            progress_secs, seconds_needed, completed
+                        ),
+                        None,
+                    );
                     Some((progress_secs, completed))
                 }
                 Err(e) => {
-                    log(LogLevel::Warn, LogCategory::TokenExtraction,
-                        &format!("API progress poll failed, falling back to CDP: {}", e), None);
+                    log(
+                        LogLevel::Warn,
+                        LogCategory::TokenExtraction,
+                        &format!("API progress poll failed, falling back to CDP: {}", e),
+                        None,
+                    );
                     None
                 }
             }
@@ -1542,28 +1751,44 @@ pub async fn complete_play_quest_via_cdp(
         // Fallback: poll via CDP JS
         let (progress_secs, completed) = match poll_result {
             Some(r) => r,
-            None => {
-                match cdp_poll_progress(port, &quest_id).await {
-                    Ok(r) => r,
-                    Err(e) => {
-                        log(LogLevel::Warn, LogCategory::TokenExtraction,
-                            &format!("CDP progress poll also failed (will retry): {}", e), None);
-                        continue;
-                    }
+            None => match cdp_poll_progress(port, &quest_id).await {
+                Ok(r) => r,
+                Err(e) => {
+                    log(
+                        LogLevel::Warn,
+                        LogCategory::TokenExtraction,
+                        &format!("CDP progress poll also failed (will retry): {}", e),
+                        None,
+                    );
+                    continue;
                 }
-            }
+            },
         };
 
         let pct = if seconds_needed > 0 {
             (progress_secs / seconds_needed as f64 * 100.0).min(100.0)
-        } else { 0.0 };
+        } else {
+            0.0
+        };
 
         let _ = app_handle.emit("quest-progress", pct);
-        log(LogLevel::Debug, LogCategory::TokenExtraction,
-            &format!("CDP play quest progress: {:.1}% ({:.0}/{}s)", pct, progress_secs, seconds_needed), None);
+        log(
+            LogLevel::Debug,
+            LogCategory::TokenExtraction,
+            &format!(
+                "CDP play quest progress: {:.1}% ({:.0}/{}s)",
+                pct, progress_secs, seconds_needed
+            ),
+            None,
+        );
 
         if completed || pct >= 100.0 {
-            log(LogLevel::Info, LogCategory::TokenExtraction, "CDP play quest completed!", None);
+            log(
+                LogLevel::Info,
+                LogCategory::TokenExtraction,
+                "CDP play quest completed!",
+                None,
+            );
             cdp_cleanup(port).await;
             let _ = app_handle.emit("quest-complete", ());
             return Ok(());
@@ -1584,38 +1809,49 @@ pub async fn complete_stream_quest_via_cdp(
     app_handle: tauri::AppHandle,
     mut cancel_rx: tokio::sync::mpsc::Receiver<()>,
 ) -> Result<()> {
-    use crate::logger::{log, LogLevel, LogCategory};
+    use crate::logger::{log, LogCategory, LogLevel};
 
-    log(LogLevel::Info, LogCategory::TokenExtraction,
-        &format!("CDP stream quest: quest_id={}, app_id={}", quest_id, app_id), None);
+    log(
+        LogLevel::Info,
+        LogCategory::TokenExtraction,
+        &format!("CDP stream quest: quest_id={}, app_id={}", quest_id, app_id),
+        None,
+    );
 
     // Defensive pre-cleanup: ensure previous spoof state is removed before applying new patches.
     cdp_cleanup(port).await;
     cdp_warmup_quest_route(port).await;
 
     // 1. Init modules
-    cdp_init_modules(port).await
+    cdp_init_modules(port)
+        .await
         .context("Failed to initialize CDP modules for stream quest")?;
 
     // 2. Spoof streaming metadata
     let js = js_spoof_stream(&app_id);
-    let stream_summary = match cdp_execute_json_on_all_targets(port, &js, false, 10, "stream quest spoof").await {
-        Ok(summary) => summary,
-        Err(err) => {
-            cdp_cleanup(port).await;
-            return Err(err);
-        }
-    };
+    let stream_summary =
+        match cdp_execute_json_on_all_targets(port, &js, false, 10, "stream quest spoof").await {
+            Ok(summary) => summary,
+            Err(err) => {
+                cdp_cleanup(port).await;
+                return Err(err);
+            }
+        };
 
     log_partial_target_failures("stream quest spoof", &stream_summary.target_failures);
 
     // Also spoof running game (stream quests also need the game running)
     let js_game = js_spoof_play_game(&app_id, "StreamedApp");
-    if let Ok(game_summary) = cdp_execute_json_on_all_targets(port, &js_game, true, 15, "stream companion game spoof").await {
+    if let Ok(game_summary) =
+        cdp_execute_json_on_all_targets(port, &js_game, true, 15, "stream companion game spoof")
+            .await
+    {
         log_partial_target_failures("stream companion game spoof", &game_summary.target_failures);
     }
 
-    log(LogLevel::Info, LogCategory::TokenExtraction,
+    log(
+        LogLevel::Info,
+        LogCategory::TokenExtraction,
         &format!(
             "CDP: Stream spoofed successfully on {}/{} target(s). Polling progress...",
             stream_summary.successful_results.len(),
@@ -1626,7 +1862,11 @@ pub async fn complete_stream_quest_via_cdp(
 
     // 3. Poll progress using Rust API client (reliable) with CDP fallback
     let poll_interval = Duration::from_secs(20);
-    let initial_pct = if seconds_needed > 0 { (initial_progress / seconds_needed as f64) * 100.0 } else { 0.0 };
+    let initial_pct = if seconds_needed > 0 {
+        (initial_progress / seconds_needed as f64) * 100.0
+    } else {
+        0.0
+    };
     let _ = app_handle.emit("quest-progress", initial_pct);
 
     loop {
@@ -1644,13 +1884,24 @@ pub async fn complete_stream_quest_via_cdp(
         let poll_result = if let Some(ref api_client) = client {
             match api_client.get_quest_progress(&quest_id).await {
                 Ok((progress_secs, completed)) => {
-                    log(LogLevel::Debug, LogCategory::TokenExtraction,
-                        &format!("CDP stream quest poll (API): {:.0}/{}s completed={}", progress_secs, seconds_needed, completed), None);
+                    log(
+                        LogLevel::Debug,
+                        LogCategory::TokenExtraction,
+                        &format!(
+                            "CDP stream quest poll (API): {:.0}/{}s completed={}",
+                            progress_secs, seconds_needed, completed
+                        ),
+                        None,
+                    );
                     Some((progress_secs, completed))
                 }
                 Err(e) => {
-                    log(LogLevel::Warn, LogCategory::TokenExtraction,
-                        &format!("API progress poll failed, falling back to CDP: {}", e), None);
+                    log(
+                        LogLevel::Warn,
+                        LogCategory::TokenExtraction,
+                        &format!("API progress poll failed, falling back to CDP: {}", e),
+                        None,
+                    );
                     None
                 }
             }
@@ -1661,28 +1912,44 @@ pub async fn complete_stream_quest_via_cdp(
         // Fallback: poll via CDP JS
         let (progress_secs, completed) = match poll_result {
             Some(r) => r,
-            None => {
-                match cdp_poll_progress(port, &quest_id).await {
-                    Ok(r) => r,
-                    Err(e) => {
-                        log(LogLevel::Warn, LogCategory::TokenExtraction,
-                            &format!("CDP stream progress poll also failed (will retry): {}", e), None);
-                        continue;
-                    }
+            None => match cdp_poll_progress(port, &quest_id).await {
+                Ok(r) => r,
+                Err(e) => {
+                    log(
+                        LogLevel::Warn,
+                        LogCategory::TokenExtraction,
+                        &format!("CDP stream progress poll also failed (will retry): {}", e),
+                        None,
+                    );
+                    continue;
                 }
-            }
+            },
         };
 
         let pct = if seconds_needed > 0 {
             (progress_secs / seconds_needed as f64 * 100.0).min(100.0)
-        } else { 0.0 };
+        } else {
+            0.0
+        };
 
         let _ = app_handle.emit("quest-progress", pct);
-        log(LogLevel::Debug, LogCategory::TokenExtraction,
-            &format!("CDP stream quest progress: {:.1}% ({:.0}/{}s)", pct, progress_secs, seconds_needed), None);
+        log(
+            LogLevel::Debug,
+            LogCategory::TokenExtraction,
+            &format!(
+                "CDP stream quest progress: {:.1}% ({:.0}/{}s)",
+                pct, progress_secs, seconds_needed
+            ),
+            None,
+        );
 
         if completed || pct >= 100.0 {
-            log(LogLevel::Info, LogCategory::TokenExtraction, "CDP stream quest completed!", None);
+            log(
+                LogLevel::Info,
+                LogCategory::TokenExtraction,
+                "CDP stream quest completed!",
+                None,
+            );
             cdp_cleanup(port).await;
             let _ = app_handle.emit("quest-complete", ());
             return Ok(());
@@ -1703,21 +1970,32 @@ pub async fn complete_video_quest_via_cdp(
     app_handle: tauri::AppHandle,
     mut cancel_rx: tokio::sync::mpsc::Receiver<()>,
 ) -> Result<()> {
-    use crate::logger::{log, LogLevel, LogCategory};
+    use crate::logger::{log, LogCategory, LogLevel};
 
-    log(LogLevel::Info, LogCategory::TokenExtraction,
-        &format!("CDP video quest: quest_id={}, target={}s, initial={:.0}s", 
-            quest_id, seconds_needed, initial_progress), None);
+    log(
+        LogLevel::Info,
+        LogCategory::TokenExtraction,
+        &format!(
+            "CDP video quest: quest_id={}, target={}s, initial={:.0}s",
+            quest_id, seconds_needed, initial_progress
+        ),
+        None,
+    );
 
     // Defensive pre-cleanup for cross-quest consistency.
     cdp_cleanup(port).await;
     cdp_warmup_quest_route(port).await;
 
     // 1. Init modules
-    cdp_init_modules(port).await
+    cdp_init_modules(port)
+        .await
         .context("Failed to initialize CDP modules for video quest")?;
 
-    let initial_pct = if seconds_needed > 0 { (initial_progress / seconds_needed as f64) * 100.0 } else { 0.0 };
+    let initial_pct = if seconds_needed > 0 {
+        (initial_progress / seconds_needed as f64) * 100.0
+    } else {
+        0.0
+    };
     let _ = app_handle.emit("quest-progress", initial_pct);
 
     // 2. Fire-and-forget: launch the async video JS loop inside Discord.
@@ -1726,12 +2004,15 @@ pub async fn complete_video_quest_via_cdp(
     //    This avoids CDP "Promise was collected" errors from awaitPromise=true.
     let js = js_start_video_quest(&quest_id, seconds_needed, initial_progress);
 
-    let start_summary = cdp_execute_json_on_all_targets(port, &js, false, 15, "video quest start").await
+    let start_summary = cdp_execute_json_on_all_targets(port, &js, false, 15, "video quest start")
+        .await
         .context("Failed to launch video quest JS")?;
 
     log_partial_target_failures("video quest start", &start_summary.target_failures);
 
-    log(LogLevel::Info, LogCategory::TokenExtraction,
+    log(
+        LogLevel::Info,
+        LogCategory::TokenExtraction,
         &format!(
             "CDP video quest JS launched on {}/{} target(s) (fire-and-forget). Polling progress...",
             start_summary.successful_results.len(),
@@ -1743,7 +2024,7 @@ pub async fn complete_video_quest_via_cdp(
     // 3. Poll progress until the JS loop finishes (videoRunning=false) or quest completes
     let poll_interval = Duration::from_secs(5);
     let max_duration = Duration::from_secs(
-        ((seconds_needed as f64 - initial_progress).max(0.0) / 7.0 * 2.0) as u64 + 300
+        ((seconds_needed as f64 - initial_progress).max(0.0) / 7.0 * 2.0) as u64 + 300,
     );
     let start_time = std::time::Instant::now();
 
@@ -1767,8 +2048,12 @@ pub async fn complete_video_quest_via_cdp(
 
         // Timeout safety
         if start_time.elapsed() > max_duration {
-            log(LogLevel::Error, LogCategory::TokenExtraction,
-                &format!("CDP video quest timed out after {:?}", start_time.elapsed()), None);
+            log(
+                LogLevel::Error,
+                LogCategory::TokenExtraction,
+                &format!("CDP video quest timed out after {:?}", start_time.elapsed()),
+                None,
+            );
             let _ = app_handle.emit("quest-error", "Video quest timed out".to_string());
             return Ok(());
         }
@@ -1778,22 +2063,40 @@ pub async fn complete_video_quest_via_cdp(
             Ok((progress_secs, completed)) => {
                 let pct = if seconds_needed > 0 {
                     (progress_secs / seconds_needed as f64 * 100.0).min(100.0)
-                } else { 0.0 };
+                } else {
+                    0.0
+                };
 
                 let _ = app_handle.emit("quest-progress", pct);
-                log(LogLevel::Debug, LogCategory::TokenExtraction,
-                    &format!("CDP video quest progress: {:.1}% ({:.0}/{}s)", pct, progress_secs, seconds_needed), None);
+                log(
+                    LogLevel::Debug,
+                    LogCategory::TokenExtraction,
+                    &format!(
+                        "CDP video quest progress: {:.1}% ({:.0}/{}s)",
+                        pct, progress_secs, seconds_needed
+                    ),
+                    None,
+                );
 
                 if completed || pct >= 100.0 {
-                    log(LogLevel::Info, LogCategory::TokenExtraction, "CDP video quest completed!", None);
+                    log(
+                        LogLevel::Info,
+                        LogCategory::TokenExtraction,
+                        "CDP video quest completed!",
+                        None,
+                    );
                     let _ = app_handle.emit("quest-progress", 100.0f64);
                     let _ = app_handle.emit("quest-complete", ());
                     return Ok(());
                 }
             }
             Err(e) => {
-                log(LogLevel::Warn, LogCategory::TokenExtraction,
-                    &format!("CDP video progress poll failed (will retry): {}", e), None);
+                log(
+                    LogLevel::Warn,
+                    LogCategory::TokenExtraction,
+                    &format!("CDP video progress poll failed (will retry): {}", e),
+                    None,
+                );
             }
         }
 
@@ -1908,7 +2211,8 @@ fn js_dispatch_message_event(event_type: &str, payload_json: &str) -> String {
 /// Generate JS to call Discord SDK commands inside the activity iframe.
 fn js_init_activity_quest(quest_id: &str) -> String {
     let safe_quest_id = serde_json::to_string(quest_id).unwrap_or_else(|_| "\"\"".to_string());
-    format!(r#"
+    format!(
+        r#"
 (async () => {{
     try {{
         const questId = {safe_quest_id};
@@ -1950,7 +2254,8 @@ fn js_init_activity_quest(quest_id: &str) -> String {
         return JSON.stringify({{ success: false, error: String(e) }});
     }}
 }})()
-"#)
+"#
+    )
 }
 
 /// Generate JS to check quest completion status inside the activity iframe.
@@ -1979,13 +2284,15 @@ fn js_check_activity_quest_status() -> String {
         return JSON.stringify({ success: false, error: String(e) });
     }
 })()
-"#.to_string()
+"#
+    .to_string()
 }
 
 /// Generate JS to navigate Discord's SPA to a specific path.
 fn js_navigate_spa(target_path: &str) -> String {
     let safe_path = serde_json::to_string(target_path).unwrap_or_else(|_| "\"\"".to_string());
-    format!(r#"
+    format!(
+        r#"
 (async () => {{
     try {{
         const targetPath = {safe_path};
@@ -2085,7 +2392,8 @@ fn js_navigate_spa(target_path: &str) -> String {
         return JSON.stringify({{ success: false, error: String(e) }});
     }}
 }})()
-"#)
+"#
+    )
 }
 
 /// Navigate Discord's SPA to a specific path and bring Discord to the front.
@@ -2102,19 +2410,36 @@ pub async fn navigate_discord_spa(port: u16, target_path: &str) -> Result<()> {
         .first()
         .context("SPA navigation returned no successful target results")?;
 
-    let success = parsed.get("success").and_then(|s| s.as_bool()).unwrap_or(false);
-    let method = parsed.get("method").and_then(|m| m.as_str()).unwrap_or("unknown");
+    let success = parsed
+        .get("success")
+        .and_then(|s| s.as_bool())
+        .unwrap_or(false);
+    let method = parsed
+        .get("method")
+        .and_then(|m| m.as_str())
+        .unwrap_or("unknown");
 
     if success {
-        log(LogLevel::Info, LogCategory::TokenExtraction,
-            &format!("Discord SPA navigation successful (method={})", method), None);
+        log(
+            LogLevel::Info,
+            LogCategory::TokenExtraction,
+            &format!("Discord SPA navigation successful (method={})", method),
+            None,
+        );
         cdp_client::bring_primary_discord_target_to_front(port)
             .await
             .context("Failed to bring Discord window to front after SPA navigation")?;
         Ok(())
     } else {
-        let error = parsed.get("error").and_then(|e| e.as_str()).unwrap_or("Unknown error");
-        anyhow::bail!("Discord SPA navigation failed: {} (method={})", error, method)
+        let error = parsed
+            .get("error")
+            .and_then(|e| e.as_str())
+            .unwrap_or("Unknown error");
+        anyhow::bail!(
+            "Discord SPA navigation failed: {} (method={})",
+            error,
+            method
+        )
     }
 }
 
@@ -2135,30 +2460,50 @@ pub async fn complete_activity_quest_via_cdp(
         anyhow::bail!("Activity quest requires at least one checkpoint interval");
     }
 
-    log(LogLevel::Info, LogCategory::TokenExtraction,
-        &format!("CDP activity quest: quest_id={}, checkpoints={}, total={}s, times={:?}",
-            quest_id, total_checkpoints, total_seconds, checkpoint_times), None);
+    log(
+        LogLevel::Info,
+        LogCategory::TokenExtraction,
+        &format!(
+            "CDP activity quest: quest_id={}, checkpoints={}, total={}s, times={:?}",
+            quest_id, total_checkpoints, total_seconds, checkpoint_times
+        ),
+        None,
+    );
 
-    let iframe_target = cdp_client::find_activity_iframe_target(port).await
+    let iframe_target = cdp_client::find_activity_iframe_target(port)
+        .await
         .context("Failed to find activity iframe target")?;
 
-    let ws_url = iframe_target.web_socket_debugger_url
+    let ws_url = iframe_target
+        .web_socket_debugger_url
         .context("Activity iframe target has no WebSocket URL")?;
 
-    log(LogLevel::Info, LogCategory::TokenExtraction,
-        &format!("CDP activity quest: found iframe target '{}' url='{}'",
-            iframe_target.title, iframe_target.url), None);
+    log(
+        LogLevel::Info,
+        LogCategory::TokenExtraction,
+        &format!(
+            "CDP activity quest: found iframe target '{}' url='{}'",
+            iframe_target.title, iframe_target.url
+        ),
+        None,
+    );
 
     let init_js = js_init_activity_quest(&quest_id);
-    let init_result = cdp_client::execute_js_on_target(&ws_url, &init_js, true, 15).await
+    let init_result = cdp_client::execute_js_on_target(&ws_url, &init_js, true, 15)
+        .await
         .context("Failed to initialize activity quest via CDP")?;
 
-    log(LogLevel::Info, LogCategory::TokenExtraction,
-        &format!("CDP activity quest init result: {}", init_result), None);
+    log(
+        LogLevel::Info,
+        LogCategory::TokenExtraction,
+        &format!("CDP activity quest init result: {}", init_result),
+        None,
+    );
 
     let init_parsed: serde_json::Value = serde_json::from_str(&init_result).unwrap_or_default();
     if init_parsed.get("success") != Some(&serde_json::json!(true)) {
-        let error = init_parsed.get("error")
+        let error = init_parsed
+            .get("error")
             .and_then(|e| e.as_str())
             .unwrap_or("Unknown init error");
         anyhow::bail!("Activity quest init failed: {}", error);
@@ -2171,9 +2516,15 @@ pub async fn complete_activity_quest_via_cdp(
         let is_last = i == total_checkpoints - 1;
         let checkpoint_num = i + 1;
 
-        log(LogLevel::Info, LogCategory::TokenExtraction,
-            &format!("CDP activity quest: waiting for checkpoint {}/{} ({}s)",
-                checkpoint_num, total_checkpoints, checkpoint_secs), None);
+        log(
+            LogLevel::Info,
+            LogCategory::TokenExtraction,
+            &format!(
+                "CDP activity quest: waiting for checkpoint {}/{} ({}s)",
+                checkpoint_num, total_checkpoints, checkpoint_secs
+            ),
+            None,
+        );
 
         tokio::select! {
             _ = sleep(Duration::from_secs(*checkpoint_secs as u64)) => {},
@@ -2193,19 +2544,35 @@ pub async fn complete_activity_quest_via_cdp(
         let _ = app_handle.emit("quest-progress", progress_pct);
 
         if is_last {
-            log(LogLevel::Info, LogCategory::TokenExtraction,
-                "CDP activity quest: dispatching quest-completed event", None);
+            log(
+                LogLevel::Info,
+                LogCategory::TokenExtraction,
+                "CDP activity quest: dispatching quest-completed event",
+                None,
+            );
 
             let completed_payload = serde_json::json!({
                 "quest_id": quest_id.as_str(),
                 "completed": true
-            }).to_string();
+            })
+            .to_string();
             let completed_js = js_dispatch_message_event("quest-completed", &completed_payload);
             match cdp_client::execute_js_on_target(&ws_url, &completed_js, false, 10).await {
-                Ok(result) => log(LogLevel::Info, LogCategory::TokenExtraction,
-                    &format!("CDP activity quest: quest-completed dispatch result: {}", result), None),
-                Err(e) => log(LogLevel::Warn, LogCategory::TokenExtraction,
-                    &format!("CDP activity quest: quest-completed dispatch failed: {}", e), None),
+                Ok(result) => log(
+                    LogLevel::Info,
+                    LogCategory::TokenExtraction,
+                    &format!(
+                        "CDP activity quest: quest-completed dispatch result: {}",
+                        result
+                    ),
+                    None,
+                ),
+                Err(e) => log(
+                    LogLevel::Warn,
+                    LogCategory::TokenExtraction,
+                    &format!("CDP activity quest: quest-completed dispatch failed: {}", e),
+                    None,
+                ),
             }
         } else {
             log(LogLevel::Info, LogCategory::TokenExtraction,
@@ -2215,26 +2582,54 @@ pub async fn complete_activity_quest_via_cdp(
             let progress_payload = checkpoint_num.to_string();
             let progress_js = js_dispatch_message_event("quest-progress", &progress_payload);
             match cdp_client::execute_js_on_target(&ws_url, &progress_js, false, 10).await {
-                Ok(result) => log(LogLevel::Info, LogCategory::TokenExtraction,
-                    &format!("CDP activity quest: quest-progress dispatch result: {}", result), None),
-                Err(e) => log(LogLevel::Warn, LogCategory::TokenExtraction,
-                    &format!("CDP activity quest: quest-progress dispatch failed: {}", e), None),
+                Ok(result) => log(
+                    LogLevel::Info,
+                    LogCategory::TokenExtraction,
+                    &format!(
+                        "CDP activity quest: quest-progress dispatch result: {}",
+                        result
+                    ),
+                    None,
+                ),
+                Err(e) => log(
+                    LogLevel::Warn,
+                    LogCategory::TokenExtraction,
+                    &format!("CDP activity quest: quest-progress dispatch failed: {}", e),
+                    None,
+                ),
             }
         }
     }
 
-    log(LogLevel::Info, LogCategory::TokenExtraction,
-        "CDP activity quest: verifying completion...", None);
+    log(
+        LogLevel::Info,
+        LogCategory::TokenExtraction,
+        "CDP activity quest: verifying completion...",
+        None,
+    );
 
     let verify_js = js_check_activity_quest_status();
     match cdp_client::execute_js_on_target(&ws_url, &verify_js, true, 15).await {
         Ok(result) => {
             let parsed: serde_json::Value = serde_json::from_str(&result).unwrap_or_default();
-            let completed = parsed.get("completed").and_then(|c| c.as_bool()).unwrap_or(false);
-            let completed_at = parsed.get("completedAt").and_then(|c| c.as_str()).unwrap_or("null");
+            let completed = parsed
+                .get("completed")
+                .and_then(|c| c.as_bool())
+                .unwrap_or(false);
+            let completed_at = parsed
+                .get("completedAt")
+                .and_then(|c| c.as_str())
+                .unwrap_or("null");
 
-            log(LogLevel::Info, LogCategory::TokenExtraction,
-                &format!("CDP activity quest verification: completed={}, completedAt={}", completed, completed_at), None);
+            log(
+                LogLevel::Info,
+                LogCategory::TokenExtraction,
+                &format!(
+                    "CDP activity quest verification: completed={}, completedAt={}",
+                    completed, completed_at
+                ),
+                None,
+            );
 
             if completed {
                 let _ = app_handle.emit("quest-progress", 100.0f64);
@@ -2245,8 +2640,12 @@ pub async fn complete_activity_quest_via_cdp(
             }
         }
         Err(e) => {
-            log(LogLevel::Warn, LogCategory::TokenExtraction,
-                &format!("CDP activity quest verification failed: {}", e), None);
+            log(
+                LogLevel::Warn,
+                LogCategory::TokenExtraction,
+                &format!("CDP activity quest verification failed: {}", e),
+                None,
+            );
             let _ = app_handle.emit(
                 "quest-error",
                 format!("Activity quest verification failed: {}", e),
@@ -2254,7 +2653,12 @@ pub async fn complete_activity_quest_via_cdp(
         }
     }
 
-    log(LogLevel::Info, LogCategory::TokenExtraction, "CDP activity quest finished", None);
+    log(
+        LogLevel::Info,
+        LogCategory::TokenExtraction,
+        "CDP activity quest finished",
+        None,
+    );
     Ok(())
 }
 
@@ -2287,4 +2691,3 @@ mod tests {
         assert!(build_quest_route_warmup_plan("chrome://version").is_none());
     }
 }
-

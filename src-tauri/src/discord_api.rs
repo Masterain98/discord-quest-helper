@@ -3,11 +3,10 @@ use anyhow::{Context, Result};
 use arc_swap::ArcSwap;
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE, REFERER, USER_AGENT};
 use reqwest::{Method, RequestBuilder};
-use base64::Engine;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 const DISCORD_API_BASE: &str = "https://discord.com/api/v9";
@@ -119,20 +118,14 @@ impl DiscordApiClient {
             AUTHORIZATION,
             HeaderValue::from_str(token).context("Invalid token format")?,
         );
-        headers.insert(
-            CONTENT_TYPE,
-            HeaderValue::from_static("application/json"),
-        );
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         // Note: X-Super-Properties is no longer set here, but dynamically obtained on each request
         // This ensures the latest validation parameters (including data obtained from CDP) are used
         headers.insert(
             "x-debug-options",
             HeaderValue::from_static("bugReporterEnabled"),
         );
-        headers.insert(
-            "accept",
-            HeaderValue::from_static("*/*"),
-        );
+        headers.insert("accept", HeaderValue::from_static("*/*"));
 
         Ok(headers)
     }
@@ -247,7 +240,12 @@ impl DiscordApiClient {
 
         if self
             .last_proxy_check_elapsed_ms
-            .compare_exchange(last_check_ms, now_elapsed_ms, Ordering::AcqRel, Ordering::Acquire)
+            .compare_exchange(
+                last_check_ms,
+                now_elapsed_ms,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
             .is_err()
         {
             return false;
@@ -290,19 +288,26 @@ impl DiscordApiClient {
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
             manager.get_super_properties_base64()
         };
-        
+
         // Log the generated properties for audit purposes
         #[cfg(debug_assertions)]
         {
-           use crate::logger::{log, LogLevel, LogCategory};
-           // Decode to verify content
-           if let Ok(decoded) = base64::engine::general_purpose::STANDARD.decode(&super_props) {
-               if let Ok(s) = String::from_utf8(decoded) {
-                   // Truncate for logging if too long, but show enough to verify structure
-                   let preview = if s.len() > 100 { format!("{}...", &s[..100]) } else { s };
-                   log(LogLevel::Debug, LogCategory::Api, &format!("Injecting X-Super-Properties: {}", preview), None);
-               }
-           }
+            use base64::Engine as _;
+            use crate::logger::{log, LogCategory, LogLevel};
+            // Decode only to validate shape; avoid logging decoded payload contents
+            if base64::engine::general_purpose::STANDARD
+                .decode(&super_props)
+                .ok()
+                .and_then(|d| String::from_utf8(d).ok())
+                .is_some()
+            {
+                log(
+                    LogLevel::Debug,
+                    LogCategory::Api,
+                    &format!("Injecting X-Super-Properties (base64_len={})", super_props.len()),
+                    None,
+                );
+            }
         }
 
         HeaderValue::from_str(&super_props).unwrap_or_else(|e| {
@@ -331,10 +336,14 @@ impl DiscordApiClient {
             let manager = crate::SUPER_PROPERTIES_MANAGER
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
-            (manager.get_user_agent_string(), manager.get_header_profile())
+            (
+                manager.get_user_agent_string(),
+                manager.get_header_profile(),
+            )
         };
 
-        let mut request = self.current_client()
+        let mut request = self
+            .current_client()
             .request(method, url)
             .header("x-super-properties", self.get_super_properties_header());
 
@@ -347,7 +356,8 @@ impl DiscordApiClient {
         if let Some(value) = Self::header_value(&header_profile.locale, "x-discord-locale") {
             request = request.header("x-discord-locale", value);
         }
-        if let Some(value) = Self::header_value(&header_profile.accept_language, "accept-language") {
+        if let Some(value) = Self::header_value(&header_profile.accept_language, "accept-language")
+        {
             request = request.header("accept-language", value);
         }
         if let Some(installation_id) = header_profile.installation_id.as_deref() {
@@ -369,41 +379,55 @@ impl DiscordApiClient {
 
     /// Get current user info
     pub async fn get_current_user(&self) -> Result<DiscordUser> {
-        use crate::logger::{log, LogLevel, LogCategory};
-        
+        use crate::logger::{log, LogCategory, LogLevel};
+
         let url = format!("{}/users/@me", DISCORD_API_BASE);
-        log(LogLevel::Debug, LogCategory::Api, "Requesting current user info", Some(&url));
-        
-        
-        let response = self.request(Method::GET, &url)
-            .send()
-            .await
-            .map_err(|e| {
-                log(LogLevel::Error, LogCategory::Api, 
-                    "Network request failed for /users/@me", Some(&e.to_string()));
-                anyhow::anyhow!("Request for current user info failed: {}", e)
-            })?;
+        log(
+            LogLevel::Debug,
+            LogCategory::Api,
+            "Requesting current user info",
+            Some(&url),
+        );
+
+        let response = self.request(Method::GET, &url).send().await.map_err(|e| {
+            log(
+                LogLevel::Error,
+                LogCategory::Api,
+                "Network request failed for /users/@me",
+                Some(&e.to_string()),
+            );
+            anyhow::anyhow!("Request for current user info failed: {}", e)
+        })?;
 
         let status = response.status();
-        log(LogLevel::Debug, LogCategory::Api, 
-            &format!("Response status for /users/@me: {}", status), None);
+        log(
+            LogLevel::Debug,
+            LogCategory::Api,
+            &format!("Response status for /users/@me: {}", status),
+            None,
+        );
 
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
             // Use chars().take() for safe UTF-8 truncation
             let truncated_body: String = body.chars().take(200).collect();
-            log(LogLevel::Error, LogCategory::Api, 
-                &format!("API error for /users/@me: {} - {}", status, truncated_body), None);
+            log(
+                LogLevel::Error,
+                LogCategory::Api,
+                &format!("API error for /users/@me: {} - {}", status, truncated_body),
+                None,
+            );
             anyhow::bail!("Failed to get user info: {} - {}", status, body);
         }
 
-        let user: DiscordUser = response
-            .json()
-            .await
-            .context("Failed to parse user info")?;
-        
-        log(LogLevel::Debug, LogCategory::Api, 
-            "Successfully retrieved user info", None);
+        let user: DiscordUser = response.json().await.context("Failed to parse user info")?;
+
+        log(
+            LogLevel::Debug,
+            LogCategory::Api,
+            "Successfully retrieved user info",
+            None,
+        );
 
         Ok(user)
     }
@@ -414,11 +438,13 @@ impl DiscordApiClient {
     /// and extracting the relevant quest's user_status.
     pub async fn get_quest_progress(&self, quest_id: &str) -> Result<(f64, bool)> {
         let data = self.get_quests_raw().await?;
-        let quests = data.get("quests")
+        let quests = data
+            .get("quests")
             .and_then(|q| q.as_array())
             .ok_or_else(|| anyhow::anyhow!("Quest list missing 'quests' array"))?;
 
-        let quest = quests.iter()
+        let quest = quests
+            .iter()
             .find(|q| q.get("id").and_then(|id| id.as_str()) == Some(quest_id))
             .ok_or_else(|| anyhow::anyhow!("Quest {} not found in quest list", quest_id))?;
 
@@ -429,14 +455,20 @@ impl DiscordApiClient {
             .unwrap_or(false);
 
         let mut progress_seconds = 0.0f64;
-        if let Some(progress) = user_status.and_then(|us| us.get("progress")).and_then(|p| p.as_object()) {
+        if let Some(progress) = user_status
+            .and_then(|us| us.get("progress"))
+            .and_then(|p| p.as_object())
+        {
             // progress is {"TASK_KEY": {"value": N}, ...}
             if let Some(first) = progress.values().next() {
                 if let Some(val) = first.get("value").and_then(|v| v.as_f64()) {
                     progress_seconds = val;
                 }
             }
-        } else if let Some(sps) = user_status.and_then(|us| us.get("stream_progress_seconds")).and_then(|v| v.as_f64()) {
+        } else if let Some(sps) = user_status
+            .and_then(|us| us.get("stream_progress_seconds"))
+            .and_then(|v| v.as_f64())
+        {
             progress_seconds = sps;
         }
 
@@ -446,25 +478,30 @@ impl DiscordApiClient {
     /// Get raw quest list data (via /quests/@me endpoint)
     pub async fn get_quests_raw(&self) -> Result<serde_json::Value> {
         let url = format!("{}/quests/@me", DISCORD_API_BASE);
-        
+
         println!("Requesting quest list: {}", url);
-        
-        let response = self.request(Method::GET, &url)
+
+        let response = self
+            .request(Method::GET, &url)
             .send()
             .await
             .context("Request for quest list failed")?;
 
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        
-        println!("Quest list response: {} - received {} bytes", status, body.len());
+
+        println!(
+            "Quest list response: {} - received {} bytes",
+            status,
+            body.len()
+        );
 
         if !status.is_success() {
             anyhow::bail!("Failed to get quest list: {} - {}", status, body);
         }
 
-        let data: serde_json::Value = serde_json::from_str(&body)
-            .context("Failed to parse quest list")?;
+        let data: serde_json::Value =
+            serde_json::from_str(&body).context("Failed to parse quest list")?;
 
         // Print quest count if available
         if let Some(quests) = data.get("quests").and_then(|q| q.as_array()) {
@@ -491,7 +528,8 @@ impl DiscordApiClient {
             .append_pair("client_heartbeat_session_id", &heartbeat_session_id)
             .append_pair("client_ad_session_id", &ad_session_id);
 
-        let response = self.request(Method::GET, url.as_str())
+        let response = self
+            .request(Method::GET, url.as_str())
             .send()
             .await
             .context("Request for quest placement decision failed")?;
@@ -499,13 +537,21 @@ impl DiscordApiClient {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
         if !status.is_success() {
-            anyhow::bail!("Failed to get quest placement decision: {} - {}", status, body);
+            anyhow::bail!(
+                "Failed to get quest placement decision: {} - {}",
+                status,
+                body
+            );
         }
 
         serde_json::from_str(&body).context("Failed to parse quest placement decision")
     }
 
-    pub async fn get_quest_decisions_debug(&self, placement: u64, num: u64) -> Result<serde_json::Value> {
+    pub async fn get_quest_decisions_debug(
+        &self,
+        placement: u64,
+        num: u64,
+    ) -> Result<serde_json::Value> {
         let (heartbeat_session_id, ad_session_id) = {
             let manager = crate::SUPER_PROPERTIES_MANAGER
                 .lock()
@@ -523,7 +569,8 @@ impl DiscordApiClient {
             .append_pair("client_heartbeat_session_id", &heartbeat_session_id)
             .append_pair("client_ad_session_id", &ad_session_id);
 
-        let response = self.request(Method::GET, url.as_str())
+        let response = self
+            .request(Method::GET, url.as_str())
             .send()
             .await
             .context("Request for quest placement decisions failed")?;
@@ -531,7 +578,11 @@ impl DiscordApiClient {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
         if !status.is_success() {
-            anyhow::bail!("Failed to get quest placement decisions: {} - {}", status, body);
+            anyhow::bail!(
+                "Failed to get quest placement decisions: {} - {}",
+                status,
+                body
+            );
         }
 
         serde_json::from_str(&body).context("Failed to parse quest placement decisions")
@@ -540,7 +591,8 @@ impl DiscordApiClient {
     pub async fn get_virtual_currency_balance(&self) -> Result<serde_json::Value> {
         let url = format!("{}/users/@me/virtual-currency/balance", DISCORD_API_BASE);
 
-        let response = self.request(Method::GET, &url)
+        let response = self
+            .request(Method::GET, &url)
             .send()
             .await
             .context("Request for virtual currency balance failed")?;
@@ -548,20 +600,31 @@ impl DiscordApiClient {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
         if !status.is_success() {
-            anyhow::bail!("Failed to get virtual currency balance: {} - {}", status, body);
+            anyhow::bail!(
+                "Failed to get virtual currency balance: {} - {}",
+                status,
+                body
+            );
         }
 
         serde_json::from_str(&body).context("Failed to parse virtual currency balance")
     }
 
-    pub async fn claim_quest_reward(&self, quest_id: &str, platform: Option<String>) -> Result<serde_json::Value> {
+    pub async fn claim_quest_reward(
+        &self,
+        quest_id: &str,
+        platform: Option<String>,
+    ) -> Result<serde_json::Value> {
         let url = format!("{}/quests/{}/claim-reward", DISCORD_API_BASE, quest_id);
         let payload = match platform {
-            Some(platform) if !platform.trim().is_empty() => serde_json::json!({ "platform": platform }),
+            Some(platform) if !platform.trim().is_empty() => {
+                serde_json::json!({ "platform": platform })
+            }
             _ => serde_json::json!({}),
         };
 
-        let response = self.request(Method::POST, &url)
+        let response = self
+            .request(Method::POST, &url)
             .json(&payload)
             .send()
             .await
@@ -576,22 +639,21 @@ impl DiscordApiClient {
         serde_json::from_str(&body).context("Failed to parse claim reward response")
     }
 
-
     /// Update video watch progress
-    pub async fn update_video_progress(
-        &self,
-        quest_id: &str,
-        timestamp: f64,
-    ) -> Result<bool> {
+    pub async fn update_video_progress(&self, quest_id: &str, timestamp: f64) -> Result<bool> {
         let url = format!("{}/quests/{}/video-progress", DISCORD_API_BASE, quest_id);
-        
+
         let payload = VideoProgressPayload {
             timestamp: Self::normalize_video_timestamp(timestamp),
         };
 
-        println!("Sending video progress: quest_id={}, timestamp={}", quest_id, payload.timestamp);
+        println!(
+            "Sending video progress: quest_id={}, timestamp={}",
+            quest_id, payload.timestamp
+        );
 
-        let response = self.request(Method::POST, &url)
+        let response = self
+            .request(Method::POST, &url)
             .json(&payload)
             .send()
             .await
@@ -605,24 +667,24 @@ impl DiscordApiClient {
 
         // Check if quest is completed from response
         let body: serde_json::Value = response.json().await.unwrap_or_default();
-        let completed = body.get("completed_at").map(|v| !v.is_null()).unwrap_or(false);
-        
+        let completed = body
+            .get("completed_at")
+            .map(|v| !v.is_null())
+            .unwrap_or(false);
+
         Ok(completed)
     }
 
     /// Send stream heartbeat
-    pub async fn send_stream_heartbeat(
-        &self,
-        quest_id: &str,
-        stream_key: &str,
-    ) -> Result<()> {
+    pub async fn send_stream_heartbeat(&self, quest_id: &str, stream_key: &str) -> Result<()> {
         let url = format!("{}/quests/{}/heartbeat", DISCORD_API_BASE, quest_id);
-        
+
         let payload = HeartbeatPayload {
             stream_key: stream_key.to_string(),
         };
 
-        let response = self.request(Method::POST, &url)
+        let response = self
+            .request(Method::POST, &url)
             .json(&payload)
             .send()
             .await
@@ -645,15 +707,19 @@ impl DiscordApiClient {
         terminal: bool,
     ) -> Result<bool> {
         let url = format!("{}/quests/{}/heartbeat", DISCORD_API_BASE, quest_id);
-        
+
         let payload = GameHeartbeatPayload {
             application_id: application_id.to_string(),
             terminal,
         };
 
-        println!("Sending game heartbeat: quest_id={}, app_id={}, terminal={}", quest_id, application_id, terminal);
+        println!(
+            "Sending game heartbeat: quest_id={}, app_id={}, terminal={}",
+            quest_id, application_id, terminal
+        );
 
-        let response = self.request(Method::POST, &url)
+        let response = self
+            .request(Method::POST, &url)
             .json(&payload)
             .send()
             .await
@@ -667,15 +733,18 @@ impl DiscordApiClient {
 
         // Check if quest is completed from response
         let body: serde_json::Value = response.json().await.unwrap_or_default();
-        let completed = body.get("completed_at").map(|v| !v.is_null()).unwrap_or(false);
-        
+        let completed = body
+            .get("completed_at")
+            .map(|v| !v.is_null())
+            .unwrap_or(false);
+
         Ok(completed)
     }
 
     /// Accept quest (enroll in quest)
     pub async fn accept_quest(&self, quest_id: &str) -> Result<serde_json::Value> {
         let url = format!("{}/quests/{}/enroll", DISCORD_API_BASE, quest_id);
-        
+
         println!("Accepting quest: quest_id={}", quest_id);
 
         // POST with enrollment payload from HAR capture
@@ -685,7 +754,8 @@ impl DiscordApiClient {
             "metadata_raw": null
         });
 
-        let response = self.request(Method::POST, &url)
+        let response = self
+            .request(Method::POST, &url)
             .json(&payload)
             .send()
             .await
@@ -701,7 +771,8 @@ impl DiscordApiClient {
         let first_body = response.text().await.unwrap_or_default();
 
         let minimal_payload = serde_json::json!({ "location": 11 });
-        let fallback_response = self.request(Method::POST, &url)
+        let fallback_response = self
+            .request(Method::POST, &url)
             .json(&minimal_payload)
             .send()
             .await
@@ -709,7 +780,10 @@ impl DiscordApiClient {
 
         if fallback_response.status().is_success() {
             let body: serde_json::Value = fallback_response.json().await.unwrap_or_default();
-            println!("Quest accepted successfully with minimal payload: {:?}", body);
+            println!(
+                "Quest accepted successfully with minimal payload: {:?}",
+                body
+            );
             return Ok(body);
         }
 
@@ -729,13 +803,14 @@ impl DiscordApiClient {
     pub async fn fetch_detectable_games(&self) -> Result<Vec<DetectableGame>> {
         let games_url = format!("{}/applications/detectable", DISCORD_API_BASE);
         let apps_url = format!("{}/applications/non-games/detectable", DISCORD_API_BASE);
-        
+
         println!("Requesting detectable games and apps lists...");
 
         // Helper to fetch a single URL
         let fetch_list = |url: String| async move {
             println!("Requesting: {}", url);
-            let response = self.request(Method::GET, &url)
+            let response = self
+                .request(Method::GET, &url)
                 .send()
                 .await
                 .context(format!("Failed to request {}", url))?;
@@ -753,15 +828,12 @@ impl DiscordApiClient {
                 .json()
                 .await
                 .context(format!("Failed to parse list from {}", url))?;
-            
+
             Ok::<Vec<DetectableGame>, anyhow::Error>(list)
         };
 
         // Fetch both concurrently
-        let (games_res, apps_res) = tokio::join!(
-            fetch_list(games_url),
-            fetch_list(apps_url)
-        );
+        let (games_res, apps_res) = tokio::join!(fetch_list(games_url), fetch_list(apps_url));
 
         let mut all_items = Vec::new();
 
@@ -772,7 +844,7 @@ impl DiscordApiClient {
                     game.type_name = Some("Game".to_string());
                 }
                 all_items.extend(games);
-            },
+            }
             Err(e) => println!("Error fetching games: {}", e),
         }
 
@@ -780,10 +852,10 @@ impl DiscordApiClient {
             Ok(mut apps) => {
                 println!("Retrieved {} non-game apps", apps.len());
                 for app in &mut apps {
-                     app.type_name = Some("App".to_string());
+                    app.type_name = Some("App".to_string());
                 }
                 all_items.extend(apps);
-            },
+            }
             Err(e) => println!("Error fetching apps: {}", e),
         }
 
@@ -800,16 +872,18 @@ fn convert_api_quest_to_quest(quest_json: &serde_json::Value) -> Option<Quest> {
     let messages = config.get("messages");
     let application = config.get("application");
     let user_status = quest_json.get("user_status");
-    
+
     // Get quest name
     let name = messages
         .and_then(|m| m.get("quest_name"))
         .and_then(|n| n.as_str())
         .unwrap_or("Unknown Quest")
         .to_string();
-    
+
     // Get task config and extract task info
-    let task_config = config.get("task_config_v2").or_else(|| config.get("task_config"));
+    let task_config = config
+        .get("task_config_v2")
+        .or_else(|| config.get("task_config"));
     let (seconds_needed, task_type) = task_config
         .and_then(|tc| tc.get("tasks"))
         .and_then(|tasks| tasks.as_object())
@@ -822,7 +896,7 @@ fn convert_api_quest_to_quest(quest_json: &serde_json::Value) -> Option<Quest> {
             (0u32, String::new())
         })
         .unwrap_or((0, String::new()));
-    
+
     // Calculate progress
     let progress = user_status
         .and_then(|us| us.get("progress"))
@@ -840,7 +914,7 @@ fn convert_api_quest_to_quest(quest_json: &serde_json::Value) -> Option<Quest> {
             0.0
         })
         .unwrap_or(0.0);
-    
+
     Some(Quest {
         id,
         name,
@@ -956,10 +1030,10 @@ mod tests {
             original_fingerprint
         );
 
-        let after_interval_refresh = client.maybe_refresh_client_for_proxy_state_with(
-            PROXY_STATE_CHECK_INTERVAL_MS,
-            || changed_state,
-        );
+        let after_interval_refresh = client
+            .maybe_refresh_client_for_proxy_state_with(PROXY_STATE_CHECK_INTERVAL_MS, || {
+                changed_state
+            });
         assert!(after_interval_refresh);
         assert_eq!(
             client.proxy_fingerprint.load(Ordering::Acquire),
@@ -982,7 +1056,9 @@ mod tests {
             Some(QUEST_HOME_REFERER)
         );
         assert_eq!(
-            DiscordApiClient::quest_referer_for_url("https://discord.com/api/v9/users/@me/virtual-currency/balance"),
+            DiscordApiClient::quest_referer_for_url(
+                "https://discord.com/api/v9/users/@me/virtual-currency/balance"
+            ),
             Some(QUEST_HOME_REFERER)
         );
         assert_eq!(
@@ -993,6 +1069,8 @@ mod tests {
 
     #[test]
     fn request_injects_user_agent_matching_x_super_properties() {
+        use base64::Engine as _;
+
         let client = DiscordApiClient::new("test-token".to_string()).unwrap();
         let request = client
             .request(Method::GET, "https://discord.com/api/v9/quests/@me")
@@ -1002,12 +1080,17 @@ mod tests {
         let headers = request.headers();
         let user_agent = headers.get(USER_AGENT).unwrap().to_str().unwrap();
         let xsp = headers.get("x-super-properties").unwrap().to_str().unwrap();
-        let decoded = base64::engine::general_purpose::STANDARD.decode(xsp).unwrap();
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(xsp)
+            .unwrap();
         let props: serde_json::Value = serde_json::from_slice(&decoded).unwrap();
 
         assert_eq!(
             user_agent,
-            props.get("browser_user_agent").and_then(|value| value.as_str()).unwrap()
+            props
+                .get("browser_user_agent")
+                .and_then(|value| value.as_str())
+                .unwrap()
         );
         assert!(headers.get(REFERER).is_some());
         assert!(headers.get("x-discord-timezone").is_some());

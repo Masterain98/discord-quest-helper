@@ -377,6 +377,32 @@ export async function fetchSuperPropertiesCdp(port?: number): Promise<CdpSuperPr
   return await invoke('fetch_super_properties_cdp', { port })
 }
 
+export type DiscordChannelArg = 'auto' | 'stable' | 'ptb' | 'canary'
+export type DiscordChannelResult = 'stable' | 'ptb' | 'canary'
+
+export interface DiscordCdpLaunchResult {
+  launched_path: string
+  channel: DiscordChannelResult
+  port: number
+  cdp_connected: boolean
+}
+
+export async function isDiscordRunning(channel?: DiscordChannelArg): Promise<boolean> {
+  return await invoke('is_discord_running', { channel })
+}
+
+export async function launchDiscordCdp(port?: number, channel?: DiscordChannelArg): Promise<DiscordCdpLaunchResult> {
+  return await invoke('launch_discord_cdp', { port, channel })
+}
+
+export async function restartDiscordCdp(port?: number, channel?: DiscordChannelArg): Promise<DiscordCdpLaunchResult> {
+  return await invoke('restart_discord_cdp', { port, channel })
+}
+
+export async function createDiscordCdpLauncherShortcut(port?: number, channel?: DiscordChannelArg): Promise<string> {
+  return await invoke('create_discord_cdp_launcher_shortcut', { port, channel })
+}
+
 export async function createDiscordDebugShortcut(port?: number): Promise<string> {
   return await invoke('create_discord_debug_shortcut', { port })
 }

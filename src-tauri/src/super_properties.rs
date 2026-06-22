@@ -40,7 +40,7 @@ impl SourceMode {
             SourceMode::Default => "default",
         }
     }
-    
+
     pub fn display_name(&self) -> &'static str {
         match self {
             SourceMode::Cdp => "CDP (Discord Client)",
@@ -258,11 +258,11 @@ impl Default for SuperProperties {
 pub fn generate_clean_launch_signature() -> String {
     let uuid = Uuid::new_v4();
     let uuid_int = uuid.as_u128();
-    
+
     // Clear detection bits
     let clean_mask = !CLIENT_MOD_DETECTION_BITS;
     let clean_signature = uuid_int & clean_mask;
-    
+
     Uuid::from_u128(clean_signature).to_string()
 }
 
@@ -287,10 +287,10 @@ pub struct XSuperPropertiesManager {
     cached_super_properties: Option<SuperProperties>,
     // Value extracted from Discord client
     extracted_base64: Option<String>,
-    source_mode: SourceMode,  // Current data source mode
-    source_client: Option<String>,  // e.g., "Stable", "Canary", "PTB"
+    source_mode: SourceMode,       // Current data source mode
+    source_client: Option<String>, // e.g., "Stable", "Canary", "PTB"
     // Dynamically obtained client information
-    client_version: Option<String>,  // e.g., "1.0.9219"
+    client_version: Option<String>, // e.g., "1.0.9219"
     native_build_number: Option<u64>,
     header_profile: HeaderProfile,
 }
@@ -314,8 +314,6 @@ impl XSuperPropertiesManager {
         }
     }
 
-
-    
     /// Sets client information obtained from Discord Update API
     pub fn set_client_info(&mut self, version: String, native_build: u64) {
         self.client_version = Some(version);
@@ -323,12 +321,12 @@ impl XSuperPropertiesManager {
         // Clear cache to regenerate with new information
         self.cached_super_properties = None;
     }
-    
+
     /// Sets SuperProperties from CDP-obtained data
     pub fn set_from_cdp(&mut self, base64_value: &str, decoded: &serde_json::Value) {
         self.extracted_base64 = Some(base64_value.to_string());
         self.source_mode = SourceMode::Cdp;
-        
+
         // Attempt to extract key information from decoded data
         if let Some(build_number) = decoded.get("client_build_number").and_then(|v| v.as_u64()) {
             self.cached_build_number = Some(build_number);
@@ -339,11 +337,11 @@ impl XSuperPropertiesManager {
         if let Some(native_build) = decoded.get("native_build_number").and_then(|v| v.as_u64()) {
             self.native_build_number = Some(native_build);
         }
-        
+
         // Clear cache to use new information
         self.cached_super_properties = None;
     }
-    
+
     /// Sets build number obtained from remote JS
     pub fn set_from_remote_js(&mut self, build_number: u64) {
         self.cached_build_number = Some(build_number);
@@ -352,12 +350,12 @@ impl XSuperPropertiesManager {
         self.extracted_base64 = None;
         self.cached_super_properties = None;
     }
-    
+
     /// Gets the current source mode
     pub fn get_mode(&self) -> SourceMode {
         self.source_mode
     }
-    
+
     /// Gets the current build number
     pub fn get_build_number(&self) -> Option<u64> {
         self.cached_build_number
@@ -394,7 +392,7 @@ impl XSuperPropertiesManager {
             source: self.source_mode.as_str().to_string(),
         }
     }
-    
+
     /// Resets to default state (for manual retry)
     pub fn reset(&mut self) {
         self.cached_build_number = None;
@@ -433,7 +431,8 @@ impl XSuperPropertiesManager {
                         // Replace session-level IDs (new ones generated on each launch)
                         props.launch_signature = Some(self.launch_signature.clone());
                         props.client_launch_id = Some(self.client_launch_id.clone());
-                        props.client_heartbeat_session_id = Some(self.client_heartbeat_session_id.clone());
+                        props.client_heartbeat_session_id =
+                            Some(self.client_heartbeat_session_id.clone());
                         return props;
                     }
                 }
@@ -443,20 +442,18 @@ impl XSuperPropertiesManager {
         self.build_properties()
     }
 
-
-
     /// Gets debug information
     pub fn get_debug_info(&self) -> DebugInfo {
         // Get the actually used SuperProperties (consider extracted values)
         let props = self.get_super_properties();
-        
+
         // Generate source display text
         let source = if let Some(ref client) = self.source_client {
             format!("{} ({})", self.source_mode.display_name(), client)
         } else {
             self.source_mode.display_name().to_string()
         };
-        
+
         DebugInfo {
             x_super_properties_base64: self.get_super_properties_base64(),
             super_properties: props,
@@ -478,26 +475,24 @@ impl XSuperPropertiesManager {
         props.launch_signature = Some(self.launch_signature.clone());
         props.client_launch_id = Some(self.client_launch_id.clone());
         props.client_heartbeat_session_id = Some(self.client_heartbeat_session_id.clone());
-        
+
         if let Some(build_number) = self.cached_build_number {
             props.client_build_number = build_number;
         }
-        
+
         // Use dynamically obtained client version information
         if let Some(ref version) = self.client_version {
             props.client_version = Some(version.clone());
             // Also update browser_user_agent
             props.browser_user_agent = discord_user_agent(version);
         }
-        
+
         if let Some(native_build) = self.native_build_number {
             props.native_build_number = Some(native_build);
         }
-        
+
         props
     }
-
-
 }
 
 impl Default for XSuperPropertiesManager {
@@ -514,7 +509,7 @@ pub struct DebugInfo {
     pub client_launch_id: String,
     pub client_heartbeat_session_id: String,
     pub launch_signature: String,
-    pub source: String,  // "Auto-Generated" or "Discord Client (Extracted)"
+    pub source: String, // "Auto-Generated" or "Discord Client (Extracted)"
     pub client_identity: ClientIdentity,
     pub header_profile: HeaderProfilePreview,
 }
@@ -526,10 +521,10 @@ mod tests {
     #[test]
     fn test_generate_clean_launch_signature() {
         let signature = generate_clean_launch_signature();
-        
+
         // Verify it is a valid UUID format
         assert!(Uuid::parse_str(&signature).is_ok());
-        
+
         // Verify detection bits are cleared
         let uuid = Uuid::parse_str(&signature).unwrap();
         let uuid_int = uuid.as_u128();
@@ -540,7 +535,7 @@ mod tests {
     fn test_super_properties_serialization() {
         let props = SuperProperties::default();
         let json = serde_json::to_string(&props).unwrap();
-        
+
         // Verify has_client_mods is false
         assert!(json.contains("\"has_client_mods\":false"));
     }
@@ -549,7 +544,7 @@ mod tests {
     fn test_manager_generates_unique_ids() {
         let manager1 = XSuperPropertiesManager::new();
         let manager2 = XSuperPropertiesManager::new();
-        
+
         // Each manager creation should generate different IDs
         assert_ne!(manager1.client_launch_id, manager2.client_launch_id);
         assert_ne!(manager1.launch_signature, manager2.launch_signature);
@@ -559,12 +554,12 @@ mod tests {
     fn test_base64_encoding() {
         let manager = XSuperPropertiesManager::new();
         let base64 = manager.get_super_properties_base64();
-        
+
         // Verify it can be correctly decoded
         let decoded = BASE64.decode(&base64).unwrap();
         let json_str = String::from_utf8(decoded).unwrap();
         let props: SuperProperties = serde_json::from_str(&json_str).unwrap();
-        
+
         assert_eq!(props.os, "Windows");
         assert!(props.launch_signature.is_some());
     }
@@ -589,17 +584,29 @@ mod tests {
     fn cdp_header_profile_redacts_installation_id_in_preview() {
         let mut manager = XSuperPropertiesManager::new();
         let headers = HashMap::from([
-            ("x-discord-timezone".to_string(), "Asia/Shanghai".to_string()),
+            (
+                "x-discord-timezone".to_string(),
+                "Asia/Shanghai".to_string(),
+            ),
             ("x-discord-locale".to_string(), "en-US".to_string()),
-            ("accept-language".to_string(), "en-US,zh-Hans-CN;q=0.9".to_string()),
-            ("x-installation-id".to_string(), "installation-secret".to_string()),
+            (
+                "accept-language".to_string(),
+                "en-US,zh-Hans-CN;q=0.9".to_string(),
+            ),
+            (
+                "x-installation-id".to_string(),
+                "installation-secret".to_string(),
+            ),
         ]);
 
         manager.update_header_profile_from_headers(&headers);
         let profile = manager.get_header_profile();
         let preview = profile.preview();
 
-        assert_eq!(profile.installation_id.as_deref(), Some("installation-secret"));
+        assert_eq!(
+            profile.installation_id.as_deref(),
+            Some("installation-secret")
+        );
         assert!(preview.installation_id_present);
         assert_eq!(preview.installation_id_source, "cdp");
         assert_eq!(preview.timezone, "Asia/Shanghai");

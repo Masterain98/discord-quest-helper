@@ -1,13 +1,31 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { Check, Link2, Loader2, Wifi, WifiOff } from 'lucide-vue-next'
+import { computed, onMounted, ref } from 'vue'
+import { Check, Link2, Loader2, Play, Wifi, WifiOff } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useQuestsStore } from '@/stores/quests'
-import { checkCdpStatus, createDiscordDebugShortcut, fetchSuperPropertiesCdp, type CdpStatus } from '@/api/tauri'
+import {
+  checkCdpStatus,
+  createDiscordCdpLauncherShortcut,
+  fetchSuperPropertiesCdp,
+  isDiscordRunning,
+  launchDiscordCdp,
+  restartDiscordCdp,
+  type CdpStatus
+} from '@/api/tauri'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from '@/components/ui/alert-dialog'
 import AdvancedDisclosure from './AdvancedDisclosure.vue'
 
 const { t } = useI18n()
@@ -15,12 +33,23 @@ const questsStore = useQuestsStore()
 
 const cdpStatus = ref<CdpStatus | null>(null)
 const cdpChecking = ref(false)
+
+// Dynamic button label: show "Restart" when CDP is already connected
+const cdpPrimaryLabelKey = computed(() =>
+  cdpStatus.value?.connected ? 'settings.cdp_restart' : 'settings.cdp_launch'
+)
 const cdpFetching = ref(false)
 const cdpFetchSuccess = ref(false)
 const cdpFetchError = ref('')
+const cdpActionBusy = ref(false)
+const cdpLaunchSuccess = ref('')
+const cdpLaunchError = ref('')
 const shortcutCreating = ref(false)
 const shortcutSuccess = ref(false)
 const shortcutError = ref('')
+const cdpDialogOpen = ref(false)
+const discordWasRunning = ref(false)
+const discordWasConnected = ref(false)
 
 async function checkCdp() {
   cdpChecking.value = true
@@ -57,7 +86,7 @@ async function createShortcut() {
   shortcutSuccess.value = false
   shortcutError.value = ''
   try {
-    await createDiscordDebugShortcut(questsStore.cdpPort)
+    await createDiscordCdpLauncherShortcut(questsStore.cdpPort, 'auto')
     shortcutSuccess.value = true
     setTimeout(() => { shortcutSuccess.value = false }, 3000)
   } catch (e) {
@@ -68,10 +97,81 @@ async function createShortcut() {
   }
 }
 
+function resetLaunchMessage() {
+  cdpLaunchSuccess.value = ''
+  cdpLaunchError.value = ''
+}
+
+async function requestCdpAction() {
+  resetLaunchMessage()
+  cdpActionBusy.value = true
+  try {
+    const running = await isDiscordRunning('auto')
+    discordWasRunning.value = running
+    discordWasConnected.value = !!cdpStatus.value?.connected
+    if (running) {
+      cdpDialogOpen.value = true
+      return
+    }
+    await performLaunch(false)
+  } catch (e) {
+    cdpLaunchError.value = String(e)
+    setTimeout(() => { cdpLaunchError.value = '' }, 6000)
+  } finally {
+    cdpActionBusy.value = false
+  }
+}
+
+async function confirmCdpAction() {
+  if (cdpActionBusy.value) return
+  cdpDialogOpen.value = false
+  await performLaunch(true)
+}
+
+async function performLaunch(restart: boolean) {
+  cdpActionBusy.value = true
+  resetLaunchMessage()
+
+  try {
+    const result = restart
+      ? await restartDiscordCdp(questsStore.cdpPort, 'auto')
+      : await launchDiscordCdp(questsStore.cdpPort, 'auto')
+    cdpLaunchSuccess.value = result.cdp_connected
+      ? t('settings.cdp_launch_success')
+      : t('settings.cdp_launch_started')
+    setTimeout(() => { cdpLaunchSuccess.value = '' }, 5000)
+    await checkCdp()
+  } catch (e) {
+    cdpLaunchError.value = String(e)
+    setTimeout(() => { cdpLaunchError.value = '' }, 8000)
+  } finally {
+    cdpActionBusy.value = false
+  }
+}
+
 onMounted(checkCdp)
 </script>
 
 <template>
+  <AlertDialog :open="cdpDialogOpen" @update:open="cdpDialogOpen = $event">
+    <AlertDialogContent class="max-w-[520px]">
+      <AlertDialogHeader>
+        <AlertDialogTitle>
+          {{ discordWasConnected ? t('settings.cdp_dialog_title_connected') : t('settings.cdp_dialog_title_disconnected') }}
+        </AlertDialogTitle>
+        <AlertDialogDescription>
+          {{ discordWasConnected ? t('settings.cdp_dialog_desc_connected') : t('settings.cdp_dialog_desc_disconnected') }}
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+      <AlertDialogFooter>
+        <AlertDialogCancel>{{ t('dialog.cancel') }}</AlertDialogCancel>
+        <AlertDialogAction :disabled="cdpActionBusy" @click="confirmCdpAction">
+          {{ t('settings.cdp_dialog_confirm') }}
+        </AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
+  </AlertDialog>
+
   <Card>
     <CardHeader>
       <CardTitle>{{ t('settings.cdp_title') }}</CardTitle>
@@ -102,6 +202,22 @@ onMounted(checkCdp)
 
       <div class="space-y-3 rounded-lg border border-border p-4">
         <p class="text-sm font-medium">{{ t('settings.integration_setup') }}</p>
+        <p class="text-sm text-muted-foreground">{{ t('settings.cdp_launch_desc') }}</p>
+        <div class="flex flex-wrap items-center gap-2">
+          <Button variant="secondary" @click="requestCdpAction" :disabled="cdpActionBusy">
+            <Loader2 v-if="cdpActionBusy" class="mr-2 h-4 w-4 animate-spin" />
+            <Play v-else class="mr-2 h-4 w-4" />
+            {{ t(cdpPrimaryLabelKey) }}
+          </Button>
+          <span v-if="cdpLaunchSuccess" class="flex items-center gap-1 text-sm text-green-500">
+            <Check class="h-4 w-4" /> {{ cdpLaunchSuccess }}
+          </span>
+          <span v-if="cdpLaunchError" class="text-sm text-red-500">{{ cdpLaunchError }}</span>
+        </div>
+      </div>
+
+      <div class="space-y-3 rounded-lg border border-border p-4">
+        <p class="text-sm font-medium">{{ t('settings.cdp_shortcut_title') }}</p>
         <p class="text-sm text-muted-foreground">{{ t('settings.cdp_shortcut_desc') }}</p>
         <div class="flex flex-wrap items-center gap-2">
           <Button variant="outline" @click="createShortcut" :disabled="shortcutCreating">

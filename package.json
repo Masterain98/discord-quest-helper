@@ -9,9 +9,10 @@
     "build": "vue-tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "tauri:dev": "npm run build:runner && tauri dev",
-    "tauri:build": "npm run build:runner && tauri build",
+    "tauri:dev": "pnpm run build:runner && pnpm run build:cdp-launcher && tauri dev -- --bin discord-quest-helper",
+    "tauri:build": "pnpm run build:runner && pnpm run build:cdp-launcher && tauri build",
     "build:runner": "node scripts/build-runner.js",
+    "build:cdp-launcher": "node scripts/build-cdp-launcher.js",
     "analyze:har": "python scripts/analyze-har-quests.py",
     "test": "vitest run",
     "test:quest-schema": "python scripts/validate-quest-schema-fixture.py tests/fixtures/quests_2026_06_16.schema.json"
