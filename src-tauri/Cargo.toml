@@ -2,10 +2,15 @@
 name = "discord-quest-helper"
 version = "0.1.0"
 edition = "2021"
+default-run = "discord-quest-helper"
 
 [lib]
 name = "discord_quest_helper_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "discord-cdp-launcher"
+path = "src/bin/discord-cdp-launcher.rs"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
