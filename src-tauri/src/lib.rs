@@ -1466,7 +1466,7 @@ fn create_platform_cdp_launcher_shortcut(
         .parent()
         .ok_or_else(|| "Could not get launcher directory".to_string())?;
     let channel_arg = channel.map(|c| c.as_str()).unwrap_or("auto");
-    let args = format!("--port {} --channel {} --wait-cdp", port, channel_arg);
+    let args = format!("--port {} --channel {}", port, channel_arg);
 
     let shortcut_path_ps = ps_single_quote(&shortcut_path.to_string_lossy());
     let launcher_path_ps = ps_single_quote(&launcher_path.to_string_lossy());
@@ -1548,7 +1548,7 @@ fn create_platform_cdp_launcher_shortcut(
     }
 
     let script_content = format!(
-        "#!/bin/bash\n{} --port {} --channel {} --wait-cdp\n",
+        "#!/bin/bash\n{} --port {} --channel {}\n",
         shell_single_quote(&launcher_path.to_string_lossy()),
         port,
         channel_arg

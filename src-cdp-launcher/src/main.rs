@@ -40,7 +40,6 @@ struct LaunchOptions {
     allow_origins: bool,
     channel: Option<DiscordChannel>,
     restart_existing: bool,
-    wait_for_cdp: bool,
 }
 
 impl Default for LaunchOptions {
@@ -50,7 +49,6 @@ impl Default for LaunchOptions {
             allow_origins: true,
             channel: None,
             restart_existing: false,
-            wait_for_cdp: true,
         }
     }
 }
@@ -60,7 +58,6 @@ struct LaunchResult {
     launched_path: String,
     channel: DiscordChannel,
     port: u16,
-    cdp_connected: bool,
 }
 
 #[derive(Debug)]
@@ -68,7 +65,6 @@ struct CliOptions {
     port: u16,
     channel: Option<DiscordChannel>,
     restart: bool,
-    wait_cdp: bool,
     status: bool,
 }
 
@@ -78,7 +74,6 @@ impl Default for CliOptions {
             port: DEFAULT_CDP_PORT,
             channel: None,
             restart: false,
-            wait_cdp: true,
             status: false,
         }
     }
@@ -199,7 +194,6 @@ fn run(strings: &Strings) -> Result<i32, String> {
             port: options.port,
             channel: options.channel,
             restart_existing: true,
-            wait_for_cdp: options.wait_cdp,
             ..Default::default()
         })?;
         print_launch_result(&result);
@@ -210,7 +204,6 @@ fn run(strings: &Strings) -> Result<i32, String> {
         port: options.port,
         channel: options.channel,
         restart_existing: options.restart,
-        wait_for_cdp: options.wait_cdp,
         ..Default::default()
     };
 
@@ -231,9 +224,6 @@ fn print_launch_result(result: &LaunchResult) {
         result.port,
         result.launched_path
     );
-    if result.cdp_connected {
-        println!("CDP is available on port {}", result.port);
-    }
 }
 
 fn parse_args(args: Vec<String>) -> Result<CliOptions, String> {
@@ -269,12 +259,6 @@ fn parse_args(args: Vec<String>) -> Result<CliOptions, String> {
             "--restart" => {
                 options.restart = true;
             }
-            "--wait-cdp" => {
-                options.wait_cdp = true;
-            }
-            "--no-wait-cdp" => {
-                options.wait_cdp = false;
-            }
             "--status" => {
                 options.status = true;
             }
@@ -306,7 +290,7 @@ fn parse_discord_channel(value: Option<&str>) -> Result<Option<DiscordChannel>, 
 fn launch_discord_with_cdp(options: LaunchOptions) -> Result<LaunchResult, String> {
     if is_cdp_available(options.port) {
         let install = select_preferred_install(options.channel)?;
-        return Ok(launch_result(&install, options.port, true));
+        return Ok(launch_result(&install, options.port));
     }
 
     if options.restart_existing {
@@ -343,20 +327,7 @@ fn launch_discord_with_cdp(options: LaunchOptions) -> Result<LaunchResult, Strin
         options.port
     );
 
-    let cdp_connected = if options.wait_for_cdp {
-        poll_cdp_connected(options.port, Duration::from_secs(15))
-    } else {
-        false
-    };
-
-    if options.wait_for_cdp && !cdp_connected {
-        return Err(format!(
-            "Discord was launched, but CDP did not become available on port {} within 15 seconds.",
-            options.port
-        ));
-    }
-
-    Ok(launch_result(&install, options.port, cdp_connected))
+    Ok(launch_result(&install, options.port))
 }
 
 fn restart_discord_with_cdp(mut options: LaunchOptions) -> Result<LaunchResult, String> {
@@ -416,19 +387,6 @@ fn is_tcp_port_open(port: u16) -> bool {
     TcpStream::connect_timeout(&addr, Duration::from_millis(250)).is_ok()
 }
 
-fn poll_cdp_connected(port: u16, timeout: Duration) -> bool {
-    let started = Instant::now();
-    while started.elapsed() < timeout {
-        if is_cdp_available(port) {
-            return true;
-        }
-
-        thread::sleep(Duration::from_millis(500));
-    }
-
-    false
-}
-
 fn wait_until_discord_exits(
     channel: Option<DiscordChannel>,
     timeout: Duration,
@@ -446,12 +404,11 @@ fn wait_until_discord_exits(
         .to_string())
 }
 
-fn launch_result(install: &DiscordInstall, port: u16, cdp_connected: bool) -> LaunchResult {
+fn launch_result(install: &DiscordInstall, port: u16) -> LaunchResult {
     LaunchResult {
         launched_path: install.executable_path.to_string_lossy().to_string(),
         channel: install.channel,
         port,
-        cdp_connected,
     }
 }
 
@@ -861,7 +818,7 @@ fn help_text() -> &'static str {
     "Usage:
   discord-cdp-launcher --port 9223 --channel auto
   discord-cdp-launcher --port 9223 --channel stable
-  discord-cdp-launcher --port 9223 --restart --wait-cdp
+  discord-cdp-launcher --port 9223 --restart
   discord-cdp-launcher --status --port 9223
 
 Options:
@@ -869,8 +826,6 @@ Options:
   --channel <auto|stable|ptb|canary>
                                 Discord channel to launch. Defaults to auto.
   --restart                     Close the selected Discord client before launching.
-  --wait-cdp                    Wait until CDP becomes available. Enabled by default.
-  --no-wait-cdp                 Do not wait for CDP readiness.
   --status                      Check whether CDP is already available.
   --help, -h                    Show this help."
 }
