@@ -315,7 +315,7 @@ export default {
         create_dialog_title: "Utwórz samodzielną symulację",
         create_dialog_desc: "Spowoduje to zapisanie samodzielnego, symulowanego procesu wykonywalnego w folderze na dysku. Możesz uruchomić ją później niezależnie od tej aplikacji, aby uruchomić wykrywanie gry Discord.",
         create_dialog_path_label: "Zapisz ścieżkę",
-        create_dialog_path_hint: “Plik wykonywalny zostanie zapisany jako „<save path>/<executable name>\”.”,
+        create_dialog_path_hint: "\“Plik wykonywalny zostanie zapisany jako „<save path>/<executable name>\”.",
         run_success_rpc: "Symulowana gra działa z RPC!",
         run_success: "Symulowana gra jest już uruchomiona!",
         showing_top: "Wyświetlanie najlepszych {count} gier. Wyszukaj, aby znaleźć więcej.",
