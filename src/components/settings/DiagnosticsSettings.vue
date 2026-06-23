@@ -1,15 +1,18 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { Check, Copy, Download, Loader2 } from 'lucide-vue-next'
+import { Check, Copy, Download, Info, Loader2, Stethoscope } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { invoke } from '@tauri-apps/api/core'
 import { save } from '@tauri-apps/plugin-dialog'
 import { writeTextFile } from '@tauri-apps/plugin-fs'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth'
 import { useQuestsStore } from '@/stores/quests'
 import { useVersionStore } from '@/stores/version'
+import SettingsSectionCard from './SettingsSectionCard.vue'
+import SettingsStatusPanel from './SettingsStatusPanel.vue'
+import { cn } from '@/lib/utils'
+import { settingToneClass } from './settingTones'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
@@ -63,33 +66,41 @@ async function copyDiagnosticsSummary() {
 </script>
 
 <template>
-  <Card>
-    <CardHeader>
-      <CardTitle>{{ t('settings.diagnostics') }}</CardTitle>
-      <CardDescription>{{ t('settings.diagnostics_desc') }}</CardDescription>
-    </CardHeader>
-    <CardContent class="space-y-4">
-      <p class="text-sm text-muted-foreground">
+  <SettingsSectionCard
+    :title="t('settings.diagnostics')"
+    :description="t('settings.diagnostics_desc')"
+    :icon="Stethoscope"
+    tone="info"
+  >
+      <SettingsStatusPanel tone="info" :icon="Info">
         {{ t('settings.diagnostics_info') }}
-      </p>
+      </SettingsStatusPanel>
       <div class="flex flex-wrap items-center gap-3">
-        <Button variant="outline" @click="exportLogs" :disabled="exporting">
-          <Download v-if="!exporting" class="mr-2 h-4 w-4" />
-          <Loader2 v-else class="mr-2 h-4 w-4 animate-spin" />
+        <Button
+          variant="outline"
+          :class="cn('gap-2', settingToneClass.info.buttonSoft)"
+          @click="exportLogs"
+          :disabled="exporting"
+        >
+          <Download v-if="!exporting" class="h-4 w-4" />
+          <Loader2 v-else class="h-4 w-4 animate-spin" />
           {{ t('settings.export_logs') }}
         </Button>
-        <Button variant="outline" @click="copyDiagnosticsSummary">
-          <Check v-if="copiedSummary" class="mr-2 h-4 w-4 text-green-500" />
-          <Copy v-else class="mr-2 h-4 w-4" />
+        <Button
+          variant="outline"
+          :class="cn('gap-2', settingToneClass.primary.buttonSoft)"
+          @click="copyDiagnosticsSummary"
+        >
+          <Check v-if="copiedSummary" class="h-4 w-4" />
+          <Copy v-else class="h-4 w-4" />
           {{ t('settings.copy_diagnostics') }}
         </Button>
-        <span v-if="exportSuccess" class="flex items-center gap-1 text-sm text-green-500">
-          <Check class="h-4 w-4" /> {{ t('settings.export_success') }}
-        </span>
-        <span v-if="exportError" class="text-sm text-red-500">
-          {{ t('settings.export_error') }}
-        </span>
       </div>
-    </CardContent>
-  </Card>
+      <SettingsStatusPanel v-if="exportSuccess" tone="success" :icon="Check">
+        {{ t('settings.export_success') }}
+      </SettingsStatusPanel>
+      <SettingsStatusPanel v-if="exportError" tone="danger">
+          {{ t('settings.export_error') }}
+      </SettingsStatusPanel>
+  </SettingsSectionCard>
 </template>

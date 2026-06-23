@@ -8,6 +8,9 @@ import { useAuthStore } from '@/stores/auth'
 import { useQuestsStore } from '@/stores/quests'
 import { useVersionStore } from '@/stores/version'
 import type { SettingsSection } from '@/composables/useSettingsNavigation'
+import { cn } from '@/lib/utils'
+import SettingsStatusPanel from './SettingsStatusPanel.vue'
+import { settingToneClass, type SettingsTone } from './settingTones'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
@@ -24,24 +27,28 @@ const cards = computed(() => [
     value: authStore.user ? `@${authStore.user.username}` : t('settings.overview_not_connected'),
     ok: !!authStore.user,
     icon: User,
+    tone: 'success' as SettingsTone,
   },
   {
     label: t('settings.overview_mode'),
     value: questsStore.gameQuestMode === 'cdp' ? t('settings.game_mode_cdp') : t('settings.game_mode_simulate'),
     ok: questsStore.gameQuestMode !== 'cdp' || questsStore.cdpAvailable,
     icon: Gamepad2,
+    tone: 'violet' as SettingsTone,
   },
   {
     label: t('settings.overview_discord_client'),
     value: questsStore.cdpAvailable ? t('settings.cdp_connected') : t('settings.cdp_disconnected_short'),
     ok: questsStore.cdpAvailable,
     icon: questsStore.cdpAvailable ? Wifi : WifiOff,
+    tone: 'info' as SettingsTone,
   },
   {
     label: t('settings.overview_version'),
     value: `v${versionStore.currentVersion}`,
     ok: !versionStore.hasUpdate,
     icon: CheckCircle2,
+    tone: 'primary' as SettingsTone,
     badge: versionStore.isChecking
       ? t('settings.version_checking')
       : versionStore.hasUpdate
@@ -85,32 +92,45 @@ const recommendation = computed<{ text: string, action: string, section: Setting
       <div
         v-for="card in cards"
         :key="card.label"
-        class="rounded-lg border bg-card p-4"
+        :class="cn(
+          'rounded-lg border bg-card p-4 transition-all hover:-translate-y-0.5 hover:shadow-sm',
+          card.ok ? settingToneClass[card.tone].card : settingToneClass.warning.card,
+        )"
       >
         <div class="flex items-center justify-between gap-3">
           <span class="text-xs font-medium text-muted-foreground">{{ card.label }}</span>
-          <component :is="card.icon" class="h-4 w-4 text-muted-foreground" />
+          <div :class="cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-md', settingToneClass[card.ok ? card.tone : 'warning'].icon)">
+            <component :is="card.icon" class="h-4 w-4" />
+          </div>
         </div>
         <div class="mt-2 flex items-center gap-2">
           <p class="truncate text-sm font-semibold">{{ card.value }}</p>
-          <Badge :variant="card.ok ? 'outline' : 'secondary'" class="shrink-0 text-[10px]">
+          <Badge
+            variant="outline"
+            :class="cn('shrink-0 text-[10px]', settingToneClass[card.ok ? card.tone : 'warning'].badge)"
+          >
             {{ card.badge ?? (card.ok ? t('settings.status_ok') : t('settings.status_attention')) }}
           </Badge>
         </div>
       </div>
     </div>
 
-    <div
+    <SettingsStatusPanel
       v-if="recommendation"
-      class="flex flex-col gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm sm:flex-row sm:items-center sm:justify-between"
+      tone="warning"
+      :icon="AlertTriangle"
     >
-      <div class="flex items-start gap-2 text-amber-700 dark:text-amber-300">
-        <AlertTriangle class="mt-0.5 h-4 w-4 shrink-0" />
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <span>{{ recommendation.text }}</span>
+        <Button
+          variant="outline"
+          size="sm"
+          :class="cn('shrink-0', settingToneClass.warning.buttonSoft)"
+          @click="emit('selectSection', recommendation.section)"
+        >
+          {{ recommendation.action }}
+        </Button>
       </div>
-      <Button variant="outline" size="sm" class="shrink-0" @click="emit('selectSection', recommendation.section)">
-        {{ recommendation.action }}
-      </Button>
-    </div>
+    </SettingsStatusPanel>
   </div>
 </template>

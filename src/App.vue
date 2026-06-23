@@ -119,7 +119,8 @@ function updateTheme() {
 // Language Logic
 function setLanguage(lang: string) {
   locale.value = lang
-  localStorage.setItem('language', lang)
+  localStorage.setItem('locale', lang)
+  localStorage.removeItem('language')
 }
 
 // Account Selection Logic
@@ -216,7 +217,7 @@ function openSettingsSection(section: 'discord_integration' | 'quest_behavior' |
                 <Languages class="w-5 h-5" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+            <DropdownMenuContent align="end" class="max-h-[70vh] overflow-y-auto">
               <DropdownMenuItem @click="setLanguage('en')">English</DropdownMenuItem>
               <DropdownMenuItem @click="setLanguage('zh')">简体中文</DropdownMenuItem>
               <DropdownMenuItem @click="setLanguage('zh-TW')">繁體中文</DropdownMenuItem>
@@ -224,6 +225,15 @@ function openSettingsSection(section: 'discord_integration' | 'quest_behavior' |
               <DropdownMenuItem @click="setLanguage('ko')">한국어</DropdownMenuItem>
               <DropdownMenuItem @click="setLanguage('ru')">Русский</DropdownMenuItem>
               <DropdownMenuItem @click="setLanguage('es')">Español</DropdownMenuItem>
+              <DropdownMenuItem @click="setLanguage('th')">ไทย</DropdownMenuItem>
+              <DropdownMenuItem @click="setLanguage('pt-BR')">Português (Brasil)</DropdownMenuItem>
+              <DropdownMenuItem @click="setLanguage('tr')">Türkçe</DropdownMenuItem>
+              <DropdownMenuItem @click="setLanguage('vi')">Tiếng Việt</DropdownMenuItem>
+              <DropdownMenuItem @click="setLanguage('de')">Deutsch</DropdownMenuItem>
+              <DropdownMenuItem @click="setLanguage('fr')">Français</DropdownMenuItem>
+              <DropdownMenuItem @click="setLanguage('pt-PT')">Português (Portugal)</DropdownMenuItem>
+              <DropdownMenuItem @click="setLanguage('id')">Bahasa Indonesia</DropdownMenuItem>
+              <DropdownMenuItem @click="setLanguage('pl')">Polski</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
 

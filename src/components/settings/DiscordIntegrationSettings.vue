@@ -4,7 +4,6 @@ import { Check, Link2, Loader2, Play, Wifi, WifiOff } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useQuestsStore } from '@/stores/quests'
@@ -30,6 +29,10 @@ import {
   AlertDialogTitle
 } from '@/components/ui/alert-dialog'
 import AdvancedDisclosure from './AdvancedDisclosure.vue'
+import SettingsSectionCard from './SettingsSectionCard.vue'
+import SettingsStatusPanel from './SettingsStatusPanel.vue'
+import { cn } from '@/lib/utils'
+import { settingToneClass, type SettingsTone } from './settingTones'
 
 const { t } = useI18n()
 const questsStore = useQuestsStore()
@@ -55,6 +58,22 @@ const discordWasRunning = ref(false)
 const discordWasConnected = ref(false)
 const debugInfo = ref<DebugInfo | null>(null)
 const debugInfoLoading = ref(false)
+
+const cdpSectionTone = computed<SettingsTone>(() => cdpStatus.value?.connected ? 'success' : 'warning')
+const cdpStatusTone = computed<SettingsTone>(() => {
+  if (cdpChecking.value) return 'info'
+  return cdpStatus.value?.connected ? 'success' : 'warning'
+})
+const cdpStatusIcon = computed(() => {
+  if (cdpChecking.value) return Loader2
+  return cdpStatus.value?.connected ? Wifi : WifiOff
+})
+const debugInfoSourceTone = computed<SettingsTone>(() => {
+  const source = debugInfo.value?.source ?? ''
+  if (source.includes('CDP')) return 'success'
+  if (source.includes('Remote')) return 'warning'
+  return 'danger'
+})
 
 async function checkCdp() {
   cdpChecking.value = true
@@ -192,20 +211,16 @@ onMounted(() => {
     </AlertDialogContent>
   </AlertDialog>
 
-  <Card>
-    <CardHeader>
-      <CardTitle>{{ t('settings.cdp_title') }}</CardTitle>
-      <CardDescription>{{ t('settings.cdp_desc') }}</CardDescription>
-    </CardHeader>
-    <CardContent class="space-y-5">
-      <div
-        class="flex items-center justify-between rounded-lg border p-3"
-        :class="cdpStatus?.connected ? 'border-green-500/30 bg-green-500/10' : 'border-border bg-muted/50'"
-      >
-        <div class="flex items-center gap-2">
-          <Wifi v-if="cdpStatus?.connected" class="h-4 w-4 text-green-500" />
-          <WifiOff v-else class="h-4 w-4 text-muted-foreground" />
-          <span class="text-sm">
+  <SettingsSectionCard
+    :title="t('settings.cdp_title')"
+    :description="t('settings.cdp_desc')"
+    :icon="cdpStatus?.connected ? Wifi : WifiOff"
+    :tone="cdpSectionTone"
+    content-class="space-y-5"
+  >
+      <SettingsStatusPanel :tone="cdpStatusTone" :icon="cdpStatusIcon">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <span class="min-w-0">
             <template v-if="cdpChecking">{{ t('settings.cdp_checking') }}</template>
             <template v-else-if="cdpStatus?.connected">
               {{ t('settings.cdp_connected') }}
@@ -213,103 +228,136 @@ onMounted(() => {
             </template>
             <template v-else>{{ t('settings.cdp_disconnected') }}</template>
           </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            class="h-8 gap-2 text-muted-foreground hover:text-foreground"
+            @click="checkCdp"
+            :disabled="cdpChecking"
+          >
+            <Loader2 v-if="cdpChecking" class="h-4 w-4 animate-spin" />
+            <template v-else>{{ t('general.refresh') }}</template>
+          </Button>
         </div>
-        <Button variant="ghost" size="sm" @click="checkCdp" :disabled="cdpChecking">
-          <Loader2 v-if="cdpChecking" class="h-4 w-4 animate-spin" />
-          <template v-else>{{ t('general.refresh') }}</template>
-        </Button>
-      </div>
+      </SettingsStatusPanel>
 
-      <div class="space-y-3 rounded-lg border border-border p-4">
-        <p class="text-sm font-medium">{{ t('settings.integration_setup') }}</p>
+      <div class="space-y-3 rounded-lg border border-primary/20 bg-primary/5 p-4">
+        <p class="text-sm font-semibold">{{ t('settings.integration_setup') }}</p>
         <p class="text-sm text-muted-foreground">{{ t('settings.cdp_launch_desc') }}</p>
         <div class="flex flex-wrap items-center gap-2">
-          <Button variant="secondary" @click="requestCdpAction" :disabled="cdpActionBusy">
-            <Loader2 v-if="cdpActionBusy" class="mr-2 h-4 w-4 animate-spin" />
-            <Play v-else class="mr-2 h-4 w-4" />
+          <Button
+            :variant="cdpStatus?.connected ? 'outline' : 'default'"
+            :class="cn('gap-2', cdpStatus?.connected ? settingToneClass.warning.buttonSoft : 'shadow-sm')"
+            @click="requestCdpAction"
+            :disabled="cdpActionBusy"
+          >
+            <Loader2 v-if="cdpActionBusy" class="h-4 w-4 animate-spin" />
+            <Play v-else class="h-4 w-4" />
             {{ t(cdpPrimaryLabelKey) }}
           </Button>
-          <span v-if="cdpLaunchSuccess" class="flex items-center gap-1 text-sm text-green-500">
-            <Check class="h-4 w-4" /> {{ cdpLaunchSuccess }}
-          </span>
-          <span v-if="cdpLaunchError" class="text-sm text-red-500">{{ cdpLaunchError }}</span>
         </div>
+        <SettingsStatusPanel v-if="cdpLaunchSuccess" tone="success" :icon="Check">
+          {{ cdpLaunchSuccess }}
+        </SettingsStatusPanel>
+        <SettingsStatusPanel v-if="cdpLaunchError" tone="danger">
+          {{ cdpLaunchError }}
+        </SettingsStatusPanel>
       </div>
 
-      <div class="space-y-3 rounded-lg border border-border p-4">
-        <p class="text-sm font-medium">{{ t('settings.cdp_shortcut_title') }}</p>
+      <div class="space-y-3 rounded-lg border border-sky-500/25 bg-sky-500/5 p-4">
+        <p class="text-sm font-semibold">{{ t('settings.cdp_shortcut_title') }}</p>
         <p class="text-sm text-muted-foreground">{{ t('settings.cdp_shortcut_desc') }}</p>
         <div class="flex flex-wrap items-center gap-2">
-          <Button variant="outline" @click="createShortcut" :disabled="shortcutCreating">
-            <Loader2 v-if="shortcutCreating" class="mr-2 h-4 w-4 animate-spin" />
+          <Button
+            variant="outline"
+            :class="cn('gap-2', settingToneClass.info.buttonSoft)"
+            @click="createShortcut"
+            :disabled="shortcutCreating"
+          >
+            <Loader2 v-if="shortcutCreating" class="h-4 w-4 animate-spin" />
             {{ t('settings.cdp_create_shortcut') }}
           </Button>
-          <span v-if="shortcutSuccess" class="flex items-center gap-1 text-sm text-green-500">
-            <Check class="h-4 w-4" /> {{ t('settings.cdp_shortcut_success') }}
-          </span>
-          <span v-if="shortcutError" class="text-sm text-red-500">{{ shortcutError }}</span>
         </div>
+        <SettingsStatusPanel v-if="shortcutSuccess" tone="success" :icon="Check">
+          {{ t('settings.cdp_shortcut_success') }}
+        </SettingsStatusPanel>
+        <SettingsStatusPanel v-if="shortcutError" tone="danger">
+          {{ shortcutError }}
+        </SettingsStatusPanel>
       </div>
 
       <AdvancedDisclosure
         :title="t('settings.client_emulation')"
         :description="t('settings.client_emulation_desc')"
+        tone="info"
         default-open
       >
         <div class="space-y-3">
           <div v-if="cdpStatus?.connected" class="flex flex-wrap items-center gap-3">
-            <Button variant="secondary" size="sm" @click="fetchCdpSuperProperties" :disabled="cdpFetching">
-              <Loader2 v-if="cdpFetching" class="mr-2 h-4 w-4 animate-spin" />
-              <Link2 v-else class="mr-2 h-4 w-4" />
+            <Button
+              variant="outline"
+              size="sm"
+              :class="cn('gap-2', settingToneClass.primary.buttonSoft)"
+              @click="fetchCdpSuperProperties"
+              :disabled="cdpFetching"
+            >
+              <Loader2 v-if="cdpFetching" class="h-4 w-4 animate-spin" />
+              <Link2 v-else class="h-4 w-4" />
               {{ t('settings.cdp_sync') }}
             </Button>
-            <span v-if="cdpFetchSuccess" class="flex items-center gap-1 text-sm text-green-500">
-              <Check class="h-4 w-4" /> {{ t('settings.cdp_sync_success') }}
-            </span>
-            <span v-if="cdpFetchError" class="text-sm text-red-500">{{ cdpFetchError }}</span>
+            <Badge
+              v-if="cdpFetchSuccess"
+              variant="outline"
+              :class="cn('gap-1', settingToneClass.success.badge)"
+            >
+              <Check class="h-3 w-3" /> {{ t('settings.cdp_sync_success') }}
+            </Badge>
+            <Badge
+              v-if="cdpFetchError"
+              variant="outline"
+              :class="settingToneClass.danger.badge"
+            >
+              {{ cdpFetchError }}
+            </Badge>
           </div>
           <template v-if="debugInfo">
             <div class="flex items-center gap-2">
               <Badge
-                :variant="debugInfo.source?.includes('CDP') ? 'default' : (debugInfo.source?.includes('Remote') ? 'secondary' : 'outline')"
-                :class="[
-                  debugInfo.source?.includes('CDP') && 'bg-green-500 text-white',
-                  debugInfo.source?.includes('Remote') && 'bg-yellow-500 text-black',
-                  !debugInfo.source?.includes('CDP') && !debugInfo.source?.includes('Remote') && 'border-red-500/50 bg-red-500/20 text-red-500',
-                ]"
+                variant="outline"
+                :class="settingToneClass[debugInfoSourceTone].badge"
               >
                 {{ debugInfo.source }}
               </Badge>
               <span class="text-xs text-muted-foreground">{{ t('settings.super_props_mode') }}</span>
             </div>
-            <div class="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-              <div class="flex items-center justify-between gap-2">
-                <span class="text-muted-foreground">{{ t('settings.field_client_build_number') }}</span>
-                <span class="font-mono font-semibold">{{ debugInfo.super_properties?.client_build_number }}</span>
+            <div class="grid gap-2 md:grid-cols-2">
+              <div class="rounded-md border bg-muted/30 px-3 py-2">
+                <p class="text-[11px] text-muted-foreground">{{ t('settings.field_client_build_number') }}</p>
+                <p class="mt-1 truncate font-mono text-sm font-medium">{{ debugInfo.super_properties?.client_build_number }}</p>
               </div>
-              <div class="flex items-center justify-between gap-2">
-                <span class="text-muted-foreground">{{ t('settings.field_client_version') }}</span>
-                <span class="font-mono">{{ debugInfo.super_properties?.client_version ?? '—' }}</span>
+              <div class="rounded-md border bg-muted/30 px-3 py-2">
+                <p class="text-[11px] text-muted-foreground">{{ t('settings.field_client_version') }}</p>
+                <p class="mt-1 truncate font-mono text-sm font-medium">{{ debugInfo.super_properties?.client_version ?? '—' }}</p>
               </div>
-              <div class="flex items-center justify-between gap-2">
-                <span class="text-muted-foreground">{{ t('settings.field_native_build_number') }}</span>
-                <span class="font-mono">{{ debugInfo.super_properties?.native_build_number ?? '—' }}</span>
+              <div class="rounded-md border bg-muted/30 px-3 py-2">
+                <p class="text-[11px] text-muted-foreground">{{ t('settings.field_native_build_number') }}</p>
+                <p class="mt-1 truncate font-mono text-sm font-medium">{{ debugInfo.super_properties?.native_build_number ?? '—' }}</p>
               </div>
-              <div class="flex items-center justify-between gap-2">
-                <span class="text-muted-foreground">{{ t('settings.field_os') }}</span>
-                <span class="font-mono">{{ debugInfo.super_properties?.os }} {{ debugInfo.super_properties?.os_version }}</span>
+              <div class="rounded-md border bg-muted/30 px-3 py-2">
+                <p class="text-[11px] text-muted-foreground">{{ t('settings.field_os') }}</p>
+                <p class="mt-1 truncate font-mono text-sm font-medium">{{ debugInfo.super_properties?.os }} {{ debugInfo.super_properties?.os_version }}</p>
               </div>
-              <div class="flex items-center justify-between gap-2">
-                <span class="text-muted-foreground">{{ t('settings.field_browser') }}</span>
-                <span class="font-mono">{{ debugInfo.super_properties?.browser }}</span>
+              <div class="rounded-md border bg-muted/30 px-3 py-2">
+                <p class="text-[11px] text-muted-foreground">{{ t('settings.field_browser') }}</p>
+                <p class="mt-1 truncate font-mono text-sm font-medium">{{ debugInfo.super_properties?.browser }}</p>
               </div>
-              <div class="flex items-center justify-between gap-2">
-                <span class="text-muted-foreground">{{ t('settings.field_release_channel') }}</span>
-                <span class="font-mono">{{ debugInfo.super_properties?.release_channel }}</span>
+              <div class="rounded-md border bg-muted/30 px-3 py-2">
+                <p class="text-[11px] text-muted-foreground">{{ t('settings.field_release_channel') }}</p>
+                <p class="mt-1 truncate font-mono text-sm font-medium">{{ debugInfo.super_properties?.release_channel }}</p>
               </div>
-              <div class="flex items-center justify-between gap-2">
-                <span class="text-muted-foreground">{{ t('settings.field_system_locale') }}</span>
-                <span class="font-mono">{{ debugInfo.super_properties?.system_locale }}</span>
+              <div class="rounded-md border bg-muted/30 px-3 py-2">
+                <p class="text-[11px] text-muted-foreground">{{ t('settings.field_system_locale') }}</p>
+                <p class="mt-1 truncate font-mono text-sm font-medium">{{ debugInfo.super_properties?.system_locale }}</p>
               </div>
             </div>
           </template>
@@ -320,6 +368,7 @@ onMounted(() => {
         id="custom-port-section"
         :title="t('settings.custom_port')"
         :description="t('settings.custom_port_desc')"
+        tone="warning"
         default-open
       >
         <div class="space-y-2">
@@ -336,6 +385,5 @@ onMounted(() => {
           </div>
         </div>
       </AdvancedDisclosure>
-    </CardContent>
-  </Card>
+  </SettingsSectionCard>
 </template>
