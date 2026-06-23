@@ -50,3 +50,6 @@ discord-quest-helper-v*.zip
 *.msi
 *.txt
 /private-scripts/*
+
+# i18n validation/audit reports
+reports/

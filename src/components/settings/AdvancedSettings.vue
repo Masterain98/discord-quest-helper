@@ -124,6 +124,7 @@ onMounted(async () => {
             <Button
               variant="outline"
               size="sm"
+              :aria-label="t('settings.super_props_mode_desc')"
               :class="cn('h-7 gap-1 px-2', settingToneClass.info.buttonSoft)"
               @click="retrySuperProps"
               :disabled="retryingMode"
@@ -151,6 +152,7 @@ onMounted(async () => {
           <Button
             variant="ghost"
             size="icon"
+            :aria-label="t('debug.copy')"
             class="h-7 w-7 shrink-0 text-sky-700 hover:bg-sky-500/10 hover:text-sky-700 dark:text-sky-300 dark:hover:text-sky-300"
             @click="copyPath"
           >

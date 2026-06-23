@@ -22,6 +22,7 @@ const open = ref(props.defaultOpen ?? false)
     <Button
       type="button"
       variant="ghost"
+      :aria-expanded="open"
       class="h-auto w-full justify-between gap-3 whitespace-normal rounded-none px-4 py-3 text-left hover:bg-muted/40"
       @click="open = !open"
     >
