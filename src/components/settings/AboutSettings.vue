@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { CheckCircle2, Link2, XCircle } from 'lucide-vue-next'
+import { AlertTriangle, CheckCircle2, ExternalLink, Info, Link2, XCircle } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { open } from '@tauri-apps/plugin-shell'
 import {
@@ -15,9 +15,13 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { useVersionStore } from '@/stores/version'
+import SettingsSectionCard from './SettingsSectionCard.vue'
+import SettingsStatusPanel from './SettingsStatusPanel.vue'
+import SettingsSwitch from './SettingsSwitch.vue'
+import { cn } from '@/lib/utils'
+import { settingToneClass } from './settingTones'
 
 const { t } = useI18n()
 const versionStore = useVersionStore()
@@ -124,12 +128,13 @@ function removeBubble(id: number) {
       </AlertDialogContent>
     </AlertDialog>
 
-    <Card>
-      <CardHeader>
-        <CardTitle>{{ t('settings.about') }}</CardTitle>
-      </CardHeader>
-      <CardContent class="space-y-4 text-sm text-muted-foreground">
-        <p class="flex flex-wrap items-center gap-2">
+    <SettingsSectionCard
+      :title="t('settings.about')"
+      :icon="Info"
+      tone="primary"
+      content-class="space-y-4 text-sm text-muted-foreground"
+    >
+        <div class="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
           <span
             class="relative cursor-pointer select-none transition-transform active:scale-95"
             @click="handleVersionTapWithBubble"
@@ -146,39 +151,62 @@ function removeBubble(id: number) {
               @animationend="removeBubble(bubble.id)"
             />
           </span>
-          <Badge v-if="versionStore.isLatest" variant="outline" class="gap-1 border-green-600/50 text-green-600">
+          <Badge v-if="versionStore.isLatest" variant="outline" :class="cn('gap-1', settingToneClass.success.badge)">
             <CheckCircle2 class="h-3 w-3" />
             {{ t('settings.version_latest') }}
           </Badge>
           <span v-else-if="versionStore.isChecking" class="text-xs text-muted-foreground">
             {{ t('settings.version_checking') }}
           </span>
-          <span v-if="debugModeEnabled" class="inline-flex items-center gap-1 text-xs font-medium text-green-600 dark:text-green-400">
+          <Badge v-if="debugModeEnabled" variant="outline" :class="cn('gap-1', settingToneClass.success.badge)">
             <CheckCircle2 class="h-3 w-3" />
             {{ t('settings.debug_already_unlocked') }}
-          </span>
-          <Button v-if="debugModeEnabled" variant="ghost" size="sm" class="h-6 gap-1 px-2 text-xs text-destructive" @click="disableDialogOpen = true">
+          </Badge>
+          <Button
+            v-if="debugModeEnabled"
+            variant="outline"
+            size="sm"
+            :class="cn('h-7 gap-1 px-2 text-xs', settingToneClass.danger.buttonSoft)"
+            @click="disableDialogOpen = true"
+          >
             <XCircle class="h-3 w-3" />
             {{ t('settings.disable_developer_mode') }}
           </Button>
           <span v-else-if="showDebugUnlockHint" class="animate-pulse text-xs font-medium text-primary">
             {{ t('settings.debug_unlock_hint', { steps: 7 - versionTapCount }) }}
           </span>
-        </p>
+        </div>
 
         <p>{{ t('settings.about_desc') }}</p>
 
-        <a href="#" @click.prevent="openExternal('https://github.com/Masterain98/discord-quest-helper')" class="inline-flex items-center gap-2 transition-opacity hover:opacity-80">
-          <img src="/icons/github-mark.svg" alt="GitHub" class="h-5 w-5 dark:hidden" />
-          <img src="/icons/github-mark-white.svg" alt="GitHub" class="hidden h-5 w-5 dark:block" />
-          <span class="text-primary hover:underline">Masterain98/discord-quest-helper</span>
+        <a
+          href="#"
+          @click.prevent="openExternal('https://github.com/Masterain98/discord-quest-helper')"
+          class="flex items-center justify-between rounded-lg border bg-muted/30 px-3 py-2 transition-colors hover:bg-muted/60"
+        >
+          <span class="flex min-w-0 items-center gap-2">
+            <img src="/icons/github-mark.svg" alt="GitHub" class="h-5 w-5 shrink-0 dark:hidden" />
+            <img src="/icons/github-mark-white.svg" alt="GitHub" class="hidden h-5 w-5 shrink-0 dark:block" />
+            <span class="truncate text-primary">Masterain98/discord-quest-helper</span>
+          </span>
+          <ExternalLink class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         </a>
 
         <div class="flex flex-wrap gap-2">
-          <Button variant="outline" size="sm" @click="openExternal('https://github.com/Masterain98/discord-quest-helper/issues/new/choose')">
+          <Button
+            variant="outline"
+            size="sm"
+            :class="settingToneClass.info.buttonSoft"
+            @click="openExternal('https://github.com/Masterain98/discord-quest-helper/issues/new/choose')"
+          >
             {{ t('settings.feedback') }}
           </Button>
-          <Button variant="outline" size="sm" @click="openExternal('https://discord-quest-helper.dal.ao/')">
+          <Button
+            variant="outline"
+            size="sm"
+            :class="settingToneClass.primary.buttonSoft"
+            @click="openExternal('https://discord-quest-helper.dal.ao/')"
+          >
             {{ t('settings.website') }}
           </Button>
         </div>
@@ -189,88 +217,89 @@ function removeBubble(id: number) {
               <Label class="text-sm font-medium">{{ t('settings.check_prerelease') }}</Label>
               <p class="text-xs text-muted-foreground">{{ t('settings.check_prerelease_desc') }}</p>
             </div>
-            <button
-              type="button"
-              role="switch"
-              :aria-checked="versionStore.checkPreRelease"
-              :class="[
-                'peer inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50',
-                versionStore.checkPreRelease ? 'bg-primary' : 'bg-input',
-              ]"
-              @click="versionStore.setCheckPreRelease(!versionStore.checkPreRelease)"
-            >
-              <span
-                :class="[
-                  'pointer-events-none block h-4 w-4 rounded-full bg-background shadow-lg ring-0 transition-transform',
-                  versionStore.checkPreRelease ? 'translate-x-4' : 'translate-x-0',
-                ]"
-              />
-            </button>
+            <SettingsSwitch
+              :model-value="versionStore.checkPreRelease"
+              @update:model-value="versionStore.setCheckPreRelease"
+            />
           </div>
         </div>
 
-        <p class="text-yellow-500/90 dark:text-yellow-400">
-          ⚠️ {{ t('settings.about_warning') }}
-        </p>
-      </CardContent>
-    </Card>
+        <SettingsStatusPanel tone="warning" :icon="AlertTriangle">
+          {{ t('settings.about_warning') }}
+        </SettingsStatusPanel>
+    </SettingsSectionCard>
 
-    <Card>
-      <CardHeader>
-        <CardTitle>{{ t('settings.credits') }}</CardTitle>
-      </CardHeader>
-      <CardContent class="space-y-4 text-sm text-muted-foreground">
+    <SettingsSectionCard
+      :title="t('settings.credits')"
+      :icon="Link2"
+      tone="info"
+      content-class="space-y-4 text-sm text-muted-foreground"
+    >
         <div>
           <p class="mb-2 font-medium text-foreground">{{ t('settings.credits_desc') }}</p>
           <ul class="space-y-2">
             <li>
-              <a href="#" @click.prevent="openExternal('https://github.com/markterence/discord-quest-completer')" class="inline-flex items-center gap-2 transition-opacity hover:opacity-80">
-                <img src="/icons/github-mark.svg" alt="GitHub" class="h-4 w-4 dark:hidden" />
-                <img src="/icons/github-mark-white.svg" alt="GitHub" class="hidden h-4 w-4 dark:block" />
-                <span class="hover:underline">markterence/discord-quest-completer</span>
+              <a href="#" @click.prevent="openExternal('https://github.com/markterence/discord-quest-completer')" class="flex items-center justify-between rounded-lg border bg-card px-3 py-2 text-sm transition-colors hover:bg-muted/50">
+                <span class="flex min-w-0 items-center gap-2">
+                  <img src="/icons/github-mark.svg" alt="GitHub" class="h-4 w-4 shrink-0 dark:hidden" />
+                  <img src="/icons/github-mark-white.svg" alt="GitHub" class="hidden h-4 w-4 shrink-0 dark:block" />
+                  <span class="truncate">markterence/discord-quest-completer</span>
+                </span>
+                <ExternalLink class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
               </a>
             </li>
             <li>
-              <a href="#" @click.prevent="openExternal('https://github.com/power0matin/discord-quest-auto-completer')" class="inline-flex items-center gap-2 transition-opacity hover:opacity-80">
-                <img src="/icons/github-mark.svg" alt="GitHub" class="h-4 w-4 dark:hidden" />
-                <img src="/icons/github-mark-white.svg" alt="GitHub" class="hidden h-4 w-4 dark:block" />
-                <span class="hover:underline">power0matin/discord-quest-auto-completer</span>
+              <a href="#" @click.prevent="openExternal('https://github.com/power0matin/discord-quest-auto-completer')" class="flex items-center justify-between rounded-lg border bg-card px-3 py-2 text-sm transition-colors hover:bg-muted/50">
+                <span class="flex min-w-0 items-center gap-2">
+                  <img src="/icons/github-mark.svg" alt="GitHub" class="h-4 w-4 shrink-0 dark:hidden" />
+                  <img src="/icons/github-mark-white.svg" alt="GitHub" class="hidden h-4 w-4 shrink-0 dark:block" />
+                  <span class="truncate">power0matin/discord-quest-auto-completer</span>
+                </span>
+                <ExternalLink class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
               </a>
             </li>
             <li>
-              <a href="#" @click.prevent="openExternal('https://github.com/taisrisk/Discord-Quest-Helper')" class="inline-flex items-center gap-2 transition-opacity hover:opacity-80">
-                <img src="/icons/github-mark.svg" alt="GitHub" class="h-4 w-4 dark:hidden" />
-                <img src="/icons/github-mark-white.svg" alt="GitHub" class="hidden h-4 w-4 dark:block" />
-                <span class="hover:underline">taisrisk/Discord-Quest-Helper</span>
+              <a href="#" @click.prevent="openExternal('https://github.com/taisrisk/Discord-Quest-Helper')" class="flex items-center justify-between rounded-lg border bg-card px-3 py-2 text-sm transition-colors hover:bg-muted/50">
+                <span class="flex min-w-0 items-center gap-2">
+                  <img src="/icons/github-mark.svg" alt="GitHub" class="h-4 w-4 shrink-0 dark:hidden" />
+                  <img src="/icons/github-mark-white.svg" alt="GitHub" class="hidden h-4 w-4 shrink-0 dark:block" />
+                  <span class="truncate">taisrisk/Discord-Quest-Helper</span>
+                </span>
+                <ExternalLink class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
               </a>
             </li>
             <li>
-              <a href="#" @click.prevent="openExternal('https://gist.github.com/aamiaa/204cd9d42013ded9faf646fae7f89fbb')" class="inline-flex items-center gap-2 transition-opacity hover:opacity-80">
-                <img src="/icons/github-mark.svg" alt="GitHub" class="h-4 w-4 dark:hidden" />
-                <img src="/icons/github-mark-white.svg" alt="GitHub" class="hidden h-4 w-4 dark:block" />
-                <span class="hover:underline">aamiaa/CompleteDiscordQuest.md</span>
+              <a href="#" @click.prevent="openExternal('https://gist.github.com/aamiaa/204cd9d42013ded9faf646fae7f89fbb')" class="flex items-center justify-between rounded-lg border bg-card px-3 py-2 text-sm transition-colors hover:bg-muted/50">
+                <span class="flex min-w-0 items-center gap-2">
+                  <img src="/icons/github-mark.svg" alt="GitHub" class="h-4 w-4 shrink-0 dark:hidden" />
+                  <img src="/icons/github-mark-white.svg" alt="GitHub" class="hidden h-4 w-4 shrink-0 dark:block" />
+                  <span class="truncate">aamiaa/CompleteDiscordQuest.md</span>
+                </span>
+                <ExternalLink class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
               </a>
             </li>
             <li>
-              <a href="#" @click.prevent="openExternal('https://docs.discord.food/')" class="inline-flex items-center gap-2 transition-opacity hover:opacity-80">
-                <Link2 class="h-4 w-4" />
-                <span class="hover:underline">docs.discord.food</span>
+              <a href="#" @click.prevent="openExternal('https://docs.discord.food/')" class="flex items-center justify-between rounded-lg border bg-card px-3 py-2 text-sm transition-colors hover:bg-muted/50">
+                <span class="flex min-w-0 items-center gap-2">
+                  <Link2 class="h-4 w-4 shrink-0" />
+                  <span class="truncate">docs.discord.food</span>
+                </span>
+                <ExternalLink class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
               </a>
             </li>
           </ul>
         </div>
         <div>
           <p class="mb-1 font-medium text-foreground">{{ t('settings.tech_stack') }}</p>
-          <ul class="list-inside list-disc">
-            <li>Tauri</li>
-            <li>Vue 3</li>
-            <li>shadcn-vue</li>
-            <li>TailwindCSS</li>
-            <li>vue-i18n</li>
-          </ul>
+          <div class="flex flex-wrap gap-2">
+            <Badge variant="outline">Tauri</Badge>
+            <Badge variant="outline">Vue 3</Badge>
+            <Badge variant="outline">shadcn-vue</Badge>
+            <Badge variant="outline">TailwindCSS</Badge>
+            <Badge variant="outline">vue-i18n</Badge>
+          </div>
         </div>
-      </CardContent>
-    </Card>
+    </SettingsSectionCard>
   </div>
 </template>
 

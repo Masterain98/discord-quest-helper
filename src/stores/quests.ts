@@ -619,7 +619,7 @@ export const useQuestsStore = defineStore('quests', () => {
 
   async function stop() {
     stopping.value = true
-    console.trace('questsStore.stop() called')
+    console.log('questsStore.stop() called')
 
     stopProgressSimulation()
 
