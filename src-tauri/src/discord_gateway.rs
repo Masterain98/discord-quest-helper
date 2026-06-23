@@ -235,9 +235,13 @@ pub async fn get_quests_from_gateway(token: &str) -> Result<Vec<Quest>> {
                             // HEARTBEAT request from server
                             println!("Server requested heartbeat, sending...");
                             let heartbeat = json!({"op": 1, "d": null});
-                            let _ = write
+                            if let Err(err) = write
                                 .send(Message::Text(heartbeat.to_string().into()))
-                                .await;
+                                .await
+                            {
+                                println!("Failed to send heartbeat: {}", err);
+                                break;
+                            }
                         }
                         9 => {
                             // Invalid Session

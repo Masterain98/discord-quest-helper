@@ -24,4 +24,4 @@
 3. Added i18n validation and audit scripts for translation quality assurance.
 4. Added 9 new languages: German, French, Indonesian, Polish, Portuguese (Brazil), Portuguese (Portugal), Thai, Turkish, and Vietnamese.
 5. Bump default `client_build_number` to `565311`, `native_build_number` to `84410`, `client_version` to `1.0.9242`.
-6. Bump Rust and Vue denpendencies versions
+6. Bump Rust and Vue dependencies versions

@@ -775,8 +775,14 @@ pub async fn find_activity_iframe_target(port: u16) -> Result<CdpTarget> {
     let targets = get_cdp_targets(port).await?;
 
     let iframe_target = targets.iter().find(|t| {
+        let is_activity_host = reqwest::Url::parse(&t.url)
+            .ok()
+            .and_then(|url| url.host_str().map(str::to_owned))
+            .map(|host| host == "discordsays.com" || host.ends_with(".discordsays.com"))
+            .unwrap_or(false);
+
         (t.target_type == "iframe" || t.target_type == "page")
-            && t.url.contains("discordsays.com")
+            && is_activity_host
             && t.web_socket_debugger_url.is_some()
     });
 

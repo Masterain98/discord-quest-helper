@@ -110,6 +110,7 @@ const questsStore = useQuestsStore()
               max="2.0"
               step="0.1"
               :disabled="questsStore.gameQuestMode === 'cdp'"
+              :aria-label="t('settings.completion_speed')"
               class="w-48 accent-primary disabled:opacity-50"
             />
             <Badge variant="outline" :class="settingToneClass.primary.badge">
@@ -130,6 +131,7 @@ const questsStore = useQuestsStore()
               max="30"
               step="1"
               :disabled="questsStore.gameQuestMode === 'cdp'"
+              :aria-label="t('settings.request_interval')"
               class="w-48 accent-primary disabled:opacity-50"
             />
             <Badge variant="outline" :class="settingToneClass.primary.badge">
@@ -149,6 +151,7 @@ const questsStore = useQuestsStore()
               min="30"
               max="300"
               step="1"
+              :aria-label="t('settings.game_polling_interval')"
               class="w-48 accent-primary"
             />
             <Badge variant="outline" :class="settingToneClass.violet.badge">
@@ -176,6 +179,7 @@ const questsStore = useQuestsStore()
                 v-model.number="questsStore.activityCheckpointMin"
                 min="30"
                 :max="questsStore.activityCheckpointMax"
+                :aria-label="t('settings.activity_checkpoint_min')"
                 class="w-24"
               />
               <span class="text-sm text-muted-foreground">{{ t('settings.activity_checkpoint_unit') }}</span>
@@ -190,6 +194,7 @@ const questsStore = useQuestsStore()
                 v-model.number="questsStore.activityCheckpointMax"
                 :min="questsStore.activityCheckpointMin"
                 max="900"
+                :aria-label="t('settings.activity_checkpoint_max')"
                 class="w-24"
               />
               <span class="text-sm text-muted-foreground">{{ t('settings.activity_checkpoint_unit') }}</span>

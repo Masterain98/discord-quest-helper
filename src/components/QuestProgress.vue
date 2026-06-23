@@ -114,10 +114,12 @@ function startDrag(event: PointerEvent) {
 
   window.addEventListener('pointermove', handleDragMove)
   window.addEventListener('pointerup', stopDrag)
+  window.addEventListener('pointercancel', stopDrag)
 }
 
 function handleDragMove(event: PointerEvent) {
   if (!dragState) return
+  if (event.pointerId !== dragState.pointerId) return
   const dx = event.clientX - dragState.startX
   const dy = event.clientY - dragState.startY
 
@@ -129,6 +131,7 @@ function handleDragMove(event: PointerEvent) {
 }
 
 function stopDrag(event: PointerEvent) {
+  if (dragState && event.pointerId !== dragState.pointerId) return
   if (dragState && event.currentTarget instanceof HTMLElement) {
     try {
       event.currentTarget.releasePointerCapture(dragState.pointerId)
@@ -141,6 +144,7 @@ function stopDrag(event: PointerEvent) {
   saveFloatingPosition()
   window.removeEventListener('pointermove', handleDragMove)
   window.removeEventListener('pointerup', stopDrag)
+  window.removeEventListener('pointercancel', stopDrag)
 }
 
 function handleCollapsedClick() {
@@ -214,6 +218,7 @@ watch([expanded, queuedBehindCount], () => {
 onUnmounted(() => {
   window.removeEventListener('pointermove', handleDragMove)
   window.removeEventListener('pointerup', stopDrag)
+  window.removeEventListener('pointercancel', stopDrag)
 })
 
 // Single-gradient progress bar style: true blue→green color blend

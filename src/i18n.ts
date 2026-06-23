@@ -18,26 +18,30 @@ import pl from './locales/pl'
 
 // Detect default locale based on browser settings
 function getDefaultLocale(): string {
-    const saved = localStorage.getItem('locale') ?? localStorage.getItem('language')
-    if (saved) return saved
+    const normalizeLocale = (raw: string): string => {
+        const v = raw.toLowerCase()
+        if (v.startsWith('zh-tw') || v.startsWith('zh-hant')) return 'zh-TW'
+        if (v.startsWith('pt-br')) return 'pt-BR'
+        if (v === 'pt' || v.startsWith('pt-pt')) return 'pt-PT'
+        if (v.startsWith('zh')) return 'zh'
+        if (v.startsWith('th')) return 'th'
+        if (v.startsWith('tr')) return 'tr'
+        if (v.startsWith('vi')) return 'vi'
+        if (v.startsWith('de')) return 'de'
+        if (v.startsWith('fr')) return 'fr'
+        if (v.startsWith('id')) return 'id'
+        if (v.startsWith('pl')) return 'pl'
+        if (v.startsWith('ja')) return 'ja'
+        if (v.startsWith('ko')) return 'ko'
+        if (v.startsWith('ru')) return 'ru'
+        if (v.startsWith('es')) return 'es'
+        return 'en'
+    }
 
-    const browserLang = navigator.language.toLowerCase()
-    if (browserLang.startsWith('zh-tw') || browserLang.startsWith('zh-hant')) return 'zh-TW'
-    if (browserLang.startsWith('pt-br')) return 'pt-BR'
-    if (browserLang.startsWith('zh')) return 'zh'
-    if (browserLang.startsWith('th')) return 'th'
-    if (browserLang.startsWith('tr')) return 'tr'
-    if (browserLang.startsWith('vi')) return 'vi'
-    if (browserLang.startsWith('de')) return 'de'
-    if (browserLang.startsWith('fr')) return 'fr'
-    if (browserLang.startsWith('pt')) return 'pt-PT'
-    if (browserLang.startsWith('id')) return 'id'
-    if (browserLang.startsWith('pl')) return 'pl'
-    if (browserLang.startsWith('ja')) return 'ja'
-    if (browserLang.startsWith('ko')) return 'ko'
-    if (browserLang.startsWith('ru')) return 'ru'
-    if (browserLang.startsWith('es')) return 'es'
-    return 'en'
+    const saved = localStorage.getItem('locale') ?? localStorage.getItem('language')
+    if (saved) return normalizeLocale(saved)
+
+    return normalizeLocale(navigator.language)
 }
 
 const i18n = createI18n({

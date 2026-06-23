@@ -168,6 +168,12 @@ async function performLaunch(restart: boolean) {
   cdpActionBusy.value = true
   resetLaunchMessage()
 
+  if (!Number.isInteger(questsStore.cdpPort) || questsStore.cdpPort < 1024 || questsStore.cdpPort > 65535) {
+    cdpLaunchError.value = 'Invalid port number. Must be between 1024 and 65535.'
+    cdpActionBusy.value = false
+    return
+  }
+
   try {
     const result = restart
       ? await restartDiscordCdp(questsStore.cdpPort, 'auto')

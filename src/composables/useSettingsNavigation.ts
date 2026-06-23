@@ -1,16 +1,7 @@
 import { onMounted, onUnmounted, ref, watch } from 'vue'
 
-export type SettingsSection =
-  | 'account'
-  | 'quest_behavior'
-  | 'discord_integration'
-  | 'appearance'
-  | 'diagnostics'
-  | 'advanced'
-  | 'about'
-
 const SETTINGS_SECTION_STORAGE_KEY = 'questHelper_lastSettingsSection'
-const settingsSections: SettingsSection[] = [
+const settingsSections = [
   'account',
   'quest_behavior',
   'discord_integration',
@@ -18,20 +9,33 @@ const settingsSections: SettingsSection[] = [
   'diagnostics',
   'advanced',
   'about',
-]
+] as const
+
+export type SettingsSection = (typeof settingsSections)[number]
 
 export function isSettingsSection(value: unknown): value is SettingsSection {
-  return typeof value === 'string' && settingsSections.includes(value as SettingsSection)
+  return typeof value === 'string' && (settingsSections as readonly string[]).includes(value)
+}
+
+function getStorage(): Storage | null {
+  if (typeof window === 'undefined') return null
+  try {
+    return window.localStorage
+  } catch {
+    return null
+  }
 }
 
 function readInitialSection(): SettingsSection {
-  const saved = localStorage.getItem(SETTINGS_SECTION_STORAGE_KEY)
+  const saved = getStorage()?.getItem(SETTINGS_SECTION_STORAGE_KEY)
   return isSettingsSection(saved) ? saved : 'account'
 }
 
 export function persistSettingsSection(section: SettingsSection) {
-  localStorage.setItem(SETTINGS_SECTION_STORAGE_KEY, section)
-  window.dispatchEvent(new CustomEvent('app:open-settings-section', { detail: section }))
+  getStorage()?.setItem(SETTINGS_SECTION_STORAGE_KEY, section)
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('app:open-settings-section', { detail: section }))
+  }
 }
 
 export function useSettingsNavigation() {
@@ -49,7 +53,7 @@ export function useSettingsNavigation() {
   }
 
   watch(selectedSection, (section) => {
-    localStorage.setItem(SETTINGS_SECTION_STORAGE_KEY, section)
+    getStorage()?.setItem(SETTINGS_SECTION_STORAGE_KEY, section)
   })
 
   onMounted(() => {

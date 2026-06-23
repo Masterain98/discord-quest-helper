@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, ref } from 'vue'
 import { Check, Copy, FolderOpen, Loader2, RotateCw, SlidersHorizontal } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { invoke } from '@tauri-apps/api/core'
-import { documentDir } from '@tauri-apps/api/path'
+import { documentDir, join } from '@tauri-apps/api/path'
 import { mkdir } from '@tauri-apps/plugin-fs'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -81,8 +81,7 @@ async function openCacheDir() {
 
 onMounted(async () => {
   const docDir = await documentDir()
-  const normalizedDocDir = docDir.replace(/[\\/]+$/, '')
-  cachePath.value = `${normalizedDocDir}\\DiscordQuestGames`
+  cachePath.value = await join(docDir, 'DiscordQuestGames')
   debugModeEnabled.value = localStorage.getItem('debugMode') === 'true'
   await loadSuperPropsMode()
 })

@@ -2536,11 +2536,8 @@ pub async fn complete_activity_quest_via_cdp(
         }
 
         elapsed_secs += checkpoint_secs;
-        let progress_pct = if is_last {
-            100.0
-        } else {
-            ((elapsed_secs as f64) / (total_seconds as f64) * 100.0).min(99.0)
-        };
+        let progress_pct =
+            ((elapsed_secs as f64) / (total_seconds as f64) * 100.0).min(99.0);
         let _ = app_handle.emit("quest-progress", progress_pct);
 
         if is_last {

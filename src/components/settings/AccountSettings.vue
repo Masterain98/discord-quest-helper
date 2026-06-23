@@ -75,11 +75,14 @@ async function handleManualLogin() {
                   v-model="manualToken"
                   :type="showToken ? 'text' : 'password'"
                   :placeholder="t('auth.enter_token')"
+                  :aria-label="t('auth.enter_token')"
                 />
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon"
+                  :aria-label="showToken ? 'Hide token' : 'Show token'"
+                  :aria-pressed="showToken"
                   class="absolute right-0 top-0 h-full px-3 text-muted-foreground hover:text-foreground"
                   @click="showToken = !showToken"
                 >

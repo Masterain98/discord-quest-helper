@@ -43,7 +43,12 @@ for (const target of ['release', 'debug']) {
   for (const name of stalePatterns) {
     const stale = join(targetDir, name);
     if (existsSync(stale)) {
-      try { unlinkSync(stale); console.log(`Removed stale legacy binary: ${stale}`); } catch {}
+      try {
+        unlinkSync(stale);
+        console.log(`Removed stale legacy binary: ${stale}`);
+      } catch (error) {
+        console.warn(`Could not remove stale legacy binary ${stale}: ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
   }
 }

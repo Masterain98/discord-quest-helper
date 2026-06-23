@@ -60,6 +60,8 @@ const styleMap = {
         </div>
 
         <button
+          type="button"
+          aria-label="Dismiss notification"
           class="shrink-0 text-muted-foreground/60 hover:text-foreground transition-colors"
           @click="toastStore.dismiss(toast.id)"
         >

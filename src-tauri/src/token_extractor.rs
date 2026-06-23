@@ -602,8 +602,8 @@ async fn fetch_build_number_from_scripts(
         r#""buildNumber"\s*:\s*(\d+)"#,
     ];
 
-    // Only check the last few JS files (build info is usually in the larger main bundle)
-    let urls_to_check: Vec<&String> = script_urls.iter().rev().take(5).collect();
+    // Check more bundles to handle Discord moving build metadata between assets
+    let urls_to_check: Vec<&String> = script_urls.iter().rev().take(10).collect();
 
     for url in urls_to_check {
         log(
