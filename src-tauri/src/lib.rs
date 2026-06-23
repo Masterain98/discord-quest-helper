@@ -1462,7 +1462,6 @@ fn create_platform_cdp_launcher_shortcut(
         .map_err(|_| "Could not get desktop path".to_string())?;
 
     let shortcut_path = desktop.join("Discord CDP Launcher.lnk");
-    let legacy_shortcut_path = desktop.join("Discord (Debug Mode).lnk");
     let launcher_dir = launcher_path
         .parent()
         .ok_or_else(|| "Could not get launcher directory".to_string())?;
@@ -1470,7 +1469,6 @@ fn create_platform_cdp_launcher_shortcut(
     let args = format!("--port {} --channel {} --wait-cdp", port, channel_arg);
 
     let shortcut_path_ps = ps_single_quote(&shortcut_path.to_string_lossy());
-    let legacy_shortcut_path_ps = ps_single_quote(&legacy_shortcut_path.to_string_lossy());
     let launcher_path_ps = ps_single_quote(&launcher_path.to_string_lossy());
     let launcher_dir_ps = ps_single_quote(&launcher_dir.to_string_lossy());
     let args_ps = ps_single_quote(&args);
@@ -1479,25 +1477,18 @@ fn create_platform_cdp_launcher_shortcut(
         r#"
 $ErrorActionPreference = 'Stop'
 $WshShell = New-Object -ComObject WScript.Shell
-function Set-CdpShortcut($Path) {{
-  $Shortcut = $WshShell.CreateShortcut($Path)
-  $Shortcut.TargetPath = '{launcher_path}'
-  $Shortcut.Arguments = '{args}'
-  $Shortcut.WorkingDirectory = '{launcher_dir}'
-  $Shortcut.Description = 'Launch Discord with CDP enabled for Discord Quest Helper'
-  $Shortcut.IconLocation = '{launcher_path},0'
-  $Shortcut.Save()
-}}
-Set-CdpShortcut '{shortcut_path}'
-if (Test-Path -LiteralPath '{legacy_shortcut_path}') {{
-  Set-CdpShortcut '{legacy_shortcut_path}'
-}}
+$Shortcut = $WshShell.CreateShortcut('{shortcut_path}')
+$Shortcut.TargetPath = '{launcher_path}'
+$Shortcut.Arguments = '{args}'
+$Shortcut.WorkingDirectory = '{launcher_dir}'
+$Shortcut.Description = 'Launch Discord with CDP enabled for Discord Quest Helper'
+$Shortcut.IconLocation = '{launcher_path},0'
+$Shortcut.Save()
 "#,
         launcher_path = launcher_path_ps,
         args = args_ps,
         launcher_dir = launcher_dir_ps,
         shortcut_path = shortcut_path_ps,
-        legacy_shortcut_path = legacy_shortcut_path_ps,
     );
 
     let script_path = std::env::temp_dir().join(format!(
@@ -1549,7 +1540,6 @@ fn create_platform_cdp_launcher_shortcut(
     let home = std::env::var_os("HOME").ok_or_else(|| "Could not get HOME".to_string())?;
     let desktop = std::path::PathBuf::from(home).join("Desktop");
     let script_path = desktop.join("Discord CDP Launcher.command");
-    let legacy_script_path = desktop.join("Discord Debug Mode.command");
     let channel_arg = channel.map(|c| c.as_str()).unwrap_or("auto");
 
     // Use single quotes to prevent shell metacharacter expansion ($, `, \, ")
@@ -1568,16 +1558,6 @@ fn create_platform_cdp_launcher_shortcut(
         .map_err(|e| format!("Failed to write launcher command: {}", e))?;
     std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755))
         .map_err(|e| format!("Failed to mark launcher command executable: {}", e))?;
-
-    if legacy_script_path.exists() {
-        if let Ok(mut file) = std::fs::File::create(&legacy_script_path) {
-            let _ = file.write_all(script_content.as_bytes());
-            let _ = std::fs::set_permissions(
-                &legacy_script_path,
-                std::fs::Permissions::from_mode(0o755),
-            );
-        }
-    }
 
     Ok(script_path.to_string_lossy().to_string())
 }
