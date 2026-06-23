@@ -1,6 +1,6 @@
 export default {
     general: {
-        title: "Nitro Basic",
+        title: "Discord Quest Helper",
         subtitle: "Panel do zarządzania Twoim Discord Quests",
         welcome: "Witamy w Discord Quest Helper",
         login_prompt: "Zaloguj się na swoje konto Discord, aby rozpocząć zarządzanie swoimi misjami.",
@@ -9,7 +9,7 @@ export default {
         logout: "Wyloguj się",
         loading: "Ładowanie...",
         refresh: "Odśwież",
-        clear: "Jasne",
+        clear: "Wyczyść",
     },
     auth: {
         auto_detect: "Automatyczne wykrywanie Token",
@@ -19,7 +19,7 @@ export default {
         authenticated_as: "Uwierzytelnione jako"
     },
     nav: {
-        home: "Dom",
+        home: "Strona główna",
         game_simulator: "Symulator gry",
         settings: "Ustawienia",
         debug: "Debuguj"
@@ -60,7 +60,7 @@ export default {
         view_pending_claim: "Zobacz",
         accept_quest: "Zaakceptuj Quests",
         accepting: "Akceptuję...",
-        stop: "Zatrzymaj się",
+        stop: "Stop",
         start_quest: "Rozpocznij Quest",
         start_watching: "Zacznij oglądać",
         start_playing: "Zacznij grać",
@@ -130,7 +130,7 @@ export default {
         pending: "Lokalne oczekujące",
     },
     filter: {
-        type: "Wpisz",
+        type: "Typ",
         reward: "Nagroda",
         not_accepted: "Nie zaakceptowano",
         in_progress: "W toku",
@@ -138,8 +138,8 @@ export default {
         claimed: "Zgłoszono",
         video: "Wideo",
         play: "Zagraj",
-        activity: "Nitro Basic",
-        stream_play: "Nitro Basic",
+        activity: "Aktywność",
+        stream_play: "Stream/Gra",
         orbs: "Discord Orbs",
         decoration: "Discord Dekoracja awatara",
         in_game: "Nagroda w grze"
@@ -155,7 +155,7 @@ export default {
         nav_advanced: "Zaawansowane",
         nav_about: "O",
         overview_account: "Konto",
-        overview_mode: "Tryb CDP.",
+        overview_mode: "Tryb Quest",
         overview_discord_client: "Discord Klient",
         overview_version: "Wersja",
         overview_not_connected: "Nie podłączony",
@@ -182,8 +182,8 @@ export default {
         show_orbs_balance: "Pokaż saldo Orbs.",
         show_orbs_balance_desc: "Pobiera saldo waluty wirtualnej przy logowaniu i ręcznym odświeżeniu.",
         game_quest_mode: "Tryb gry Quest.",
-        game_mode_simulate: "Symulowany tryb gry (zalecany)",
-        game_mode_simulate_desc: "Rozpoczyna lekki proces symulowanej gry. Bezpieczny jak prawdziwa gra.",
+        game_mode_simulate: "Symulowany tryb gry",
+        game_mode_simulate_desc: "Rozpoczyna lekki proces symulowanej gry.",
         game_mode_cdp: "CDP Tryb wtrysku",
         game_mode_cdp_desc: "Wstrzykuje do klienta Discord przez CDP. Działa dla wszystkich gier. Wymaga Discord z włączonym portem debugowania.",
         game_mode_cdp_unavailable: "CDP niedostępne. Rozpocznij Discord od --remote-debugging-port.",
@@ -216,7 +216,7 @@ export default {
         cdp_connected: "Połączono",
         cdp_disconnected: "Brak połączenia - Rozpocznij Discord z flagą debugowania",
         cdp_disconnected_short: "Nie podłączony",
-        cdp_port: "Nitro Basic",
+        cdp_port: "Port debugowania",
         cdp_port_hint: "Wartość domyślna: 9223",
         cdp_sync: "Synchronizuj Discord Informacje o kliencie poprzez CDP",
         integration_setup: "Konfiguracja",
@@ -247,7 +247,7 @@ export default {
         field_system_locale: "Ustawienia regionalne systemu",
         field_native_build_number: "Natywny numer kompilacji",
         edit_port: "Edytuj",
-        super_props_mode: "Tryb CDP.",
+        super_props_mode: "Tryb X-Super-Properties",
         remote_js: "Zdalny",
         default_mode: "Domyślne",
         super_props_mode_desc: "Zaawansowane źródło tożsamości żądania używane przez wywołania API.",
@@ -346,7 +346,7 @@ export default {
         title: "Informacje o debugowaniu",
         description: "Wyświetl parametry programu i wartości konfiguracyjne",
         refresh: "Odśwież",
-        token: "Nitro Basic",
+        token: "Token",
         token_desc: "Twój token uwierzytelniający Discord.",
         session_ids: "Identyfikatory sesji",
         session_ids_desc: "Generowane raz na uruchomienie aplikacji",
@@ -392,8 +392,8 @@ export default {
         fetch: "Pobierz"
     },
     user: {
-        nitro: "Nitro Basic",
-        nitro_classic: "Nitro Basic",
+        nitro: "Nitro",
+        nitro_classic: "Nitro Classic",
         nitro_basic: "Nitro Basic"
     },
     header: {

@@ -1,6 +1,6 @@
 export default {
     general: {
-        title: "Nitro Basic",
+        title: "Discord Quest Helper",
         subtitle: "แดชบอร์ดสำหรับจัดการ Discord Quests ของคุณ",
         welcome: "ยินดีต้อนรับสู่ Discord Quest Helper",
         login_prompt: "เข้าสู่ระบบด้วยบัญชี Discord ของคุณเพื่อเริ่มจัดการภารกิจของคุณ",
@@ -9,7 +9,7 @@ export default {
         logout: "ออกจากระบบ",
         loading: "กำลังโหลด...",
         refresh: "รีเฟรช",
-        clear: "ชัดเจน",
+        clear: "ล้าง",
     },
     auth: {
         auto_detect: "ตรวจจับอัตโนมัติ Token",
@@ -19,7 +19,7 @@ export default {
         authenticated_as: "รับรองความถูกต้องเป็น"
     },
     nav: {
-        home: "บ้าน",
+        home: "หน้าแรก",
         game_simulator: "เกมจำลอง",
         settings: "การตั้งค่า",
         debug: "ดีบัก"
@@ -138,8 +138,8 @@ export default {
         claimed: "อ้างสิทธิ์",
         video: "วีดีโอ",
         play: "เล่น",
-        activity: "Nitro Basic",
-        stream_play: "Nitro Basic",
+        activity: "กิจกรรม",
+        stream_play: "สตรีม/เล่น",
         orbs: "Discord Orbs",
         decoration: "Discord การตกแต่งอวตาร",
         in_game: "รางวัลในเกม"
@@ -155,8 +155,8 @@ export default {
         nav_advanced: "ขั้นสูง",
         nav_about: "เกี่ยวกับ",
         overview_account: "บัญชี",
-        overview_mode: "โหมด CDP",
-        overview_discord_client: "Discord ลูกค้า",
+        overview_mode: "โหมด Quest",
+        overview_discord_client: "Discord Client",
         overview_version: "เวอร์ชัน",
         overview_not_connected: "ไม่ได้เชื่อมต่อ",
         status_ok: "ตกลง",
@@ -182,8 +182,8 @@ export default {
         show_orbs_balance: "แสดงยอดคงเหลือ Orbs",
         show_orbs_balance_desc: "เรียกยอดเงินสกุลเงินเสมือนเมื่อเข้าสู่ระบบและเมื่อรีเฟรชด้วยตนเอง",
         game_quest_mode: "โหมดเกม Quest",
-        game_mode_simulate: "โหมดเกมจำลอง (แนะนำ)",
-        game_mode_simulate_desc: "เริ่มกระบวนการเกมจำลองแบบน้ำหนักเบา ปลอดภัยเหมือนเกมจริง",
+        game_mode_simulate: "โหมดเกมจำลอง",
+        game_mode_simulate_desc: "เริ่มกระบวนการเกมจำลองแบบน้ำหนักเบา",
         game_mode_cdp: "CDP โหมดการฉีด",
         game_mode_cdp_desc: "แทรกเข้าไปในไคลเอนต์ Discord ผ่าน CDP ใช้ได้กับทุกเกม ต้องใช้ Discord โดยเปิดใช้งานพอร์ตแก้ไขข้อบกพร่อง",
         game_mode_cdp_unavailable: "CDP ไม่พร้อมใช้งาน เริ่มต้น Discord ด้วย --remote-debugging-port",
@@ -216,7 +216,7 @@ export default {
         cdp_connected: "เชื่อมต่อแล้ว",
         cdp_disconnected: "ไม่ได้เชื่อมต่อ - เริ่ม Discord ด้วยแฟล็กการแก้ไขข้อบกพร่อง",
         cdp_disconnected_short: "ไม่ได้เชื่อมต่อ",
-        cdp_port: "Nitro Basic",
+        cdp_port: "พอร์ตดีบัก",
         cdp_port_hint: "ค่าเริ่มต้น: 9223",
         cdp_sync: "ซิงค์ Discord ข้อมูลลูกค้าผ่าน CDP",
         integration_setup: "ตั้งค่า",
@@ -247,7 +247,7 @@ export default {
         field_system_locale: "สถานที่ของระบบ",
         field_native_build_number: "หมายเลขบิลด์ดั้งเดิม",
         edit_port: "แก้ไข",
-        super_props_mode: "โหมด CDP",
+        super_props_mode: "โหมด X-Super-Properties",
         remote_js: "ระยะไกล",
         default_mode: "ค่าเริ่มต้น",
         super_props_mode_desc: "แหล่งที่มาของข้อมูลประจำตัวคำขอขั้นสูงที่ใช้โดยการโทร API",
@@ -346,7 +346,7 @@ export default {
         title: "ข้อมูลการแก้ไขข้อบกพร่อง",
         description: "ดูพารามิเตอร์โปรแกรมและค่าการกำหนดค่า",
         refresh: "รีเฟรช",
-        token: "Nitro Basic",
+        token: "โทเค็น",
         token_desc: "โทเค็นการตรวจสอบสิทธิ์ Discord ของคุณ",
         session_ids: "รหัสเซสชัน",
         session_ids_desc: "สร้างหนึ่งครั้งต่อการเปิดตัวแอปพลิเคชัน",
@@ -392,8 +392,8 @@ export default {
         fetch: "ดึงข้อมูล"
     },
     user: {
-        nitro: "Nitro Basic",
-        nitro_classic: "Nitro Basic",
+        nitro: "Nitro",
+        nitro_classic: "Nitro Classic",
         nitro_basic: "Nitro Basic"
     },
     header: {

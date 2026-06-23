@@ -1,6 +1,6 @@
 export default {
     general: {
-        title: "Nitro Basic",
+        title: "Discord Quest Helper",
         subtitle: "Discord Quests cihazınızı yönetmek için kontrol paneli",
         welcome: "Discord Quest Helper'a hoş geldiniz",
         login_prompt: "Görevlerinizi yönetmeye başlamak için Discord hesabınızla giriş yapın.",
@@ -138,8 +138,8 @@ export default {
         claimed: "Hak talebinde bulunuldu",
         video: "video",
         play: "Oyna",
-        activity: "Nitro Basic",
-        stream_play: "Nitro Basic",
+        activity: "Etkinlik",
+        stream_play: "Yayın/Oyna",
         orbs: "Discord Orbs",
         decoration: "Discord Avatar Dekorasyonu",
         in_game: "Oyun İçi Ödül"
@@ -155,7 +155,7 @@ export default {
         nav_advanced: "Gelişmiş",
         nav_about: "Hakkında",
         overview_account: "Hesap",
-        overview_mode: "CDP Modu",
+        overview_mode: "Quest Modu",
         overview_discord_client: "Discord İstemci",
         overview_version: "Sürüm",
         overview_not_connected: "Bağlı değil",
@@ -182,8 +182,8 @@ export default {
         show_orbs_balance: "Orbs bakiyesini göster",
         show_orbs_balance_desc: "Oturum açıldığında ve manuel olarak yenilendiğinde sanal para bakiyesini getirir.",
         game_quest_mode: "Oyun Quest Modu",
-        game_mode_simulate: "Simüle Edilmiş Oyun Modu (Önerilen)",
-        game_mode_simulate_desc: "Hafif bir simüle edilmiş oyun sürecini başlatır. Gerçek bir oyun kadar güvenli.",
+        game_mode_simulate: "Simüle Edilmiş Oyun Modu",
+        game_mode_simulate_desc: "Hafif bir simüle edilmiş oyun sürecini başlatır.",
         game_mode_cdp: "CDP Enjeksiyon Modu",
         game_mode_cdp_desc: "CDP aracılığıyla Discord istemcisine enjekte eder. Tüm oyunlar için çalışır. Hata ayıklama bağlantı noktasının etkin olduğu Discord gerektirir.",
         game_mode_cdp_unavailable: "CDP mevcut değil. Discord'i --remote-debugging-port ile başlatın.",
@@ -216,7 +216,7 @@ export default {
         cdp_connected: "Bağlı",
         cdp_disconnected: "Bağlı değil - Discord'ı hata ayıklama bayrağıyla başlatın",
         cdp_disconnected_short: "Bağlı değil",
-        cdp_port: "Nitro Basic",
+        cdp_port: "Hata Ayıklama Portu",
         cdp_port_hint: "Varsayılan: 9223",
         cdp_sync: "Discord İstemci Bilgilerini CDP aracılığıyla senkronize et",
         integration_setup: "Kurulum",
@@ -247,7 +247,7 @@ export default {
         field_system_locale: "Sistem Yerel Ayarı",
         field_native_build_number: "Yerel Yapı Numarası",
         edit_port: "Düzenle",
-        super_props_mode: "CDP Modu",
+        super_props_mode: "X-Super-Properties Modu",
         remote_js: "Uzaktan",
         default_mode: "Varsayılan",
         super_props_mode_desc: "API çağrıları tarafından kullanılan gelişmiş istek kimliği kaynağı.",
@@ -346,7 +346,7 @@ export default {
         title: "Hata Ayıklama Bilgileri",
         description: "Program parametrelerini ve konfigürasyon değerlerini görüntüleyin",
         refresh: "Yenile",
-        token: "Nitro Basic",
+        token: "Token",
         token_desc: "Discord kimlik doğrulama belirteciniz",
         session_ids: "Oturum Kimlikleri",
         session_ids_desc: "Her uygulama açılışında bir kez oluşturulur",
@@ -392,8 +392,8 @@ export default {
         fetch: "Getir"
     },
     user: {
-        nitro: "Nitro Basic",
-        nitro_classic: "Nitro Basic",
+        nitro: "Nitro",
+        nitro_classic: "Nitro Classic",
         nitro_basic: "Nitro Basic"
     },
     header: {

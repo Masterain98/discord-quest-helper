@@ -9,7 +9,7 @@ export default {
         logout: "Keluar",
         loading: "Memuat...",
         refresh: "Segarkan",
-        clear: "Jelas",
+        clear: "Hapus",
     },
     auth: {
         auto_detect: "Deteksi Otomatis Token",
@@ -19,7 +19,7 @@ export default {
         authenticated_as: "Diautentikasi sebagai"
     },
     nav: {
-        home: "Rumah",
+        home: "Beranda",
         game_simulator: "Simulator Permainan",
         settings: "Pengaturan",
         debug: "Men-debug"
@@ -130,7 +130,7 @@ export default {
         pending: "Lokal Tertunda",
     },
     filter: {
-        type: "Ketik",
+        type: "Tipe",
         reward: "Hadiah",
         not_accepted: "Tidak Diterima",
         in_progress: "Sedang Berlangsung",
@@ -155,7 +155,7 @@ export default {
         nav_advanced: "Lanjutan",
         nav_about: "Tentang",
         overview_account: "Akun",
-        overview_mode: "CDP Modus",
+        overview_mode: "Modus Quest",
         overview_discord_client: "Discord Klien",
         overview_version: "Versi",
         overview_not_connected: "Tidak terhubung",
@@ -182,8 +182,8 @@ export default {
         show_orbs_balance: "Tampilkan saldo Orbs.",
         show_orbs_balance_desc: "Mengambil saldo mata uang virtual saat login dan saat disegarkan secara manual.",
         game_quest_mode: "Mode Permainan Quest",
-        game_mode_simulate: "Mode Permainan Simulasi (Disarankan)",
-        game_mode_simulate_desc: "Memulai proses permainan simulasi ringan. Aman seperti game sungguhan.",
+        game_mode_simulate: "Mode Permainan Simulasi",
+        game_mode_simulate_desc: "Memulai proses permainan simulasi ringan.",
         game_mode_cdp: "CDP Mode Injeksi",
         game_mode_cdp_desc: "Disuntikkan ke klien Discord melalui CDP. Berfungsi untuk semua game. Membutuhkan Discord dengan port debug diaktifkan.",
         game_mode_cdp_unavailable: "CDP tidak tersedia. Mulai Discord dengan --remote-debugging-port.",
@@ -247,7 +247,7 @@ export default {
         field_system_locale: "Lokal Sistem",
         field_native_build_number: "Nomor Pembuatan Asli",
         edit_port: "Sunting",
-        super_props_mode: "CDP Modus",
+        super_props_mode: "Modus X-Super-Properties",
         remote_js: "Terpencil",
         default_mode: "Bawaan",
         super_props_mode_desc: "Sumber identitas permintaan tingkat lanjut yang digunakan oleh panggilan API.",
