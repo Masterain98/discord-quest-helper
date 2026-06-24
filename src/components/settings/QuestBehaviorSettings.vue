@@ -97,68 +97,76 @@ const questsStore = useQuestsStore()
         {{ t('settings.video_config_cdp_notice') }}
       </SettingsStatusPanel>
 
-      <div class="rounded-lg border px-4">
-        <SettingRow
-          :label="t('settings.completion_speed')"
-          :description="t('settings.speed_hint')"
-        >
-          <div class="flex items-center gap-3">
-            <input
-              type="range"
-              v-model.number="questsStore.speedMultiplier"
-              min="0.1"
-              max="2.0"
-              step="0.1"
-              :disabled="questsStore.gameQuestMode === 'cdp'"
-              :aria-label="t('settings.completion_speed')"
-              class="w-48 accent-primary disabled:opacity-50"
-            />
-            <Badge variant="outline" :class="settingToneClass.primary.badge">
-              {{ questsStore.speedMultiplier }}x
-            </Badge>
-          </div>
-        </SettingRow>
+      <div class="space-y-3">
+        <Label>{{ t('settings.video_task_settings') }}</Label>
+        <div class="rounded-lg border px-4">
+          <SettingRow
+            :label="t('settings.completion_speed')"
+            :description="t('settings.speed_hint')"
+          >
+            <div class="flex items-center gap-3">
+              <input
+                type="range"
+                v-model.number="questsStore.speedMultiplier"
+                min="0.1"
+                max="2.0"
+                step="0.1"
+                :disabled="questsStore.gameQuestMode === 'cdp'"
+                :aria-label="t('settings.completion_speed')"
+                class="w-48 accent-primary disabled:opacity-50"
+              />
+              <Badge variant="outline" :class="settingToneClass.primary.badge">
+                {{ questsStore.speedMultiplier }}x
+              </Badge>
+            </div>
+          </SettingRow>
 
-        <SettingRow
-          :label="t('settings.request_interval')"
-          :description="t('settings.interval_hint')"
-        >
-          <div class="flex items-center gap-3">
-            <input
-              type="range"
-              v-model.number="questsStore.heartbeatInterval"
-              min="10"
-              max="30"
-              step="1"
-              :disabled="questsStore.gameQuestMode === 'cdp'"
-              :aria-label="t('settings.request_interval')"
-              class="w-48 accent-primary disabled:opacity-50"
-            />
-            <Badge variant="outline" :class="settingToneClass.primary.badge">
-              {{ questsStore.heartbeatInterval }}s
-            </Badge>
-          </div>
-        </SettingRow>
+          <SettingRow
+            :label="t('settings.request_interval')"
+            :description="t('settings.interval_hint')"
+          >
+            <div class="flex items-center gap-3">
+              <input
+                type="range"
+                v-model.number="questsStore.heartbeatInterval"
+                min="10"
+                max="30"
+                step="1"
+                :disabled="questsStore.gameQuestMode === 'cdp'"
+                :aria-label="t('settings.request_interval')"
+                class="w-48 accent-primary disabled:opacity-50"
+              />
+              <Badge variant="outline" :class="settingToneClass.primary.badge">
+                {{ questsStore.heartbeatInterval }}s
+              </Badge>
+            </div>
+          </SettingRow>
+        </div>
+      </div>
 
-        <SettingRow
-          :label="t('settings.game_polling_interval')"
-          :description="t('settings.game_polling_hint')"
-        >
-          <div class="flex items-center gap-3">
-            <input
-              type="range"
-              v-model.number="questsStore.gamePollingInterval"
-              min="30"
-              max="300"
-              step="1"
-              :aria-label="t('settings.game_polling_interval')"
-              class="w-48 accent-primary"
-            />
-            <Badge variant="outline" :class="settingToneClass.violet.badge">
-              {{ questsStore.gamePollingInterval }}s
-            </Badge>
-          </div>
-        </SettingRow>
+      <div class="space-y-3">
+        <Label>{{ t('settings.general_task_settings') }}</Label>
+        <div class="rounded-lg border px-4">
+          <SettingRow
+            :label="t('settings.game_polling_interval')"
+            :description="t('settings.game_polling_hint')"
+          >
+            <div class="flex items-center gap-3">
+              <input
+                type="range"
+                v-model.number="questsStore.gamePollingInterval"
+                min="30"
+                max="300"
+                step="1"
+                :aria-label="t('settings.game_polling_interval')"
+                class="w-48 accent-primary"
+              />
+              <Badge variant="outline" :class="settingToneClass.violet.badge">
+                {{ questsStore.gamePollingInterval }}s
+              </Badge>
+            </div>
+          </SettingRow>
+        </div>
       </div>
 
       <AdvancedDisclosure
