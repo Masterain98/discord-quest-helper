@@ -135,8 +135,11 @@ export function deriveHomeQuestBuckets(quests: Quest[], options: HomeQuestStateO
       continue
     }
 
-    if (completed && !expired) {
-      bucket.readyToClaim.push(quest)
+    if (completed) {
+      bucket.completed.push(quest)
+      if (!expired) {
+        bucket.readyToClaim.push(quest)
+      }
       continue
     }
 
