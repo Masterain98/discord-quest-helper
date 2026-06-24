@@ -411,7 +411,7 @@
   "toast": {
     "error": "Hata",
     "warning": "Uyarı",
-    "info": "Uyarı",
+    "info": "Bilgi",
     "retry": "Yeniden dene",
     "open_settings": "Ayarlar",
     "known": "Anladım",

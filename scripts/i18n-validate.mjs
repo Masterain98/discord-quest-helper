@@ -22,9 +22,10 @@ function readJson(fileName) {
   }
 }
 
-function flattenMessages(value, prefix = '') {
+function flattenMessages(value, prefix = '', errors = []) {
   if (!isPlainObject(value)) {
-    throw new Error(`Expected object at ${prefix || '<root>'}`)
+    errors.push({ path: prefix || '<root>', issue: `expected object, got ${Array.isArray(value) ? 'array' : typeof value}` })
+    return new Map()
   }
 
   const result = new Map()
@@ -38,15 +39,13 @@ function flattenMessages(value, prefix = '') {
     }
 
     if (isPlainObject(child)) {
-      for (const [nestedKey, nestedValue] of flattenMessages(child, nextPath)) {
+      for (const [nestedKey, nestedValue] of flattenMessages(child, nextPath, errors)) {
         result.set(nestedKey, nestedValue)
       }
       continue
     }
 
-    throw new Error(
-      `Invalid value at ${nextPath}: expected string or object, got ${Array.isArray(child) ? 'array' : typeof child}`,
-    )
+    errors.push({ path: nextPath, issue: `expected string or object, got ${Array.isArray(child) ? 'array' : typeof child}` })
   }
 
   return result
@@ -90,17 +89,6 @@ function main() {
     throw new Error(`Missing source locale: ${SOURCE_LOCALE}.json`)
   }
 
-  const baseline = flattenMessages(readJson(`${SOURCE_LOCALE}.json`))
-  const baselineKeys = new Set(baseline.keys())
-
-  const locales = jsonFiles
-    .filter(file => file !== `${SOURCE_LOCALE}.json`)
-    .map(file => ({
-      locale: file.replace(/\.json$/, ''),
-      file,
-      values: flattenMessages(readJson(file)),
-    }))
-
   const missing = []
   const extra = []
   const placeholderMismatch = []
@@ -108,6 +96,36 @@ function main() {
   const markerErrors = []
   const nonStringErrors = []
   const warnings = []
+
+  let baseline
+  try {
+    const flattenErrors = []
+    baseline = flattenMessages(readJson(`${SOURCE_LOCALE}.json`), '', flattenErrors)
+    for (const err of flattenErrors) {
+      nonStringErrors.push({ locale: SOURCE_LOCALE, key: err.path, issue: err.issue })
+    }
+  } catch (error) {
+    nonStringErrors.push({ locale: SOURCE_LOCALE, key: '(load)', issue: error.message })
+    baseline = new Map()
+  }
+  const baselineKeys = new Set(baseline.keys())
+
+  const locales = jsonFiles
+    .filter(file => file !== `${SOURCE_LOCALE}.json`)
+    .map(file => {
+      const locale = file.replace(/\.json$/, '')
+      try {
+        const flattenErrors = []
+        const values = flattenMessages(readJson(file), '', flattenErrors)
+        for (const err of flattenErrors) {
+          nonStringErrors.push({ locale, key: err.path, issue: err.issue })
+        }
+        return { locale, file, values }
+      } catch (error) {
+        nonStringErrors.push({ locale, key: '(load)', issue: error.message })
+        return { locale, file, values: new Map() }
+      }
+    })
 
   for (const [key, value] of baseline) {
     if (!value.trim()) emptyStrings.push({ locale: SOURCE_LOCALE, key })

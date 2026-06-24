@@ -48,4 +48,4 @@ for (const fileName of tsFiles) {
 }
 
 console.log(`\nDone. Converted ${tsFiles.length} files.`)
-console.log('Verify with: node -e "for (const f of require(\'fs\').readdirSync(\'src/locales\').filter(f=>f.endsWith(\'.json\'))) JSON.parse(require(\'fs\').readFileSync(\'src/locales\'+f,\'utf8\')); console.log(\'All JSON valid.\')"')
+console.log('Verify with: node -e "for (const f of require(\'fs\').readdirSync(\'src/locales\').filter(f=>f.endsWith(\'.json\'))) JSON.parse(require(\'fs\').readFileSync(\'src/locales/\'+f,\'utf8\')); console.log(\'All JSON valid.\')"')
