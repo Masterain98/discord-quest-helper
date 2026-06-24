@@ -15,6 +15,7 @@
     "build:runner": "node scripts/build-runner.js",
     "build:cdp-launcher": "node scripts/build-cdp-launcher.js",
     "analyze:har": "python scripts/analyze-har-quests.py",
+    "i18n:check": "node scripts/i18n-validate.mjs",
     "test": "vitest run",
     "test:quest-schema": "python scripts/validate-quest-schema-fixture.py tests/fixtures/quests_2026_06_16.schema.json"
   },
@@ -41,6 +42,7 @@
     "@vitejs/plugin-vue": "^6.0.7",
     "postcss": "^8.5.15",
     "tailwindcss": "^4.2.4",
+    "tsx": "^4.22.4",
     "typescript": "^5.3.0",
     "vite": "^7.3.5",
     "vitest": "^4.0.15",

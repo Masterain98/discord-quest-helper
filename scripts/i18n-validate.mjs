@@ -1,84 +1,54 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import ts from 'typescript'
 
 const ROOT = process.cwd()
-const LOCALE_DIR = path.join(ROOT, 'src/locales')
+const LOCALE_DIR = path.join(ROOT, 'src', 'locales')
 const REPORT_DIR = path.join(ROOT, 'reports')
-const EN_FILE = path.join(LOCALE_DIR, 'en.ts')
+const SOURCE_LOCALE = 'en'
 const PLACEHOLDER_RE = /\{[a-zA-Z0-9_]+\}/g
 const TODO_RE = /\b(?:TODO|FIXME|TRANSLATE|UNTRANSLATED)\b/
 const TOKEN_RE = /\[\[/
 
-function propNameToString(name) {
-  if (ts.isIdentifier(name)) return name.text
-  if (ts.isStringLiteral(name) || ts.isNumericLiteral(name)) return name.text
-  return null
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
-function findDefaultExportObject(sourceFile) {
-  let result = null
+function readJson(fileName) {
+  const filePath = path.join(LOCALE_DIR, fileName)
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'))
+  } catch (error) {
+    throw new Error(`Invalid JSON in ${fileName}: ${error.message}`)
+  }
+}
 
-  function visit(node) {
-    if (ts.isExportAssignment(node) && ts.isObjectLiteralExpression(node.expression)) {
-      result = node.expression
-    }
-    ts.forEachChild(node, visit)
+function flattenMessages(value, prefix = '', errors = []) {
+  if (!isPlainObject(value)) {
+    errors.push({ path: prefix || '<root>', issue: `expected object, got ${Array.isArray(value) ? 'array' : typeof value}` })
+    return new Map()
   }
 
-  visit(sourceFile)
+  const result = new Map()
+
+  for (const [key, child] of Object.entries(value)) {
+    const nextPath = prefix ? `${prefix}.${key}` : key
+
+    if (typeof child === 'string') {
+      result.set(nextPath, child)
+      continue
+    }
+
+    if (isPlainObject(child)) {
+      for (const [nestedKey, nestedValue] of flattenMessages(child, nextPath, errors)) {
+        result.set(nestedKey, nestedValue)
+      }
+      continue
+    }
+
+    errors.push({ path: nextPath, issue: `expected string or object, got ${Array.isArray(child) ? 'array' : typeof child}` })
+  }
+
   return result
-}
-
-function flattenLocaleObject(sourceFile, objectLiteral, prefix = [], out = new Map(), errors = []) {
-  for (const prop of objectLiteral.properties) {
-    if (!ts.isPropertyAssignment(prop)) continue
-
-    const name = propNameToString(prop.name)
-    if (!name) continue
-
-    const next = [...prefix, name]
-    const key = next.join('.')
-    const init = prop.initializer
-    const line = ts.getLineAndCharacterOfPosition(sourceFile, prop.getStart(sourceFile)).line + 1
-
-    if (ts.isObjectLiteralExpression(init)) {
-      flattenLocaleObject(sourceFile, init, next, out, errors)
-    } else if (ts.isStringLiteral(init) || ts.isNoSubstitutionTemplateLiteral(init)) {
-      out.set(key, {
-        key,
-        value: init.text,
-        line,
-      })
-    } else {
-      errors.push({
-        key,
-        line,
-        issue: 'leaf value is not a string literal',
-      })
-    }
-  }
-
-  return { values: out, errors }
-}
-
-function readLocale(file) {
-  const full = path.join(LOCALE_DIR, file)
-  const text = fs.readFileSync(full, 'utf8')
-  const sourceFile = ts.createSourceFile(full, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
-  const obj = findDefaultExportObject(sourceFile)
-
-  if (!obj) {
-    throw new Error(`Cannot find default export object in ${file}`)
-  }
-
-  const { values, errors } = flattenLocaleObject(sourceFile, obj)
-  return {
-    locale: file.replace(/\.ts$/, ''),
-    file,
-    values,
-    errors,
-  }
 }
 
 function placeholders(value) {
@@ -100,17 +70,24 @@ function sortedDiff(a, b) {
 function main() {
   fs.mkdirSync(REPORT_DIR, { recursive: true })
 
-  const localeFiles = fs.readdirSync(LOCALE_DIR)
-    .filter(file => file.endsWith('.ts'))
+  const jsonFiles = fs.readdirSync(LOCALE_DIR)
+    .filter(file => file.endsWith('.json'))
     .sort((a, b) => {
-      if (a === 'en.ts') return -1
-      if (b === 'en.ts') return 1
+      if (a === `${SOURCE_LOCALE}.json`) return -1
+      if (b === `${SOURCE_LOCALE}.json`) return 1
       return a.localeCompare(b)
     })
 
-  const baseline = readLocale(path.basename(EN_FILE))
-  const baselineKeys = new Set(baseline.values.keys())
-  const locales = localeFiles.filter(file => file !== 'en.ts').map(readLocale)
+  const tsLocaleFiles = fs.readdirSync(LOCALE_DIR)
+    .filter(file => file.endsWith('.ts') && file !== 'meta.ts')
+
+  if (tsLocaleFiles.length > 0) {
+    console.error(`WARNING: Unexpected TypeScript locale files remain: ${tsLocaleFiles.join(', ')}`)
+  }
+
+  if (!jsonFiles.includes(`${SOURCE_LOCALE}.json`)) {
+    throw new Error(`Missing source locale: ${SOURCE_LOCALE}.json`)
+  }
 
   const missing = []
   const extra = []
@@ -120,14 +97,40 @@ function main() {
   const nonStringErrors = []
   const warnings = []
 
-  for (const error of baseline.errors) {
-    nonStringErrors.push({ locale: 'en', ...error })
+  let baseline
+  try {
+    const flattenErrors = []
+    baseline = flattenMessages(readJson(`${SOURCE_LOCALE}.json`), '', flattenErrors)
+    for (const err of flattenErrors) {
+      nonStringErrors.push({ locale: SOURCE_LOCALE, key: err.path, issue: err.issue })
+    }
+  } catch (error) {
+    nonStringErrors.push({ locale: SOURCE_LOCALE, key: '(load)', issue: error.message })
+    baseline = new Map()
   }
+  const baselineKeys = new Set(baseline.keys())
 
-  for (const item of baseline.values.values()) {
-    if (!item.value.trim()) emptyStrings.push({ locale: 'en', key: item.key, line: item.line })
-    if (TODO_RE.test(item.value) || TOKEN_RE.test(item.value)) {
-      markerErrors.push({ locale: 'en', key: item.key, line: item.line, value: item.value })
+  const locales = jsonFiles
+    .filter(file => file !== `${SOURCE_LOCALE}.json`)
+    .map(file => {
+      const locale = file.replace(/\.json$/, '')
+      try {
+        const flattenErrors = []
+        const values = flattenMessages(readJson(file), '', flattenErrors)
+        for (const err of flattenErrors) {
+          nonStringErrors.push({ locale, key: err.path, issue: err.issue })
+        }
+        return { locale, file, values }
+      } catch (error) {
+        nonStringErrors.push({ locale, key: '(load)', issue: error.message })
+        return { locale, file, values: new Map() }
+      }
+    })
+
+  for (const [key, value] of baseline) {
+    if (!value.trim()) emptyStrings.push({ locale: SOURCE_LOCALE, key })
+    if (TODO_RE.test(value) || TOKEN_RE.test(value)) {
+      markerErrors.push({ locale: SOURCE_LOCALE, key, value })
     }
   }
 
@@ -142,21 +145,17 @@ function main() {
       extra.push({ locale: locale.locale, key })
     }
 
-    for (const error of locale.errors) {
-      nonStringErrors.push({ locale: locale.locale, ...error })
-    }
-
-    for (const [key, item] of locale.values) {
-      if (!item.value.trim()) emptyStrings.push({ locale: locale.locale, key, line: item.line })
-      if (TODO_RE.test(item.value) || TOKEN_RE.test(item.value)) {
-        markerErrors.push({ locale: locale.locale, key, line: item.line, value: item.value })
+    for (const [key, value] of locale.values) {
+      if (!value.trim()) emptyStrings.push({ locale: locale.locale, key })
+      if (TODO_RE.test(value) || TOKEN_RE.test(value)) {
+        markerErrors.push({ locale: locale.locale, key, value })
       }
 
-      const enItem = baseline.values.get(key)
-      if (!enItem) continue
+      const enValue = baseline.get(key)
+      if (!enValue) continue
 
-      const enPlaceholders = placeholders(enItem.value)
-      const targetPlaceholders = placeholders(item.value)
+      const enPlaceholders = placeholders(enValue)
+      const targetPlaceholders = placeholders(value)
       if (!sameSet(enPlaceholders, targetPlaceholders)) {
         placeholderMismatch.push({
           locale: locale.locale,
@@ -167,16 +166,16 @@ function main() {
       }
 
       if (
-        locale.locale !== 'en'
-        && item.value === enItem.value
-        && item.value.length > 18
-        && !/^(Discord|CDP|API|RPC|Token|X-Super-Properties|x-super-properties|Tauri|Vue 3|TailwindCSS|vue-i18n|shadcn-vue)/.test(item.value)
+        locale.locale !== SOURCE_LOCALE
+        && value === enValue
+        && value.length > 18
+        && !/^(Discord|CDP|API|RPC|Token|X-Super-Properties|x-super-properties|Tauri|Vue 3|TailwindCSS|vue-i18n|shadcn-vue)/.test(value)
       ) {
         warnings.push({
           locale: locale.locale,
           key,
           issue: 'value matches English baseline',
-          value: item.value,
+          value,
         })
       }
     }
@@ -186,7 +185,7 @@ function main() {
   const report = [
     '# i18n validation report',
     '',
-    'Baseline: src/locales/en.ts',
+    `Baseline: src/locales/${SOURCE_LOCALE}.json`,
     '',
     'Locales checked:',
     ...locales.map(locale => `- ${locale.locale}`),
@@ -216,15 +215,15 @@ function main() {
     '',
     '## Empty strings',
     '',
-    ...(emptyStrings.length ? emptyStrings.map(item => `- ${item.locale}: \`${item.key}\` line ${item.line}`) : ['None.']),
+    ...(emptyStrings.length ? emptyStrings.map(item => `- ${item.locale}: \`${item.key}\``) : ['None.']),
     '',
     '## Marker errors',
     '',
-    ...(markerErrors.length ? markerErrors.map(item => `- ${item.locale}: \`${item.key}\` line ${item.line}`) : ['None.']),
+    ...(markerErrors.length ? markerErrors.map(item => `- ${item.locale}: \`${item.key}\``) : ['None.']),
     '',
     '## Non-string leaf values',
     '',
-    ...(nonStringErrors.length ? nonStringErrors.map(item => `- ${item.locale}: \`${item.key}\` line ${item.line} - ${item.issue}`) : ['None.']),
+    ...(nonStringErrors.length ? nonStringErrors.map(item => `- ${item.locale}: \`${item.key}\` - ${item.issue}`) : ['None.']),
     '',
     '## Soft warnings',
     '',
