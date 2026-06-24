@@ -203,6 +203,7 @@ export default {
         credits: "Kredyty",
         credits_desc: "Na podstawie pracy:",
         tech_stack: "Stos technologii",
+        version_prerelease: "Beta",
         version_latest: "Najnowsze",
         version_checking: "Sprawdzam...",
         diagnostics: "Diagnostyka",

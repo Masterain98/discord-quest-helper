@@ -237,13 +237,13 @@ impl Default for SuperProperties {
             browser_user_agent: discord_user_agent(DEFAULT_CLIENT_VERSION),
             browser_version: DEFAULT_ELECTRON_VERSION.to_string(),
             os_sdk_version: Some("19045".to_string()),
-            // FALLBACK BUILD NUMBER: Captured ~May 2026. This hardcoded value is used when
+            // FALLBACK BUILD NUMBER: This hardcoded value is used when
             // CDP extraction and remote JS fetch both fail. May need periodic updates as
             // Discord releases new versions. The actual build number is fetched dynamically
             // from Discord when possible.
             // Default build_number
-            // May 21st, 2026
-            client_build_number: 565311,
+            // June 24th, 2026
+            client_build_number: 567600,
             native_build_number: Some(84410),
             client_event_source: None,
             launch_signature: None,

@@ -8,6 +8,28 @@ export interface ReleaseInfo {
     name: string
 }
 
+/**
+ * Parse a version string like "0.9.0-rc1" into its numeric components [0, 9, 0].
+ * Pre-release suffixes (e.g. -rc1, -beta2) are stripped before parsing.
+ */
+function parseSemver(version: string): [number, number, number] {
+    const cleaned = version.replace(/^v/, '').split('-')[0]
+    const parts = cleaned.split('.').map(Number)
+    return [parts[0] || 0, parts[1] || 0, parts[2] || 0]
+}
+
+/**
+ * Compare two semver strings. Returns -1 / 0 / 1.
+ */
+function compareSemver(a: string, b: string): -1 | 0 | 1 {
+    const [a0, a1, a2] = parseSemver(a)
+    const [b0, b1, b2] = parseSemver(b)
+    if (a0 !== b0) return a0 < b0 ? -1 : 1
+    if (a1 !== b1) return a1 < b1 ? -1 : 1
+    if (a2 !== b2) return a2 < b2 ? -1 : 1
+    return 0
+}
+
 export const useVersionStore = defineStore('version', () => {
     const currentVersion = ref<string>('Dev')
     const latestRelease = ref<ReleaseInfo | null>(null)
@@ -16,12 +38,15 @@ export const useVersionStore = defineStore('version', () => {
     const hasChecked = ref(false)
     const checkPreRelease = ref(localStorage.getItem('checkPreRelease') === 'true')
 
+    const isPreRelease = computed(() =>
+        currentVersion.value !== 'Dev' && currentVersion.value.includes('rc'),
+    )
+
     const hasUpdate = computed(() => {
         if (!latestRelease.value || currentVersion.value === 'Dev') return false
-        // Compare versions (strip 'v' prefix if present)
         const current = currentVersion.value.replace(/^v/, '')
         const latest = latestRelease.value.tag_name.replace(/^v/, '')
-        return latest !== current
+        return compareSemver(latest, current) > 0
     })
 
     const isLatest = computed(() => {
@@ -102,6 +127,11 @@ export const useVersionStore = defineStore('version', () => {
 
     async function initialize() {
         await loadCurrentVersion()
+        // Force pre-release update checks when running an RC build,
+        // without persisting the user's original setting.
+        if (isPreRelease.value) {
+            checkPreRelease.value = true
+        }
         await checkForUpdate()
     }
 
@@ -113,6 +143,7 @@ export const useVersionStore = defineStore('version', () => {
         hasChecked,
         hasUpdate,
         isLatest,
+        isPreRelease,
         checkPreRelease,
         loadCurrentVersion,
         checkForUpdate,

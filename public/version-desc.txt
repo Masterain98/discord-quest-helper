@@ -4,7 +4,7 @@
 1. Added Activity quest support via CDP, allowing direct launch and completion from the app.
 2. Added a CDP Launcher for one-click Discord startup with CDP support. Desktop shortcuts will no longer become invalid after Discord updates.
 3. Added batch actions to accept or complete multiple quests at once.
-4. Added update check support for beta versions
+4. Added update check support for beta versions; enhanced the version checker.
 
 ### 🎨 UI/UX Improvements
 1. Redesigned Home page with a Quest Dashboard showing summary cards for available, running, and ready-to-claim quests.
@@ -22,6 +22,7 @@
 1. Enhanced CDP quest completion with Activity quest support and improved error handling.
 2. Updated Discord API client with better token extraction and super properties handling.
 3. Added i18n validation and audit scripts for translation quality assurance.
-4. Added 9 new languages: German, French, Indonesian, Polish, Portuguese (Brazil), Portuguese (Portugal), Thai, Turkish, and Vietnamese.
-5. Bump default `client_build_number` to `565311`, `native_build_number` to `84410`, `client_version` to `1.0.9242`.
-6. Bump Rust and Vue dependencies versions
+4. Added a new icon for CDP Launcher.
+5. Added 9 new languages: German, French, Indonesian, Polish, Portuguese (Brazil), Portuguese (Portugal), Thai, Turkish, and Vietnamese.
+6. Bump default `client_build_number` to `567600`.
+7. Bump Rust and Vue dependencies versions

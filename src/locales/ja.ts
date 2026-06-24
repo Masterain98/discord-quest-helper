@@ -203,6 +203,7 @@ export default {
         credits: "クレジット",
         credits_desc: "以下の作品に基づいています：",
         tech_stack: "技術スタック",
+        version_prerelease: "ベータ版",
         version_latest: "最新版",
         version_checking: "確認中...",
         diagnostics: "診断",

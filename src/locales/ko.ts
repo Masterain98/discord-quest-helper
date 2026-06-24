@@ -203,6 +203,7 @@ export default {
         credits: "크레딧",
         credits_desc: "다음 작업을 기반으로 함:",
         tech_stack: "기술 스택",
+        version_prerelease: "베타",
         version_latest: "최신 버전",
         version_checking: "확인 중...",
         diagnostics: "진단",

@@ -51,9 +51,11 @@ const cards = computed(() => [
     tone: 'primary' as SettingsTone,
     badge: versionStore.isChecking
       ? t('settings.version_checking')
-      : versionStore.hasUpdate
-        ? t('version.update_available')
-        : t('settings.version_latest'),
+      : versionStore.isPreRelease
+        ? t('settings.version_prerelease')
+        : versionStore.hasUpdate
+          ? t('version.update_available')
+          : t('settings.version_latest'),
   },
 ])
 

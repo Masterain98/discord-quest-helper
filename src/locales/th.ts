@@ -203,6 +203,7 @@ export default {
         credits: "เครดิต",
         credits_desc: "อ้างอิงจากงานโดย:",
         tech_stack: "เทคสแต็ค",
+        version_prerelease: "เบต้า",
         version_latest: "ล่าสุด",
         version_checking: "กำลังตรวจสอบ...",
         diagnostics: "การวินิจฉัย",

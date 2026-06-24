@@ -203,6 +203,7 @@ export default {
         credits: "Благодарности",
         credits_desc: "Основано на работе:",
         tech_stack: "Технологии",
+        version_prerelease: "Бета",
         version_latest: "Последняя",
         version_checking: "Проверка...",
         diagnostics: "Диагностика",

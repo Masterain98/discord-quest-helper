@@ -203,6 +203,7 @@ export default {
         credits: "Kredi",
         credits_desc: "Tarafından yapılan çalışmaya dayanmaktadır:",
         tech_stack: "Teknoloji Yığını",
+        version_prerelease: "Beta",
         version_latest: "En son",
         version_checking: "Kontrol ediliyor...",
         diagnostics: "Teşhis",

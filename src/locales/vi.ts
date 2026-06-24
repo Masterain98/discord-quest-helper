@@ -203,6 +203,7 @@ export default {
         credits: "Tín dụng",
         credits_desc: "Dựa trên tác phẩm của:",
         tech_stack: "ngăn xếp công nghệ",
+        version_prerelease: "Beta",
         version_latest: "Mới nhất",
         version_checking: "Đang kiểm tra...",
         diagnostics: "Chẩn đoán",

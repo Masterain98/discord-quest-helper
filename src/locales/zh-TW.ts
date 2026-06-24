@@ -203,6 +203,7 @@ export default {
         credits: "致謝",
         credits_desc: "基於以下專案：",
         tech_stack: "技術栈",
+        version_prerelease: "測試版",
         version_latest: "最新版本",
         version_checking: "檢查中...",
         diagnostics: "診斷",

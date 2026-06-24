@@ -203,6 +203,7 @@ export default {
         credits: "Kredit",
         credits_desc: "Berdasarkan pekerjaan oleh:",
         tech_stack: "Tumpukan Teknologi",
+        version_prerelease: "Beta",
         version_latest: "Terbaru",
         version_checking: "Memeriksa...",
         diagnostics: "Diagnostik",

@@ -151,6 +151,9 @@ function removeBubble(id: number) {
               @animationend="removeBubble(bubble.id)"
             />
           </span>
+          <Badge v-if="versionStore.isPreRelease" variant="outline" :class="cn('gap-1', settingToneClass.warning.badge)">
+            {{ t('settings.version_prerelease') }}
+          </Badge>
           <Badge v-if="versionStore.isLatest" variant="outline" :class="cn('gap-1', settingToneClass.success.badge)">
             <CheckCircle2 class="h-3 w-3" />
             {{ t('settings.version_latest') }}
