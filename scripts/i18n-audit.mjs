@@ -1,9 +1,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import ts from 'typescript'
 
 const ROOT = process.cwd()
-const EN_FILE = path.join(ROOT, 'src/locales/en.ts')
+const EN_FILE = path.join(ROOT, 'src/locales/en.json')
 const REPORT_DIR = path.join(ROOT, 'reports')
 
 const SOURCE_EXTS = new Set(['.ts', '.tsx', '.js', '.jsx', '.vue', '.rs', '.mjs', '.cjs'])
@@ -31,46 +30,31 @@ function walk(dir, files = []) {
   return files
 }
 
-function findDefaultExportObject(sourceFile) {
-  let result = null
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
 
-  function visit(node) {
-    if (ts.isExportAssignment(node) && ts.isObjectLiteralExpression(node.expression)) {
-      result = node.expression
-    }
-    ts.forEachChild(node, visit)
+function flattenMessages(value, prefix = '', out = new Map()) {
+  if (!isPlainObject(value)) {
+    throw new Error(`Expected object at ${prefix || '<root>'}`)
   }
 
-  visit(sourceFile)
-  return result
-}
+  for (const [key, child] of Object.entries(value)) {
+    const nextPath = prefix ? `${prefix}.${key}` : key
 
-function propNameToString(name) {
-  if (ts.isIdentifier(name)) return name.text
-  if (ts.isStringLiteral(name) || ts.isNumericLiteral(name)) return name.text
-  return null
-}
-
-function flattenLocaleObject(objectLiteral, prefix = [], out = new Map()) {
-  for (const prop of objectLiteral.properties) {
-    if (!ts.isPropertyAssignment(prop)) continue
-
-    const name = propNameToString(prop.name)
-    if (!name) continue
-
-    const next = [...prefix, name]
-    const init = prop.initializer
-
-    if (ts.isObjectLiteralExpression(init)) {
-      flattenLocaleObject(init, next, out)
-    } else if (ts.isStringLiteral(init) || ts.isNoSubstitutionTemplateLiteral(init)) {
-      const key = next.join('.')
-      out.set(key, {
-        key,
-        value: init.text,
-        line: ts.getLineAndCharacterOfPosition(init.getSourceFile(), prop.getStart()).line + 1,
-      })
+    if (typeof child === 'string') {
+      out.set(nextPath, { key: nextPath, value: child })
+      continue
     }
+
+    if (isPlainObject(child)) {
+      flattenMessages(child, nextPath, out)
+      continue
+    }
+
+    throw new Error(
+      `Invalid value at ${nextPath}: expected string or object, got ${Array.isArray(child) ? 'array' : typeof child}`,
+    )
   }
 
   return out
@@ -78,14 +62,14 @@ function flattenLocaleObject(objectLiteral, prefix = [], out = new Map()) {
 
 function extractEnglishKeys() {
   const text = fs.readFileSync(EN_FILE, 'utf8')
-  const sourceFile = ts.createSourceFile(EN_FILE, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
-  const obj = findDefaultExportObject(sourceFile)
-
-  if (!obj) {
-    throw new Error('Cannot find default export object in src/locales/en.ts')
+  let parsed
+  try {
+    parsed = JSON.parse(text)
+  } catch (error) {
+    throw new Error(`Invalid JSON in en.json: ${error.message}`)
   }
 
-  return flattenLocaleObject(obj)
+  return flattenMessages(parsed)
 }
 
 function collectSourceText(files) {

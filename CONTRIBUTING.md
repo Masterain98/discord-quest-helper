@@ -61,7 +61,7 @@ discord-quest-helper/
 │   ├── components/               # Reusable UI components
 │   ├── views/                    # Page views (Home, Settings, GameSimulator)
 │   ├── stores/                   # Pinia state management
-│   ├── locales/                  # i18n translations (7 languages)
+│   ├── locales/                  # i18n translations (16 languages, JSON)
 │   ├── api/tauri.ts              # Tauri IPC bridge
 │   └── App.vue                   # Root component
 ├── src-tauri/                    # Rust backend
@@ -165,16 +165,22 @@ async fn create_simulated_game(...) -> Result<(), String> { ... }
 
 ### Internationalization
 
+- All UI text must use `vue-i18n` keys.
+- Source strings live in `src/locales/en.json`.
+- Translations live in `src/locales/{locale}.json`.
+- Do not edit generated Crowdin translation files unless fixing an urgent issue.
+- Keep interpolation placeholders such as `{count}` and `{name}` unchanged.
+- Console logs and code comments remain English only.
+
 ```typescript
 // All UI text via vue-i18n
 const { t } = useI18n()
 
 // Template usage
 {{ t('settings.title') }}
-
-// Locale files: src/locales/{lang}.ts
-// Console logs/comments: English only
 ```
+
+Run `pnpm run i18n:check` before submitting translation changes.
 
 ---
 
