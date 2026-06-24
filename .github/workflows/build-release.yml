@@ -92,6 +92,9 @@ jobs:
       - name: Run frontend tests
         run: pnpm test
 
+      - name: Sync version from public/version.txt
+        run: pnpm run sync-version
+
       - name: Build runner sidecar
         run: pnpm run build:runner
 

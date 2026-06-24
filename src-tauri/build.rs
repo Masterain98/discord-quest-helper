@@ -73,6 +73,9 @@ fn main() {
     println!("cargo:rerun-if-changed=data/{}", runner_exe_name);
     println!("cargo:rerun-if-changed=data/runner-version.txt");
     println!("cargo:rerun-if-changed={}", launcher_path.display());
+    // Re-run when the canonical version file changes (sync-version patches
+    // Cargo.toml from this file before each build)
+    println!("cargo:rerun-if-changed=../public/version.txt");
 
     tauri_build::build()
 }
