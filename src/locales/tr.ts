@@ -46,7 +46,7 @@ export default {
         summary_ready_to_claim: "Hak talebinde bulunmaya hazır",
         summary_attention: "Dikkat gerekli",
         accept_all: "Tümünü Kabul Et",
-        accept_all_safe: "Tüm güvenli görevleri kabul et",
+        accept_all_quests: "Tüm questleri kabul et",
         complete_all_video: "Tüm Videoyu Tamamla Quests",
         complete_all_game: "Tüm Oyunu Tamamla Quests",
         complete_all_tasks: "Tümünü Tamamla Quests",

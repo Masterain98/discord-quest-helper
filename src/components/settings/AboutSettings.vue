@@ -134,9 +134,9 @@ function removeBubble(id: number) {
       tone="primary"
       content-class="space-y-4 text-sm text-muted-foreground"
     >
-        <div class="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
+        <div class="flex flex-wrap items-center gap-2">
           <span
-            class="relative cursor-pointer select-none transition-transform active:scale-95"
+            class="relative cursor-pointer select-none text-base font-semibold text-foreground transition-transform active:scale-95"
             @click="handleVersionTapWithBubble"
             title="Version Info"
           >
@@ -165,17 +165,7 @@ function removeBubble(id: number) {
             <CheckCircle2 class="h-3 w-3" />
             {{ t('settings.debug_already_unlocked') }}
           </Badge>
-          <Button
-            v-if="debugModeEnabled"
-            variant="outline"
-            size="sm"
-            :class="cn('h-7 gap-1 px-2 text-xs', settingToneClass.danger.buttonSoft)"
-            @click="disableDialogOpen = true"
-          >
-            <XCircle class="h-3 w-3" />
-            {{ t('settings.disable_developer_mode') }}
-          </Button>
-          <span v-else-if="showDebugUnlockHint" class="animate-pulse text-xs font-medium text-primary">
+          <span v-if="!debugModeEnabled && showDebugUnlockHint" class="animate-pulse text-xs font-medium text-primary">
             {{ t('settings.debug_unlock_hint', { steps: 7 - versionTapCount }) }}
           </span>
         </div>
@@ -205,12 +195,14 @@ function removeBubble(id: number) {
             {{ t('settings.feedback') }}
           </Button>
           <Button
+            v-if="debugModeEnabled"
             variant="outline"
             size="sm"
-            :class="settingToneClass.primary.buttonSoft"
-            @click="openExternal('https://discord-quest-helper.dal.ao/')"
+            :class="cn('gap-1', settingToneClass.danger.buttonSoft)"
+            @click="disableDialogOpen = true"
           >
-            {{ t('settings.website') }}
+            <XCircle class="h-3 w-3" />
+            {{ t('settings.disable_developer_mode') }}
           </Button>
         </div>
 
@@ -284,7 +276,7 @@ function removeBubble(id: number) {
             <li>
               <a href="#" @click.prevent="openExternal('https://docs.discord.food/')" class="flex items-center justify-between rounded-lg border bg-card px-3 py-2 text-sm transition-colors hover:bg-muted/50">
                 <span class="flex min-w-0 items-center gap-2">
-                  <Link2 class="h-4 w-4 shrink-0" />
+                  <img src="/icons/discord-food-docs.png" alt="docs.discord.food" class="h-4 w-4 shrink-0 rounded-sm" />
                   <span class="truncate">docs.discord.food</span>
                 </span>
                 <ExternalLink class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />

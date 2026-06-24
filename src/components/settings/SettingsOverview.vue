@@ -76,14 +76,6 @@ const recommendation = computed<{ text: string, action: string, section: Setting
     }
   }
 
-  if (versionStore.hasUpdate) {
-    return {
-      text: t('settings.recommend_update'),
-      action: t('settings.nav_about'),
-      section: 'about',
-    }
-  }
-
   return null
 })
 </script>

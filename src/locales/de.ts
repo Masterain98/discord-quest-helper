@@ -46,7 +46,7 @@ export default {
         summary_ready_to_claim: "Bereit zum Anspruch",
         summary_attention: "Aufmerksamkeit erforderlich",
         accept_all: "Alle akzeptieren",
-        accept_all_safe: "Akzeptiere alle sicheren Quests",
+        accept_all_quests: "Alle Quests akzeptieren",
         complete_all_video: "Schließe alle Videos ab Quests",
         complete_all_game: "Schließe das gesamte Spiel ab Quests",
         complete_all_tasks: "Schließe alle ab Quests",

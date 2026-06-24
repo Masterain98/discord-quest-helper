@@ -46,7 +46,7 @@ export default {
         summary_ready_to_claim: "Siap untuk diklaim",
         summary_attention: "Dibutuhkan perhatian",
         accept_all: "Terima Semua",
-        accept_all_safe: "Terima semua misi aman",
+        accept_all_quests: "Terima semua quest",
         complete_all_video: "Selesaikan Semua Video Quests",
         complete_all_game: "Selesaikan Semua Game Quests",
         complete_all_tasks: "Selesaikan Semua Quests",

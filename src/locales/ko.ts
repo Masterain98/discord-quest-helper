@@ -46,7 +46,7 @@ export default {
         summary_ready_to_claim: "청구 준비 완료",
         summary_attention: "주의가 필요함",
         accept_all: "모두 수락",
-        accept_all_safe: "모든 안전한 퀘스트를 수락하세요",
+        accept_all_quests: "모든 퀘스트 수락",
         complete_all_video: "모든 비디오 퀘스트 완료",
         complete_all_game: "모든 게임 퀘스트 완료",
         complete_all_tasks: "모든 퀘스트 완료",

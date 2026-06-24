@@ -1012,8 +1012,7 @@ const nextBestAction = computed<HomeNextAction>(() => {
       state: 'accept',
       title: t('home.next_accept_title', { count: questBuckets.value.toAccept.length }),
       description: t('home.next_accept_desc', { name: recommendedAcceptQuest.value.config.messages.quest_name }),
-      primaryLabel: questBuckets.value.toAccept.length > 1 ? t('home.accept_all_safe') : t('home.accept_quest'),
-      secondaryLabel: t('home.view_to_accept'),
+      primaryLabel: questBuckets.value.toAccept.length > 1 ? t('home.accept_all_quests') : t('home.accept_quest'),
       primaryDisabled: isBatchAccepting.value || acceptingQuest.value === recommendedAcceptQuest.value.id,
       targetQuest: recommendedAcceptQuest.value,
     }

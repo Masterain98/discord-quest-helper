@@ -46,7 +46,7 @@ export default {
         summary_ready_to_claim: "Prêt à réclamer",
         summary_attention: "Attention nécessaire",
         accept_all: "Accepter tout",
-        accept_all_safe: "Acceptez toutes les quêtes sécurisées",
+        accept_all_quests: "Accepter toutes les quêtes",
         complete_all_video: "Terminer toutes les vidéos Quests",
         complete_all_game: "Terminer tous les jeux Quests",
         complete_all_tasks: "Terminer tout Quests",

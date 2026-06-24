@@ -46,7 +46,7 @@ export default {
         summary_ready_to_claim: "請求する準備ができています",
         summary_attention: "注意が必要です",
         accept_all: "すべて受け入れる",
-        accept_all_safe: "安全なクエストをすべて受け入れる",
+        accept_all_quests: "すべてのクエストを受け入れる",
         complete_all_video: "すべての動画クエストを完了",
         complete_all_game: "すべてのゲームクエストを完了",
         complete_all_tasks: "すべてのタスクを完了",

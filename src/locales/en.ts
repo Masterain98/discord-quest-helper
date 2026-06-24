@@ -46,7 +46,7 @@ export default {
         summary_ready_to_claim: "Ready to claim",
         summary_attention: "Attention needed",
         accept_all: "Accept All",
-        accept_all_safe: "Accept all safe quests",
+        accept_all_quests: "Accept All Quests",
         complete_all_video: "Complete All Video Quests",
         complete_all_game: "Complete All Game Quests",
         complete_all_tasks: "Complete All Quests",

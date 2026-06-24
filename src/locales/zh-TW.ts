@@ -46,7 +46,7 @@ export default {
         summary_ready_to_claim: "準備索賠",
         summary_attention: "需要注意",
         accept_all: "全部接受",
-        accept_all_safe: "接受所有安全任務",
+        accept_all_quests: "接受全部任務",
         complete_all_video: "完成所有影片任務",
         complete_all_game: "完成全部遊戲任務",
         complete_all_tasks: "完成全部任務",

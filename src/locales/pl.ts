@@ -46,7 +46,7 @@ export default {
         summary_ready_to_claim: "Gotowy do reklamacji",
         summary_attention: "Potrzebna uwaga",
         accept_all: "Zaakceptuj wszystko",
-        accept_all_safe: "Zaakceptuj wszystkie bezpieczne zadania",
+        accept_all_quests: "Zaakceptuj wszystkie questy",
         complete_all_video: "Ukończ cały film Quests",
         complete_all_game: "Ukończ całą grę Quests",
         complete_all_tasks: "Ukończ wszystko Quests",

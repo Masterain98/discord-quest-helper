@@ -46,7 +46,7 @@ export default {
         summary_ready_to_claim: "Sẵn sàng yêu cầu bồi thường",
         summary_attention: "Cần chú ý",
         accept_all: "Chấp nhận tất cả",
-        accept_all_safe: "Chấp nhận mọi nhiệm vụ an toàn",
+        accept_all_quests: "Chấp nhận tất cả quest",
         complete_all_video: "Hoàn thành tất cả video Quests",
         complete_all_game: "Hoàn thành tất cả trò chơi Quests",
         complete_all_tasks: "Hoàn thành tất cả Quests",

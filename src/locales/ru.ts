@@ -46,7 +46,7 @@ export default {
         summary_ready_to_claim: "Готов предъявить претензии",
         summary_attention: "Требуется внимание",
         accept_all: "Принять все",
-        accept_all_safe: "Принять все безопасные квесты",
+        accept_all_quests: "Принять все квесты",
         complete_all_video: "Завершить все видео квесты",
         complete_all_game: "Завершить все игровые квесты",
         complete_all_tasks: "Завершить все квесты",
