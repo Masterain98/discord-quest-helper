@@ -40,9 +40,10 @@ function formatMultiplier(multiplier: number): string {
   return `${Number(multiplier.toFixed(2)).toString()}x`
 }
 
-export function formatQuestReward(reward: QuestReward, userStatus?: QuestUserStatus | null): QuestRewardView {
+export function formatQuestReward(reward: QuestReward, userStatus?: QuestUserStatus | null, userPremiumType?: number | null): QuestRewardView {
   const name = reward.messages?.name || 'Reward'
-  const multiplier = getPremiumMultiplier(reward)
+  const hasNitro = !!userPremiumType && userPremiumType > 0
+  const multiplier = hasNitro ? getPremiumMultiplier(reward) : null
   const claimedOrbs = userStatus?.orb_quantity_claimed
   const claimed = !!userStatus?.claimed_at
 
@@ -51,7 +52,7 @@ export function formatQuestReward(reward: QuestReward, userStatus?: QuestUserSta
     const premium = reward.premium_orb_quantity
     const amountText = claimed && claimedOrbs != null
       ? `Claimed ${claimedOrbs.toLocaleString()} Orbs`
-      : base != null && premium != null && premium > base
+      : hasNitro && base != null && premium != null && premium > base
         ? `${base.toLocaleString()} -> ${premium.toLocaleString()} Orbs`
         : base != null
           ? `${base.toLocaleString()} Orbs`
@@ -89,8 +90,8 @@ export function formatQuestReward(reward: QuestReward, userStatus?: QuestUserSta
   }
 }
 
-export function getQuestRewardViews(quest: Quest): QuestRewardView[] {
-  return (quest.config.rewards_config?.rewards || []).map(reward => formatQuestReward(reward, quest.user_status))
+export function getQuestRewardViews(quest: Quest, userPremiumType?: number | null): QuestRewardView[] {
+  return (quest.config.rewards_config?.rewards || []).map(reward => formatQuestReward(reward, quest.user_status, userPremiumType))
 }
 
 export function getQuestRewardCategory(quest: Quest): 'orbs' | 'avatar' | 'ingame' {

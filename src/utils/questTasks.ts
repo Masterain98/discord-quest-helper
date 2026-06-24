@@ -122,5 +122,6 @@ export function firstStartableTask(quest: Quest): QuestTaskView | null {
   return tasks.find(task => isVideoTask(task) && task.target != null && task.target > 0)
     ?? tasks.find(task => isDesktopPlayTask(task) && task.target != null && task.target > 0)
     ?? tasks.find(task => isStreamTask(task) && task.target != null && task.target > 0)
+    ?? tasks.find(task => isActivityTask(task) && task.target != null && task.target > 0)
     ?? null
 }

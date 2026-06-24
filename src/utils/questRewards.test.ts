@@ -12,16 +12,30 @@ function reward(overrides: Partial<QuestReward>): QuestReward {
 }
 
 describe('formatQuestReward', () => {
-  it('shows Nitro multiplier when premium Orbs exceed base Orbs', () => {
-    const view = formatQuestReward(reward({ orb_quantity: 700, premium_orb_quantity: 840 }), null)
+  it('shows Nitro multiplier when user has Nitro and premium Orbs exceed base', () => {
+    const view = formatQuestReward(reward({ orb_quantity: 700, premium_orb_quantity: 840 }), null, 2)
 
     expect(view.kind).toBe('orbs')
     expect(view.amountText).toBe('700 -> 840 Orbs')
     expect(view.badgeText).toBe('Nitro 1.2x')
   })
 
+  it('hides Nitro multiplier when user has no Nitro even if premium data exists', () => {
+    const view = formatQuestReward(reward({ orb_quantity: 700, premium_orb_quantity: 840 }), null, 0)
+
+    expect(view.amountText).toBe('700 Orbs')
+    expect(view.badgeText).toBeNull()
+  })
+
+  it('hides Nitro multiplier when premium_type is not provided', () => {
+    const view = formatQuestReward(reward({ orb_quantity: 700, premium_orb_quantity: 840 }), null)
+
+    expect(view.amountText).toBe('700 Orbs')
+    expect(view.badgeText).toBeNull()
+  })
+
   it('shows only base Orbs when premium quantity is missing', () => {
-    const view = formatQuestReward(reward({ orb_quantity: 700, premium_orb_quantity: null }), null)
+    const view = formatQuestReward(reward({ orb_quantity: 700, premium_orb_quantity: null }), null, 2)
 
     expect(view.amountText).toBe('700 Orbs')
     expect(view.badgeText).toBeNull()
@@ -33,7 +47,7 @@ describe('formatQuestReward', () => {
       orb_quantity_claimed: 840,
     }
 
-    const view = formatQuestReward(reward({ orb_quantity: 700, premium_orb_quantity: 840 }), status)
+    const view = formatQuestReward(reward({ orb_quantity: 700, premium_orb_quantity: 840 }), status, 2)
 
     expect(view.amountText).toBe('Claimed 840 Orbs')
   })

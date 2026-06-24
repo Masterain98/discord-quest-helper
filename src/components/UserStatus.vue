@@ -16,7 +16,15 @@
           <AvatarFallback>{{ authStore.user.username[0].toUpperCase() }}</AvatarFallback>
         </Avatar>
         <div class="hidden md:block select-none">
-          <p class="text-sm font-medium leading-none">{{ authStore.user.global_name || authStore.user.username }}</p>
+          <p class="text-sm font-medium leading-none flex items-center gap-1.5">
+            {{ authStore.user.global_name || authStore.user.username }}
+            <span
+              v-if="nitroBadge"
+              :class="['text-[10px] font-semibold leading-none px-1.5 py-0.5 rounded-full border', nitroBadge.class]"
+            >
+              {{ nitroBadge.label }}
+            </span>
+          </p>
           <p class="text-xs text-muted-foreground">{{ authStore.user.username }}</p>
         </div>
       </div>
@@ -60,7 +68,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useQuestsStore } from '@/stores/quests'
 import { Button } from '@/components/ui/button'
@@ -72,6 +80,15 @@ import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
 const authStore = useAuthStore()
 const questsStore = useQuestsStore()
+
+const nitroBadge = computed(() => {
+  const pt = authStore.user?.premium_type
+  if (!pt || pt === 0) return null
+  if (pt === 1) return { label: t('user.nitro_classic'), class: 'border-sky-400/60 bg-sky-500/10 text-sky-600 dark:text-sky-400' }
+  if (pt === 2) return { label: t('user.nitro'), class: 'border-violet-400/60 bg-violet-500/10 text-violet-600 dark:text-violet-400' }
+  if (pt === 3) return { label: t('user.nitro_basic'), class: 'border-indigo-400/60 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400' }
+  return null
+})
 const showManualInput = ref(false)
 const manualToken = ref('')
 

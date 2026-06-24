@@ -7,6 +7,9 @@ pub struct DiscordUser {
     pub discriminator: String,
     pub avatar: Option<String>,
     pub global_name: Option<String>,
+    /// Nitro subscription type: 0=None, 1=Nitro Classic, 2=Nitro, 3=Nitro Basic
+    #[serde(default)]
+    pub premium_type: Option<u8>,
 }
 
 /// Simplified Quest model for frontend display

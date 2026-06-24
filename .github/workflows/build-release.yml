@@ -78,13 +78,25 @@ jobs:
       - name: Rust cache (Tauri App)
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: './src-tauri -> target'
+          workspaces: |
+            ./src-tauri -> target
+            ./src-runner -> target
+            ./src-cdp-launcher -> target
     
       - name: install frontend dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
-      - name: Build Runner
-        run: npm run build:runner
+      - name: Validate i18n
+        run: node scripts/i18n-validate.mjs
+
+      - name: Run frontend tests
+        run: pnpm test
+
+      - name: Build runner sidecar
+        run: pnpm run build:runner
+
+      - name: Build Discord CDP launcher sidecar
+        run: pnpm run build:cdp-launcher
 
       - uses: tauri-apps/tauri-action@v0
         env:

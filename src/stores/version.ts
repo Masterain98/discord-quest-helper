@@ -14,6 +14,7 @@ export const useVersionStore = defineStore('version', () => {
     const checkError = ref<string | null>(null)
     const isChecking = ref(false)
     const hasChecked = ref(false)
+    const checkPreRelease = ref(localStorage.getItem('checkPreRelease') === 'true')
 
     const hasUpdate = computed(() => {
         if (!latestRelease.value || currentVersion.value === 'Dev') return false
@@ -48,7 +49,11 @@ export const useVersionStore = defineStore('version', () => {
         checkError.value = null
 
         try {
-            const res = await fetch('https://api.github.com/repos/Masterain98/discord-quest-helper/releases/latest', {
+            const url = checkPreRelease.value
+              ? 'https://api.github.com/repos/Masterain98/discord-quest-helper/releases'
+              : 'https://api.github.com/repos/Masterain98/discord-quest-helper/releases/latest'
+
+            const res = await fetch(url, {
                 headers: {
                     'Accept': 'application/vnd.github.v3+json'
                 }
@@ -59,11 +64,24 @@ export const useVersionStore = defineStore('version', () => {
             }
 
             const data = await res.json()
-            latestRelease.value = {
-                tag_name: data.tag_name,
-                html_url: data.html_url,
-                published_at: data.published_at,
-                name: data.name
+
+            if (checkPreRelease.value) {
+                // Array of releases — pick the first one (newest, including pre-releases)
+                const release = Array.isArray(data) ? data[0] : data
+                if (!release) throw new Error('No releases found')
+                latestRelease.value = {
+                    tag_name: release.tag_name,
+                    html_url: release.html_url,
+                    published_at: release.published_at,
+                    name: release.name
+                }
+            } else {
+                latestRelease.value = {
+                    tag_name: data.tag_name,
+                    html_url: data.html_url,
+                    published_at: data.published_at,
+                    name: data.name
+                }
             }
             hasChecked.value = true
         } catch (e) {
@@ -72,6 +90,14 @@ export const useVersionStore = defineStore('version', () => {
         } finally {
             isChecking.value = false
         }
+    }
+
+    function setCheckPreRelease(value: boolean) {
+        checkPreRelease.value = value
+        localStorage.setItem('checkPreRelease', String(value))
+        hasChecked.value = false
+        latestRelease.value = null
+        checkForUpdate()
     }
 
     async function initialize() {
@@ -87,8 +113,10 @@ export const useVersionStore = defineStore('version', () => {
         hasChecked,
         hasUpdate,
         isLatest,
+        checkPreRelease,
         loadCurrentVersion,
         checkForUpdate,
+        setCheckPreRelease,
         initialize
     }
 })

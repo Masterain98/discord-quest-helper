@@ -47,7 +47,11 @@ pub fn get_runner_info() -> RunnerInfo {
 
     RunnerInfo {
         embedded,
-        commit_hash: if commit_hash != "not-built" { commit_hash } else { "unknown".to_string() },
+        commit_hash: if commit_hash != "not-built" {
+            commit_hash
+        } else {
+            "unknown".to_string()
+        },
         build_time: if embedded { build_time } else { String::new() },
         size_bytes: RUNNER_BYTES.len(),
     }
@@ -62,8 +66,7 @@ fn ensure_runner_bytes(target_path: &Path) -> Result<()> {
             anyhow::bail!("Runner binary not available for this platform");
         }
     }
-    fs::write(target_path, RUNNER_BYTES)
-        .context("Failed to write embedded runner binary")?;
+    fs::write(target_path, RUNNER_BYTES).context("Failed to write embedded runner binary")?;
     // On macOS/Linux, set executable permission
     #[cfg(unix)]
     {
@@ -94,8 +97,10 @@ pub fn create_simulated_game(path: &str, executable_name: &str, _app_id: &str) -
 
     if !target_dir.exists() {
         println!("Creating directory: {:?}", target_dir);
-        fs::create_dir_all(&target_dir)
-            .context(format!("Could not create target directory: {:?}", target_dir))?;
+        fs::create_dir_all(&target_dir).context(format!(
+            "Could not create target directory: {:?}",
+            target_dir
+        ))?;
     }
 
     // Target executable path
@@ -143,14 +148,22 @@ pub fn create_simulated_game(path: &str, executable_name: &str, _app_id: &str) -
 
 /// Run the simulated game
 #[cfg(target_os = "windows")]
-pub fn run_simulated_game(name: &str, path: &str, executable_name: &str, _app_id: &str) -> Result<()> {
+pub fn run_simulated_game(
+    name: &str,
+    path: &str,
+    executable_name: &str,
+    _app_id: &str,
+) -> Result<()> {
     let exe_to_run = PathBuf::from(path).join(executable_name);
 
     // Always try to update the runner binary from the embedded bytes
     println!("Attempting to update simulated game at {:?}", exe_to_run);
     match ensure_runner_bytes(&exe_to_run) {
         Ok(_) => println!("Successfully updated simulated game executable"),
-        Err(e) => println!("Could not update simulated game executable (might be running?): {}", e),
+        Err(e) => println!(
+            "Could not update simulated game executable (might be running?): {}",
+            e
+        ),
     }
 
     if !exe_to_run.exists() {
@@ -170,7 +183,12 @@ pub fn run_simulated_game(name: &str, path: &str, executable_name: &str, _app_id
 }
 
 #[cfg(target_os = "macos")]
-pub fn run_simulated_game(name: &str, path: &str, executable_name: &str, _app_id: &str) -> Result<()> {
+pub fn run_simulated_game(
+    name: &str,
+    path: &str,
+    executable_name: &str,
+    _app_id: &str,
+) -> Result<()> {
     let exe_to_run = PathBuf::from(path).join(executable_name);
 
     if !exe_to_run.exists() {
@@ -298,7 +316,11 @@ fn untrack_running_game(executable_name: &str) {
         .to_string();
     if let Ok(mut set) = RUNNING_GAMES.lock() {
         set.remove(&file_name);
-        println!("Untracked running game: {} (remaining: {})", file_name, set.len());
+        println!(
+            "Untracked running game: {} (remaining: {})",
+            file_name,
+            set.len()
+        );
     }
 }
 
@@ -325,7 +347,10 @@ pub fn cleanup_all_simulated_games() {
         return;
     }
 
-    println!("Cleaning up {} simulated game process(es) on exit...", games.len());
+    println!(
+        "Cleaning up {} simulated game process(es) on exit...",
+        games.len()
+    );
     for name in &games {
         println!("  Stopping: {}", name);
         let _ = stop_simulated_game(name);

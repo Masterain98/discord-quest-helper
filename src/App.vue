@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import UserStatus from './components/UserStatus.vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import Home from './views/Home.vue'
 import GameSimulator from './views/GameSimulator.vue'
 import Settings from './views/Settings.vue'
@@ -13,7 +12,12 @@ import { useQuestsStore } from '@/stores/quests'
 import { useVersionStore } from '@/stores/version'
 import type { ExtractedAccount } from '@/api/tauri'
 import { useI18n } from 'vue-i18n'
-import { Moon, Sun, Loader2, Languages, AlertTriangle, Wifi } from 'lucide-vue-next'
+import { Moon, Sun, Loader2, Languages, RotateCw } from 'lucide-vue-next'
+import AccountMenu from './components/AccountMenu.vue'
+import QuestModeIndicator from './components/QuestModeIndicator.vue'
+import Toaster from './components/Toaster.vue'
+import { cn } from '@/lib/utils'
+import { persistSettingsSection } from '@/composables/useSettingsNavigation'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -91,6 +95,7 @@ function toggleTheme(event: MouseEvent) {
         {
           duration: 500,
           easing: 'ease-out',
+          fill: 'both',
           pseudoElement: switchingToDark 
             ? '::view-transition-old(root)' 
             : '::view-transition-new(root)'
@@ -114,7 +119,8 @@ function updateTheme() {
 // Language Logic
 function setLanguage(lang: string) {
   locale.value = lang
-  localStorage.setItem('language', lang)
+  localStorage.setItem('locale', lang)
+  localStorage.removeItem('language')
 }
 
 // Account Selection Logic
@@ -137,14 +143,40 @@ onMounted(() => {
     isDark.value = window.matchMedia('(prefers-color-scheme: dark)').matches
   }
   updateTheme()
-  
+
   // Restore debug mode state
   debugModeEnabled.value = localStorage.getItem('debugMode') === 'true'
-  
+
   // Check for updates
   const versionStore = useVersionStore()
   versionStore.initialize()
+
+  // Listen for tab navigation events from toast actions
+  window.addEventListener('app:navigate', handleAppNavigate)
 })
+
+onUnmounted(() => {
+  window.removeEventListener('app:navigate', handleAppNavigate)
+})
+
+function handleAppNavigate(e: Event) {
+  const tab = (e as CustomEvent<string>).detail
+  if (tab === 'home' || tab === 'game' || tab === 'settings' || tab === 'debug') {
+    currentTab.value = tab
+  }
+}
+
+function handleDebugDisabled() {
+  debugModeEnabled.value = false
+  if (currentTab.value === 'debug') {
+    currentTab.value = 'settings'
+  }
+}
+
+function openSettingsSection(section: 'discord_integration' | 'quest_behavior' | 'advanced' | 'account') {
+  persistSettingsSection(section)
+  currentTab.value = 'settings'
+}
 </script>
 
 <template>
@@ -166,24 +198,26 @@ onMounted(() => {
           </div>
         </div>
         
-        <div class="flex flex-col items-end gap-1 select-none">
-          <div class="flex items-center gap-2">
-           <UserStatus v-if="authStore.user" />
-           
-           <!-- Theme Toggle -->
-           <Button variant="ghost" size="icon" @click="toggleTheme" title="Toggle Theme">
-             <Moon v-if="isDark" class="w-5 h-5" />
-             <Sun v-else class="w-5 h-5" />
-           </Button>
+        <div class="flex items-center gap-2 select-none">
+          <QuestModeIndicator
+            v-if="authStore.user"
+            @open-settings="openSettingsSection('quest_behavior')"
+          />
 
-           <!-- Language Toggle -->
-           <DropdownMenu>
+          <!-- Theme Toggle -->
+          <Button variant="ghost" size="icon" @click="toggleTheme" :title="t('header.toggle_theme')">
+            <Moon v-if="isDark" class="w-5 h-5" />
+            <Sun v-else class="w-5 h-5" />
+          </Button>
+
+          <!-- Language Toggle -->
+          <DropdownMenu>
             <DropdownMenuTrigger as-child>
-              <Button variant="ghost" size="icon" title="Change Language">
+              <Button variant="ghost" size="icon" :title="t('header.change_language')">
                 <Languages class="w-5 h-5" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+            <DropdownMenuContent align="end" class="max-h-[70vh] overflow-y-auto">
               <DropdownMenuItem @click="setLanguage('en')">English</DropdownMenuItem>
               <DropdownMenuItem @click="setLanguage('zh')">简体中文</DropdownMenuItem>
               <DropdownMenuItem @click="setLanguage('zh-TW')">繁體中文</DropdownMenuItem>
@@ -191,92 +225,71 @@ onMounted(() => {
               <DropdownMenuItem @click="setLanguage('ko')">한국어</DropdownMenuItem>
               <DropdownMenuItem @click="setLanguage('ru')">Русский</DropdownMenuItem>
               <DropdownMenuItem @click="setLanguage('es')">Español</DropdownMenuItem>
+              <DropdownMenuItem @click="setLanguage('th')">ไทย</DropdownMenuItem>
+              <DropdownMenuItem @click="setLanguage('pt-BR')">Português (Brasil)</DropdownMenuItem>
+              <DropdownMenuItem @click="setLanguage('tr')">Türkçe</DropdownMenuItem>
+              <DropdownMenuItem @click="setLanguage('vi')">Tiếng Việt</DropdownMenuItem>
+              <DropdownMenuItem @click="setLanguage('de')">Deutsch</DropdownMenuItem>
+              <DropdownMenuItem @click="setLanguage('fr')">Français</DropdownMenuItem>
+              <DropdownMenuItem @click="setLanguage('pt-PT')">Português (Portugal)</DropdownMenuItem>
+              <DropdownMenuItem @click="setLanguage('id')">Bahasa Indonesia</DropdownMenuItem>
+              <DropdownMenuItem @click="setLanguage('pl')">Polski</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          </div>
-          
-          <!-- CDP Status Banner -->
-          <div v-if="authStore.user" class="relative group">
-            <div 
-              v-if="questsStore.gameQuestMode === 'cdp' && questsStore.cdpAvailable" 
-              class="flex items-center gap-1.5 text-xs text-green-500 bg-green-500/10 border border-green-500/20 px-2.5 py-1 rounded-md cursor-pointer hover:bg-green-500/15 transition-colors"
-              @click="currentTab = 'settings'"
-            >
-              <Wifi class="w-3.5 h-3.5 shrink-0" />
-              <span>{{ t('settings.cdp_banner_connected') }}</span>
-            </div>
-            <div 
-              v-else-if="questsStore.gameQuestMode === 'cdp' && !questsStore.cdpAvailable" 
-              class="flex items-center gap-1.5 text-xs text-amber-500 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-md cursor-pointer hover:bg-amber-500/15 transition-colors"
-              @click="currentTab = 'settings'"
-            >
-              <AlertTriangle class="w-3.5 h-3.5 shrink-0" />
-              <span>{{ t('settings.cdp_banner_disconnected') }}</span>
-            </div>
-            <div 
-              v-else
-              class="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/40 border border-border px-2.5 py-1 rounded-md cursor-pointer hover:bg-muted/60 transition-colors"
-              @click="currentTab = 'settings'"
-            >
-              <span>{{ questsStore.gameQuestMode === 'heartbeat' ? t('settings.mode_heartbeat') : t('settings.mode_simulate') }}</span>
-            </div>
-            <!-- Hover tooltip -->
-            <div class="absolute right-0 top-full mt-2 z-50 hidden group-hover:block w-64 rounded-md border border-border bg-popover text-popover-foreground shadow-md p-3 text-xs pointer-events-none">
-              <template v-if="questsStore.gameQuestMode === 'cdp'">
-                <p class="font-semibold mb-1.5">{{ t('settings.tooltip_cdp_title') }}</p>
-                <ul class="space-y-1 list-disc list-inside text-muted-foreground">
-                  <li>{{ t('settings.tooltip_cdp_1') }}</li>
-                  <li>{{ t('settings.tooltip_cdp_2') }}</li>
-                  <li>{{ t('settings.tooltip_cdp_3') }}</li>
-                </ul>
-              </template>
-              <template v-else-if="questsStore.gameQuestMode === 'simulate'">
-                <p class="font-semibold mb-1.5">{{ t('settings.tooltip_simulate_title') }}</p>
-                <ul class="space-y-1 list-disc list-inside text-muted-foreground">
-                  <li>{{ t('settings.tooltip_simulate_1') }}</li>
-                  <li>{{ t('settings.tooltip_simulate_2') }}</li>
-                  <li>{{ t('settings.tooltip_simulate_3') }}</li>
-                </ul>
-              </template>
-              <template v-else>
-                <p class="font-semibold mb-1.5">{{ t('settings.tooltip_heartbeat_title') }}</p>
-                <ul class="space-y-1 list-disc list-inside text-muted-foreground">
-                  <li>{{ t('settings.tooltip_heartbeat_1') }}</li>
-                  <li>{{ t('settings.tooltip_heartbeat_2') }}</li>
-                  <li>{{ t('settings.tooltip_heartbeat_3') }}</li>
-                </ul>
-              </template>
-            </div>
-          </div>
+
+          <AccountMenu v-if="authStore.user" @logout="authStore.logout" />
         </div>
       </header>
       
-      <div class="mb-8 flex gap-2 border-b border-border pb-4 select-none">
-        <Button 
-          :variant="currentTab === 'home' ? 'secondary' : 'ghost'"
-          @click="currentTab = 'home'"
+      <div class="mb-8 flex items-center gap-2 border-b border-border pb-4 select-none">
+        <div class="flex gap-2">
+          <Button
+            :variant="currentTab === 'home' ? 'secondary' : 'ghost'"
+            @click="currentTab = 'home'"
+          >
+            {{ t('nav.home') }}
+          </Button>
+           <Button
+            :variant="currentTab === 'game' ? 'secondary' : 'ghost'"
+            @click="currentTab = 'game'"
+          >
+            {{ t('nav.game_simulator') }}
+          </Button>
+           <Button
+            :variant="currentTab === 'settings' ? 'secondary' : 'ghost'"
+            @click="currentTab = 'settings'"
+          >
+            {{ t('nav.settings') }}
+          </Button>
+          <Button
+            v-if="debugModeEnabled"
+            :variant="currentTab === 'debug' ? 'secondary' : 'ghost'"
+            @click="currentTab = 'debug'"
+          >
+            {{ t('nav.debug') }}
+          </Button>
+        </div>
+
+        <!-- Orbs Balance (compact, right-aligned) -->
+        <div
+          v-if="authStore.user && questsStore.showOrbsBalance"
+          class="ml-auto flex shrink-0 items-center gap-1.5 rounded-md border bg-card px-2.5 py-1.5 text-xs"
         >
-          {{ t('nav.home') }}
-        </Button>
-         <Button 
-          :variant="currentTab === 'game' ? 'secondary' : 'ghost'"
-          @click="currentTab = 'game'"
-        >
-          {{ t('nav.game_simulator') }}
-        </Button>
-         <Button 
-          :variant="currentTab === 'settings' ? 'secondary' : 'ghost'"
-          @click="currentTab = 'settings'"
-        >
-          {{ t('nav.settings') }}
-        </Button>
-        <Button 
-          v-if="debugModeEnabled"
-          :variant="currentTab === 'debug' ? 'secondary' : 'ghost'"
-          @click="currentTab = 'debug'"
-        >
-          {{ t('nav.debug') }}
-        </Button>
+          <img src="/icons/orbs.png" alt="" class="h-4 w-4 object-contain" />
+          <span class="text-muted-foreground">{{ t('home.current_orbs') }}:</span>
+          <span class="font-semibold">
+            {{ questsStore.orbsBalance == null ? '—' : questsStore.orbsBalance.toLocaleString() }}
+          </span>
+          <Button
+            variant="ghost"
+            size="icon"
+            class="h-5 w-5"
+            @click="questsStore.fetchOrbsBalance(true)"
+            :disabled="questsStore.orbsBalanceLoading || !authStore.user"
+          >
+            <RotateCw :class="cn('h-3 w-3', questsStore.orbsBalanceLoading && 'animate-spin')" />
+          </Button>
+        </div>
       </div>
       
       <main class="fade-in flex-1">
@@ -374,6 +387,7 @@ onMounted(() => {
           v-else-if="currentTab === 'settings'" 
           @navigate-to-home="currentTab = 'home'" 
           @debug-unlocked="debugModeEnabled = true; currentTab = 'debug'"
+          @debug-disabled="handleDebugDisabled"
         />
         
         <!-- Debug - no login required -->
@@ -383,6 +397,7 @@ onMounted(() => {
 
     </div>
     </div>
+    <Toaster />
   </div>
 </template>
 

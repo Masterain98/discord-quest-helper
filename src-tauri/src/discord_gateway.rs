@@ -98,7 +98,7 @@ pub async fn get_quests_from_gateway(token: &str) -> Result<Vec<Quest>> {
 
     // Use non-compressed JSON mode for simplicity
     let gateway_url = "wss://gateway.discord.gg/?v=9&encoding=json";
-    
+
     // Connect to Gateway
     let (ws_stream, _) = connect_async(gateway_url)
         .await
@@ -117,8 +117,11 @@ pub async fn get_quests_from_gateway(token: &str) -> Result<Vec<Quest>> {
                 let text: String = utf8_text.to_string();
                 // Parse JSON directly
                 if let Ok(payload) = serde_json::from_str::<GatewayPayload>(&text) {
-                    println!("Received Gateway message: op={}, t={:?}", payload.op, payload.t);
-                    
+                    println!(
+                        "Received Gateway message: op={}, t={:?}",
+                        payload.op, payload.t
+                    );
+
                     match payload.op {
                         10 => {
                             // HELLO
@@ -176,22 +179,28 @@ pub async fn get_quests_from_gateway(token: &str) -> Result<Vec<Quest>> {
                             // DISPATCH
                             if let Some(event_type) = &payload.t {
                                 println!("Received DISPATCH event: {}", event_type);
-                                
+
                                 // Check for quests in various events
                                 if let Some(d) = &payload.d {
                                     // Debug: print available keys for key events
                                     if event_type == "READY" || event_type == "READY_SUPPLEMENTAL" {
                                         if let Some(obj) = d.as_object() {
-                                            println!("{} payload keys: {:?}", event_type, obj.keys().collect::<Vec<_>>());
+                                            println!(
+                                                "{} payload keys: {:?}",
+                                                event_type,
+                                                obj.keys().collect::<Vec<_>>()
+                                            );
                                         }
                                     }
-                                    
+
                                     // Try to find quests in any event
                                     if let Some(quest_array) = d.get("quests") {
-                                        println!("Found quests field in {} with {} items", 
+                                        println!(
+                                            "Found quests field in {} with {} items",
                                             event_type,
-                                            quest_array.as_array().map(|a| a.len()).unwrap_or(0));
-                                        
+                                            quest_array.as_array().map(|a| a.len()).unwrap_or(0)
+                                        );
+
                                         if let Ok(ready_quests) =
                                             serde_json::from_value::<Vec<ReadyQuest>>(
                                                 quest_array.clone(),
@@ -201,18 +210,15 @@ pub async fn get_quests_from_gateway(token: &str) -> Result<Vec<Quest>> {
                                                 .into_iter()
                                                 .map(convert_ready_quest_to_quest)
                                                 .collect();
-                                            println!(
-                                                "Successfully parsed {} quests",
-                                                quests.len()
-                                            );
-                                            
+                                            println!("Successfully parsed {} quests", quests.len());
+
                                             // Found quests, close and return
                                             let _ = write.close().await;
                                             return Ok(quests);
                                         }
                                     }
                                 }
-                                
+
                                 // After READY_SUPPLEMENTAL, if still no quests, return empty
                                 if event_type == "READY_SUPPLEMENTAL" {
                                     println!("No quests in READY_SUPPLEMENTAL either, returning empty list");
@@ -229,7 +235,13 @@ pub async fn get_quests_from_gateway(token: &str) -> Result<Vec<Quest>> {
                             // HEARTBEAT request from server
                             println!("Server requested heartbeat, sending...");
                             let heartbeat = json!({"op": 1, "d": null});
-                            let _ = write.send(Message::Text(heartbeat.to_string().into())).await;
+                            if let Err(err) = write
+                                .send(Message::Text(heartbeat.to_string().into()))
+                                .await
+                            {
+                                println!("Failed to send heartbeat: {}", err);
+                                break;
+                            }
                         }
                         9 => {
                             // Invalid Session
@@ -311,17 +323,11 @@ fn convert_ready_quest_to_quest(rq: ReadyQuest) -> Quest {
         progress: progress / seconds_needed as f64 * 100.0,
         seconds_needed,
         task_type,
-        application_id: application
-            .and_then(|a| a.id.clone())
-            .unwrap_or_default(),
-        application_name: application
-            .and_then(|a| a.name.clone())
-            .unwrap_or_default(),
+        application_id: application.and_then(|a| a.id.clone()).unwrap_or_default(),
+        application_name: application.and_then(|a| a.name.clone()).unwrap_or_default(),
         application_icon: application.and_then(|a| a.icon.clone()),
         expires_at: config.expires_at.clone(),
         enrolled: user_status.and_then(|us| us.enrolled_at.clone()).is_some(),
-        completed: user_status
-            .and_then(|us| us.completed_at.clone())
-            .is_some(),
+        completed: user_status.and_then(|us| us.completed_at.clone()).is_some(),
     }
 }

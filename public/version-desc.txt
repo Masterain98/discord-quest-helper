@@ -1,18 +1,27 @@
 ## ✨ What's Changed
 
 ### 🎊 New Features
-1. Added Orbs balance display on the Home page with an optional toggle in Settings.
-2. Added task type badges (Desktop, Mobile, Xbox, PlayStation, etc.) to quest cards.
-3. Added support for Discord Nitro membership and Nitro quest 1.2x bonus reward recognition
+1. Added Activity quest support via CDP, allowing direct launch and completion from the app.
+2. Added a CDP Launcher for one-click Discord startup with CDP support. Desktop shortcuts will no longer become invalid after Discord updates.
+3. Added batch actions to accept or complete multiple quests at once.
+4. Added update check support for beta versions
 
-### 👩‍💻 Developer's Tools
-1. Added a collapsible Developer Details panel for quest debugging.
-2. Added Debug page sections for Header Profile, Quest API Baseline, and Quest Placement Decisions.
-3. Added HAR analysis and quest schema validation scripts.
+### 🎨 UI/UX Improvements
+1. Redesigned Home page with a Quest Dashboard showing summary cards for available, running, and ready-to-claim quests.
+2. Added a "Next Best Action" panel recommending the most important step to take.
+3. Added quick view tabs (Recommended, To Accept, Ready to Run, Ready to Claim, Completed) for instant quest filtering.
+4. Redesigned Settings page with organized sections: Account, Appearance, Discord Integration, Quest Behavior, and more.
+5. Added an Account Menu showing your Discord avatar, username, and Nitro membership badge.
+6. Added a quest mode indicator in the header showing the current completion mode (CDP, Heartbeat, or Simulate).
+7. Added toast notifications for clearer feedback on your actions.
+8. Improved quest claim flow with direct navigation to the Discord quest page.
+9. Enhanced dark mode transitions for a smoother visual experience.
+10. Improved quest progress tracking and error messages.
 
 ### ⚡ Enhancements
-1. Refactored quest reward and task logic into dedicated utility modules.
-2. Enhanced Discord API client with Referer header, dynamic User-Agent, and video timestamp normalization.
-3. Added quest enrollment block detection and excluded quest tracking.
-4. Fixed vue-i18n interpolation syntax issues across all locale files.
+1. Enhanced CDP quest completion with Activity quest support and improved error handling.
+2. Updated Discord API client with better token extraction and super properties handling.
+3. Added i18n validation and audit scripts for translation quality assurance.
+4. Added 9 new languages: German, French, Indonesian, Polish, Portuguese (Brazil), Portuguese (Portugal), Thai, Turkish, and Vietnamese.
 5. Bump default `client_build_number` to `565311`, `native_build_number` to `84410`, `client_version` to `1.0.9242`.
+6. Bump Rust and Vue dependencies versions

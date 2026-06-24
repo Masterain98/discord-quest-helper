@@ -1,6 +1,12 @@
 import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
 import type { Quest, DetectableGame, ExcludedQuest } from '@/api/tauri'
+import { getQuestKind } from '@/utils/questTasks'
+
+/** Quest with optional pre-selected executable name for batch game quest processing */
+interface QueueItem extends Quest {
+  selectedExeName?: string
+}
 import {
   getQuestsFull,
   startVideoQuest,
@@ -42,7 +48,7 @@ export const useQuestsStore = defineStore('quests', () => {
   const orbsBalanceError = ref<string | null>(null)
 
   const activeQuestId = ref<string | null>(null)
-  const activeQuestType = ref<'video' | 'stream' | 'game' | null>(null)
+  const activeQuestType = ref<'video' | 'stream' | 'game' | 'activity' | null>(null)
   const activeQuestProgress = ref(0)
   const activeQuestTargetDuration = ref(0)
 
@@ -101,6 +107,23 @@ export const useQuestsStore = defineStore('quests', () => {
   const savedShowOrbsBalance = localStorage.getItem(STORAGE_SHOW_ORBS_BALANCE_KEY)
   const showOrbsBalance = ref(savedShowOrbsBalance === null ? true : savedShowOrbsBalance === 'true')
 
+  // Activity quest checkpoint interval (seconds) - min/max time between checkpoints
+  const STORAGE_ACTIVITY_CHECKPOINT_MIN_KEY = 'questHelper_activityCheckpointMin'
+  const savedCheckpointMin = localStorage.getItem(STORAGE_ACTIVITY_CHECKPOINT_MIN_KEY)
+  let initialCheckpointMin = savedCheckpointMin ? parseInt(savedCheckpointMin) : 180
+  if (isNaN(initialCheckpointMin) || initialCheckpointMin < 30 || initialCheckpointMin > 600) {
+    initialCheckpointMin = 180
+  }
+  const activityCheckpointMin = ref(initialCheckpointMin)
+
+  const STORAGE_ACTIVITY_CHECKPOINT_MAX_KEY = 'questHelper_activityCheckpointMax'
+  const savedCheckpointMax = localStorage.getItem(STORAGE_ACTIVITY_CHECKPOINT_MAX_KEY)
+  let initialCheckpointMax = savedCheckpointMax ? parseInt(savedCheckpointMax) : 300
+  if (isNaN(initialCheckpointMax) || initialCheckpointMax < 60 || initialCheckpointMax > 900) {
+    initialCheckpointMax = 300
+  }
+  const activityCheckpointMax = ref(initialCheckpointMax)
+
   // Persist speed changes to localStorage
   watch(speedMultiplier, (newSpeed) => {
     localStorage.setItem(STORAGE_SPEED_KEY, String(newSpeed))
@@ -135,6 +158,39 @@ export const useQuestsStore = defineStore('quests', () => {
     }
   })
 
+  function normalizeCheckpoint(value: number, fallback: number, min: number, max: number): number {
+    if (!Number.isFinite(value)) return fallback
+    const n = Math.round(value)
+    return Math.min(max, Math.max(min, n))
+  }
+
+  // Persist activity checkpoint interval changes
+  watch(activityCheckpointMin, (newMin) => {
+    const normalizedMin = normalizeCheckpoint(newMin, 180, 30, 600)
+    if (normalizedMin !== newMin) {
+      activityCheckpointMin.value = normalizedMin
+      return
+    }
+    localStorage.setItem(STORAGE_ACTIVITY_CHECKPOINT_MIN_KEY, String(normalizedMin))
+    // Ensure max >= min
+    if (activityCheckpointMax.value < normalizedMin) {
+      activityCheckpointMax.value = normalizedMin
+    }
+  })
+
+  watch(activityCheckpointMax, (newMax) => {
+    const normalizedMax = normalizeCheckpoint(newMax, 300, 60, 900)
+    if (normalizedMax !== newMax) {
+      activityCheckpointMax.value = normalizedMax
+      return
+    }
+    localStorage.setItem(STORAGE_ACTIVITY_CHECKPOINT_MAX_KEY, String(normalizedMax))
+    // Ensure min <= max
+    if (activityCheckpointMin.value > normalizedMax) {
+      activityCheckpointMin.value = normalizedMax
+    }
+  })
+
   let progressUnlisten: (() => void) | null = null
   let completeUnlisten: (() => void) | null = null
   let errorUnlisten: (() => void) | null = null
@@ -165,7 +221,7 @@ export const useQuestsStore = defineStore('quests', () => {
       questEnrollmentBlockedUntil.value = response.quest_enrollment_blocked_until || null
       lastQuestsFetchTime.value = Date.now()
     } catch (e) {
-      error.value = e as string
+      error.value = e instanceof Error ? e.message : String(e)
     } finally {
       if (!silent) loading.value = false
     }
@@ -204,6 +260,32 @@ export const useQuestsStore = defineStore('quests', () => {
 
     // Check completion
     if (quest.user_status?.completed_at) {
+      // If queue is running, handle transition to next quest instead of full stop
+      if (isQueueRunning.value && questQueue.value.length > 0) {
+        console.log('Queue item completed detected via polling.')
+        const finished = questQueue.value.shift()
+        console.log(`Queue item finished: ${finished?.id}. Remaining: ${questQueue.value.length}`)
+
+        // Reset active state
+        activeQuestId.value = null
+        activeQuestType.value = null
+        activeQuestProgress.value = 0
+        activeQuestTargetDuration.value = 0
+        activeGameExe.value = null
+        localProgress.value = 0
+        stopProgressSimulation()
+        stopPolling()
+
+        // Refresh quests to update status in UI
+        fetchQuests(true, true)
+
+        // Process next item after a short delay
+        setTimeout(() => {
+          processQueue()
+        }, 2000)
+        return
+      }
+
       console.log('Quest completed detected via polling, stopping game.')
       stop()
       return
@@ -330,7 +412,7 @@ export const useQuestsStore = defineStore('quests', () => {
       startProgressSimulation(gameQuestMode.value === 'cdp' ? 1.0 : speedMultiplier.value)
       setupListeners()
     } catch (e) {
-      error.value = e as string
+      error.value = e instanceof Error ? e.message : String(e)
       throw e
     }
   }
@@ -347,7 +429,7 @@ export const useQuestsStore = defineStore('quests', () => {
       startProgressSimulation(1.0)
       setupListeners()
     } catch (e) {
-      error.value = e as string
+      error.value = e instanceof Error ? e.message : String(e)
       throw e
     }
   }
@@ -464,7 +546,7 @@ export const useQuestsStore = defineStore('quests', () => {
         startPolling()
       }
     } catch (e) {
-      error.value = e as string
+      error.value = e instanceof Error ? e.message : String(e)
       // Clean up if started (only for simulate mode)
       if (activeGameExe.value) {
         try {
@@ -478,9 +560,66 @@ export const useQuestsStore = defineStore('quests', () => {
     }
   }
 
+  async function startActivity(quest: Quest) {
+    loading.value = true
+    error.value = null
+    try {
+      // Activity quests require CDP mode
+      if (!cdpAvailable.value) {
+        throw new Error('Activity quests require CDP mode. Please start Discord with --remote-debugging-port and enable CDP in Settings.')
+      }
+
+      // Get checkpoint count from task config (default 3)
+      const tasks = quest.config.task_config_v2?.tasks ?? quest.config.task_config?.tasks
+      const activityTask = tasks ? Object.values(tasks).find(t =>
+        t.type?.includes('ACTIVITY') || t.type?.includes('ACHIEVEMENT')
+      ) : null
+      const checkpointCount = activityTask?.target || 3
+
+      // Generate random checkpoint times within [min, max] range
+      const min = activityCheckpointMin.value
+      const max = activityCheckpointMax.value
+      const checkpointTimes: number[] = []
+      for (let i = 0; i < checkpointCount; i++) {
+        checkpointTimes.push(Math.floor(Math.random() * (max - min + 1)) + min)
+      }
+      const totalSeconds = checkpointTimes.reduce((sum, t) => sum + t, 0)
+
+      console.log(`Starting activity quest via CDP: ${checkpointCount} checkpoints, times=[${checkpointTimes.join(', ')}], total=${totalSeconds}s`)
+
+      const appId = quest.config.application?.id || ''
+      const appName = quest.config.application?.name || quest.config.messages?.quest_name || 'Activity'
+
+      await startCdpQuest(
+        quest.id,
+        'activity',
+        appId,
+        appName,
+        totalSeconds,
+        0,
+        cdpPort.value,
+        checkpointTimes
+      )
+
+      activeQuestId.value = quest.id
+      activeQuestType.value = 'activity'
+      activeQuestProgress.value = 0
+      activeQuestTargetDuration.value = totalSeconds
+
+      startProgressSimulation(1.0)
+      setupListeners()
+
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : String(e)
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
   async function stop() {
     stopping.value = true
-    console.trace('questsStore.stop() called')
+    console.log('questsStore.stop() called')
 
     stopProgressSimulation()
 
@@ -674,7 +813,7 @@ export const useQuestsStore = defineStore('quests', () => {
       // Optimistic update
       updateQuestEnrollment(questId, new Date().toISOString())
     } catch (e) {
-      error.value = e as string
+      error.value = e instanceof Error ? e.message : String(e)
       throw e
     }
   }
@@ -709,7 +848,7 @@ export const useQuestsStore = defineStore('quests', () => {
   // Refined Complete All Video:
   // We can't blocking-wait in the UI thread for 15 mins x N quests.
   // But we can start a "Queue Mode".
-  const questQueue = ref<Quest[]>([])
+  const questQueue = ref<QueueItem[]>([])
   const isQueueRunning = ref(false)
 
   async function processQueue() {
@@ -719,14 +858,14 @@ export const useQuestsStore = defineStore('quests', () => {
     }
 
     isQueueRunning.value = true
-    const quest = questQueue.value[0]
+    const queueItem = questQueue.value[0]
 
     try {
-      console.log(`Queue processing: ${quest.id}`)
-      // Start video
+      console.log(`Queue processing: ${queueItem.id}`)
+
       // Calculate duration needed
       let seconds = 0
-      const queueTasks = quest.config.task_config_v2?.tasks ?? quest.config.task_config?.tasks
+      const queueTasks = queueItem.config.task_config_v2?.tasks ?? queueItem.config.task_config?.tasks
       if (queueTasks) {
         const taskValues = Object.values(queueTasks)
         if (taskValues.length > 0) seconds = taskValues[0].target || 0
@@ -734,24 +873,33 @@ export const useQuestsStore = defineStore('quests', () => {
 
       // Check if already partial
       let progress = 0
-      if (quest.user_status?.progress) {
-        const vals = Object.values(quest.user_status.progress)
+      if (queueItem.user_status?.progress) {
+        const vals = Object.values(queueItem.user_status.progress)
         if (vals.length > 0) progress = vals[0].value || 0
       }
 
       // If completed, skip
-      if (quest.user_status?.completed_at) {
+      if (queueItem.user_status?.completed_at) {
         questQueue.value.shift()
         processQueue()
         return
       }
 
-      await startVideo(quest.id, seconds, progress)
+      // Route by quest type
+      const questKind = getQuestKind(queueItem)
+      console.log(`Queue item type: ${questKind}`)
 
-      // Now we wait for completion event. 
-      // setupListeners handles `onQuestComplete`.
-      // We need to hook into that.
-      // Modifying setupListeners to check queue?
+      if (questKind === 'video') {
+        await startVideo(queueItem.id, seconds, progress)
+      } else {
+        // Game (stream/play) quests — use startPlay with optional pre-selected exe
+        await startPlay(queueItem, seconds, progress, queueItem.selectedExeName)
+      }
+
+      // Now we wait for completion.
+      // Video quests: handled by onQuestComplete event in setupListeners.
+      // Game quests (simulate): handled by polling in checkActiveQuestStatus.
+      // Game quests (CDP/heartbeat): handled by onQuestComplete event.
 
     } catch (e) {
       console.error("Queue error:", e)
@@ -853,6 +1001,8 @@ export const useQuestsStore = defineStore('quests', () => {
     orbsBalanceLoading,
     orbsBalanceError,
     showOrbsBalance,
+    activityCheckpointMin,
+    activityCheckpointMax,
     activeQuestId,
     activeQuestType,
     activeQuestProgress,
@@ -874,14 +1024,16 @@ export const useQuestsStore = defineStore('quests', () => {
     startVideo,
     startStream,
     startPlay,
+    startActivity,
     stop,
     setSpeedMultiplier,
     acceptQuest: acceptQuestWrapper,
     acceptAllQuests,
     // Add to queue logic needs integration with listeners
-    addToQueue: (q: Quest) => {
+    addToQueue: (q: Quest, selectedExeName?: string) => {
       if (!questQueue.value.find(x => x.id === q.id)) {
-        questQueue.value.push(q)
+        const item: QueueItem = { ...q, selectedExeName }
+        questQueue.value.push(item)
       }
     },
     startQueue: processQueue,

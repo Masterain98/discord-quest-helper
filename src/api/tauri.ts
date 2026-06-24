@@ -7,6 +7,8 @@ export interface DiscordUser {
   discriminator: string
   avatar: string | null
   global_name: string | null
+  /** Nitro subscription type: 0=None, 1=Nitro Classic, 2=Nitro, 3=Nitro Basic */
+  premium_type?: number | null
 }
 
 export interface Quest {
@@ -375,6 +377,32 @@ export async function fetchSuperPropertiesCdp(port?: number): Promise<CdpSuperPr
   return await invoke('fetch_super_properties_cdp', { port })
 }
 
+export type DiscordChannelArg = 'auto' | 'stable' | 'ptb' | 'canary'
+export type DiscordChannelResult = 'stable' | 'ptb' | 'canary'
+
+export interface DiscordCdpLaunchResult {
+  launched_path: string
+  channel: DiscordChannelResult
+  port: number
+  cdp_connected: boolean
+}
+
+export async function isDiscordRunning(channel?: DiscordChannelArg): Promise<boolean> {
+  return await invoke('is_discord_running', { channel })
+}
+
+export async function launchDiscordCdp(port?: number, channel?: DiscordChannelArg): Promise<DiscordCdpLaunchResult> {
+  return await invoke('launch_discord_cdp', { port, channel })
+}
+
+export async function restartDiscordCdp(port?: number, channel?: DiscordChannelArg): Promise<DiscordCdpLaunchResult> {
+  return await invoke('restart_discord_cdp', { port, channel })
+}
+
+export async function createDiscordCdpLauncherShortcut(port?: number, channel?: DiscordChannelArg): Promise<string> {
+  return await invoke('create_discord_cdp_launcher_shortcut', { port, channel })
+}
+
 export async function createDiscordDebugShortcut(port?: number): Promise<string> {
   return await invoke('create_discord_debug_shortcut', { port })
 }
@@ -429,12 +457,13 @@ export async function captureDiscordHeadersCdp(port?: number, durationSecs?: num
 
 export async function startCdpQuest(
   questId: string,
-  questType: 'play' | 'stream' | 'video',
+  questType: 'play' | 'stream' | 'video' | 'activity',
   applicationId: string,
   applicationName: string,
   secondsNeeded: number,
   initialProgress: number,
-  cdpPort: number
+  cdpPort: number,
+  checkpointTimes?: number[]
 ): Promise<void> {
   return await invoke('start_cdp_quest', {
     questId,
@@ -443,6 +472,11 @@ export async function startCdpQuest(
     applicationName,
     secondsNeeded,
     initialProgress,
-    cdpPort
+    cdpPort,
+    checkpointTimes: checkpointTimes || []
   })
+}
+
+export async function navigateDiscordSpa(targetPath: string, cdpPort: number): Promise<void> {
+  return await invoke('navigate_discord_spa', { targetPath, cdpPort })
 }

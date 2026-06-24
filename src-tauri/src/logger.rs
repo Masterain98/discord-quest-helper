@@ -1,15 +1,15 @@
 //! Application logging module with data sanitization
-//! 
+//!
 //! Provides structured logging throughout the application with automatic
 //! sanitization of sensitive data (tokens, user IDs, paths, etc.)
 //! Logs are session-only and automatically cleared on app restart.
 
+use chrono::{DateTime, Utc};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::sync::Mutex;
-use chrono::{DateTime, Utc};
 
 /// Maximum number of log entries to store (FIFO)
 const MAX_LOG_ENTRIES: usize = 1000;
@@ -18,9 +18,8 @@ const MAX_LOG_ENTRIES: usize = 1000;
 static SESSION_START: Lazy<DateTime<Utc>> = Lazy::new(Utc::now);
 
 /// Thread-safe in-memory log storage
-static LOG_STORAGE: Lazy<Mutex<VecDeque<LogEntry>>> = Lazy::new(|| {
-    Mutex::new(VecDeque::with_capacity(MAX_LOG_ENTRIES))
-});
+static LOG_STORAGE: Lazy<Mutex<VecDeque<LogEntry>>> =
+    Lazy::new(|| Mutex::new(VecDeque::with_capacity(MAX_LOG_ENTRIES)));
 
 /// Log level
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -102,7 +101,7 @@ pub fn sanitize_token(token: &str) -> String {
     if len <= 16 {
         return "***".to_string();
     }
-    format!("{}...***...{}", &token[..8], &token[len-4..])
+    format!("{}...***...{}", &token[..8], &token[len - 4..])
 }
 
 /// Sanitize a Discord user ID (keep first 4 and last 4 characters)
@@ -113,7 +112,7 @@ pub fn sanitize_user_id(id: &str) -> String {
     if len <= 8 {
         return "***".to_string();
     }
-    format!("{}...{}", &id[..4], &id[len-4..])
+    format!("{}...{}", &id[..4], &id[len - 4..])
 }
 
 /// Sanitize a username (keep first character only)
@@ -128,22 +127,24 @@ pub fn sanitize_username(username: &str) -> String {
 }
 
 // Pre-compiled regex patterns for path sanitization
-static PATH_REGEX_WIN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(?i)\\Users\\[^\\]+").expect("Invalid Windows path regex")
-});
-static PATH_REGEX_UNIX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"/(home|Users)/[^/]+").expect("Invalid Unix path regex")
-});
+static PATH_REGEX_WIN: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)\\Users\\[^\\]+").expect("Invalid Windows path regex"));
+static PATH_REGEX_UNIX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"/(home|Users)/[^/]+").expect("Invalid Unix path regex"));
 
 /// Sanitize a file path (replace username with [USER])
 /// Works for both Windows and Unix-style paths
 pub fn sanitize_path(path: &str) -> String {
     // Windows: C:\Users\Username\... -> C:\Users\[USER]\...
-    let result = PATH_REGEX_WIN.replace_all(path, "\\Users\\[USER]").to_string();
-    
+    let result = PATH_REGEX_WIN
+        .replace_all(path, "\\Users\\[USER]")
+        .to_string();
+
     // Unix: /home/username/... -> /home/[USER]/...
     // Also handles /Users/username/... on macOS
-    PATH_REGEX_UNIX.replace_all(&result, "/$1/[USER]").to_string()
+    PATH_REGEX_UNIX
+        .replace_all(&result, "/$1/[USER]")
+        .to_string()
 }
 
 /// Sanitize an email address (show only domain)
@@ -164,7 +165,8 @@ pub fn sanitize_email(email: &str) -> String {
 // Pre-compiled regex patterns for message sanitization
 static TOKEN_REGEX: Lazy<Regex> = Lazy::new(|| {
     // Match Discord token patterns (base64-like strings of significant length)
-    Regex::new(r"[A-Za-z0-9_-]{24,}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,}").expect("Invalid token regex")
+    Regex::new(r"[A-Za-z0-9_-]{24,}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,}")
+        .expect("Invalid token regex")
 });
 static USER_ID_REGEX: Lazy<Regex> = Lazy::new(|| {
     // Match Discord user IDs (17-19 digit numbers)
@@ -175,10 +177,10 @@ static USER_ID_REGEX: Lazy<Regex> = Lazy::new(|| {
 fn sanitize_message(message: &str) -> String {
     // Apply path sanitization
     let result = sanitize_path(message);
-    
+
     // Mask any Discord tokens
     let result = TOKEN_REGEX.replace_all(&result, "[TOKEN]").to_string();
-    
+
     // Mask Discord user IDs
     USER_ID_REGEX.replace_all(&result, "[USER_ID]").to_string()
 }
@@ -189,11 +191,11 @@ pub fn log(level: LogLevel, category: LogCategory, message: &str, details: Optio
     // Force SESSION_START initialization on first log call
     // This ensures session_start reflects app startup, not export time
     let _ = *SESSION_START;
-    
+
     // Sanitize message and details before storing
     let sanitized_message = sanitize_message(message);
     let sanitized_details = details.map(|s| sanitize_message(s));
-    
+
     let entry = LogEntry {
         timestamp: Utc::now().to_rfc3339(),
         level,
@@ -201,14 +203,17 @@ pub fn log(level: LogLevel, category: LogCategory, message: &str, details: Optio
         message: sanitized_message,
         details: sanitized_details,
     };
-    
+
     // Also print to console for debugging (already sanitized)
     if let Some(ref detail) = entry.details {
-        println!("[{}] [{}] {}: {}", entry.level, entry.category, entry.message, detail);
+        println!(
+            "[{}] [{}] {}: {}",
+            entry.level, entry.category, entry.message, detail
+        );
     } else {
         println!("[{}] [{}] {}", entry.level, entry.category, entry.message);
     }
-    
+
     // Store in memory
     if let Ok(mut storage) = LOG_STORAGE.lock() {
         if storage.len() >= MAX_LOG_ENTRIES {
@@ -302,10 +307,7 @@ fn get_os_info() -> String {
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
         // Get Linux distribution info if available
-        if let Ok(output) = std::process::Command::new("uname")
-            .args(["-sr"])
-            .output()
-        {
+        if let Ok(output) = std::process::Command::new("uname").args(["-sr"]).output() {
             let version = String::from_utf8_lossy(&output.stdout);
             let version = version.trim();
             if !version.is_empty() {
@@ -324,7 +326,7 @@ pub fn export_logs() -> anyhow::Result<String> {
     } else {
         Vec::new()
     };
-    
+
     let export = LogExport {
         export_time: Utc::now().to_rfc3339(),
         session_start: SESSION_START.to_rfc3339(),
@@ -332,7 +334,7 @@ pub fn export_logs() -> anyhow::Result<String> {
         os: get_os_info(),
         entries,
     };
-    
+
     serde_json::to_string_pretty(&export)
         .map_err(|e| anyhow::anyhow!("Failed to serialize logs: {}", e))
 }
