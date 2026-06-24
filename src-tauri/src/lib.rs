@@ -1370,7 +1370,10 @@ fn find_bundled_cdp_launcher(app_handle: &tauri::AppHandle) -> Result<std::path:
     let mut candidate_dirs = Vec::new();
 
     // Dev mode: cwd-based paths (cwd is typically the repo root during `tauri dev`)
+    // Also covers packaged installers (MSI/NSIS) where cwd == install dir and
+    // the sidecar binary lives at the install root.
     if let Ok(cwd) = std::env::current_dir() {
+        candidate_dirs.push(cwd.clone());
         candidate_dirs.push(cwd.join("src-tauri").join("binaries"));
         candidate_dirs.push(cwd.join("binaries"));
     }
