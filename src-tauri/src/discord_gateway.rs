@@ -5,9 +5,9 @@ use serde_json::{json, Value};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 use crate::models::Quest;
+use crate::super_properties::SuperProperties;
 
-#[allow(dead_code)]
-const GATEWAY_URL: &str = "wss://gateway.discord.gg/?v=9&encoding=json&compress=zlib-stream";
+const GATEWAY_URL: &str = "wss://gateway.discord.gg/?v=9&encoding=json";
 
 /// Discord Gateway opcodes
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -93,14 +93,11 @@ struct ReadyQuestUserStatus {
 }
 
 #[allow(dead_code)]
-pub async fn get_quests_from_gateway(token: &str) -> Result<Vec<Quest>> {
+pub async fn get_quests_from_gateway(token: &str, props: &SuperProperties) -> Result<Vec<Quest>> {
     println!("Connecting to Discord Gateway...");
 
-    // Use non-compressed JSON mode for simplicity
-    let gateway_url = "wss://gateway.discord.gg/?v=9&encoding=json";
-
     // Connect to Gateway
-    let (ws_stream, _) = connect_async(gateway_url)
+    let (ws_stream, _) = connect_async(GATEWAY_URL)
         .await
         .context("Could not connect to Discord Gateway")?;
 
@@ -127,46 +124,8 @@ pub async fn get_quests_from_gateway(token: &str) -> Result<Vec<Quest>> {
                             // HELLO
                             println!("Received HELLO event");
 
-                            // Send Identify with better client properties
-                            let identify = json!({
-                                "op": 2,
-                                "d": {
-                                    "token": token,
-                                    "capabilities": 30717,
-                                    "properties": {
-                                        "os": "Windows",
-                                        "browser": "Discord Client",
-                                        "device": "",
-                                        "system_locale": "en-US",
-                                        "browser_user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) discord/1.0.9015 Chrome/108.0.5359.215 Electron/22.3.2 Safari/537.36",
-                                        "browser_version": "22.3.2",
-                                        "os_version": "10.0.19045",
-                                        "referrer": "",
-                                        "referring_domain": "",
-                                        "referrer_current": "",
-                                        "referring_domain_current": "",
-                                        "release_channel": "stable",
-                                        "client_build_number": 175517,
-                                        "client_event_source": null
-                                    },
-                                    "presence": {
-                                        "status": "online",
-                                        "since": 0,
-                                        "activities": [],
-                                        "afk": false
-                                    },
-                                    "compress": false,
-                                    "client_state": {
-                                        "guild_versions": {},
-                                        "highest_last_message_id": "0",
-                                        "read_state_version": 0,
-                                        "user_guild_settings_version": -1,
-                                        "user_settings_version": -1,
-                                        "private_channels_version": "0",
-                                        "api_code_version": 0
-                                    }
-                                }
-                            });
+                            // Send Identify with client properties from SuperProperties
+                            let identify = props.to_gateway_identify_payload(token);
 
                             write
                                 .send(Message::Text(identify.to_string().into()))

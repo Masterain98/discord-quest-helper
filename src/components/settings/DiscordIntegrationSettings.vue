@@ -354,8 +354,12 @@ onMounted(() => {
                 <p class="mt-1 truncate font-mono text-sm font-medium">{{ debugInfo.super_properties?.os }} {{ debugInfo.super_properties?.os_version }}</p>
               </div>
               <div class="rounded-md border bg-muted/30 px-3 py-2">
-                <p class="text-[11px] text-muted-foreground">{{ t('settings.field_browser') }}</p>
+                <p class="text-[11px] text-muted-foreground">{{ t('settings.field_client_type') }}</p>
                 <p class="mt-1 truncate font-mono text-sm font-medium">{{ debugInfo.super_properties?.browser }}</p>
+              </div>
+              <div class="rounded-md border bg-muted/30 px-3 py-2">
+                <p class="text-[11px] text-muted-foreground">{{ t('settings.field_electron_version') }}</p>
+                <p class="mt-1 truncate font-mono text-sm font-medium">{{ debugInfo.super_properties?.browser_version ?? '—' }}</p>
               </div>
               <div class="rounded-md border bg-muted/30 px-3 py-2">
                 <p class="text-[11px] text-muted-foreground">{{ t('settings.field_release_channel') }}</p>

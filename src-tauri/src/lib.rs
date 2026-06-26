@@ -624,7 +624,7 @@ async fn fetch_detectable_games(state: State<'_, AppState>) -> Result<Vec<Detect
 
     // ── Unauthenticated fallback ──────────────────────────────────────────
     let http = reqwest::Client::builder()
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) discord/1.0.9219 Chrome/138.0.7204.251 Electron/37.6.0 Safari/537.36")
+        .user_agent(super_properties::discord_user_agent(super_properties::DEFAULT_CLIENT_VERSION))
         .connect_timeout(std::time::Duration::from_secs(8))
         .timeout(std::time::Duration::from_secs(20))
         .build()
