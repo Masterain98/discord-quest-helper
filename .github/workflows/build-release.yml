@@ -109,6 +109,8 @@ jobs:
       
       # Upload Windows artifact (portable)
       # Runner binary is embedded in the main executable via include_bytes!
+      # CDP launcher sidecar must be included alongside the main exe for
+      # the "Create CDP Launcher Shortcut" feature to work in portable mode.
       - name: Upload Windows artifact (portable)
         if: matrix.platform == 'windows-latest'
         uses: actions/upload-artifact@v7
@@ -116,6 +118,7 @@ jobs:
           name: tauri-win-portable
           path: |
             src-tauri/target/release/discord-quest-helper.exe
+            src-tauri/binaries/discord-cdp-launcher-sidecar-x86_64-pc-windows-msvc.exe
 
       # Upload Windows artifact (MSI installer)
       - name: Upload Windows artifact (MSI)
