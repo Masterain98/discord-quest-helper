@@ -9,11 +9,23 @@ use uuid::Uuid;
 /// Discord client mod detection bits (128-bit mask)
 /// Source: https://github.com/sparklost/endcord/blob/main/endcord/client_properties.py
 const CLIENT_MOD_DETECTION_BITS: u128 = 0b00000000100000000001000000010000000010000001000000001000000000000010000010000001000000000100000000000001000000000000100000000000;
-const DEFAULT_CLIENT_VERSION: &str = "1.0.9242";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Discord client version constants — update these together when Discord ships
+// a new client release.  Every other module references these instead of
+// hardcoding their own values.
+// ─────────────────────────────────────────────────────────────────────────────
+pub(crate) const DEFAULT_CLIENT_VERSION: &str = "1.0.9242";
 const DEFAULT_CHROME_VERSION: &str = "138.0.7204.251";
 const DEFAULT_ELECTRON_VERSION: &str = "37.6.0";
+const DEFAULT_OS_VERSION: &str = "10.0.19045";
+const DEFAULT_OS_SDK_VERSION: &str = "19045";
+/// Fallback build number when CDP extraction and remote JS fetch both fail.
+/// Updated: June 24th, 2026
+pub(crate) const DEFAULT_CLIENT_BUILD_NUMBER: u64 = 567600;
+const DEFAULT_NATIVE_BUILD_NUMBER: u64 = 84410;
 
-fn discord_user_agent(client_version: &str) -> String {
+pub(crate) fn discord_user_agent(client_version: &str) -> String {
     format!(
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) discord/{} Chrome/{} Electron/{} Safari/537.36",
         client_version, DEFAULT_CHROME_VERSION, DEFAULT_ELECTRON_VERSION
@@ -229,28 +241,68 @@ impl Default for SuperProperties {
             browser: "Discord Client".to_string(),
             release_channel: "stable".to_string(),
             client_version: Some(DEFAULT_CLIENT_VERSION.to_string()),
-            os_version: "10.0.19045".to_string(),
+            os_version: DEFAULT_OS_VERSION.to_string(),
             os_arch: Some("x64".to_string()),
             app_arch: Some("x64".to_string()),
             system_locale: "en-US".to_string(),
             has_client_mods: false, // Must be false
             browser_user_agent: discord_user_agent(DEFAULT_CLIENT_VERSION),
             browser_version: DEFAULT_ELECTRON_VERSION.to_string(),
-            os_sdk_version: Some("19045".to_string()),
-            // FALLBACK BUILD NUMBER: This hardcoded value is used when
-            // CDP extraction and remote JS fetch both fail. May need periodic updates as
-            // Discord releases new versions. The actual build number is fetched dynamically
-            // from Discord when possible.
-            // Default build_number
-            // June 24th, 2026
-            client_build_number: 567600,
-            native_build_number: Some(84410),
+            os_sdk_version: Some(DEFAULT_OS_SDK_VERSION.to_string()),
+            client_build_number: DEFAULT_CLIENT_BUILD_NUMBER,
+            native_build_number: Some(DEFAULT_NATIVE_BUILD_NUMBER),
             client_event_source: None,
             launch_signature: None,
             client_launch_id: None,
             client_heartbeat_session_id: None,
             client_app_state: Some("focused".to_string()),
         }
+    }
+}
+
+impl SuperProperties {
+    /// Builds a Gateway Identify payload (op 2) from the current properties.
+    /// The `token` parameter is the user's authentication token.
+    pub fn to_gateway_identify_payload(&self, token: &str) -> serde_json::Value {
+        serde_json::json!({
+            "op": 2,
+            "d": {
+                "token": token,
+                "capabilities": 30717,
+                "properties": {
+                    "os": self.os,
+                    "browser": self.browser,
+                    "device": "",
+                    "system_locale": self.system_locale,
+                    "browser_user_agent": self.browser_user_agent,
+                    "browser_version": self.browser_version,
+                    "os_version": self.os_version,
+                    "referrer": "",
+                    "referring_domain": "",
+                    "referrer_current": "",
+                    "referring_domain_current": "",
+                    "release_channel": self.release_channel,
+                    "client_build_number": self.client_build_number,
+                    "client_event_source": self.client_event_source
+                },
+                "presence": {
+                    "status": "online",
+                    "since": 0,
+                    "activities": [],
+                    "afk": false
+                },
+                "compress": false,
+                "client_state": {
+                    "guild_versions": {},
+                    "highest_last_message_id": "0",
+                    "read_state_version": 0,
+                    "user_guild_settings_version": -1,
+                    "user_settings_version": -1,
+                    "private_channels_version": "0",
+                    "api_code_version": 0
+                }
+            }
+        })
     }
 }
 
