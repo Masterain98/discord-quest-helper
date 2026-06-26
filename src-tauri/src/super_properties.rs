@@ -8,22 +8,22 @@ use uuid::Uuid;
 
 /// Discord client mod detection bits (128-bit mask)
 /// Source: https://github.com/sparklost/endcord/blob/main/endcord/client_properties.py
-const CLIENT_MOD_DETECTION_BITS: u128 = 0b00000000100000000001000000010000000010000001000000001000000000000010000010000001000000000100000000000001000000000000100000000000;
+pub(crate) const CLIENT_MOD_DETECTION_BITS: u128 = 0b00000000100000000001000000010000000010000001000000001000000000000010000010000001000000000100000000000001000000000000100000000000;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Discord client version constants — update these together when Discord ships
 // a new client release.  Every other module references these instead of
 // hardcoding their own values.
 // ─────────────────────────────────────────────────────────────────────────────
-pub(crate) const DEFAULT_CLIENT_VERSION: &str = "1.0.9242";
-const DEFAULT_CHROME_VERSION: &str = "138.0.7204.251";
-const DEFAULT_ELECTRON_VERSION: &str = "37.6.0";
-const DEFAULT_OS_VERSION: &str = "10.0.19045";
-const DEFAULT_OS_SDK_VERSION: &str = "19045";
+pub(crate) const DEFAULT_CLIENT_VERSION: &str = "1.0.9243";
+pub(crate) const DEFAULT_CHROME_VERSION: &str = "138.0.7204.251";
+pub(crate) const DEFAULT_ELECTRON_VERSION: &str = "37.6.0";
+pub(crate) const DEFAULT_OS_VERSION: &str = "10.0.19045";
+pub(crate) const DEFAULT_OS_SDK_VERSION: &str = "19045";
 /// Fallback build number when CDP extraction and remote JS fetch both fail.
 /// Updated: June 24th, 2026
-pub(crate) const DEFAULT_CLIENT_BUILD_NUMBER: u64 = 567600;
-const DEFAULT_NATIVE_BUILD_NUMBER: u64 = 84410;
+pub(crate) const DEFAULT_CLIENT_BUILD_NUMBER: u64 = 569817;
+pub(crate) const DEFAULT_NATIVE_BUILD_NUMBER: u64 = 84934;
 
 pub(crate) fn discord_user_agent(client_version: &str) -> String {
     format!(
@@ -270,20 +270,20 @@ impl SuperProperties {
                 "token": token,
                 "capabilities": 30717,
                 "properties": {
-                    "os": self.os,
-                    "browser": self.browser,
+                    "os": &self.os,
+                    "browser": &self.browser,
                     "device": "",
-                    "system_locale": self.system_locale,
-                    "browser_user_agent": self.browser_user_agent,
-                    "browser_version": self.browser_version,
-                    "os_version": self.os_version,
+                    "system_locale": &self.system_locale,
+                    "browser_user_agent": &self.browser_user_agent,
+                    "browser_version": &self.browser_version,
+                    "os_version": &self.os_version,
                     "referrer": "",
                     "referring_domain": "",
                     "referrer_current": "",
                     "referring_domain_current": "",
-                    "release_channel": self.release_channel,
+                    "release_channel": &self.release_channel,
                     "client_build_number": self.client_build_number,
-                    "client_event_source": self.client_event_source
+                    "client_event_source": &self.client_event_source
                 },
                 "presence": {
                     "status": "online",

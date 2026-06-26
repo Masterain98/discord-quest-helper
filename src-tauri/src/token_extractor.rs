@@ -726,7 +726,13 @@ pub async fn fetch_discord_client_info() -> Result<DiscordClientInfo> {
     let version: [u32; 3] = [
         host_version[0].as_u64().unwrap_or(1) as u32,
         host_version[1].as_u64().unwrap_or(0) as u32,
-        host_version[2].as_u64().unwrap_or(crate::super_properties::DEFAULT_CLIENT_BUILD_NUMBER) as u32,
+        host_version[2].as_u64().unwrap_or_else(|| {
+            crate::super_properties::DEFAULT_CLIENT_VERSION
+                .rsplit('.')
+                .next()
+                .and_then(|patch| patch.parse::<u64>().ok())
+                .unwrap_or(0)
+        }) as u32,
     ];
 
     // native_build_number is usually the third number in host_version

@@ -7,7 +7,6 @@ use tokio_tungstenite::{connect_async, tungstenite::Message};
 use crate::models::Quest;
 use crate::super_properties::SuperProperties;
 
-#[allow(dead_code)]
 const GATEWAY_URL: &str = "wss://gateway.discord.gg/?v=9&encoding=json";
 
 /// Discord Gateway opcodes
