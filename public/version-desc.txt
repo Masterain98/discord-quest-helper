@@ -1,28 +1,31 @@
 ## ✨ What's Changed
 
+<img width="128" height="128" alt="launcher-logo" src="https://github.com/user-attachments/assets/81cb78b5-6575-4848-85e2-284c5d4c8dee" />
+
 ### 🎊 New Features
-1. Added Activity quest support via CDP, allowing direct launch and completion from the app.
-2. Added a CDP Launcher for one-click Discord startup with CDP support. Desktop shortcuts will no longer become invalid after Discord updates.
-3. Added batch actions to accept or complete multiple quests at once.
+1. **Added Activity quest support via CDP, allowing direct launch and completion from the app.**
+2. **Added a CDP Launcher for one-click Discord startup with CDP support. Desktop shortcuts will no longer become invalid after Discord updates.**
+3. **Added batch actions to accept or complete multiple quests at once.**
 4. Added update check support for beta versions; enhanced the version checker.
 
 ### 🎨 UI/UX Improvements
-1. Redesigned Home page with a Quest Dashboard showing summary cards for available, running, and ready-to-claim quests.
-2. Added a "Next Best Action" panel recommending the most important step to take.
-3. Added quick view tabs (Recommended, To Accept, Ready to Run, Ready to Claim, Completed) for instant quest filtering.
-4. Redesigned Settings page with organized sections: Account, Appearance, Discord Integration, Quest Behavior, and more.
+1. **Redesigned Home page with a Quest Dashboard showing summary cards for available, running, and ready-to-claim quests.**
+2. **Redesigned Settings page with organized sections: Account, Appearance, Discord Integration, Quest Behavior, and more.**
+3. Added a "Next Best Action" panel recommending the most important step to take.
+4. Added quick view tabs (Recommended, To Accept, Ready to Run, Ready to Claim, Completed) for instant quest filtering.
 5. Added an Account Menu showing your Discord avatar, username, and Nitro membership badge.
 6. Added a quest mode indicator in the header showing the current completion mode (CDP, Heartbeat, or Simulate).
 7. Added toast notifications for clearer feedback on your actions.
-8. Improved quest claim flow with direct navigation to the Discord quest page.
-9. Enhanced dark mode transitions for a smoother visual experience.
-10. Improved quest progress tracking and error messages.
+8. Enhanced dark mode transitions for a smoother visual experience.
+9. Improved quest progress tracking and error messages.
 
 ### ⚡ Enhancements
-1. Enhanced CDP quest completion with Activity quest support and improved error handling.
-2. Updated Discord API client with better token extraction and super properties handling.
-3. Added i18n validation and audit scripts for translation quality assurance.
-4. Added a new icon for CDP Launcher.
-5. Added 9 new languages: German, French, Indonesian, Polish, Portuguese (Brazil), Portuguese (Portugal), Thai, Turkish, and Vietnamese.
-6. Bump default `client_build_number` to `567600`.
-7. Bump Rust and Vue dependencies versions
+1. **Improved "Claim Reward" behavior, your Discord client will be redirect to the quest page and highlight the target quest.**
+2. Enhanced CDP quest completion with Activity quest support and improved error handling.
+3. Updated Discord API client with better token extraction and super properties handling.
+4. Added i18n validation and audit scripts for translation quality assurance.
+5. Added a new icon for CDP Launcher.
+6. Added 9 new languages: German, French, Indonesian, Polish, Portuguese (Brazil), Portuguese (Portugal), Thai, Turkish, and Vietnamese.
+7. Bump default client build number to `569817` and native build number to 9243.
+8. Centralized client build metadata and shared among modules, allow login requests use latest client metadata.
+9. Bump Rust and Vue dependencies versions
