@@ -1421,18 +1421,29 @@ fn find_bundled_cdp_launcher(app_handle: &tauri::AppHandle) -> Result<std::path:
 fn cdp_launcher_binary_names() -> Vec<&'static str> {
     #[cfg(target_os = "windows")]
     {
-        return vec!["discord-cdp-launcher-sidecar-x86_64-pc-windows-msvc.exe"];
+        return vec![
+            // Tauri bundles externalBin sidecars under the base name in installed apps.
+            "discord-cdp-launcher-sidecar.exe",
+            // Dev/build trees keep the target triple because Tauri validates this input name.
+            "discord-cdp-launcher-sidecar-x86_64-pc-windows-msvc.exe",
+        ];
     }
 
     #[cfg(target_os = "macos")]
     {
         #[cfg(target_arch = "aarch64")]
         {
-            return vec!["discord-cdp-launcher-sidecar-aarch64-apple-darwin"];
+            return vec![
+                "discord-cdp-launcher-sidecar",
+                "discord-cdp-launcher-sidecar-aarch64-apple-darwin",
+            ];
         }
         #[cfg(target_arch = "x86_64")]
         {
-            return vec!["discord-cdp-launcher-sidecar-x86_64-apple-darwin"];
+            return vec![
+                "discord-cdp-launcher-sidecar",
+                "discord-cdp-launcher-sidecar-x86_64-apple-darwin",
+            ];
         }
     }
 

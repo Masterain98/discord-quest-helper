@@ -26,10 +26,12 @@ jobs:
           - platform: 'windows-latest'
             args: ''
             x-target: 'win32-x64'
+            cdp_target: 'x86_64-pc-windows-msvc'
             runner-ext: '.exe'
           - platform: 'macos-14'  # Apple Silicon M1/M2 runner
             args: '--target aarch64-apple-darwin'
             x-target: 'darwin-arm64'
+            cdp_target: 'aarch64-apple-darwin'
             runner-ext: ''
 
     runs-on: ${{ matrix.platform }}
@@ -99,6 +101,8 @@ jobs:
         run: pnpm run build:runner
 
       - name: Build Discord CDP launcher sidecar
+        env:
+          TAURI_TARGET_TRIPLE: ${{ matrix.cdp_target }}
         run: pnpm run build:cdp-launcher
 
       - uses: tauri-apps/tauri-action@v0
@@ -106,6 +110,17 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           args: ${{ matrix.args }}
+
+      - name: Stage Windows portable artifact
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        env:
+          CDP_TARGET: ${{ matrix.cdp_target }}
+        run: |
+          $portableDir = 'build/windows-portable'
+          New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
+          Copy-Item 'src-tauri/target/release/discord-quest-helper.exe' "$portableDir/discord-quest-helper.exe"
+          Copy-Item "src-tauri/binaries/discord-cdp-launcher-sidecar-$env:CDP_TARGET.exe" "$portableDir/discord-cdp-launcher-sidecar.exe"
       
       # Upload Windows artifact (portable)
       # Runner binary is embedded in the main executable via include_bytes!
@@ -116,9 +131,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: tauri-win-portable
-          path: |
-            src-tauri/target/release/discord-quest-helper.exe
-            src-tauri/binaries/discord-cdp-launcher-sidecar-x86_64-pc-windows-msvc.exe
+          path: build/windows-portable/*
 
       # Upload Windows artifact (MSI installer)
       - name: Upload Windows artifact (MSI)
