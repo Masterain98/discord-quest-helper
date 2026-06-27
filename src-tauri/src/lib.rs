@@ -1393,6 +1393,9 @@ fn find_bundled_cdp_launcher(app_handle: &tauri::AppHandle) -> Result<std::path:
         }
     }
 
+    #[cfg(target_os = "windows")]
+    add_windows_cdp_launcher_install_dirs(&mut candidate_dirs);
+
     for dir in &candidate_dirs {
         for name in &names {
             let candidate = dir.join(name);
@@ -1416,6 +1419,23 @@ fn find_bundled_cdp_launcher(app_handle: &tauri::AppHandle) -> Result<std::path:
          Run `pnpm build:cdp-launcher` and try again.",
         names, searched
     ))
+}
+
+#[cfg(target_os = "windows")]
+fn add_windows_cdp_launcher_install_dirs(candidate_dirs: &mut Vec<std::path::PathBuf>) {
+    const PRODUCT_DIR: &str = "Discord Quest Helper";
+
+    for var_name in ["ProgramFiles", "ProgramW6432", "ProgramFiles(x86)"] {
+        if let Some(root) = std::env::var_os(var_name) {
+            candidate_dirs.push(std::path::PathBuf::from(root).join(PRODUCT_DIR));
+        }
+    }
+
+    if let Some(local_appdata) = std::env::var_os("LOCALAPPDATA") {
+        let local_appdata = std::path::PathBuf::from(local_appdata);
+        candidate_dirs.push(local_appdata.join("Programs").join(PRODUCT_DIR));
+        candidate_dirs.push(local_appdata.join(PRODUCT_DIR));
+    }
 }
 
 fn cdp_launcher_binary_names() -> Vec<&'static str> {
