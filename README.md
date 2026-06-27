@@ -12,12 +12,12 @@ Complete Discord video, stream, and game quests automatically while you focus on
 
 ⭐ **If you find this helpful, please give it a star!** ⭐
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Platform](https://img.shields.io/badge/platform-Windows%20|%20macOS-blue.svg)
-![Tauri](https://img.shields.io/badge/tauri-2-blue.svg)
-![Vue](https://img.shields.io/badge/vue-3.5-green.svg)
-![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)
-![GitHub Release](https://img.shields.io/github/v/release/Masterain98/discord-quest-helper?label=latest%20release&color=41b883)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Windows%20|%20macOS-blue.svg)](https://github.com/Masterain98/discord-quest-helper/releases)
+[![Tauri](https://img.shields.io/badge/tauri-2-blue.svg)](https://tauri.app/)
+[![Vue](https://img.shields.io/badge/vue-3.5-green.svg)](https://vuejs.org/)
+[![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org/)
+[![GitHub Release](https://img.shields.io/github/v/release/Masterain98/discord-quest-helper?label=latest%20release&color=41b883)](https://github.com/Masterain98/discord-quest-helper/releases/latest)
 
 </div>
 
@@ -25,6 +25,11 @@ Complete Discord video, stream, and game quests automatically while you focus on
 
 > [!WARNING]
 > **This tool is for educational purposes only.** Using this tool may violate Discord's Terms of Service. The authors are not responsible for any consequences resulting from the use of this software. Use at your own risk.
+
+> [!IMPORTANT]
+> This project uses GitHub Actions CI/CD workflows to build and publish its binaries as immutable releases, meaning the software you download is built directly from the original publicly available source code rather than manually uploaded binaries.
+> You can use DeepWiki to ask questions about the project’s codebase. 
+> [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Masterain98/discord-quest-helper)
 
 ### Download & Run
 
@@ -62,7 +67,7 @@ Complete Discord video, stream, and game quests automatically while you focus on
 - 📺 **Video & Stream Automation** — Click once, progress submits automatically in the background
 - 🔍 **Advanced Quest Filter** — Filter by reward type, completion status, and more
 - 👥 **Multi-Account Support** — Manage multiple Discord accounts seamlessly
-- 🌏 **Multi-language** — English, Chinese (Simplified & Traditional), Japanese, Korean, Russian, Spanish
+- 🌏 **Multi-language** — 16 languages: English, Chinese (Simplified & Traditional), Japanese, Korean, Russian, Spanish, German, French, Indonesian, Polish, Portuguese (Brazil & Portugal), Thai, Turkish, Vietnamese
 
 ## 📸 Screenshots
 
@@ -86,7 +91,7 @@ Complete Discord video, stream, and game quests automatically while you focus on
 ├─────────────────────────────────────────────────────────────────┤
 │  Vue.js Frontend (Vite dev server :1420)                         │
 │  ├─ Views: Home, GameSimulator, Settings, Debug                 │
-│  ├─ Stores: auth.ts, quests.ts, version.ts (Pinia)              │
+│  ├─ Stores: auth.ts, quests.ts, version.ts, toast.ts (Pinia)    │
 │  └─ API: tauri.ts (IPC bridge)                                   │
 ├────────────────────────┬────────────────────────────────────────┤
 │     Tauri IPC          │                                         │
@@ -94,16 +99,21 @@ Complete Discord video, stream, and game quests automatically while you focus on
 │  Rust Backend (Tauri 2)                                          │
 │  ├─ token_extractor.rs   - LevelDB + DPAPI + AES-GCM             │
 │  ├─ cdp_client.rs        - Chrome DevTools Protocol integration  │
+│  ├─ cdp_quest.rs         - CDP-based quest completion            │
 │  ├─ discord_api.rs       - HTTP client & endpoints               │
 │  ├─ discord_gateway.rs   - WebSocket gateway connection          │
+│  ├─ discord_cdp_launcher.rs - CDP launcher management            │
 │  ├─ quest_completer.rs   - Video/stream automation               │
 │  ├─ game_simulator.rs    - Process creation & management         │
 │  ├─ super_properties.rs  - Discord client fingerprinting         │
 │  ├─ stealth.rs           - Stealth mode for anti-detection       │
+│  ├─ rpc.rs               - Discord RPC client                    │
+│  ├─ runner.rs            - Activity runner parsing                │
 │  ├─ logger.rs            - Structured logging                    │
-│  └─ runner.rs            - Game runner management                │
+│  └─ models.rs            - Data structures & types               │
 ├─────────────────────────────────────────────────────────────────┤
 │  Game Runner (src-runner) - Minimal Windows exe (~140KB)         │
+│  CDP Launcher (src-cdp-launcher) - Discord CDP sidecar binary   │
 └─────────────────────────────────────────────────────────────────┘
                               │ HTTPS
                               ▼
@@ -139,7 +149,8 @@ MIT License — see [LICENSE](LICENSE) file.
 - [markterence/discord-quest-completer](https://github.com/markterence/discord-quest-completer)
 - [power0matin/discord-quest-auto-completer](https://github.com/power0matin/discord-quest-auto-completer)
 - [taisrisk/Discord-Quest-Helper](https://github.com/taisrisk/Discord-Quest-Helper)
+- [aamiaa/CompleteDiscordQuest.md](https://gist.github.com/aamiaa/204cd9d42013ded9faf646fae7f89fbb)
 - [docs.discord.food](https://docs.discord.food/)
 
 **Technologies**
-- [Tauri](https://tauri.app/) • [Vue.js](https://vuejs.org/) • [shadcn-vue](https://www.shadcn-vue.com/) • [TailwindCSS](https://tailwindcss.com/)
+- [Tauri](https://tauri.app/) • [Vue.js](https://vuejs.org/) • [Pinia](https://pinia.vuejs.org/) • [vue-i18n](https://vue-i18n.intlify.dev/) • [shadcn-vue](https://www.shadcn-vue.com/) • [TailwindCSS](https://tailwindcss.com/) • [Lucide Icons](https://lucide.dev/)
