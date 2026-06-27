@@ -4,7 +4,7 @@ use std::process::Command;
 
 fn main() {
     println!("cargo:rerun-if-changed=resources/launcher.rc");
-    println!("cargo:rerun-if-changed=resources/launcher-logo.ico");
+    println!("cargo:rerun-if-changed=../public/icons/launcher-logo.ico");
 
     if env::var_os("CARGO_CFG_WINDOWS").is_none() {
         return;
