@@ -528,7 +528,9 @@ async fn start_cdp_quest(
                     cdp_port,
                     quest_id,
                     application_id,
+                    initial_progress,
                     times,
+                    client,
                     app_handle.clone(),
                     cancel_rx,
                 )

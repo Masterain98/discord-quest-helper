@@ -571,21 +571,39 @@ export const useQuestsStore = defineStore('quests', () => {
 
       // Get checkpoint count from task config (default 3)
       const tasks = quest.config.task_config_v2?.tasks ?? quest.config.task_config?.tasks
-      const activityTask = tasks ? Object.values(tasks).find(t =>
-        t.type?.includes('ACTIVITY') || t.type?.includes('ACHIEVEMENT')
+      const activityTaskEntry = tasks ? Object.entries(tasks).find(([, task]) =>
+        task.type?.includes('ACTIVITY') || task.type?.includes('ACHIEVEMENT')
       ) : null
+      const activityTaskKey = activityTaskEntry?.[0]
+      const activityTask = activityTaskEntry?.[1] ?? null
       const checkpointCount = activityTask?.target || 3
+      const currentProgress = quest.user_status?.progress
+      const currentCheckpointValue = activityTaskKey && currentProgress?.[activityTaskKey]?.value != null
+        ? currentProgress[activityTaskKey].value ?? 0
+        : Object.values(currentProgress ?? {})[0]?.value ?? 0
+      const completedCheckpoints = Math.min(
+        checkpointCount,
+        Math.max(0, Math.floor(currentCheckpointValue))
+      )
+      const remainingCheckpointCount = Math.max(0, checkpointCount - completedCheckpoints)
+
+      if (remainingCheckpointCount === 0) {
+        throw new Error('Activity quest already has all checkpoints submitted. Refresh quests or claim the reward in Discord.')
+      }
 
       // Generate random checkpoint times within [min, max] range
       const min = activityCheckpointMin.value
       const max = activityCheckpointMax.value
-      const checkpointTimes: number[] = []
+      const allCheckpointTimes: number[] = []
       for (let i = 0; i < checkpointCount; i++) {
-        checkpointTimes.push(Math.floor(Math.random() * (max - min + 1)) + min)
+        allCheckpointTimes.push(Math.floor(Math.random() * (max - min + 1)) + min)
       }
-      const totalSeconds = checkpointTimes.reduce((sum, t) => sum + t, 0)
+      const checkpointTimes = allCheckpointTimes.slice(completedCheckpoints)
+      const totalSeconds = allCheckpointTimes.reduce((sum, t) => sum + t, 0)
+      const remainingSeconds = checkpointTimes.reduce((sum, t) => sum + t, 0)
+      const progressPct = checkpointCount > 0 ? (completedCheckpoints / checkpointCount) * 100 : 0
 
-      console.log(`Starting activity quest via CDP: ${checkpointCount} checkpoints, times=[${checkpointTimes.join(', ')}], total=${totalSeconds}s`)
+      console.log(`Starting activity quest via CDP: completed=${completedCheckpoints}/${checkpointCount}, remaining=${remainingCheckpointCount}, times=[${checkpointTimes.join(', ')}], remaining=${remainingSeconds}s, estimatedTotal=${totalSeconds}s`)
 
       const appId = quest.config.application?.id || ''
       const appName = quest.config.application?.name || quest.config.messages?.quest_name || 'Activity'
@@ -596,14 +614,14 @@ export const useQuestsStore = defineStore('quests', () => {
         appId,
         appName,
         totalSeconds,
-        0,
+        completedCheckpoints,
         cdpPort.value,
         checkpointTimes
       )
 
       activeQuestId.value = quest.id
       activeQuestType.value = 'activity'
-      activeQuestProgress.value = 0
+      activeQuestProgress.value = progressPct
       activeQuestTargetDuration.value = totalSeconds
 
       startProgressSimulation(1.0)

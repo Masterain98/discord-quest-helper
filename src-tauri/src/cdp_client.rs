@@ -785,8 +785,7 @@ fn activity_target_application_id(target: &CdpTarget) -> Option<String> {
 
 fn describe_activity_host_for_log(host: &str) -> String {
     if let Some(application_id) = host.strip_suffix(".discordsays.com") {
-        if !application_id.is_empty()
-            && application_id.chars().all(|value| value.is_ascii_digit())
+        if !application_id.is_empty() && application_id.chars().all(|value| value.is_ascii_digit())
         {
             return format!(
                 "{}.discordsays.com",
@@ -806,6 +805,10 @@ fn is_activity_target(target: &CdpTarget) -> bool {
     (target.target_type == "iframe" || target.target_type == "page")
         && is_activity_host
         && target.web_socket_debugger_url.is_some()
+}
+
+fn is_activity_iframe_target(target: &CdpTarget) -> bool {
+    target.target_type == "iframe"
 }
 
 fn describe_activity_targets(targets: &[CdpTarget]) -> String {
@@ -859,31 +862,63 @@ pub async fn find_activity_iframe_target_for_application(
 
     if let Some(app_id) = requested_application_id {
         let app_id_hint = crate::logger::sanitize_user_id(app_id);
-        if let Some(target) = activity_targets
+        let matching_targets = activity_targets
             .iter()
-            .find(|target| activity_target_application_id(target).as_deref() == Some(app_id))
-        {
-            return Ok(target.clone());
-        }
+            .filter(|target| activity_target_application_id(target).as_deref() == Some(app_id))
+            .cloned()
+            .collect::<Vec<_>>();
 
-        if activity_targets.len() == 1 {
-            log(
-                LogLevel::Warn,
-                LogCategory::TokenExtraction,
-                &format!(
-                    "No activity iframe matched application_id_hint={}; falling back to sole activity target: {}",
-                    app_id_hint,
-                    describe_activity_targets(&activity_targets)
-                ),
-                None,
+        if !matching_targets.is_empty() {
+            if let Some(target) = matching_targets
+                .iter()
+                .find(|target| is_activity_iframe_target(target))
+            {
+                return Ok(target.clone());
+            }
+
+            anyhow::bail!(
+                "No iframe activity target matched application_id_hint={}. Found matching activity targets: {}",
+                app_id_hint,
+                describe_activity_targets(&matching_targets)
             );
-            return Ok(activity_targets[0].clone());
         }
 
         anyhow::bail!(
             "No activity iframe target matched application_id_hint={}. Found activity targets: {}",
             app_id_hint,
             describe_activity_targets(&activity_targets)
+        );
+    }
+
+    let iframe_targets = activity_targets
+        .iter()
+        .filter(|target| is_activity_iframe_target(target))
+        .collect::<Vec<_>>();
+
+    if let Some(target) = iframe_targets.first() {
+        if activity_targets.len() > 1 {
+            log(
+                LogLevel::Warn,
+                LogCategory::TokenExtraction,
+                &format!(
+                    "Multiple activity targets found with no application_id_hint; defaulting to first iframe target. activity_targets={}",
+                    describe_activity_targets(&activity_targets)
+                ),
+                None,
+            );
+        }
+        return Ok((*target).clone());
+    }
+
+    if activity_targets.len() > 1 {
+        log(
+            LogLevel::Warn,
+            LogCategory::TokenExtraction,
+            &format!(
+                "Multiple non-iframe activity targets found with no application_id_hint; defaulting to first target. activity_targets={}",
+                describe_activity_targets(&activity_targets)
+            ),
+            None,
         );
     }
 
