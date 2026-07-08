@@ -876,8 +876,14 @@ pub async fn find_activity_iframe_target_for_application(
                 return Ok(target.clone());
             }
 
+            // Fall back to any matching activity target (e.g. page type)
+            // since some valid activities load as page targets, not iframes.
+            if let Some(target) = matching_targets.first() {
+                return Ok(target.clone());
+            }
+
             anyhow::bail!(
-                "No iframe activity target matched application_id_hint={}. Found matching activity targets: {}",
+                "No activity target matched application_id_hint={}. Found matching activity targets: {}",
                 app_id_hint,
                 describe_activity_targets(&matching_targets)
             );
