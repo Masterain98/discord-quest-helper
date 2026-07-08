@@ -2211,77 +2211,374 @@ fn js_dispatch_message_event(event_type: &str, payload_json: &str) -> String {
 /// Generate JS to call Discord SDK commands inside the activity iframe.
 fn js_init_activity_quest(quest_id: &str) -> String {
     let safe_quest_id = serde_json::to_string(quest_id).unwrap_or_else(|_| "\"\"".to_string());
-    format!(
-        r#"
-(async () => {{
-    try {{
-        const questId = {safe_quest_id};
-        const sdk = window.discordSDK;
-        if (!sdk || !sdk.commands) {{
-            return JSON.stringify({{ success: false, error: "Discord SDK not found in iframe" }});
-        }}
+    r#"
+(async () => {
+    const questId = __DQH_QUEST_ID__;
+    const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-        try {{
-            await sdk.commands.setActivity({{
-                activity: {{
-                    state: "Playing",
-                    details: "Completing Quest"
-                }}
-            }});
-        }} catch(e) {{
+    function withTimeout(promise, timeoutMs, label) {
+        return new Promise((resolve, reject) => {
+            const timer = setTimeout(() => {
+                reject(new Error(label + " timed out after " + timeoutMs + "ms"));
+            }, timeoutMs);
+            Promise.resolve(promise).then(
+                value => {
+                    clearTimeout(timer);
+                    resolve(value);
+                },
+                error => {
+                    clearTimeout(timer);
+                    reject(error);
+                }
+            );
+        });
+    }
+
+    function stringifyValue(value) {
+        const seen = new WeakSet();
+        try {
+            const json = JSON.stringify(value, (key, val) => {
+                if (typeof val === "bigint") return String(val);
+                if (typeof val === "function") return "[Function " + (val.name || "anonymous") + "]";
+                if (val instanceof Error) {
+                    return {
+                        name: val.name,
+                        message: val.message,
+                        code: val.code,
+                        stack: val.stack
+                    };
+                }
+                if (val && typeof val === "object") {
+                    if (seen.has(val)) return "[Circular]";
+                    seen.add(val);
+                }
+                return val;
+            });
+            if (json === undefined) return String(value);
+            return json.length > 1800 ? json.slice(0, 1800) + "...(truncated)" : json;
+        } catch (jsonError) {
+            try {
+                return String(value);
+            } catch (_) {
+                return "<unprintable value>";
+            }
+        }
+    }
+
+    function describeError(error) {
+        if (error && typeof error === "object") {
+            const details = {};
+            for (const key of ["name", "message", "code", "type", "status", "statusCode", "reason", "cmd", "command", "payload"]) {
+                if (error[key] !== undefined) details[key] = error[key];
+            }
+            try {
+                for (const key of Object.keys(error)) {
+                    if (details[key] === undefined) details[key] = error[key];
+                }
+            } catch (_) {}
+            if (error.stack) details.stack = String(error.stack).split("\n").slice(0, 6).join("\n");
+            return stringifyValue(Object.keys(details).length ? details : error);
+        }
+        return String(error);
+    }
+
+    function commandNames(sdk) {
+        try {
+            return Object.keys(sdk?.commands || {})
+                .filter(key => typeof sdk.commands[key] === "function")
+                .sort();
+        } catch (_) {
+            return [];
+        }
+    }
+
+    async function waitForSdk(timeoutMs) {
+        const startedAt = Date.now();
+        let lastState = "window.discordSDK missing";
+
+        while (Date.now() - startedAt < timeoutMs) {
+            const sdk = window.discordSDK;
+            if (sdk && sdk.commands) {
+                const commands = commandNames(sdk);
+                if (typeof sdk.commands.questStartTimer === "function") {
+                    return { sdk, commands, waitedMs: Date.now() - startedAt };
+                }
+                lastState = "questStartTimer missing; commands=[" + commands.join(", ") + "]";
+            } else if (sdk) {
+                lastState = "window.discordSDK present but commands missing";
+            }
+            await sleep(250);
+        }
+
+        throw new Error("Discord SDK not ready: " + lastState);
+    }
+
+    try {
+        let sdkState;
+        try {
+            sdkState = await waitForSdk(12000);
+        } catch (e) {
+            return JSON.stringify({ success: false, error: describeError(e) });
+        }
+
+        const sdk = sdkState.sdk;
+        const commands = sdkState.commands;
+        const waitedMs = sdkState.waitedMs;
+
+        if (typeof sdk.ready === "function") {
+            try {
+                await withTimeout(sdk.ready(), 5000, "discordSDK.ready");
+            } catch (e) {
+                return JSON.stringify({
+                    success: false,
+                    error: "discordSDK.ready failed: " + describeError(e),
+                    commands,
+                    waitedMs
+                });
+            }
+        }
+
+        let setActivityError = null;
+        try {
+            if (typeof sdk.commands.setActivity === "function") {
+                await withTimeout(sdk.commands.setActivity({
+                    activity: {
+                        state: "Playing",
+                        details: "Completing Quest"
+                    }
+                }), 5000, "setActivity");
+            }
+        } catch(e) {
+            setActivityError = describeError(e);
             console.warn("[DQH] setActivity failed:", e);
-        }}
+        }
 
-        try {{
-            await sdk.commands.questStartTimer({{ quest_id: questId }});
-        }} catch(e) {{
-            return JSON.stringify({{ success: false, error: "questStartTimer failed: " + String(e) }});
-        }}
+        let questInfoBefore = null;
+        let getQuestBeforeError = null;
+        if (typeof sdk.commands.getQuest === "function") {
+            try {
+                questInfoBefore = await withTimeout(sdk.commands.getQuest(), 5000, "getQuest before start");
+                if (questInfoBefore?.quest_id && String(questInfoBefore.quest_id) !== String(questId)) {
+                    return JSON.stringify({
+                        success: false,
+                        error: "Activity iframe quest mismatch: iframe quest_id=" + questInfoBefore.quest_id + ", requested quest_id=" + questId,
+                        commands,
+                        waitedMs,
+                        questInfoBefore
+                    });
+                }
+            } catch (e) {
+                getQuestBeforeError = describeError(e);
+            }
+        }
+
+        let enrollmentStatusBefore = null;
+        let enrollmentStatusBeforeError = null;
+        if (typeof sdk.commands.getQuestEnrollmentStatus === "function") {
+            try {
+                enrollmentStatusBefore = await withTimeout(
+                    sdk.commands.getQuestEnrollmentStatus({ quest_id: questId }),
+                    5000,
+                    "getQuestEnrollmentStatus before start"
+                );
+            } catch (e) {
+                enrollmentStatusBeforeError = describeError(e);
+            }
+        }
+
+        const hasCurrentQuestContext =
+            String(questInfoBefore?.quest_id || "") === String(questId)
+            || (
+                String(enrollmentStatusBefore?.quest_id || "") === String(questId)
+                && enrollmentStatusBefore?.is_enrolled === true
+            );
+
+        let startTimerResult = null;
+        let startTimerError = null;
+        let startTimerIgnored = false;
+        try {
+            startTimerResult = await withTimeout(
+                sdk.commands.questStartTimer({ quest_id: questId }),
+                10000,
+                "questStartTimer"
+            );
+        } catch(e) {
+            startTimerError = describeError(e);
+            if (e?.code === 4002 && hasCurrentQuestContext) {
+                startTimerIgnored = true;
+                console.warn("[DQH] questStartTimer returned Quest not found for the current iframe quest; continuing:", e);
+            } else {
+                return JSON.stringify({
+                    success: false,
+                    error: "questStartTimer failed: " + startTimerError,
+                    commands,
+                    waitedMs,
+                    setActivityError,
+                    questInfoBefore,
+                    getQuestBeforeError,
+                    enrollmentStatusBefore,
+                    enrollmentStatusBeforeError
+                });
+            }
+        }
+
+        if (startTimerResult && typeof startTimerResult === "object" && startTimerResult.success === false) {
+            if (hasCurrentQuestContext) {
+                startTimerError = stringifyValue(startTimerResult);
+                startTimerIgnored = true;
+                console.warn("[DQH] questStartTimer returned success=false for the current iframe quest; continuing:", startTimerResult);
+            } else {
+                return JSON.stringify({
+                    success: false,
+                    error: "questStartTimer returned failure: " + stringifyValue(startTimerResult),
+                    commands,
+                    waitedMs,
+                    setActivityError,
+                    questInfoBefore,
+                    getQuestBeforeError,
+                    enrollmentStatusBefore,
+                    enrollmentStatusBeforeError
+                });
+            }
+        }
 
         let questInfo = null;
-        try {{
-            questInfo = await sdk.commands.getQuest();
-        }} catch(e) {{
-            return JSON.stringify({{ success: false, error: "getQuest failed: " + String(e) }});
-        }}
+        let getQuestAfterError = null;
+        let enrollmentStatus = null;
+        let enrollmentStatusError = null;
 
-        return JSON.stringify({{
+        if (typeof sdk.commands.getQuest === "function") {
+            try {
+                questInfo = await withTimeout(sdk.commands.getQuest(), 5000, "getQuest after start");
+            } catch(e) {
+                getQuestAfterError = describeError(e);
+            }
+        }
+
+        if (!questInfo && typeof sdk.commands.getQuestEnrollmentStatus === "function") {
+            try {
+                enrollmentStatus = await withTimeout(
+                    sdk.commands.getQuestEnrollmentStatus({ quest_id: questId }),
+                    5000,
+                    "getQuestEnrollmentStatus"
+                );
+            } catch(e) {
+                enrollmentStatusError = describeError(e);
+            }
+        }
+
+        return JSON.stringify({
             success: true,
             questId: questId,
-            questInfo: questInfo
-        }});
-    }} catch (e) {{
-        return JSON.stringify({{ success: false, error: String(e) }});
-    }}
-}})()
+            startTimerResult,
+            questInfo,
+            getQuestAfterError,
+            enrollmentStatus,
+            enrollmentStatusError,
+            enrollmentStatusBefore,
+            enrollmentStatusBeforeError,
+            commands,
+            waitedMs,
+            setActivityError,
+            startTimerError,
+            startTimerIgnored
+        });
+    } catch (e) {
+        return JSON.stringify({ success: false, error: describeError(e) });
+    }
+})()
 "#
-    )
+    .replace("__DQH_QUEST_ID__", &safe_quest_id)
 }
 
 /// Generate JS to check quest completion status inside the activity iframe.
 fn js_check_activity_quest_status() -> String {
     r#"
 (async () => {
+    function stringifyValue(value) {
+        const seen = new WeakSet();
+        try {
+            const json = JSON.stringify(value, (key, val) => {
+                if (typeof val === "bigint") return String(val);
+                if (typeof val === "function") return "[Function " + (val.name || "anonymous") + "]";
+                if (val instanceof Error) {
+                    return {
+                        name: val.name,
+                        message: val.message,
+                        code: val.code,
+                        stack: val.stack
+                    };
+                }
+                if (val && typeof val === "object") {
+                    if (seen.has(val)) return "[Circular]";
+                    seen.add(val);
+                }
+                return val;
+            });
+            if (json === undefined) return String(value);
+            return json.length > 1800 ? json.slice(0, 1800) + "...(truncated)" : json;
+        } catch (_) {
+            return String(value);
+        }
+    }
+
+    function describeError(error) {
+        if (error && typeof error === "object") {
+            const details = {};
+            for (const key of ["name", "message", "code", "type", "status", "statusCode", "reason", "cmd", "command", "payload"]) {
+                if (error[key] !== undefined) details[key] = error[key];
+            }
+            try {
+                for (const key of Object.keys(error)) {
+                    if (details[key] === undefined) details[key] = error[key];
+                }
+            } catch (_) {}
+            if (error.stack) details.stack = String(error.stack).split("\n").slice(0, 6).join("\n");
+            return stringifyValue(Object.keys(details).length ? details : error);
+        }
+        return String(error);
+    }
+
     try {
         const sdk = window.discordSDK;
         if (!sdk || !sdk.commands) {
             return JSON.stringify({ success: false, error: "Discord SDK not found" });
         }
 
-        const quest = await sdk.commands.getQuest();
-        if (!quest) {
-            return JSON.stringify({ success: false, error: "No quest data" });
+        if (typeof sdk.commands.getQuest === "function") {
+            const quest = await sdk.commands.getQuest();
+            if (!quest) {
+                return JSON.stringify({ success: false, error: "No quest data" });
+            }
+
+            return JSON.stringify({
+                success: true,
+                questId: quest.quest_id,
+                enrolledAt: quest.enrolled_at,
+                completedAt: quest.completed_at,
+                completed: !!quest.completed_at,
+                questInfo: quest
+            });
+        }
+
+        if (typeof sdk.commands.getQuestEnrollmentStatus === "function") {
+            const enrollmentStatus = await sdk.commands.getQuestEnrollmentStatus();
+            return JSON.stringify({
+                success: true,
+                completed: false,
+                completedAt: null,
+                cannotVerifyCompletion: true,
+                enrollmentStatus
+            });
         }
 
         return JSON.stringify({
-            success: true,
-            questId: quest.quest_id,
-            enrolledAt: quest.enrolled_at,
-            completedAt: quest.completed_at,
-            completed: !!quest.completed_at
+            success: false,
+            error: "No SDK command available to verify activity quest completion",
+            commands: Object.keys(sdk.commands || {})
         });
     } catch (e) {
-        return JSON.stringify({ success: false, error: String(e) });
+        return JSON.stringify({ success: false, error: describeError(e) });
     }
 })()
 "#
@@ -2447,14 +2744,21 @@ pub async fn navigate_discord_spa(port: u16, target_path: &str) -> Result<()> {
 pub async fn complete_activity_quest_via_cdp(
     port: u16,
     quest_id: String,
+    application_id: String,
     checkpoint_times: Vec<u32>,
     app_handle: tauri::AppHandle,
     mut cancel_rx: tokio::sync::mpsc::Receiver<()>,
 ) -> Result<()> {
-    use crate::logger::{log, LogCategory, LogLevel};
+    use crate::logger::{log, sanitize_user_id, LogCategory, LogLevel};
 
     let total_checkpoints = checkpoint_times.len();
     let total_seconds: u32 = checkpoint_times.iter().sum();
+    let quest_id_hint = sanitize_user_id(&quest_id);
+    let application_id_hint = if application_id.trim().is_empty() {
+        "none".to_string()
+    } else {
+        sanitize_user_id(application_id.trim())
+    };
 
     if total_checkpoints == 0 || total_seconds == 0 {
         anyhow::bail!("Activity quest requires at least one checkpoint interval");
@@ -2464,15 +2768,22 @@ pub async fn complete_activity_quest_via_cdp(
         LogLevel::Info,
         LogCategory::TokenExtraction,
         &format!(
-            "CDP activity quest: quest_id={}, checkpoints={}, total={}s, times={:?}",
-            quest_id, total_checkpoints, total_seconds, checkpoint_times
+            "CDP activity quest: quest_id_hint={}, application_id_hint={}, checkpoints={}, total={}s, times={:?}",
+            quest_id_hint, application_id_hint, total_checkpoints, total_seconds, checkpoint_times
         ),
         None,
     );
 
-    let iframe_target = cdp_client::find_activity_iframe_target(port)
-        .await
-        .context("Failed to find activity iframe target")?;
+    let application_id_filter = if application_id.trim().is_empty() {
+        None
+    } else {
+        Some(application_id.trim())
+    };
+
+    let iframe_target =
+        cdp_client::find_activity_iframe_target_for_application(port, application_id_filter)
+            .await
+            .context("Failed to find activity iframe target")?;
 
     let ws_url = iframe_target
         .web_socket_debugger_url
@@ -2509,9 +2820,30 @@ pub async fn complete_activity_quest_via_cdp(
         anyhow::bail!("Activity quest init failed: {}", error);
     }
 
+    if init_parsed
+        .get("startTimerIgnored")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false)
+    {
+        let start_timer_error = init_parsed
+            .get("startTimerError")
+            .and_then(|value| value.as_str())
+            .unwrap_or("unknown");
+        log(
+            LogLevel::Warn,
+            LogCategory::TokenExtraction,
+            &format!(
+                "CDP activity quest: questStartTimer was rejected but getQuest confirmed the current iframe quest; continuing with checkpoints (error={})",
+                start_timer_error
+            ),
+            None,
+        );
+    }
+
     let _ = app_handle.emit("quest-progress", 0.0f64);
 
     let mut elapsed_secs = 0u32;
+    let mut completion_event_dispatched = false;
     for (i, checkpoint_secs) in checkpoint_times.iter().enumerate() {
         let is_last = i == total_checkpoints - 1;
         let checkpoint_num = i + 1;
@@ -2536,8 +2868,7 @@ pub async fn complete_activity_quest_via_cdp(
         }
 
         elapsed_secs += checkpoint_secs;
-        let progress_pct =
-            ((elapsed_secs as f64) / (total_seconds as f64) * 100.0).min(99.0);
+        let progress_pct = ((elapsed_secs as f64) / (total_seconds as f64) * 100.0).min(99.0);
         let _ = app_handle.emit("quest-progress", progress_pct);
 
         if is_last {
@@ -2555,15 +2886,24 @@ pub async fn complete_activity_quest_via_cdp(
             .to_string();
             let completed_js = js_dispatch_message_event("quest-completed", &completed_payload);
             match cdp_client::execute_js_on_target(&ws_url, &completed_js, false, 10).await {
-                Ok(result) => log(
-                    LogLevel::Info,
-                    LogCategory::TokenExtraction,
-                    &format!(
-                        "CDP activity quest: quest-completed dispatch result: {}",
-                        result
-                    ),
-                    None,
-                ),
+                Ok(result) => {
+                    let parsed: serde_json::Value =
+                        serde_json::from_str(&result).unwrap_or_default();
+                    completion_event_dispatched = parsed
+                        .get("success")
+                        .and_then(|value| value.as_bool())
+                        .unwrap_or(false);
+
+                    log(
+                        LogLevel::Info,
+                        LogCategory::TokenExtraction,
+                        &format!(
+                            "CDP activity quest: quest-completed dispatch result: {}",
+                            result
+                        ),
+                        None,
+                    );
+                }
                 Err(e) => log(
                     LogLevel::Warn,
                     LogCategory::TokenExtraction,
@@ -2631,9 +2971,18 @@ pub async fn complete_activity_quest_via_cdp(
             if completed {
                 let _ = app_handle.emit("quest-progress", 100.0f64);
                 let _ = app_handle.emit("quest-complete", ());
+            } else if completion_event_dispatched {
+                log(
+                    LogLevel::Warn,
+                    LogCategory::TokenExtraction,
+                    "CDP activity quest verification did not reflect completion yet, but quest-completed dispatch succeeded; treating quest as complete",
+                    None,
+                );
+                let _ = app_handle.emit("quest-progress", 100.0f64);
+                let _ = app_handle.emit("quest-complete", ());
             } else {
                 let _ = app_handle.emit("quest-error",
-                    "Activity quest completed but server has not confirmed. Please check quest status in Discord.".to_string());
+                    "Activity quest completion event was not acknowledged. Please check quest status in Discord.".to_string());
             }
         }
         Err(e) => {
@@ -2643,10 +2992,15 @@ pub async fn complete_activity_quest_via_cdp(
                 &format!("CDP activity quest verification failed: {}", e),
                 None,
             );
-            let _ = app_handle.emit(
-                "quest-error",
-                format!("Activity quest verification failed: {}", e),
-            );
+            if completion_event_dispatched {
+                let _ = app_handle.emit("quest-progress", 100.0f64);
+                let _ = app_handle.emit("quest-complete", ());
+            } else {
+                let _ = app_handle.emit(
+                    "quest-error",
+                    format!("Activity quest verification failed: {}", e),
+                );
+            }
         }
     }
 
