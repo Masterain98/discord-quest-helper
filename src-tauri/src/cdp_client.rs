@@ -770,25 +770,165 @@ pub async fn execute_js_via_all_discord_targets(
     Ok(results)
 }
 
+fn activity_target_host(target: &CdpTarget) -> Option<String> {
+    reqwest::Url::parse(&target.url)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_owned))
+}
+
+fn activity_target_application_id(target: &CdpTarget) -> Option<String> {
+    let host = activity_target_host(target)?;
+    host.strip_suffix(".discordsays.com")
+        .filter(|prefix| !prefix.is_empty())
+        .map(str::to_owned)
+}
+
+fn describe_activity_host_for_log(host: &str) -> String {
+    if let Some(application_id) = host.strip_suffix(".discordsays.com") {
+        if !application_id.is_empty() && application_id.chars().all(|value| value.is_ascii_digit())
+        {
+            return format!(
+                "{}.discordsays.com",
+                crate::logger::sanitize_user_id(application_id)
+            );
+        }
+    }
+
+    host.to_string()
+}
+
+fn is_activity_target(target: &CdpTarget) -> bool {
+    let is_activity_host = activity_target_host(target)
+        .map(|host| host == "discordsays.com" || host.ends_with(".discordsays.com"))
+        .unwrap_or(false);
+
+    (target.target_type == "iframe" || target.target_type == "page")
+        && is_activity_host
+        && target.web_socket_debugger_url.is_some()
+}
+
+fn is_activity_iframe_target(target: &CdpTarget) -> bool {
+    target.target_type == "iframe"
+}
+
+fn describe_activity_targets(targets: &[CdpTarget]) -> String {
+    if targets.is_empty() {
+        return "none".to_string();
+    }
+
+    targets
+        .iter()
+        .map(|target| {
+            let host = activity_target_host(target).unwrap_or_else(|| "unknown-host".to_string());
+            format!(
+                "{} ({})",
+                describe_activity_host_for_log(&host),
+                target.target_type
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// Find the activity iframe CDP target (discordsays.com).
+#[allow(dead_code)]
 pub async fn find_activity_iframe_target(port: u16) -> Result<CdpTarget> {
+    find_activity_iframe_target_for_application(port, None).await
+}
+
+/// Find the activity iframe CDP target for a specific Discord application.
+pub async fn find_activity_iframe_target_for_application(
+    port: u16,
+    application_id: Option<&str>,
+) -> Result<CdpTarget> {
+    use crate::logger::{log, LogCategory, LogLevel};
+
     let targets = get_cdp_targets(port).await?;
 
-    let iframe_target = targets.iter().find(|t| {
-        let is_activity_host = reqwest::Url::parse(&t.url)
-            .ok()
-            .and_then(|url| url.host_str().map(str::to_owned))
-            .map(|host| host == "discordsays.com" || host.ends_with(".discordsays.com"))
-            .unwrap_or(false);
+    let activity_targets = targets
+        .into_iter()
+        .filter(is_activity_target)
+        .collect::<Vec<_>>();
 
-        (t.target_type == "iframe" || t.target_type == "page")
-            && is_activity_host
-            && t.web_socket_debugger_url.is_some()
-    });
+    if activity_targets.is_empty() {
+        anyhow::bail!(
+            "No activity iframe target found. Make sure the Activity is launched in Discord."
+        );
+    }
 
-    iframe_target
-        .cloned()
-        .context("No activity iframe target found. Make sure the Activity is launched in Discord.")
+    let requested_application_id = application_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+
+    if let Some(app_id) = requested_application_id {
+        let app_id_hint = crate::logger::sanitize_user_id(app_id);
+        let matching_targets = activity_targets
+            .iter()
+            .filter(|target| activity_target_application_id(target).as_deref() == Some(app_id))
+            .cloned()
+            .collect::<Vec<_>>();
+
+        if !matching_targets.is_empty() {
+            if let Some(target) = matching_targets
+                .iter()
+                .find(|target| is_activity_iframe_target(target))
+            {
+                return Ok(target.clone());
+            }
+
+            // Fall back to any matching activity target (e.g. page type)
+            // since some valid activities load as page targets, not iframes.
+            if let Some(target) = matching_targets.first() {
+                return Ok(target.clone());
+            }
+
+            anyhow::bail!(
+                "No activity target matched application_id_hint={}. Found matching activity targets: {}",
+                app_id_hint,
+                describe_activity_targets(&matching_targets)
+            );
+        }
+
+        anyhow::bail!(
+            "No activity iframe target matched application_id_hint={}. Found activity targets: {}",
+            app_id_hint,
+            describe_activity_targets(&activity_targets)
+        );
+    }
+
+    let iframe_targets = activity_targets
+        .iter()
+        .filter(|target| is_activity_iframe_target(target))
+        .collect::<Vec<_>>();
+
+    if let Some(target) = iframe_targets.first() {
+        if activity_targets.len() > 1 {
+            log(
+                LogLevel::Warn,
+                LogCategory::TokenExtraction,
+                &format!(
+                    "Multiple activity targets found with no application_id_hint; defaulting to first iframe target. activity_targets={}",
+                    describe_activity_targets(&activity_targets)
+                ),
+                None,
+            );
+        }
+        return Ok((*target).clone());
+    }
+
+    if activity_targets.len() > 1 {
+        log(
+            LogLevel::Warn,
+            LogCategory::TokenExtraction,
+            &format!(
+                "Multiple non-iframe activity targets found with no application_id_hint; defaulting to first target. activity_targets={}",
+                describe_activity_targets(&activity_targets)
+            ),
+            None,
+        );
+    }
+
+    Ok(activity_targets[0].clone())
 }
 
 /// Execute JavaScript on a specific CDP target via its WebSocket URL.
