@@ -2345,20 +2345,13 @@ __DQH_ACTIVITY_HELPERS__
         if (typeof sdk.commands.getQuest === "function") {
             try {
                 questInfoBefore = await withTimeout(sdk.commands.getQuest(), DQH_COMMAND_TIMEOUT_MS, "getQuest before start");
-                if (questInfoBefore?.quest_id && String(questInfoBefore.quest_id) !== String(questId)) {
-                    return JSON.stringify({
-                        success: false,
-                        error: "Activity iframe quest mismatch",
-                        commands,
-                        waitedMs,
-                        questInfoBeforeMatches: false
-                    });
-                }
             } catch (e) {
                 getQuestBeforeError = describeError(e);
             }
         }
-        const questInfoBeforeMatches = String(questInfoBefore?.quest_id || "") === String(questId);
+        const questInfoBeforeQuestId = String(questInfoBefore?.quest_id || "");
+        const questInfoBeforeMatches = questInfoBeforeQuestId !== "" && questInfoBeforeQuestId === String(questId);
+        const questInfoBeforeMismatched = questInfoBeforeQuestId !== "" && !questInfoBeforeMatches;
         const questInfoBeforeCompleted = !!questInfoBefore?.completed_at;
 
         let enrollmentStatusBefore = null;
@@ -2404,6 +2397,7 @@ __DQH_ACTIVITY_HELPERS__
                     setActivityError,
                     getQuestBeforeError,
                     questInfoBeforeMatches,
+                    questInfoBeforeMismatched,
                     questInfoBeforeCompleted,
                     enrollmentStatusBeforeMatches,
                     enrollmentStatusBeforeEnrolled,
@@ -2426,6 +2420,7 @@ __DQH_ACTIVITY_HELPERS__
                     setActivityError,
                     getQuestBeforeError,
                     questInfoBeforeMatches,
+                    questInfoBeforeMismatched,
                     questInfoBeforeCompleted,
                     enrollmentStatusBeforeMatches,
                     enrollmentStatusBeforeEnrolled,
@@ -2442,23 +2437,16 @@ __DQH_ACTIVITY_HELPERS__
         if (typeof sdk.commands.getQuest === "function") {
             try {
                 questInfo = await withTimeout(sdk.commands.getQuest(), DQH_COMMAND_TIMEOUT_MS, "getQuest after start");
-                if (questInfo?.quest_id && String(questInfo.quest_id) !== String(questId)) {
-                    return JSON.stringify({
-                        success: false,
-                        error: "Activity iframe quest mismatch after start",
-                        commands,
-                        waitedMs,
-                        questInfoAfterMatches: false
-                    });
-                }
             } catch(e) {
                 getQuestAfterError = describeError(e);
             }
         }
-        const questInfoAfterMatches = String(questInfo?.quest_id || "") === String(questId);
+        const questInfoAfterQuestId = String(questInfo?.quest_id || "");
+        const questInfoAfterMatches = questInfoAfterQuestId !== "" && questInfoAfterQuestId === String(questId);
+        const questInfoAfterMismatched = questInfoAfterQuestId !== "" && !questInfoAfterMatches;
         const questInfoAfterCompleted = !!questInfo?.completed_at;
 
-        if (!questInfo && typeof sdk.commands.getQuestEnrollmentStatus === "function") {
+        if (typeof sdk.commands.getQuestEnrollmentStatus === "function") {
             try {
                 enrollmentStatus = await withTimeout(
                     sdk.commands.getQuestEnrollmentStatus({ quest_id: questId }),
@@ -2477,8 +2465,10 @@ __DQH_ACTIVITY_HELPERS__
             success: true,
             startTimerResultReturned: startTimerResult != null,
             questInfoBeforeMatches,
+            questInfoBeforeMismatched,
             questInfoBeforeCompleted,
             questInfoAfterMatches,
+            questInfoAfterMismatched,
             questInfoAfterCompleted,
             getQuestAfterError,
             enrollmentStatusMatches,
@@ -2516,41 +2506,38 @@ __DQH_ACTIVITY_HELPERS__
             return JSON.stringify({ success: false, error: "Discord SDK not found" });
         }
 
+        let quest = null;
+        let questIdMatches = false;
+        let getQuestError = null;
         if (typeof sdk.commands.getQuest === "function") {
-            const quest = await sdk.commands.getQuest();
-            if (!quest) {
-                return JSON.stringify({ success: false, error: "No quest data" });
+            try {
+                quest = await sdk.commands.getQuest();
+                questIdMatches = String(quest?.quest_id || "") === String(questId);
+                if (questIdMatches) {
+                    return JSON.stringify({
+                        success: true,
+                        completedAt: quest.completed_at,
+                        completed: !!quest.completed_at,
+                        questIdMatches
+                    });
+                }
+            } catch (e) {
+                getQuestError = describeError(e);
             }
-
-            const questIdMatches = String(quest.quest_id || "") === String(questId);
-            if (!questIdMatches) {
-                return JSON.stringify({
-                    success: false,
-                    error: "Activity quest verification mismatch",
-                    completed: false,
-                    completedAt: null,
-                    questIdMatches
-                });
-            }
-
-            return JSON.stringify({
-                success: true,
-                completedAt: quest.completed_at,
-                completed: !!quest.completed_at,
-                questIdMatches
-            });
         }
 
         if (typeof sdk.commands.getQuestEnrollmentStatus === "function") {
             const enrollmentStatus = await sdk.commands.getQuestEnrollmentStatus({ quest_id: questId });
-            const questIdMatches = String(enrollmentStatus?.quest_id || "") === String(questId);
-            if (!questIdMatches) {
+            const enrollmentQuestIdMatches = String(enrollmentStatus?.quest_id || "") === String(questId);
+            if (!enrollmentQuestIdMatches) {
                 return JSON.stringify({
                     success: false,
                     error: "Activity quest enrollment verification mismatch",
                     completed: false,
                     completedAt: null,
-                    questIdMatches
+                    questIdMatches,
+                    enrollmentQuestIdMatches,
+                    getQuestError
                 });
             }
 
@@ -2560,7 +2547,21 @@ __DQH_ACTIVITY_HELPERS__
                 completedAt: null,
                 cannotVerifyCompletion: true,
                 questIdMatches,
-                enrolled: enrollmentStatus?.is_enrolled === true
+                enrollmentQuestIdMatches,
+                enrolled: enrollmentStatus?.is_enrolled === true,
+                getQuestError
+            });
+        }
+
+        if (quest) {
+            return JSON.stringify({
+                success: true,
+                completed: false,
+                completedAt: null,
+                cannotVerifyCompletion: true,
+                questIdMatches,
+                questInfoMismatched: !questIdMatches,
+                getQuestError
             });
         }
 
@@ -3091,5 +3092,25 @@ mod tests {
     fn test_build_quest_route_warmup_plan_rejects_invalid_urls() {
         assert!(build_quest_route_warmup_plan("not-a-url").is_none());
         assert!(build_quest_route_warmup_plan("chrome://version").is_none());
+    }
+
+    #[test]
+    fn test_activity_init_allows_getquest_mismatch_before_start() {
+        let js = js_init_activity_quest("151912345678908740");
+
+        assert!(!js.contains("Activity iframe quest mismatch"));
+        assert!(js.contains("questInfoBeforeMismatched"));
+        assert!(js.contains("sdk.commands.questStartTimer({ quest_id: questId })"));
+    }
+
+    #[test]
+    fn test_activity_status_falls_back_to_enrollment_on_getquest_mismatch() {
+        let js = js_check_activity_quest_status("151912345678908740");
+
+        assert!(!js.contains("Activity quest verification mismatch"));
+        assert!(js.contains(
+            "const enrollmentStatus = await sdk.commands.getQuestEnrollmentStatus({ quest_id: questId });"
+        ));
+        assert!(js.contains("questInfoMismatched"));
     }
 }
