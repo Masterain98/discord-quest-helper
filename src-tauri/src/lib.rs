@@ -708,6 +708,24 @@ async fn get_virtual_currency_balance(
 }
 
 #[tauri::command]
+async fn get_billing_subscriptions(
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let client = {
+        let guard = state.client.lock().unwrap();
+        guard
+            .as_ref()
+            .ok_or_else(|| "Not logged in".to_string())?
+            .clone()
+    };
+
+    client
+        .get_billing_subscriptions()
+        .await
+        .map_err(|e| format!("Failed to get billing subscriptions: {}", e))
+}
+
+#[tauri::command]
 async fn get_quest_decision_debug(
     placement: u64,
     state: State<'_, AppState>,
@@ -980,6 +998,7 @@ pub fn run() {
             fetch_detectable_games,
             accept_quest,
             get_virtual_currency_balance,
+            get_billing_subscriptions,
             get_quest_decision_debug,
             get_quest_decisions_debug,
             claim_quest_reward,

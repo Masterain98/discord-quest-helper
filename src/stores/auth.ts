@@ -1,15 +1,22 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
-import type { DiscordUser, ExtractedAccount } from '@/api/tauri'
-import { autoDetectToken, setToken, autoFetchSuperProperties } from '@/api/tauri'
+import { ref, computed } from 'vue'
+import type { DiscordUser, ExtractedAccount, BillingSubscription } from '@/api/tauri'
+import { autoDetectToken, setToken, autoFetchSuperProperties, getBillingSubscriptions } from '@/api/tauri'
 import { useQuestsStore } from './quests'
+import { useI18n } from 'vue-i18n'
 
 export const useAuthStore = defineStore('auth', () => {
+  const { t } = useI18n()
   const user = ref<DiscordUser | null>(null)
   const token = ref<string | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
   const detectedAccounts = ref<ExtractedAccount[]>([])
+
+  // Billing subscriptions (used to derive Nitro monthly Orbs grant anchor)
+  const billingSubscriptions = ref<BillingSubscription[]>([])
+  const billingLoading = ref(false)
+  const billingError = ref<string | null>(null)
 
   async function tryAutoDetect() {
     loading.value = true
@@ -68,6 +75,11 @@ export const useAuthStore = defineStore('auth', () => {
         questsStore.fetchOrbsBalance().catch(err => {
           console.warn('Background Orbs balance fetch failed:', err)
         })
+
+        // Load billing subscriptions (for Nitro monthly Orbs countdown)
+        fetchBillingSubscription().catch(err => {
+          console.warn('Background billing subscriptions fetch failed:', err)
+        })
       } catch (e) {
         // SuperProperties fetch failure should not block login
         console.warn('Failed to fetch SuperProperties:', e)
@@ -95,10 +107,102 @@ export const useAuthStore = defineStore('auth', () => {
     token.value = null
     error.value = null
     detectedAccounts.value = []
+    billingSubscriptions.value = []
+    billingLoading.value = false
+    billingError.value = null
 
     // Reset quests store to clear all cached data from previous account
     questsStore.resetForLogout()
   }
+
+  async function fetchBillingSubscription(force = false) {
+    if (billingLoading.value) return
+    if (!force && billingSubscriptions.value.length > 0) return
+    billingLoading.value = true
+    billingError.value = null
+    try {
+      billingSubscriptions.value = await getBillingSubscriptions()
+    } catch (e) {
+      billingError.value = e as string
+      console.warn('Failed to fetch billing subscriptions:', e)
+    } finally {
+      billingLoading.value = false
+    }
+  }
+
+  // The Nitro subscription (monthly Orbs are a Nitro perk). Prefer a plan that
+  // looks like Nitro; fall back to the first subscription if none match.
+  const nitroSubscription = computed<BillingSubscription | null>(() => {
+    const subs = billingSubscriptions.value
+    if (!subs.length) return null
+    const nitro = subs.find(s =>
+      (s.payment_gateway_plan_id && /premium|nitro/i.test(s.payment_gateway_plan_id)) ||
+      (s.items && s.items.some(it => /premium|nitro/i.test(it.plan_id)))
+    )
+    return nitro ?? subs[0]
+  })
+
+  // Days until the next monthly Orbs grant.
+  // Discord grants monthly Nitro Orbs on the subscription anniversary day
+  // (current_period_start day-of-month), so we compute the next occurrence of
+  // that day relative to now.
+  // Days / hours / minutes until the next monthly Orbs grant.
+  // Discord grants monthly Nitro Orbs on the subscription anniversary day
+  // (current_period_start day-of-month). Below 48h we switch to hours, and
+  // below 12h we switch to minutes for a finer-grained countdown.
+  const nextOrbsClaim = computed<
+    { value: number; unit: 'days' | 'hours' | 'minutes' } | null
+  >(() => {
+    const start = nitroSubscription.value?.current_period_start
+    if (!start) return null
+    const anchor = new Date(start)
+    if (isNaN(anchor.getTime())) return null
+    const anchorDay = anchor.getUTCDate()
+
+    const now = new Date()
+    const nowYear = now.getUTCFullYear()
+    const nowMonth = now.getUTCMonth()
+
+    // Find the first occurrence of anchorDay in a future month, clamping to the
+    // last day of the month when anchorDay exceeds that month's length (e.g. day
+    // 31 in February would otherwise roll over and break the search).
+    let candidate: Date | null = null
+    for (let offset = 0; offset < 12; offset++) {
+      const y = nowYear + Math.floor((nowMonth + offset) / 12)
+      const m = (nowMonth + offset) % 12
+      const lastDay = new Date(Date.UTC(y, m + 1, 0)).getUTCDate()
+      const day = Math.min(anchorDay, lastDay)
+      const c = new Date(Date.UTC(y, m, day))
+      if (c.getTime() > now.getTime()) {
+        candidate = c
+        break
+      }
+    }
+    if (!candidate) return null
+
+    const ms = candidate.getTime() - now.getTime()
+    const MINUTE = 1000 * 60
+    const HOUR = MINUTE * 60
+    const DAY = HOUR * 24
+
+    if (ms < 12 * HOUR) {
+      return { value: Math.max(1, Math.ceil(ms / MINUTE)), unit: 'minutes' }
+    }
+    if (ms < 48 * HOUR) {
+      return { value: Math.max(1, Math.ceil(ms / HOUR)), unit: 'hours' }
+    }
+    return { value: Math.max(1, Math.ceil(ms / DAY)), unit: 'days' }
+  })
+
+  // Localized Nitro membership status label + color class (null for non-members).
+  const nitroStatus = computed<{ label: string; class: string } | null>(() => {
+    const pt = user.value?.premium_type
+    if (!pt || pt === 0) return null
+    if (pt === 1) return { label: t('user.nitro_classic'), class: 'text-sky-600 dark:text-sky-400' }
+    if (pt === 2) return { label: t('user.nitro'), class: 'text-violet-600 dark:text-violet-400' }
+    if (pt === 3) return { label: t('user.nitro_basic'), class: 'text-indigo-600 dark:text-indigo-400' }
+    return null
+  })
 
   return {
     user,
@@ -106,8 +210,15 @@ export const useAuthStore = defineStore('auth', () => {
     loading,
     error,
     detectedAccounts,
+    billingSubscriptions,
+    billingLoading,
+    billingError,
+    nitroSubscription,
+    nextOrbsClaim,
+    nitroStatus,
     tryAutoDetect,
     loginWithToken,
-    logout
+    logout,
+    fetchBillingSubscription
   }
 })

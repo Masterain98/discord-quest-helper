@@ -744,6 +744,9 @@ onMounted(() => {
     questsStore.fetchOrbsBalance().catch(err => {
       console.warn('Background Orbs balance fetch failed:', err)
     })
+    authStore.fetchBillingSubscription().catch(err => {
+      console.warn('Background billing subscriptions fetch failed:', err)
+    })
   }
 })
 
@@ -752,6 +755,9 @@ watch(() => authStore.user, (newUser) => {
     questsStore.fetchQuests()
     questsStore.fetchOrbsBalance().catch(err => {
       console.warn('Background Orbs balance fetch failed:', err)
+    })
+    authStore.fetchBillingSubscription().catch(err => {
+      console.warn('Background billing subscriptions fetch failed:', err)
     })
   } else {
     questsStore.quests = []

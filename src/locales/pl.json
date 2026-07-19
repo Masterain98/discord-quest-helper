@@ -81,6 +81,14 @@
     "include_expired": "Uwzględnij wygasłe misje",
     "include_expired_desc": "Pokaż wygasłe wpisy do kontroli i odzyskania.",
     "current_orbs": "Bieżący Orbs",
+
+    "nitro_next_orbs_title": "Miesięczne Orby Nitro — odliczanie do następnego odebrania",
+
+    "nitro_next_orbs_days": "Następny airdrop Orbsów za {days} dni",
+
+    "nitro_next_orbs_hours": "Następny airdrop Orbsów za {hours} godzin",
+
+    "nitro_next_orbs_minutes": "Następny airdrop Orbsów za {minutes} minut",
     "claim_reward": "Odbierz nagrodę",
     "claim_navigated": "Discord został przekierowany na stronę zadań. Odbierz tam swoją nagrodę.",
     "next_error_title": "Coś wymaga uwagi",

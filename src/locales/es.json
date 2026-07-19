@@ -81,6 +81,14 @@
     "include_expired": "Incluir misiones caducadas",
     "include_expired_desc": "Mostrar entradas vencidas para inspección y recuperación.",
     "current_orbs": "Orbs actuales",
+
+    "nitro_next_orbs_title": "Orbs mensuales de Nitro — cuenta atrás para la próxima reclamación",
+
+    "nitro_next_orbs_days": "Próximo airdrop de Orbs en {days} días",
+
+    "nitro_next_orbs_hours": "Próximo airdrop de Orbs en {hours} horas",
+
+    "nitro_next_orbs_minutes": "Próximo airdrop de Orbs en {minutes} minutos",
     "claim_reward": "Reclamar recompensa",
     "claim_navigated": "Discord ha sido redirigido a la página de la misión. Reclama tu recompensa allí.",
     "next_error_title": "algo necesita atencion",

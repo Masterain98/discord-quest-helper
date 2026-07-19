@@ -13,15 +13,6 @@ const user = computed(() => authStore.user)
 const open = ref(false)
 const containerRef = ref<HTMLElement | null>(null)
 
-const nitroBadge = computed(() => {
-  const pt = user.value?.premium_type
-  if (!pt || pt === 0) return null
-  if (pt === 1) return { label: t('user.nitro_classic'), class: 'border-sky-400/60 bg-sky-500/10 text-sky-600 dark:text-sky-400' }
-  if (pt === 2) return { label: t('user.nitro'), class: 'border-violet-400/60 bg-violet-500/10 text-violet-600 dark:text-violet-400' }
-  if (pt === 3) return { label: t('user.nitro_basic'), class: 'border-indigo-400/60 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400' }
-  return null
-})
-
 const avatarUrl = computed(() => {
   if (!user.value?.avatar) return null
   return `https://cdn.discordapp.com/avatars/${user.value.id}/${user.value.avatar}.png?size=128`
@@ -92,12 +83,6 @@ onUnmounted(() => document.removeEventListener('mousedown', handleClickOutside))
             <div class="flex-1 min-w-0">
               <p class="text-sm font-medium truncate">{{ user.global_name || user.username }}</p>
               <p class="text-xs text-muted-foreground truncate">@{{ user.username }}</p>
-              <span
-                v-if="nitroBadge"
-                :class="['inline-flex mt-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full border', nitroBadge.class]"
-              >
-                {{ nitroBadge.label }}
-              </span>
             </div>
           </div>
         </div>

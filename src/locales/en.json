@@ -81,6 +81,12 @@
     "include_expired": "Include expired quests",
     "include_expired_desc": "Show expired entries for inspection and recovery.",
     "current_orbs": "Current Orbs",
+    "nitro_next_orbs_title": "Monthly Nitro Orbs — next claim countdown",
+    "nitro_next_orbs_days": "Next Orbs airdrop in {days} days",
+
+    "nitro_next_orbs_hours": "Next Orbs airdrop in {hours} hours",
+
+    "nitro_next_orbs_minutes": "Next Orbs airdrop in {minutes} minutes",
     "claim_reward": "Claim Reward",
     "claim_navigated": "Discord has been redirected to the quest page. Please claim your reward there.",
     "next_error_title": "Something needs attention",

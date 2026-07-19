@@ -81,6 +81,12 @@
     "include_expired": "包含已过期任务",
     "include_expired_desc": "显示已过期条目，用于检查或恢复。",
     "current_orbs": "当前 Orbs",
+    "nitro_next_orbs_title": "Nitro 每月 Orbs — 下次领取倒计时",
+    "nitro_next_orbs_days": "下次 Orbs 空投剩余 {days} 天",
+
+    "nitro_next_orbs_hours": "下次 Orbs 空投剩余 {hours} 小时",
+
+    "nitro_next_orbs_minutes": "下次 Orbs 空投剩余 {minutes} 分钟",
     "claim_reward": "领取奖励",
     "claim_navigated": "Discord 已跳转到对应任务页面，请在 Discord 中领取奖励。",
     "next_error_title": "有问题需要处理",
