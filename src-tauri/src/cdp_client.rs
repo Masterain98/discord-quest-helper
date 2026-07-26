@@ -376,7 +376,7 @@ pub async fn fetch_super_properties_via_cdp(port: u16) -> Result<CdpSuperPropert
                         LogCategory::TokenExtraction,
                         &format!(
                             "Received message: {}...",
-                            &text.chars().take(200).collect::<String>()
+                            text.chars().take(200).collect::<String>()
                         ),
                         None,
                     );
@@ -441,7 +441,7 @@ pub async fn fetch_super_properties_via_cdp(port: u16) -> Result<CdpSuperPropert
         LogCategory::TokenExtraction,
         &format!(
             "JavaScript returned: {}...",
-            &result_value.chars().take(100).collect::<String>()
+            result_value.chars().take(100).collect::<String>()
         ),
         None,
     );
@@ -1299,7 +1299,7 @@ async fn execute_js_via_ws(
         LogCategory::TokenExtraction,
         &format!(
             "execute_js_via_cdp result: {}...",
-            &result_value.chars().take(200).collect::<String>()
+            result_value.chars().take(200).collect::<String>()
         ),
         None,
     );

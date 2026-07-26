@@ -339,7 +339,7 @@ pub fn stop_simulated_game(exec_name: &str) -> Result<()> {
 #[cfg(target_os = "macos")]
 pub fn stop_simulated_game(exec_name: &str) -> Result<()> {
     // Extract just the filename from the path
-    let file_name = exec_name.split('/').last().unwrap_or(exec_name);
+    let file_name = exec_name.split('/').next_back().unwrap_or(exec_name);
 
     println!(
         "Stopping simulated game: Input='{}' -> Process='{}'",
