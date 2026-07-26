@@ -14,6 +14,7 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_TARGET_DIR: ${{ github.workspace }}/target
 
 jobs:
   build-tauri:
@@ -77,13 +78,10 @@ jobs:
       
 
 
-      - name: Rust cache (Tauri App)
+      - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: |
-            ./src-tauri -> target
-            ./src-runner -> target
-            ./src-cdp-launcher -> target
+          workspaces: '. -> target'
     
       - name: install frontend dependencies
         run: pnpm install --frozen-lockfile
@@ -94,10 +92,26 @@ jobs:
       - name: Run frontend tests
         run: pnpm test
 
+      - name: Rust format
+        run: |
+          cargo fmt --package discord-cdp-launch-core --package discord-cdp-launcher -- --check
+          rustfmt --edition 2021 --check src-tauri/src/discord_cdp_commands.rs
+
+      - name: Rust clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Rust tests
+        run: cargo test --workspace
+
+      - name: Verify CDP core dependency boundary
+        run: pnpm run check:cdp-core-deps
+
       - name: Sync version from public/version.txt
         run: pnpm run sync-version
 
       - name: Build runner sidecar
+        env:
+          TAURI_TARGET_TRIPLE: ${{ matrix.cdp_target }}
         run: pnpm run build:runner
 
       - name: Build Discord CDP launcher sidecar
@@ -119,7 +133,7 @@ jobs:
         run: |
           $portableDir = 'build/windows-portable'
           New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
-          Copy-Item 'src-tauri/target/release/discord-quest-helper.exe' "$portableDir/discord-quest-helper.exe"
+          Copy-Item 'target/release/discord-quest-helper.exe' "$portableDir/discord-quest-helper.exe"
           Copy-Item "src-tauri/binaries/discord-cdp-launcher-sidecar-$env:CDP_TARGET.exe" "$portableDir/discord-cdp-launcher-sidecar.exe"
       
       # Upload Windows artifact (portable)
@@ -139,7 +153,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: tauri-win-msi
-          path: src-tauri/target/release/bundle/msi/*.msi
+          path: target/release/bundle/msi/*.msi
 
       # Upload macOS artifact
       - name: Upload macOS artifact
@@ -148,7 +162,7 @@ jobs:
         with:
           name: tauri-macos-arm64-release
           path: |
-            src-tauri/target/aarch64-apple-darwin/release/bundle/
+            target/aarch64-apple-darwin/release/bundle/
 
   release:
     needs: build-tauri

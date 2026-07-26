@@ -1,0 +1,79 @@
+use crate::DiscordChannel;
+use std::path::PathBuf;
+use std::time::Duration;
+
+pub const DEFAULT_CDP_PORT: u16 = 9223;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiscordInstall {
+    pub channel: DiscordChannel,
+    pub executable_path: PathBuf,
+    pub working_dir: PathBuf,
+}
+
+#[derive(Debug, Clone)]
+pub struct LaunchOptions {
+    pub port: u16,
+    pub allow_origins: bool,
+    pub channel: Option<DiscordChannel>,
+    pub restart_existing: bool,
+    pub wait_for_cdp: bool,
+    pub shutdown_timeout: Duration,
+    pub readiness_timeout: Duration,
+    pub poll_interval: Duration,
+}
+
+impl Default for LaunchOptions {
+    fn default() -> Self {
+        Self {
+            port: DEFAULT_CDP_PORT,
+            allow_origins: true,
+            channel: None,
+            restart_existing: false,
+            wait_for_cdp: true,
+            shutdown_timeout: Duration::from_secs(8),
+            readiness_timeout: Duration::from_secs(15),
+            poll_interval: Duration::from_millis(500),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LaunchOutcome {
+    AlreadyAvailable,
+    Spawned,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LaunchResult {
+    pub outcome: LaunchOutcome,
+    pub launched_path: PathBuf,
+    pub channel: DiscordChannel,
+    pub port: u16,
+    pub pid: Option<u32>,
+    pub cdp_connected: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CdpProbeStatus {
+    Unreachable,
+    PortOccupied,
+    CdpWithoutDiscordTarget,
+    DiscordReady { target_title: Option<String> },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
+pub struct CdpTarget {
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub id: String,
+    #[cfg_attr(feature = "serde", serde(rename = "type"))]
+    pub target_type: String,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub title: String,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub url: String,
+    #[cfg_attr(feature = "serde", serde(default, rename = "webSocketDebuggerUrl"))]
+    pub web_socket_debugger_url: Option<String>,
+}

@@ -1612,6 +1612,7 @@ async fn cdp_poll_progress(port: u16, quest_id: &str) -> Result<(f64, bool)> {
 /// 3. Discord's internal heartbeat takes over (sends signed heartbeats)
 /// 4. Poll QuestsStore for progress until completion
 /// 5. Cleanup spoofed stores
+#[allow(clippy::too_many_arguments)]
 pub async fn complete_play_quest_via_cdp(
     port: u16,
     quest_id: String,
@@ -1799,6 +1800,7 @@ pub async fn complete_play_quest_via_cdp(
 /// Complete a STREAM_ON_DESKTOP quest via CDP.
 ///
 /// Similar to play quest but spoofs ApplicationStreamingStore.
+#[allow(clippy::too_many_arguments)]
 pub async fn complete_stream_quest_via_cdp(
     port: u16,
     quest_id: String,
@@ -2737,6 +2739,7 @@ pub async fn navigate_discord_spa(port: u16, target_path: &str) -> Result<()> {
 }
 
 /// Complete an ACHIEVEMENT_IN_ACTIVITY quest via CDP.
+#[allow(clippy::too_many_arguments)]
 pub async fn complete_activity_quest_via_cdp(
     port: u16,
     quest_id: String,

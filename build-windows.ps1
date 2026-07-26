@@ -28,26 +28,19 @@ Write-Host "Version: $Version" -ForegroundColor Green
 Write-Host ""
 
 # Define paths
-$SrcRunner = Join-Path $ProjectRoot "src-runner"
 $SrcTauri = Join-Path $ProjectRoot "src-tauri"
-$ReleaseDir = Join-Path $SrcTauri "target\release"
+$ReleaseDir = Join-Path $ProjectRoot "target\release"
 $OutputZip = Join-Path $ProjectRoot "discord-quest-helper-v$Version.zip"
 $TempDir = Join-Path $ProjectRoot "build-temp"
 
 # Step 1: Build src-runner
 if (-not $SkipRunnerBuild) {
     Write-Host "[1/4] Building src-runner..." -ForegroundColor Yellow
-    Push-Location $SrcRunner
-    try {
-        cargo build --release
-        if ($LASTEXITCODE -ne 0) {
-            throw "Failed to build src-runner"
-        }
-        Write-Host "  src-runner build complete." -ForegroundColor Green
+    pnpm run build:runner
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to build src-runner"
     }
-    finally {
-        Pop-Location
-    }
+    Write-Host "  src-runner build complete." -ForegroundColor Green
 } else {
     Write-Host "[1/4] Skipping src-runner build (--SkipRunnerBuild)" -ForegroundColor DarkGray
 }
@@ -78,13 +71,19 @@ New-Item -ItemType Directory -Force -Path $PackageDir | Out-Null
 
 # Copy files (runner is embedded in the main executable via include_bytes!)
 $MainExe = Join-Path $ReleaseDir "discord-quest-helper.exe"
+$CdpLauncher = Join-Path $SrcTauri "binaries\discord-cdp-launcher-sidecar-x86_64-pc-windows-msvc.exe"
 
 if (-not (Test-Path $MainExe)) {
     throw "Main executable not found: $MainExe"
 }
+if (-not (Test-Path $CdpLauncher)) {
+    throw "Discord CDP launcher sidecar not found: $CdpLauncher"
+}
 
 Write-Host "  Copying discord-quest-helper.exe..." -ForegroundColor DarkGray
 Copy-Item $MainExe -Destination $PackageDir
+Write-Host "  Copying discord-cdp-launcher-sidecar.exe..." -ForegroundColor DarkGray
+Copy-Item $CdpLauncher -Destination (Join-Path $PackageDir "discord-cdp-launcher-sidecar.exe")
 
 Write-Host "  Package structure prepared." -ForegroundColor Green
 

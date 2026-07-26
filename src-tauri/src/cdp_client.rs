@@ -4,27 +4,16 @@
 //! After starting Discord with the --remote-debugging-port parameter, it can communicate with the client via WebSocket.
 
 use anyhow::{Context, Result};
+use discord_cdp_launch_core::{
+    is_discord_target, pick_discord_target, CdpTarget,
+};
 use futures_util::{future::join_all, SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 /// Default CDP debugging port
-pub const DEFAULT_CDP_PORT: u16 = 9223;
-
-/// CDP target info (returned from /json endpoint)
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CdpTarget {
-    #[allow(dead_code)]
-    pub id: String,
-    #[serde(rename = "type")]
-    pub target_type: String,
-    pub title: String,
-    pub url: String,
-    #[serde(rename = "webSocketDebuggerUrl")]
-    pub web_socket_debugger_url: Option<String>,
-}
+pub use discord_cdp_launch_core::DEFAULT_CDP_PORT;
 
 /// SuperProperties result obtained via CDP
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -198,52 +187,11 @@ async fn get_cdp_targets(port: u16) -> Result<Vec<CdpTarget>> {
     Ok(targets)
 }
 
-/// Select Discord main window target (skip updater)
-fn pick_discord_target(targets: &[CdpTarget]) -> Option<&CdpTarget> {
-    // Prioritize targets with type "page" and title containing "Discord" (but not "updater")
-    let pages: Vec<_> = targets.iter().filter(|t| t.target_type == "page").collect();
-
-    // Find Discord main application
-    for target in &pages {
-        if is_discord_target(target) {
-            return Some(target);
-        }
-    }
-
-    // Fallback: return the first page
-    pages.first().copied()
-}
-
-/// Return true if this target looks like a Discord app page.
-fn is_discord_target(target: &CdpTarget) -> bool {
-    if target.target_type != "page" {
-        return false;
-    }
-
-    let title_lower = target.title.to_lowercase();
-    let url_lower = target.url.to_lowercase();
-
-    (title_lower.contains("discord") && !title_lower.contains("updater"))
-        || url_lower.contains("discord.com")
-        || url_lower.contains("discordapp.com")
-}
-
-fn select_discord_targets<'a>(targets: &'a [CdpTarget]) -> Vec<&'a CdpTarget> {
-    let mut selected_targets: Vec<&CdpTarget> = targets
+fn select_discord_targets(targets: &[CdpTarget]) -> Vec<&CdpTarget> {
+    targets
         .iter()
         .filter(|t| is_discord_target(t) && t.web_socket_debugger_url.is_some())
-        .collect();
-
-    // Fallback: keep old behavior if detection fails and use the best single target.
-    if selected_targets.is_empty() {
-        if let Some(target) =
-            pick_discord_target(targets).filter(|t| t.web_socket_debugger_url.is_some())
-        {
-            selected_targets.push(target);
-        }
-    }
-
-    selected_targets
+        .collect()
 }
 
 pub async fn get_primary_discord_target(port: u16) -> Result<CdpTarget> {
@@ -541,7 +489,7 @@ pub async fn capture_discord_headers_via_cdp(
     use crate::logger::{log, LogCategory, LogLevel};
     use std::collections::HashMap;
 
-    let duration_secs = duration_secs.min(120).max(5); // clamp 5..120
+    let duration_secs = duration_secs.clamp(5, 120);
 
     log(
         LogLevel::Info,
@@ -1315,19 +1263,18 @@ mod tests {
     }
 
     #[test]
-    fn test_pick_discord_target_fallback_to_first_page() {
+    fn test_pick_discord_target_does_not_fallback_to_unrelated_page() {
         let targets = vec![
-            mk_target("page", "Not Discord 1", "https://example.com/a"),
-            mk_target("page", "Not Discord 2", "https://example.com/b"),
+            mk_target("page", "Unrelated Page 1", "https://example.com/a"),
+            mk_target("page", "Unrelated Page 2", "https://example.com/b"),
         ];
 
         let picked = pick_discord_target(&targets);
-        assert!(picked.is_some());
-        assert_eq!(picked.unwrap().url, "https://example.com/a");
+        assert!(picked.is_none());
     }
 
     #[test]
-    fn test_select_discord_targets_filters_and_fallbacks() {
+    fn test_select_discord_targets_filters_without_unrelated_fallbacks() {
         let targets = vec![
             mk_target("page", "Discord Updater", "about:blank"),
             mk_target("page", "Discord", "https://discord.com/app"),
@@ -1345,8 +1292,7 @@ mod tests {
             mk_target("page", "Page B", "https://example.com/b"),
         ];
         let fallback = select_discord_targets(&no_match_targets);
-        assert_eq!(fallback.len(), 1);
-        assert_eq!(fallback[0].url, "https://example.com/a");
+        assert!(fallback.is_empty());
 
         let with_missing_ws = vec![
             mk_target_opt_ws("page", "Discord Main", "https://discord.com/app", None),

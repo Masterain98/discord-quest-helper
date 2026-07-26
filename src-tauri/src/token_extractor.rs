@@ -226,7 +226,7 @@ fn decrypt_with_dpapi(data: &[u8]) -> Result<Vec<u8>> {
     use std::ptr;
 
     unsafe {
-        let mut input_blob = CRYPT_INTEGER_BLOB {
+        let input_blob = CRYPT_INTEGER_BLOB {
             cbData: data.len() as u32,
             pbData: data.as_ptr() as *mut u8,
         };
@@ -237,7 +237,7 @@ fn decrypt_with_dpapi(data: &[u8]) -> Result<Vec<u8>> {
         };
 
         let result =
-            CryptUnprotectData(&mut input_blob, None, None, None, None, 0, &mut output_blob);
+            CryptUnprotectData(&input_blob, None, None, None, None, 0, &mut output_blob);
 
         if result.is_err() {
             anyhow::bail!("DPAPI decryption failed");
@@ -627,7 +627,7 @@ async fn fetch_build_number_from_scripts(
                                         // Upper bound (9999999): Allow for future growth to 7 digits
                                         // If Discord changes their numbering scheme significantly,
                                         // these bounds may need adjustment.
-                                        if build_num >= 100000 && build_num <= 9_999_999 {
+                                        if (100000..=9_999_999).contains(&build_num) {
                                             log(
                                                 LogLevel::Info,
                                                 LogCategory::TokenExtraction,

