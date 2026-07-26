@@ -16,6 +16,15 @@ import ptPT from './locales/pt-PT.json'
 import id from './locales/id.json'
 import pl from './locales/pl.json'
 
+const polishPluralRule = (choice: number, choicesLength: number): number => {
+    if (choicesLength !== 3) return choice === 1 ? 0 : 1
+
+    const category = new Intl.PluralRules('pl').select(choice)
+    if (category === 'one') return 0
+    if (category === 'few') return 1
+    return 2
+}
+
 // Detect default locale based on browser settings
 function getDefaultLocale(): string {
     const normalizeLocale = (raw: string): string => {
@@ -48,6 +57,9 @@ const i18n = createI18n({
     legacy: false, // Use Composition API mode
     locale: getDefaultLocale(),
     fallbackLocale: 'en',
+    pluralRules: {
+        pl: polishPluralRule
+    },
     messages: {
         en,
         zh,

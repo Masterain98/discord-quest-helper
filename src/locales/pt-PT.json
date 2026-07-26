@@ -84,11 +84,11 @@
 
     "nitro_next_orbs_title": "Orbs mensais do Nitro — contagem decrescente para o próximo resgate",
 
-    "nitro_next_orbs_days": "Próximo airdrop de Orbs em {days} dias",
+    "nitro_next_orbs_days": "Próximo airdrop de Orbs em {days} dia | Próximo airdrop de Orbs em {days} dias",
 
-    "nitro_next_orbs_hours": "Próximo airdrop de Orbs em {hours} horas",
+    "nitro_next_orbs_hours": "Próximo airdrop de Orbs em {hours} hora | Próximo airdrop de Orbs em {hours} horas",
 
-    "nitro_next_orbs_minutes": "Próximo airdrop de Orbs em {minutes} minutos",
+    "nitro_next_orbs_minutes": "Próximo airdrop de Orbs em {minutes} minuto | Próximo airdrop de Orbs em {minutes} minutos",
     "claim_reward": "Reivindicar recompensa",
     "claim_navigated": "Discord foi redirecionado para a página da missão. Por favor, reivindique a sua recompensa lá.",
     "next_error_title": "Algo precisa de atenção",

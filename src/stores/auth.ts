@@ -4,6 +4,7 @@ import type { DiscordUser, ExtractedAccount, BillingSubscription } from '@/api/t
 import { autoDetectToken, setToken, autoFetchSuperProperties, getBillingSubscriptions } from '@/api/tauri'
 import { useQuestsStore } from './quests'
 import { useI18n } from 'vue-i18n'
+import { useNow } from '@vueuse/core'
 
 export const useAuthStore = defineStore('auth', () => {
   const { t } = useI18n()
@@ -17,6 +18,15 @@ export const useAuthStore = defineStore('auth', () => {
   const billingSubscriptions = ref<BillingSubscription[]>([])
   const billingLoading = ref(false)
   const billingError = ref<string | null>(null)
+  const currentTime = useNow({ interval: 60_000 })
+  let billingRequestRevision = 0
+
+  function resetBillingState() {
+    billingRequestRevision += 1
+    billingSubscriptions.value = []
+    billingLoading.value = false
+    billingError.value = null
+  }
 
   async function tryAutoDetect() {
     loading.value = true
@@ -50,6 +60,7 @@ export const useAuthStore = defineStore('auth', () => {
   async function loginWithToken(tokenValue: string) {
     loading.value = true
     error.value = null
+    resetBillingState()
     try {
       user.value = await setToken(tokenValue)
       token.value = tokenValue
@@ -95,6 +106,9 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function logout() {
+    // Invalidate account-scoped requests before awaiting quest shutdown.
+    resetBillingState()
+
     // Stop any in-progress quest before clearing state
     const questsStore = useQuestsStore()
     try {
@@ -107,9 +121,6 @@ export const useAuthStore = defineStore('auth', () => {
     token.value = null
     error.value = null
     detectedAccounts.value = []
-    billingSubscriptions.value = []
-    billingLoading.value = false
-    billingError.value = null
 
     // Reset quests store to clear all cached data from previous account
     questsStore.resetForLogout()
@@ -118,20 +129,28 @@ export const useAuthStore = defineStore('auth', () => {
   async function fetchBillingSubscription(force = false) {
     if (billingLoading.value) return
     if (!force && billingSubscriptions.value.length > 0) return
+    const requestToken = token.value
+    if (!requestToken) return
+    const requestRevision = ++billingRequestRevision
     billingLoading.value = true
     billingError.value = null
     try {
-      billingSubscriptions.value = await getBillingSubscriptions()
+      const subscriptions = await getBillingSubscriptions()
+      if (requestRevision !== billingRequestRevision || token.value !== requestToken) return
+      billingSubscriptions.value = subscriptions
     } catch (e) {
+      if (requestRevision !== billingRequestRevision || token.value !== requestToken) return
       billingError.value = e as string
       console.warn('Failed to fetch billing subscriptions:', e)
     } finally {
-      billingLoading.value = false
+      if (requestRevision === billingRequestRevision && token.value === requestToken) {
+        billingLoading.value = false
+      }
     }
   }
 
-  // The Nitro subscription (monthly Orbs are a Nitro perk). Prefer a plan that
-  // looks like Nitro; fall back to the first subscription if none match.
+  // The Nitro subscription (monthly Orbs are a Nitro perk). Only positively
+  // identified Nitro/Premium plans can provide the monthly grant anchor.
   const nitroSubscription = computed<BillingSubscription | null>(() => {
     const subs = billingSubscriptions.value
     if (!subs.length) return null
@@ -139,7 +158,7 @@ export const useAuthStore = defineStore('auth', () => {
       (s.payment_gateway_plan_id && /premium|nitro/i.test(s.payment_gateway_plan_id)) ||
       (s.items && s.items.some(it => /premium|nitro/i.test(it.plan_id)))
     )
-    return nitro ?? subs[0]
+    return nitro ?? null
   })
 
   // Days until the next monthly Orbs grant.
@@ -159,7 +178,7 @@ export const useAuthStore = defineStore('auth', () => {
     if (isNaN(anchor.getTime())) return null
     const anchorDay = anchor.getUTCDate()
 
-    const now = new Date()
+    const now = currentTime.value
     const nowYear = now.getUTCFullYear()
     const nowMonth = now.getUTCMonth()
 

@@ -15,13 +15,16 @@ const showOrbs = computed(() => questsStore.showOrbsBalance)
 const showNitro = computed(() => authStore.nitroStatus !== null)
 
 // Build the countdown label from the structured claim value, switching the
-// i18n key based on the chosen unit (days / hours / minutes).
+// i18n key based on the chosen unit and locale-aware plural category.
 const claimText = computed(() => {
   const claim = authStore.nextOrbsClaim
   if (!claim) return ''
-  if (claim.unit === 'days') return t('home.nitro_next_orbs_days', { days: claim.value })
-  if (claim.unit === 'hours') return t('home.nitro_next_orbs_hours', { hours: claim.value })
-  return t('home.nitro_next_orbs_minutes', { minutes: claim.value })
+
+  return t(
+    `home.nitro_next_orbs_${claim.unit}`,
+    { [claim.unit]: claim.value },
+    claim.value
+  )
 })
 </script>
 
@@ -43,6 +46,7 @@ const claimText = computed(() => {
         class="h-5 w-5"
         @click="questsStore.fetchOrbsBalance(true)"
         :disabled="questsStore.orbsBalanceLoading || !authStore.user"
+        :aria-label="t('general.refresh')"
       >
         <RotateCw :class="cn('h-3 w-3', questsStore.orbsBalanceLoading && 'animate-spin')" />
       </Button>

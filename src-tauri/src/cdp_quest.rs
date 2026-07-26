@@ -2535,6 +2535,7 @@ __DQH_ACTIVITY_HELPERS__
                     error: "Activity quest enrollment verification mismatch",
                     completed: false,
                     completedAt: null,
+                    questInfoMismatched: quest !== null && !questIdMatches,
                     questIdMatches,
                     enrollmentQuestIdMatches,
                     getQuestError
@@ -2546,6 +2547,7 @@ __DQH_ACTIVITY_HELPERS__
                 completed: false,
                 completedAt: null,
                 cannotVerifyCompletion: true,
+                questInfoMismatched: quest !== null && !questIdMatches,
                 questIdMatches,
                 enrollmentQuestIdMatches,
                 enrolled: enrollmentStatus?.is_enrolled === true,
@@ -3111,6 +3113,10 @@ mod tests {
         assert!(js.contains(
             "const enrollmentStatus = await sdk.commands.getQuestEnrollmentStatus({ quest_id: questId });"
         ));
-        assert!(js.contains("questInfoMismatched"));
+        assert_eq!(
+            js.matches("questInfoMismatched: quest !== null && !questIdMatches")
+                .count(),
+            2
+        );
     }
 }
