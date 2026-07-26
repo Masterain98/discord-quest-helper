@@ -4,7 +4,7 @@
 //! to evade Discord detection. The main program uses a randomly
 //! generated filename when running.
 
-#![cfg_attr(debug_assertions, allow(dead_code))]
+#![cfg_attr(any(debug_assertions, target_os = "linux"), allow(dead_code))]
 
 use std::env;
 use std::fs;
@@ -82,14 +82,23 @@ pub fn generate_stealth_window_title() -> String {
 ///
 /// If stealth process launched successfully, this function calls `std::process::exit(0)`
 pub fn ensure_stealth_mode() -> bool {
+    // Stealth relaunches the app from a randomly named copy in the temp dir.
+    // On Linux that breaks AppImage mounts, sidecar/resource resolution and the
+    // Desktop Entry identity, so it is disabled for the first Linux release.
+    #[cfg(target_os = "linux")]
+    {
+        println!("[Stealth] Disabled on Linux");
+        true
+    }
+
     // Skip stealth mode in debug builds
-    #[cfg(debug_assertions)]
+    #[cfg(all(debug_assertions, not(target_os = "linux")))]
     {
         println!("[Stealth] Debug mode - skipping stealth");
         true
     }
 
-    #[cfg(not(debug_assertions))]
+    #[cfg(all(not(debug_assertions), not(target_os = "linux")))]
     {
         ensure_stealth_mode_impl()
     }
@@ -288,7 +297,7 @@ fn schedule_self_deletion(exe_path: &Path) {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn schedule_self_deletion(exe_path: &PathBuf) {
+fn schedule_self_deletion(exe_path: &Path) {
     // Unix systems can directly delete running files (just removes inode reference)
     let _ = fs::remove_file(exe_path);
 }

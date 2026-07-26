@@ -46,6 +46,8 @@ impl ProxyState {
         Self::hash_setting(&mut hasher, "all_proxy", &all_proxy_lower);
         Self::hash_setting(&mut hasher, "no_proxy", &no_proxy_lower);
 
+        // Only the Windows branch below augments this from the registry.
+        #[cfg_attr(not(windows), allow(unused_mut))]
         let mut has_proxy = !http_proxy.trim().is_empty()
             || !https_proxy.trim().is_empty()
             || !all_proxy.trim().is_empty()

@@ -11,6 +11,8 @@
     "clear": "Hapus"
   },
   "auth": {
+    "cdp_login": "Masuk dengan klien Discord",
+    "cdp_login_hint": "Gunakan aplikasi Discord yang sudah Anda masuki — tanpa token. Discord harus berjalan dengan CDP aktif.",
     "auto_detect": "Deteksi Otomatis Token",
     "login": "Masuk",
     "or_manually": "Atau Secara Manual",
@@ -120,6 +122,10 @@
     "activity_navigate_error": "Gagal menavigasi Discord ke halaman misi. Silakan buka Discord secara manual dan buka halaman Quests."
   },
   "quest": {
+    "soft_error_title": "Tidak dapat menyimulasikan game ini di sini",
+    "soft_error_win32_only": "{game} hanya menyediakan file executable Windows, yang tidak dapat disimulasikan sebagai proses di Linux. Beralihlah ke mode CDP untuk menyelesaikan misi ini.",
+    "soft_error_not_found": "{game} tidak memiliki file executable yang kompatibel untuk mode simulasi. Beralihlah ke mode CDP untuk menyelesaikan misi ini.",
+    "soft_error_switch_cdp": "Beralih ke CDP dan coba lagi",
     "progress": "Kemajuan",
     "required": "{duration} diperlukan",
     "expires": "Kedaluwarsa",
@@ -312,6 +318,7 @@
     "starting": "Mulai...",
     "exe_count": "{count} yang dapat dieksekusi",
     "no_exe_hint": "Game ini tidak memiliki executable yang diketahui di database Discord. Anda dapat memasukkan nama proses khusus untuk disimulasikan.",
+    "no_linux_exe_hint": "Game ini hanya menyediakan file executable Windows, yang tidak dapat disimulasikan sebagai proses di Linux. Anda dapat memasukkan nama proses khusus, atau gunakan mode CDP.",
     "no_exe_custom_warning": "Nama proses yang salah mungkin tidak terdeteksi oleh Discord.",
     "mode_from_list": "Pilih dari Daftar",
     "mode_custom": "Proses Kustom",

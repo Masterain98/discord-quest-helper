@@ -1,4 +1,4 @@
-#![windows_subsystem = "windows"]
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
 use softbuffer::Surface;
 use std::env;
@@ -208,7 +208,7 @@ fn main() {
                 }
 
                 Event::WindowEvent {
-                    event: WindowEvent::Resized(size),
+                    event: WindowEvent::Resized(_),
                     window_id,
                 } if window_id == window.id() => {
                     window.request_redraw();

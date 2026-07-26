@@ -11,6 +11,8 @@
     "clear": "清除"
   },
   "auth": {
+    "cdp_login": "使用 Discord 客户端登录",
+    "cdp_login_hint": "使用你已登录的 Discord 客户端，无需 Token。需要 Discord 已开启 CDP 调试端口运行。",
     "auto_detect": "自动检测 Token",
     "login": "登录",
     "or_manually": "或手动输入",
@@ -118,6 +120,10 @@
     "activity_navigate_error": "无法将 Discord 导航到任务页面。请手动打开 Discord 并进入任务页面。"
   },
   "quest": {
+    "soft_error_title": "无法在此模拟该游戏",
+    "soft_error_win32_only": "{game} 仅提供 Windows 可执行文件，无法在 Linux 上进行进程模拟。请切换到 CDP 模式来完成此任务。",
+    "soft_error_not_found": "{game} 没有适用于模拟模式的可执行文件。请切换到 CDP 模式来完成此任务。",
+    "soft_error_switch_cdp": "切换到 CDP 并重试",
     "progress": "进度",
     "required": "需要 {duration}",
     "expires": "过期时间",
@@ -240,7 +246,7 @@
     "cdp_dialog_confirm": "重启 Discord",
     "cdp_shortcut_title": "桌面启动器",
     "cdp_shortcut_desc": "创建一个长期可用的桌面快捷方式，每次都会动态启动当前版本的 Discord 并启用 CDP。",
-    "cdp_create_shortcut": "创建 CDP 启动器快捷方式",
+    "cdp_create_shortcut": "创建启动器",
     "cdp_shortcut_success": "CDP 启动器快捷方式已创建到桌面",
     "cdp_sync_success": "客户端信息同步成功",
     "client_emulation": "Discord 客户端模拟",
@@ -310,6 +316,7 @@
     "starting": "启动中...",
     "exe_count": "{count} 个可执行文件",
     "no_exe_hint": "此游戏在 Discord 数据库中没有已知的可执行文件。你可以输入自定义进程名称进行模拟。",
+    "no_linux_exe_hint": "此游戏仅提供 Windows 可执行文件，无法在 Linux 上进行进程模拟。你可以输入自定义进程名称，或改用 CDP 模式。",
     "no_exe_custom_warning": "不正确的进程名称可能无法被 Discord 检测到。",
     "mode_from_list": "从列表选择",
     "mode_custom": "自定义进程",

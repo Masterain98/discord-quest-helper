@@ -8,9 +8,19 @@ import { Input } from '@/components/ui/input'
 import { Loader2, Gamepad2, Search, RefreshCw } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useQuestsStore } from '@/stores/quests'
+import { getSimulationExecutables } from '@/utils/executables'
 
 const { t } = useI18n()
 const store = useQuestsStore()
+
+// Count executables the simulator can actually launch on this platform (Linux:
+// native `linux` only; Windows/macOS: win32) so the badge's "0 executables"
+// warning matches what the Game Simulator will accept.
+function compatibleExeCount(game: DetectableGame): number {
+  const priority = store.platformCapabilities?.executableOsPriority ?? ['win32']
+  const hostOs = store.platformCapabilities?.os ?? 'win32'
+  return getSimulationExecutables(game.executables, hostOs, priority).length
+}
 
 defineEmits<{
   select: [game: DetectableGame]
@@ -127,8 +137,8 @@ onMounted(async () => {
                  {{ game.type_name === 'App' ? t('game_sim.type_app') : t('game_sim.type_game') }}
                </Badge>
             </div>
-            <div class="text-xs font-normal" :class="game.executables.filter(e => e.os === 'win32').length === 0 ? 'text-yellow-500' : 'text-muted-foreground'">
-              {{ t('game_sim.exe_count', { count: game.executables.filter(e => e.os === 'win32').length }) }}
+            <div class="text-xs font-normal" :class="compatibleExeCount(game) === 0 ? 'text-yellow-500' : 'text-muted-foreground'">
+              {{ t('game_sim.exe_count', { count: compatibleExeCount(game) }) }}
             </div>
           </div>
         </Button>

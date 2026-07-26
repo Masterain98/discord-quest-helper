@@ -11,6 +11,8 @@
     "clear": "Clear"
   },
   "auth": {
+    "cdp_login": "Log in with Discord Client",
+    "cdp_login_hint": "Use the Discord app you're already signed in to — no token needed. Requires Discord running with CDP.",
     "auto_detect": "Auto Detect Token",
     "login": "Login",
     "or_manually": "Or Manually",
@@ -118,6 +120,10 @@
     "activity_navigate_error": "Failed to navigate Discord to quest page. Please open Discord manually and go to the Quests page."
   },
   "quest": {
+    "soft_error_title": "Can't simulate this game here",
+    "soft_error_win32_only": "{game} only provides a Windows executable, which can't be process-simulated on Linux. Switch to CDP mode to complete this quest.",
+    "soft_error_not_found": "{game} has no compatible executable for simulation mode. Switch to CDP mode to complete this quest.",
+    "soft_error_switch_cdp": "Switch to CDP and retry",
     "progress": "Progress",
     "required": "{duration} required",
     "expires": "Expires",
@@ -240,7 +246,7 @@
     "cdp_dialog_confirm": "Restart Discord",
     "cdp_shortcut_title": "Desktop launcher",
     "cdp_shortcut_desc": "Create a long-lived desktop shortcut that launches the current Discord version with CDP enabled.",
-    "cdp_create_shortcut": "Create CDP Launcher Shortcut",
+    "cdp_create_shortcut": "Create Launcher",
     "cdp_shortcut_success": "CDP launcher shortcut created on Desktop",
     "cdp_sync_success": "Client info synced successfully",
     "client_emulation": "Discord Client Emulation",
@@ -310,6 +316,7 @@
     "starting": "Starting...",
     "exe_count": "{count} executables",
     "no_exe_hint": "This game has no known executables in Discord's database. You can enter a custom process name to simulate.",
+    "no_linux_exe_hint": "This game only ships a Windows executable, which can't be process-simulated on Linux. You can enter a custom process name, or use CDP mode instead.",
     "no_exe_custom_warning": "An incorrect process name may not be detected by Discord.",
     "mode_from_list": "Select from List",
     "mode_custom": "Custom Process",

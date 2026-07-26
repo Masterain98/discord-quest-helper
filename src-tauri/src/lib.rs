@@ -9,6 +9,7 @@ mod discord_gateway;
 mod game_simulator;
 mod logger;
 mod models;
+mod platform_capabilities;
 mod quest_completer;
 mod stealth;
 mod super_properties;
@@ -249,6 +250,85 @@ async fn set_token(token: String, state: State<'_, AppState>) -> Result<DiscordU
     // Save client AFTER initializing SuperProperties to avoid race conditions
     // where other commands might use the client with stale properties
     *state.client.lock().unwrap() = Some(client);
+
+    Ok(user)
+}
+
+/// CDP auto-login: capture the currently logged-in Discord session over CDP and
+/// establish a DQH login from it. This is the primary login path on Linux.
+///
+/// The raw token is captured, validated, and stored **entirely on the Rust
+/// side** — only the resolved `DiscordUser` is returned to the frontend. This
+/// deliberately avoids `auto_detect_token`'s pattern of handing raw tokens to
+/// the WebView: a running client has exactly one current account. Requires
+/// Discord to be running with CDP enabled. Works on every platform; on Linux it
+/// is the primary login path (local keyring extraction is a later phase).
+#[tauri::command]
+async fn auto_login_via_cdp(
+    port: Option<u16>,
+    state: State<'_, AppState>,
+) -> Result<DiscordUser, String> {
+    use crate::logger::{log, LogCategory, LogLevel};
+    use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+
+    let cdp_port = port.unwrap_or(cdp_client::DEFAULT_CDP_PORT);
+
+    log(
+        LogLevel::Info,
+        LogCategory::TokenExtraction,
+        &format!("Starting CDP auto-login on port {}", cdp_port),
+        None,
+    );
+
+    // 1. Capture the current session's Authorization over CDP. The token stays
+    //    inside `session` (a zero-on-drop wrapper) and is never returned to the
+    //    UI, logged, or persisted.
+    let session =
+        cdp_client::capture_discord_auth_via_cdp(cdp_port, std::time::Duration::from_secs(20))
+            .await
+            .map_err(|e| e.to_string())?;
+
+    // 2. Build an API client from the captured token and validate it via
+    //    /users/@me. An invalid capture is rejected here.
+    let client = DiscordApiClient::new(session.authorization.to_string())
+        .map_err(|e| format!("Failed to create API client: {}", e))?;
+    let user = client
+        .get_current_user()
+        .await
+        .map_err(|e| format!("Captured Discord session is not valid: {}", e))?;
+
+    // 3. Bootstrap SuperProperties. Prefer the exact `x-super-properties` we
+    //    captured (the value the client actually sends); fall back to a fresh
+    //    CDP fetch. Either way the manager has built-in defaults on failure.
+    let mut super_properties_ready = false;
+    if let Some(base64) = session.super_properties.as_ref() {
+        if let Ok(decoded_bytes) = BASE64.decode(base64) {
+            if let Ok(decoded) = serde_json::from_slice::<serde_json::Value>(&decoded_bytes) {
+                if let Ok(mut manager) = SUPER_PROPERTIES_MANAGER.lock() {
+                    manager.set_from_cdp(base64, &decoded);
+                    super_properties_ready = true;
+                }
+            }
+        }
+    }
+    if !super_properties_ready {
+        if let Ok(cdp_result) = cdp_client::fetch_super_properties_via_cdp(cdp_port).await {
+            if let Ok(mut manager) = SUPER_PROPERTIES_MANAGER.lock() {
+                manager.set_from_cdp(&cdp_result.base64, &cdp_result.decoded);
+            }
+        }
+    }
+
+    // 4. Save the client last (mirrors set_token) so no request runs with stale
+    //    super properties.
+    *state.client.lock().unwrap() = Some(client);
+
+    log(
+        LogLevel::Info,
+        LogCategory::TokenExtraction,
+        "CDP auto-login succeeded",
+        None,
+    );
 
     Ok(user)
 }
@@ -889,7 +969,15 @@ async fn open_in_explorer(path: String) -> Result<(), String> {
             .spawn()
             .map_err(|e| format!("Failed to open Finder: {}", e))?;
     }
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    #[cfg(target_os = "linux")]
+    {
+        println!("Opening file manager at: {}", path);
+        std::process::Command::new("xdg-open")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("Failed to open directory: {}", e))?;
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
     {
         let _ = path; // Suppress unused variable warning on other platforms
     }
@@ -986,6 +1074,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             auto_detect_token,
             set_token,
+            auto_login_via_cdp,
             get_quests,
             get_quests_full,
             start_video_quest,
@@ -1021,7 +1110,8 @@ pub fn run() {
             auto_fetch_super_properties,
             retry_super_properties,
             capture_discord_headers_cdp,
-            navigate_discord_spa
+            navigate_discord_spa,
+            platform_capabilities::get_platform_capabilities
         ])
         .on_window_event(|_window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
@@ -1348,9 +1438,25 @@ fn stable_cdp_launcher_path() -> Result<std::path::PathBuf, String> {
             .join("discord-cdp-launcher"))
     }
 
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    #[cfg(target_os = "linux")]
     {
-        Err("Discord CDP launcher is only supported on Windows and macOS.".to_string())
+        let data_home = std::env::var_os("XDG_DATA_HOME")
+            .map(std::path::PathBuf::from)
+            .filter(|path| path.is_absolute())
+            .or_else(|| {
+                std::env::var_os("HOME")
+                    .map(|home| std::path::PathBuf::from(home).join(".local").join("share"))
+            })
+            .ok_or_else(|| "Could not determine XDG data home".to_string())?;
+        Ok(data_home
+            .join("discord-quest-helper")
+            .join("bin")
+            .join("discord-cdp-launcher"))
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        Err("Discord CDP launcher is only supported on Windows, macOS and Linux.".to_string())
     }
 }
 
@@ -1456,7 +1562,25 @@ fn cdp_launcher_binary_names() -> Vec<&'static str> {
         }
     }
 
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    #[cfg(target_os = "linux")]
+    {
+        #[cfg(target_arch = "aarch64")]
+        {
+            vec![
+                "discord-cdp-launcher-sidecar",
+                "discord-cdp-launcher-sidecar-aarch64-unknown-linux-gnu",
+            ]
+        }
+        #[cfg(not(target_arch = "aarch64"))]
+        {
+            vec![
+                "discord-cdp-launcher-sidecar",
+                "discord-cdp-launcher-sidecar-x86_64-unknown-linux-gnu",
+            ]
+        }
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
     {
         Vec::new()
     }
@@ -1557,7 +1681,6 @@ fn create_platform_cdp_launcher_shortcut(
     port: u16,
     channel: Option<discord_cdp_launch_core::DiscordChannel>,
 ) -> Result<String, String> {
-    use std::io::Write;
     use std::os::unix::fs::PermissionsExt;
 
     let home = std::env::var_os("HOME").ok_or_else(|| "Could not get HOME".to_string())?;
@@ -1585,11 +1708,143 @@ fn create_platform_cdp_launcher_shortcut(
     Ok(script_path.to_string_lossy().to_string())
 }
 
-#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+#[cfg(target_os = "linux")]
+fn create_platform_cdp_launcher_shortcut(
+    launcher_path: &std::path::Path,
+    port: u16,
+    channel: Option<discord_cdp_launch_core::DiscordChannel>,
+) -> Result<String, String> {
+    use std::io::Write;
+    use std::os::unix::fs::PermissionsExt;
+
+    if port == 0 {
+        return Err("CDP port must be between 1 and 65535.".to_string());
+    }
+
+    let data_home = std::env::var_os("XDG_DATA_HOME")
+        .map(std::path::PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .map(|home| std::path::PathBuf::from(home).join(".local").join("share"))
+        })
+        .ok_or_else(|| "Could not determine XDG data home".to_string())?;
+
+    let applications_dir = data_home.join("applications");
+    std::fs::create_dir_all(&applications_dir)
+        .map_err(|e| format!("Failed to create applications directory: {}", e))?;
+
+    let desktop_path = applications_dir.join("com.masterain.discord-quest-helper.cdp.desktop");
+
+    // `channel` is a Rust enum, so `as_str()` is always a fixed, safe token.
+    let channel_arg = channel.map(|c| c.as_str()).unwrap_or("auto");
+    let launcher_display = launcher_path.to_string_lossy();
+    // A newline anywhere in the path would close the `Exec=`/`TryExec=` value
+    // and let the rest be parsed as further Desktop Entry keys. Quoting cannot
+    // express control characters, so reject them outright rather than emit a
+    // file whose meaning depends on the reader's leniency.
+    if launcher_display.contains(char::is_control) {
+        return Err(
+            "Launcher path contains control characters; refusing to write a desktop entry."
+                .to_string(),
+        );
+    }
+    let exec_program = desktop_entry_exec_quote(&launcher_display);
+
+    let contents = format!(
+        "[Desktop Entry]\n\
+         Type=Application\n\
+         Name=Discord CDP Launcher\n\
+         Comment=Launch Discord with CDP enabled\n\
+         Exec={exec} --port {port} --channel {channel}\n\
+         TryExec={tryexec}\n\
+         Icon=com.masterain.discord-quest-helper\n\
+         Terminal=false\n\
+         Categories=Utility;\n\
+         StartupNotify=true\n",
+        exec = exec_program,
+        port = port,
+        channel = channel_arg,
+        tryexec = launcher_display,
+    );
+
+    // Write to a temp file in the same directory, then atomically rename into place.
+    let tmp_path = applications_dir.join(format!(
+        ".com.masterain.discord-quest-helper.cdp.desktop.{}.tmp",
+        std::process::id()
+    ));
+    {
+        let mut file = std::fs::File::create(&tmp_path)
+            .map_err(|e| format!("Failed to write desktop entry: {}", e))?;
+        file.write_all(contents.as_bytes())
+            .map_err(|e| format!("Failed to write desktop entry: {}", e))?;
+        file.set_permissions(std::fs::Permissions::from_mode(0o644))
+            .map_err(|e| format!("Failed to set desktop entry permissions: {}", e))?;
+    }
+    std::fs::rename(&tmp_path, &desktop_path).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp_path);
+        format!("Failed to install desktop entry: {}", e)
+    })?;
+
+    // Best-effort refresh of the desktop database; failure is non-fatal.
+    let _ = std::process::Command::new("update-desktop-database")
+        .arg(&applications_dir)
+        .status();
+
+    Ok(desktop_path.to_string_lossy().to_string())
+}
+
+/// Escape a value for use inside a double-quoted Desktop Entry `Exec` argument.
+/// Reserved characters are escaped with a backslash; backslash is escaped first.
+/// Field codes (`%f`, `%u`, …) are expanded before quoting is undone, so a
+/// literal percent sign must be written as `%%` even inside quotes.
+#[cfg(target_os = "linux")]
+fn desktop_entry_exec_quote(value: &str) -> String {
+    let escaped = value
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('`', "\\`")
+        .replace('$', "\\$")
+        .replace('%', "%%");
+    format!("\"{}\"", escaped)
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
 fn create_platform_cdp_launcher_shortcut(
     _launcher_path: &std::path::Path,
     _port: u16,
     _channel: Option<discord_cdp_launch_core::DiscordChannel>,
 ) -> Result<String, String> {
-    Err("Shortcut creation is only supported on Windows and macOS.".to_string())
+    Err("Shortcut creation is only supported on Windows, macOS and Linux.".to_string())
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod desktop_entry_tests {
+    use super::desktop_entry_exec_quote;
+
+    #[test]
+    fn quotes_plain_paths() {
+        assert_eq!(
+            desktop_entry_exec_quote("/usr/bin/discord-cdp-launcher"),
+            "\"/usr/bin/discord-cdp-launcher\""
+        );
+    }
+
+    #[test]
+    fn escapes_reserved_shell_characters() {
+        assert_eq!(
+            desktop_entry_exec_quote(r#"/tmp/we"ir$d`\path"#),
+            r#""/tmp/we\"ir\$d\`\\path""#
+        );
+    }
+
+    #[test]
+    fn doubles_literal_percent_so_it_is_not_read_as_a_field_code() {
+        // `%f`/`%u` are expanded before quoting is undone, so a path containing
+        // a percent sign must be written `%%` or the entry silently mangles it.
+        assert_eq!(
+            desktop_entry_exec_quote("/opt/My %f App/launcher"),
+            "\"/opt/My %%f App/launcher\""
+        );
+    }
 }

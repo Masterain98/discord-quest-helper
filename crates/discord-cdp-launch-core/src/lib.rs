@@ -26,3 +26,7 @@ pub use platform::windows::discover_windows_installs_in;
 #[cfg(target_os = "macos")]
 #[doc(hidden)]
 pub use platform::macos::discover_macos_installs_in;
+
+#[cfg(target_os = "linux")]
+#[doc(hidden)]
+pub use platform::linux::{classify_linux_process, discover_linux_installs_in, LinuxProcessInfo};
