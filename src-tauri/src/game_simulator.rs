@@ -380,8 +380,8 @@ pub fn stop_simulated_game(exec_name: &str) -> Result<()> {
     };
 
     // Only signal the PID if it still points at the runner we launched, so a
-    // recycled PID (or a real game with the same name) is never killed. Either
-    // way the child handle is reaped so no zombie is left behind.
+    // recycled PID (or a real game with the same name) is never killed. On a
+    // mismatch, collect the child if it already exited but never block on it.
     if linux_pid_is_runner(managed.pid, &managed.executable_path) {
         terminate_linux_game(&mut managed);
         println!("Simulated game '{}' (pid {}) stopped", key, managed.pid);
@@ -390,7 +390,7 @@ pub fn stop_simulated_game(exec_name: &str) -> Result<()> {
             "Tracked pid {} no longer refers to '{}'; not signalling",
             managed.pid, key
         );
-        reap_linux_game(&mut managed);
+        try_reap_linux_game(&mut managed);
     }
 
     Ok(())
@@ -444,7 +444,7 @@ fn track_linux_game(
         if linux_pid_is_runner(previous.pid, &previous.executable_path) {
             terminate_linux_game(&mut previous);
         } else {
-            reap_linux_game(&mut previous);
+            try_reap_linux_game(&mut previous);
         }
     }
 }
@@ -518,6 +518,22 @@ fn linux_game_has_exited(game: &mut LinuxManagedGame) -> bool {
 fn reap_linux_game(game: &mut LinuxManagedGame) {
     if let Some(mut child) = game.child.take() {
         let _ = child.wait();
+    }
+}
+
+/// Non-blocking reap for identity-mismatch paths, where the child has *not*
+/// been confirmed dead: an exited child (its `/proc/<pid>/exe` link breaks once
+/// it is a zombie) is collected, but a live one — e.g. the runner file was
+/// moved or renamed, so the link no longer matches — is left running untouched.
+/// A blocking `wait()` here would hang until that unverified process exits.
+#[cfg(target_os = "linux")]
+fn try_reap_linux_game(game: &mut LinuxManagedGame) {
+    if let Some(mut child) = game.child.take() {
+        if matches!(child.try_wait(), Ok(None)) {
+            // Still alive; not verified as ours to kill or wait on — put the
+            // handle back untouched.
+            game.child = Some(child);
+        }
     }
 }
 
@@ -613,7 +629,7 @@ fn cleanup_all_linux_games() {
             println!("  Stopping pid {}", game.pid);
             terminate_linux_game(game);
         } else {
-            reap_linux_game(game);
+            try_reap_linux_game(game);
         }
     }
 }

@@ -1114,11 +1114,12 @@ export const useQuestsStore = defineStore('quests', () => {
   async function switchToCdpAndRetry(): Promise<void> {
     const req = lastPlayRequest.value
     gameQuestMode.value = 'cdp'
-    softError.value = null
-    queuePauseReason.value = null
 
     // Confirm the CDP port is actually reachable; initCdpMode flips back to
-    // simulate when it isn't, so re-check availability afterward.
+    // simulate when it isn't, so re-check availability afterward. The soft
+    // error and pause reason are only cleared once CDP is confirmed: dropping
+    // them on a failed check would leave a paused queue reporting "running"
+    // with no active quest and no way to retry from the dialog.
     await initCdpMode()
     if (!cdpAvailable.value) {
       gameQuestMode.value = 'cdp' // keep the user's chosen mode selected
@@ -1126,6 +1127,10 @@ export const useQuestsStore = defineStore('quests', () => {
         'CDP mode is not available. Start Discord with CDP enabled (Settings → Discord integration), then try again.'
       return
     }
+
+    error.value = null
+    softError.value = null
+    queuePauseReason.value = null
 
     if (isQueueRunning.value) {
       await processQueue()
