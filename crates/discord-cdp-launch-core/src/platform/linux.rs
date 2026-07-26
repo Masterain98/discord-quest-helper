@@ -309,7 +309,26 @@ pub(crate) fn is_running(channel: Option<DiscordChannel>) -> Result<bool, Launch
     Ok(!running_discord_pids(channel)?.is_empty())
 }
 
+/// How long to wait for a graceful exit, and again after escalating to SIGKILL.
+const TERMINATE_GRACE: Duration = Duration::from_secs(3);
+
+/// True when `pid` *currently* still looks like the Discord channel we targeted.
+///
+/// PIDs are reused, and there is a multi-second gap between enumeration and the
+/// SIGKILL escalation below, so re-reading `/proc/<pid>` before escalating stops
+/// a recycled PID from being killed. Re-classification is a couple of small
+/// `/proc` reads, so it is cheap enough to do per signal.
+fn still_matches_discord(
+    pid: u32,
+    channel: Option<DiscordChannel>,
+    installs: &[DiscordInstall],
+) -> bool {
+    classify_linux_process(&read_process_info(pid), installs)
+        .is_some_and(|found| channel_matches(found, channel))
+}
+
 pub(crate) fn terminate(channel: Option<DiscordChannel>) -> Result<(), LaunchError> {
+    let installs = find_installs()?;
     let targets = running_discord_pids(channel)?;
 
     for pid in &targets {
@@ -324,7 +343,7 @@ pub(crate) fn terminate(channel: Option<DiscordChannel>) -> Result<(), LaunchErr
         }
     }
 
-    let deadline = Instant::now() + Duration::from_secs(3);
+    let deadline = Instant::now() + TERMINATE_GRACE;
     while Instant::now() < deadline {
         if targets.iter().all(|pid| !process_is_alive(*pid)) {
             return Ok(());
@@ -333,12 +352,28 @@ pub(crate) fn terminate(channel: Option<DiscordChannel>) -> Result<(), LaunchErr
     }
 
     for pid in &targets {
-        if process_is_alive(*pid) {
+        if process_is_alive(*pid) && still_matches_discord(*pid, channel, &installs) {
             let _ = signal::kill(Pid::from_raw(*pid as i32), Signal::SIGKILL);
         }
     }
 
-    Ok(())
+    // SIGKILL only queues the signal — a process in uninterruptible I/O can
+    // outlive it. Confirm before reporting success, or the caller relaunches
+    // Discord while the old instance still holds the CDP port.
+    let deadline = Instant::now() + TERMINATE_GRACE;
+    while Instant::now() < deadline {
+        if targets
+            .iter()
+            .all(|pid| !process_is_alive(*pid) || !still_matches_discord(*pid, channel, &installs))
+        {
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+
+    Err(LaunchError::ShutdownTimeout {
+        timeout: TERMINATE_GRACE,
+    })
 }
 
 /// Liveness check via `kill(pid, 0)`, which performs error checking without

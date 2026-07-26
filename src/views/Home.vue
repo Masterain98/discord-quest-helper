@@ -525,7 +525,7 @@
          steer the user to CDP mode instead of failing the quest. -->
     <AlertDialog
       :open="!!questsStore.softError"
-      @update:open="(value: boolean) => { if (!value) questsStore.dismissSoftError() }"
+      @update:open="(value: boolean) => { if (!value && !switchingToCdp) questsStore.dismissSoftError() }"
     >
       <AlertDialogContent class="max-w-[560px]">
         <AlertDialogHeader>
@@ -538,10 +538,17 @@
           {{ questsStore.error }}
         </p>
         <AlertDialogFooter>
-          <AlertDialogCancel @click="questsStore.dismissSoftError()">{{ t('dialog.cancel') }}</AlertDialogCancel>
-          <AlertDialogAction @click="questsStore.switchToCdpAndRetry()">
+          <!-- Cancel closes the dialog, and `update:open` dismisses the soft
+               error (which also skips a queue item paused as incompatible). -->
+          <AlertDialogCancel :disabled="switchingToCdp">{{ t('dialog.cancel') }}</AlertDialogCancel>
+          <!-- Deliberately a plain Button, not AlertDialogAction: that closes
+               the dialog on click, which would run dismissSoftError() — losing
+               the error and skipping the paused queue item — while the CDP
+               switch is still awaiting initCdpMode(). -->
+          <Button :disabled="switchingToCdp" @click="handleSwitchToCdp">
+            <Loader2 v-if="switchingToCdp" class="w-4 h-4 mr-2 animate-spin" />
             {{ t('quest.soft_error_switch_cdp') }}
-          </AlertDialogAction>
+          </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
@@ -632,6 +639,20 @@ function simulationExesFor(game: DetectableGame) {
 }
 
 const isLinuxHost = computed(() => questsStore.platformCapabilities?.os === 'linux')
+
+// The soft-error dialog stays open for the whole CDP switch: dismissing it
+// mid-flight would clear the error and skip the paused queue item.
+const switchingToCdp = ref(false)
+
+async function handleSwitchToCdp() {
+  if (switchingToCdp.value) return
+  switchingToCdp.value = true
+  try {
+    await questsStore.switchToCdpAndRetry()
+  } finally {
+    switchingToCdp.value = false
+  }
+}
 
 // Localized body for the recoverable simulation soft error:
 // e.g. a win32-only game selected while running the Linux process simulator.
@@ -1329,6 +1350,9 @@ async function confirmBatchComplete() {
  * Resolves when all selections are done, rejects if user cancels any.
  */
 async function preselectExesForGameQuests(gameQuests: Quest[]): Promise<void> {
+  // Capabilities drive the win32/linux rule below, so make sure they're loaded
+  // before deciding what to offer (resolves instantly once cached).
+  await questsStore.initPlatformCapabilities()
   const gamesList = await questsStore.getDetectableGames()
 
   for (const quest of gameQuests) {
@@ -1519,6 +1543,7 @@ async function startQuest(quest: Quest) {
         if (questsStore.gameQuestMode === 'simulate') {
           const appId = quest.config.application?.id
           if (appId) {
+            await questsStore.initPlatformCapabilities()
             const gamesList = await questsStore.getDetectableGames()
             const game = gamesList.find(g => g.id === appId)
             if (game) {

@@ -782,13 +782,23 @@ struct CdpAuthCorrelator {
 /// client; hitting it just means we fall back to the in-order path.
 const MAX_UNMATCHED_EXTRA_INFO: usize = 256;
 
+/// Cap on remembered request classifications. Correlation only matters between
+/// an event pair that arrives back to back, so dropping the oldest generation
+/// wholesale costs nothing in practice and keeps the map bounded however long
+/// the capture window runs.
+const MAX_CLASSIFIED_REQUESTS: usize = 1024;
+
 /// Pull an `(authorization, super_properties)` pair out of a single CDP Network
 /// event, correlating `...ExtraInfo` events back to a known Discord API request
 /// by `requestId` regardless of which of the two events arrives first.
+///
+/// The authorization value stays inside `Zeroizing` end to end so the captured
+/// session token is never left in a plain `String` the allocator can hand out
+/// again — see [`CapturedDiscordSession`].
 fn extract_auth_from_cdp_event(
     text: &str,
     state: &mut CdpAuthCorrelator,
-) -> Option<(String, Option<String>)> {
+) -> Option<(Zeroizing<String>, Option<String>)> {
     let json: serde_json::Value = serde_json::from_str(text).ok()?;
     let method = json.get("method").and_then(|v| v.as_str())?;
     let params = json.get("params")?;
@@ -806,6 +816,9 @@ fn extract_auth_from_cdp_event(
             let buffered = if request_id.is_empty() {
                 None
             } else {
+                if state.classified.len() >= MAX_CLASSIFIED_REQUESTS {
+                    state.classified.clear();
+                }
                 state.classified.insert(request_id.to_string(), is_api);
                 state.unmatched_extra_info.remove(request_id)
             };
@@ -819,15 +832,13 @@ fn extract_auth_from_cdp_event(
             if let Some(headers) = request.get("headers").and_then(|h| h.as_object()) {
                 if let Some(authorization) = cdp_header_value(headers, "authorization") {
                     return Some((
-                        authorization,
+                        Zeroizing::new(authorization),
                         cdp_header_value(headers, "x-super-properties"),
                     ));
                 }
             }
 
-            buffered.map(|(authorization, super_properties)| {
-                (authorization.to_string(), super_properties)
-            })
+            buffered
         }
         "Network.requestWillBeSentExtraInfo" => {
             let request_id = params.get("requestId").and_then(|v| v.as_str())?;
@@ -836,7 +847,7 @@ fn extract_auth_from_cdp_event(
             let super_properties = cdp_header_value(headers, "x-super-properties");
 
             match state.classified.get(request_id) {
-                Some(true) => Some((authorization, super_properties)),
+                Some(true) => Some((Zeroizing::new(authorization), super_properties)),
                 // Known non-API request: drop the headers, never buffer them.
                 Some(false) => None,
                 // Arrived first — hold on to it until the URL is classified.
@@ -954,7 +965,7 @@ pub async fn capture_discord_auth_via_cdp(
                 None,
             );
             Ok(CapturedDiscordSession {
-                authorization: Zeroizing::new(authorization),
+                authorization,
                 super_properties,
             })
         }

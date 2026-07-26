@@ -90,12 +90,29 @@ fn install(channel: DiscordChannel) -> DiscordInstall {
     }
 }
 
+/// Options for tests that assert a *timeout* is reached: the budget must be
+/// small so the test is fast.
 fn fast_options() -> LaunchOptions {
     LaunchOptions {
         shutdown_timeout: Duration::from_millis(10),
         readiness_timeout: Duration::from_millis(10),
         poll_interval: Duration::from_millis(1),
         ..Default::default()
+    }
+}
+
+/// Options for tests that assert *eventual success* after several polls.
+///
+/// `fast_options`' 10ms readiness budget is wall-clock, and a 1ms sleep can
+/// overshoot by an order of magnitude on a loaded CI runner, so a multi-poll
+/// success path spuriously times out there. The generous ceiling is never
+/// actually reached: the fake probe reports readiness after a fixed number of
+/// polls, so these tests still finish in milliseconds.
+fn patient_options() -> LaunchOptions {
+    LaunchOptions {
+        shutdown_timeout: Duration::from_secs(30),
+        readiness_timeout: Duration::from_secs(30),
+        ..fast_options()
     }
 }
 
@@ -130,7 +147,7 @@ fn restart_terminates_before_spawning() {
     let options = LaunchOptions {
         restart_existing: true,
         wait_for_cdp: false,
-        ..fast_options()
+        ..patient_options()
     };
     let result = launch_with_backends(options, &platform, &probe).unwrap();
     assert_eq!(result.outcome, LaunchOutcome::Spawned);
@@ -201,7 +218,7 @@ fn spawn_waits_until_discord_target_is_ready() {
             target_title: Some("Discord".to_string()),
         },
     ]);
-    let result = launch_with_backends(fast_options(), &platform, &probe).unwrap();
+    let result = launch_with_backends(patient_options(), &platform, &probe).unwrap();
     assert!(result.cdp_connected);
     assert_eq!(result.pid, Some(4242));
 }

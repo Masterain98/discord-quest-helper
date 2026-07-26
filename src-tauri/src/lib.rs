@@ -1739,6 +1739,16 @@ fn create_platform_cdp_launcher_shortcut(
     // `channel` is a Rust enum, so `as_str()` is always a fixed, safe token.
     let channel_arg = channel.map(|c| c.as_str()).unwrap_or("auto");
     let launcher_display = launcher_path.to_string_lossy();
+    // A newline anywhere in the path would close the `Exec=`/`TryExec=` value
+    // and let the rest be parsed as further Desktop Entry keys. Quoting cannot
+    // express control characters, so reject them outright rather than emit a
+    // file whose meaning depends on the reader's leniency.
+    if launcher_display.contains(char::is_control) {
+        return Err(
+            "Launcher path contains control characters; refusing to write a desktop entry."
+                .to_string(),
+        );
+    }
     let exec_program = desktop_entry_exec_quote(&launcher_display);
 
     let contents = format!(
@@ -1805,7 +1815,7 @@ fn create_platform_cdp_launcher_shortcut(
     _port: u16,
     _channel: Option<discord_cdp_launch_core::DiscordChannel>,
 ) -> Result<String, String> {
-    Err("Shortcut creation is only supported on Windows and macOS.".to_string())
+    Err("Shortcut creation is only supported on Windows, macOS and Linux.".to_string())
 }
 
 #[cfg(all(test, target_os = "linux"))]

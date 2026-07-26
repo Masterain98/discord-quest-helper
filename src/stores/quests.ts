@@ -126,33 +126,50 @@ export const useQuestsStore = defineStore('quests', () => {
   // True once the first load attempt has settled (success or failure), so the UI
   // can avoid rendering platform-dependent affordances against a null descriptor.
   const platformCapabilitiesReady = ref(false)
+  // In-flight load, so the fire-and-forget call at store creation and the
+  // awaiting callers (startPlay, the Home pre-selection flows) share one fetch.
+  let platformCapabilitiesInFlight: Promise<PlatformCapabilities | null> | null = null
 
   /**
    * Load the platform capability descriptor. On first run (no saved mode) this
    * applies the platform's default Play-Quest mode — 'cdp' on Linux, 'simulate'
    * on Windows/macOS — without ever overriding a preference the user has set.
-   * Safe to call more than once; only the first call fetches.
+   * Safe to call more than once and from several callers concurrently; only the
+   * first call fetches, and later ones resolve from the cached descriptor.
    */
   async function initPlatformCapabilities(): Promise<PlatformCapabilities | null> {
     if (platformCapabilities.value) return platformCapabilities.value
-    try {
-      const caps = await getPlatformCapabilities()
-      platformCapabilities.value = caps
-      if (
-        savedGameQuestMode === null &&
-        (caps.defaultGameQuestMode === 'simulate' ||
-          caps.defaultGameQuestMode === 'heartbeat' ||
-          caps.defaultGameQuestMode === 'cdp')
-      ) {
-        gameQuestMode.value = caps.defaultGameQuestMode
+    if (platformCapabilitiesInFlight) return platformCapabilitiesInFlight
+
+    platformCapabilitiesInFlight = (async () => {
+      try {
+        const caps = await getPlatformCapabilities()
+        platformCapabilities.value = caps
+        // Re-read at resolve time rather than trusting `savedGameQuestMode`,
+        // which is a store-setup snapshot. If the user picked a mode from
+        // Settings while this fetch was in flight, the `gameQuestMode` watcher
+        // has already persisted it, and applying the platform default here
+        // would silently clobber that fresh choice.
+        const currentSavedMode = localStorage.getItem(STORAGE_GAME_QUEST_MODE_KEY)
+        if (
+          currentSavedMode === null &&
+          (caps.defaultGameQuestMode === 'simulate' ||
+            caps.defaultGameQuestMode === 'heartbeat' ||
+            caps.defaultGameQuestMode === 'cdp')
+        ) {
+          gameQuestMode.value = caps.defaultGameQuestMode
+        }
+        return caps
+      } catch (error) {
+        console.warn('Failed to load platform capabilities:', error)
+        return null
+      } finally {
+        platformCapabilitiesReady.value = true
+        platformCapabilitiesInFlight = null
       }
-      return caps
-    } catch (error) {
-      console.warn('Failed to load platform capabilities:', error)
-      return null
-    } finally {
-      platformCapabilitiesReady.value = true
-    }
+    })()
+
+    return platformCapabilitiesInFlight
   }
 
   // Recoverable soft error (e.g. win32-only game on Linux simulate mode) that
@@ -571,7 +588,13 @@ export const useQuestsStore = defineStore('quests', () => {
         // win32-first; on Linux a native `linux` executable is preferred and a
         // win32-only game raises a recoverable soft error steering the user to
         // CDP mode (a Windows binary can't be process-simulated on Linux).
-        const hostOs = platformCapabilities.value?.os ?? 'win32'
+        // Await rather than reading the ref: capabilities load fire-and-forget
+        // at store creation, and a null descriptor here would fall back to
+        // 'win32' and happily accept a Windows executable on Linux — exactly
+        // the case the soft error below exists to prevent. Resolves instantly
+        // once loaded.
+        const caps = await initPlatformCapabilities()
+        const hostOs = caps?.os ?? 'win32'
         const resolution = resolveSimulationExecutable(game.executables, hostOs, selectedExeName)
         if (resolution.kind === 'win32_only_on_linux') {
           softError.value = {
