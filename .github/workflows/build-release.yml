@@ -252,24 +252,33 @@ jobs:
           # Copy Windows MSI installer
           cp tauri-win-msi/*.msi ./build/discord-quest-helper-Windows-x64-${{ env.version }}-setup.msi
           
-          # Package macOS build (find the .dmg file)
+          # Package macOS build (find the .dmg file).
+          # softprops/action-gh-release skips missing `files:` entries silently,
+          # so every platform validates its own artifact here instead.
           cd tauri-macos-arm64-release
           if [ -d "dmg" ]; then
             cp dmg/*.dmg ../build/discord-quest-helper-MacOS-arm64-${{ env.version }}.dmg
           elif [ -d "macos" ]; then
             zip -r ../build/discord-quest-helper-MacOS-arm64-${{ env.version }}.zip macos/
+          else
+            echo "::error::No macOS dmg/ or macos/ output in tauri-macos-arm64-release"
+            exit 1
           fi
           cd ..
 
           # Copy Linux AppImage + DEB (paths are flattened by upload-artifact)
           appimage=$(find tauri-linux-x64-release -name '*.AppImage' | head -n 1)
           deb=$(find tauri-linux-x64-release -name '*.deb' | head -n 1)
-          if [ -n "$appimage" ]; then
-            cp "$appimage" ./build/discord-quest-helper-Linux-x86_64-${{ env.version }}.AppImage
+          if [ -z "$appimage" ]; then
+            echo "::error::No Linux AppImage found in tauri-linux-x64-release"
+            exit 1
           fi
-          if [ -n "$deb" ]; then
-            cp "$deb" ./build/discord-quest-helper-Linux-x86_64-${{ env.version }}.deb
+          cp "$appimage" ./build/discord-quest-helper-Linux-x86_64-${{ env.version }}.AppImage
+          if [ -z "$deb" ]; then
+            echo "::error::No Linux .deb found in tauri-linux-x64-release"
+            exit 1
           fi
+          cp "$deb" ./build/discord-quest-helper-Linux-x86_64-${{ env.version }}.deb
 
           echo "win_portable=discord-quest-helper-Windows-x64-${{ env.version }}-portable" >> $GITHUB_ENV
           echo "win_msi=discord-quest-helper-Windows-x64-${{ env.version }}-setup" >> $GITHUB_ENV

@@ -44,8 +44,11 @@ fn discovers_channels_by_priority_and_orders_stable_ptb_canary() {
     // A non-executable decoy that must be ignored.
     write_plain(&usr_bin.join("discord-ptb"));
 
-    let installs =
-        discover_linux_installs_in(&[usr_bin.clone(), opt.clone()], &[], &[user_bin.clone()]);
+    let installs = discover_linux_installs_in(
+        &[usr_bin.clone(), opt.clone()],
+        &[],
+        std::slice::from_ref(&user_bin),
+    );
 
     let channels: Vec<_> = installs.iter().map(|install| install.channel).collect();
     assert_eq!(
@@ -82,7 +85,7 @@ fn ignores_non_executable_files() {
     let usr_bin = root.join("usr/bin");
     write_plain(&usr_bin.join("discord"));
 
-    let installs = discover_linux_installs_in(&[usr_bin.clone()], &[], &[]);
+    let installs = discover_linux_installs_in(std::slice::from_ref(&usr_bin), &[], &[]);
     assert!(installs.is_empty());
 
     fs::remove_dir_all(&root).ok();

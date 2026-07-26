@@ -318,6 +318,7 @@
     "starting": "Iniciando...",
     "exe_count": "{count} ejecutables",
     "no_exe_hint": "Este juego no tiene ejecutables conocidos en la base de datos de Discord. Puedes introducir un nombre de proceso personalizado para simular.",
+    "no_linux_exe_hint": "Este juego solo ofrece un ejecutable de Windows, que no se puede simular como proceso en Linux. Puedes escribir un nombre de proceso personalizado o usar el modo CDP.",
     "no_exe_custom_warning": "Un nombre de proceso incorrecto podría no ser detectado por Discord.",
     "mode_from_list": "Seleccionar de la lista",
     "mode_custom": "Proceso personalizado",

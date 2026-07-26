@@ -297,7 +297,7 @@ fn schedule_self_deletion(exe_path: &Path) {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn schedule_self_deletion(exe_path: &PathBuf) {
+fn schedule_self_deletion(exe_path: &Path) {
     // Unix systems can directly delete running files (just removes inode reference)
     let _ = fs::remove_file(exe_path);
 }

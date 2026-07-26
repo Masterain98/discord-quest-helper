@@ -318,6 +318,7 @@
     "starting": "시작 중...",
     "exe_count": "{count}개의 실행 파일",
     "no_exe_hint": "이 게임에는 Discord 데이터베이스에 알려진 실행 파일이 없습니다. 사용자 지정 프로세스 이름을 입력하여 시뮬레이션할 수 있습니다.",
+    "no_linux_exe_hint": "이 게임은 Windows 실행 파일만 제공하여 Linux에서는 프로세스를 시뮬레이션할 수 없습니다. 사용자 지정 프로세스 이름을 입력하거나 CDP 모드를 사용하세요.",
     "no_exe_custom_warning": "잘못된 프로세스 이름은 Discord에서 감지되지 않을 수 있습니다.",
     "mode_from_list": "목록에서 선택",
     "mode_custom": "커스텀 프로세스",

@@ -318,6 +318,7 @@
     "starting": "Commencer...",
     "exe_count": "{count} exécutables",
     "no_exe_hint": "Ce jeu n'a aucun exécutable connu dans la base de données de Discord. Vous pouvez saisir un nom de processus personnalisé à simuler.",
+    "no_linux_exe_hint": "Ce jeu ne fournit qu'un exécutable Windows, qui ne peut pas être simulé en tant que processus sous Linux. Tu peux saisir un nom de processus personnalisé ou utiliser le mode CDP.",
     "no_exe_custom_warning": "Un nom de processus incorrect peut ne pas être détecté par Discord.",
     "mode_from_list": "Sélectionner dans la liste",
     "mode_custom": "Processus personnalisé",

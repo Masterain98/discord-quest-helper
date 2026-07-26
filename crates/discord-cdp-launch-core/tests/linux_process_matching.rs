@@ -130,4 +130,9 @@ fn stable_name_does_not_capture_ptb_or_canary() {
         classify_linux_process(&ptb, &installs),
         Some(DiscordChannel::Ptb)
     );
+    let canary = process(21, None, &["discord-canary"], Some("discord-canary"));
+    assert_eq!(
+        classify_linux_process(&canary, &installs),
+        Some(DiscordChannel::Canary)
+    );
 }

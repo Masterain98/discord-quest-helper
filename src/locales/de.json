@@ -318,6 +318,7 @@
     "starting": "Beginnt...",
     "exe_count": "{count} ausführbare Dateien",
     "no_exe_hint": "Für dieses Spiel sind keine ausführbaren Dateien in der Datenbank von Discord bekannt. Sie können zur Simulation einen benutzerdefinierten Prozessnamen eingeben.",
+    "no_linux_exe_hint": "Dieses Spiel bietet nur eine Windows-Datei, die unter Linux nicht als Prozess simuliert werden kann. Du kannst einen eigenen Prozessnamen eingeben oder stattdessen den CDP-Modus verwenden.",
     "no_exe_custom_warning": "Ein falscher Prozessname wird von Discord möglicherweise nicht erkannt.",
     "mode_from_list": "Aus Liste auswählen",
     "mode_custom": "Benutzerdefinierter Prozess",

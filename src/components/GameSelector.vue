@@ -8,16 +8,18 @@ import { Input } from '@/components/ui/input'
 import { Loader2, Gamepad2, Search, RefreshCw } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useQuestsStore } from '@/stores/quests'
-import { getCompatibleExecutables } from '@/utils/executables'
+import { getSimulationExecutables } from '@/utils/executables'
 
 const { t } = useI18n()
 const store = useQuestsStore()
 
-// Count executables usable on this platform (Linux prefers native `linux`, then
-// `win32`; Windows/macOS stay win32) so the badge is meaningful cross-platform.
+// Count executables the simulator can actually launch on this platform (Linux:
+// native `linux` only; Windows/macOS: win32) so the badge's "0 executables"
+// warning matches what the Game Simulator will accept.
 function compatibleExeCount(game: DetectableGame): number {
   const priority = store.platformCapabilities?.executableOsPriority ?? ['win32']
-  return getCompatibleExecutables(game.executables, priority).executables.length
+  const hostOs = store.platformCapabilities?.os ?? 'win32'
+  return getSimulationExecutables(game.executables, hostOs, priority).length
 }
 
 defineEmits<{

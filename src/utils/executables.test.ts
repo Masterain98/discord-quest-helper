@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   getCompatibleExecutables,
+  getSimulationExecutables,
   resolveSimulationExecutable,
   type DetectableExecutable,
 } from './executables'
@@ -26,6 +27,20 @@ describe('getCompatibleExecutables', () => {
     const result = getCompatibleExecutables([mac], ['linux', 'win32'])
     expect(result.sourceOs).toBeNull()
     expect(result.executables).toEqual([])
+  })
+})
+
+describe('getSimulationExecutables', () => {
+  it('Linux never offers win32 executables, matching resolveSimulationExecutable', () => {
+    expect(getSimulationExecutables([win, lin], 'linux', ['linux', 'win32'])).toEqual([lin])
+    expect(getSimulationExecutables([win], 'linux', ['linux', 'win32'])).toEqual([])
+    // The UI and the quest-start path must agree about win32-only games.
+    expect(resolveSimulationExecutable([win], 'linux').kind).toBe('win32_only_on_linux')
+  })
+
+  it('non-Linux hosts keep the plain priority-order behavior', () => {
+    expect(getSimulationExecutables([win, lin], 'win32', ['win32'])).toEqual([win])
+    expect(getSimulationExecutables([mac], 'darwin', ['win32'])).toEqual([])
   })
 })
 

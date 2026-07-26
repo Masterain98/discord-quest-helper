@@ -20,11 +20,17 @@ use once_cell::sync::Lazy;
 static RUNNING_GAMES: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| Mutex::new(HashSet::new()));
 
 /// A simulated-game child process tracked by exact PID on Linux.
+///
+/// The `Child` handle is kept alive so the process is actually reaped: dropping
+/// it would leave a zombie for the app's lifetime, and `kill(pid, 0)` succeeds
+/// against a zombie, so the termination poll below would never see it exit.
 #[cfg(target_os = "linux")]
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct LinuxManagedGame {
     pid: u32,
     executable_path: PathBuf,
+    /// `None` once the child has been waited on.
+    child: Option<std::process::Child>,
 }
 
 /// Linux tracks simulated games by PID (keyed on executable name) so it can
@@ -274,7 +280,7 @@ pub fn run_simulated_game(
         .context("Could not start simulated game")?;
 
     let pid = child.id();
-    track_linux_game(executable_name, exe_to_run.clone(), pid);
+    track_linux_game(executable_name, exe_to_run.clone(), pid, child);
 
     println!(
         "Simulated game {} started from {:?} with PID {}",
@@ -368,21 +374,23 @@ pub fn stop_simulated_game(exec_name: &str) -> Result<()> {
         .ok()
         .and_then(|mut games| games.remove(&key));
 
-    let Some(managed) = managed else {
+    let Some(mut managed) = managed else {
         println!("No tracked Linux simulated game for '{}'", key);
         return Ok(());
     };
 
     // Only signal the PID if it still points at the runner we launched, so a
-    // recycled PID (or a real game with the same name) is never killed.
+    // recycled PID (or a real game with the same name) is never killed. Either
+    // way the child handle is reaped so no zombie is left behind.
     if linux_pid_is_runner(managed.pid, &managed.executable_path) {
-        terminate_linux_pid(managed.pid);
+        terminate_linux_game(&mut managed);
         println!("Simulated game '{}' (pid {}) stopped", key, managed.pid);
     } else {
         println!(
             "Tracked pid {} no longer refers to '{}'; not signalling",
             managed.pid, key
         );
+        reap_linux_game(&mut managed);
     }
 
     Ok(())
@@ -400,12 +408,44 @@ fn file_name_key(name: &str) -> String {
 }
 
 /// Record a started simulated game keyed on its executable name.
+///
+/// Re-launching the same name replaces the tracked entry; the superseded
+/// process is stopped first so it can never be orphaned past app exit.
 #[cfg(target_os = "linux")]
-fn track_linux_game(executable_name: &str, executable_path: PathBuf, pid: u32) {
+fn track_linux_game(
+    executable_name: &str,
+    executable_path: PathBuf,
+    pid: u32,
+    child: std::process::Child,
+) {
     let key = file_name_key(executable_name);
-    if let Ok(mut games) = RUNNING_LINUX_GAMES.lock() {
-        games.insert(key.clone(), LinuxManagedGame { pid, executable_path });
-        println!("Tracked Linux game '{}' pid {}", key, pid);
+    let previous = match RUNNING_LINUX_GAMES.lock() {
+        Ok(mut games) => {
+            let previous = games.insert(
+                key.clone(),
+                LinuxManagedGame {
+                    pid,
+                    executable_path,
+                    child: Some(child),
+                },
+            );
+            println!("Tracked Linux game '{}' pid {}", key, pid);
+            previous
+        }
+        Err(_) => None,
+    };
+
+    // Terminating waits up to 2s, so do it after releasing the map lock.
+    if let Some(mut previous) = previous {
+        println!(
+            "Replacing tracked '{}': stopping previous pid {}",
+            key, previous.pid
+        );
+        if linux_pid_is_runner(previous.pid, &previous.executable_path) {
+            terminate_linux_game(&mut previous);
+        } else {
+            reap_linux_game(&mut previous);
+        }
     }
 }
 
@@ -419,33 +459,66 @@ fn linux_pid_is_runner(pid: u32, executable_path: &Path) -> bool {
     ) {
         (Ok(actual), Ok(expected)) => actual == expected,
         // If the target file was replaced/removed we can still compare the raw
-        // symlink target against the tracked path.
+        // symlink target against the tracked path. The kernel appends
+        // " (deleted)" to the link once the inode is unlinked, so strip it.
         _ => std::fs::read_link(&exe_link)
-            .map(|target| target == *executable_path)
+            .map(|target| {
+                let raw = target.to_string_lossy();
+                let stripped = raw.strip_suffix(" (deleted)").unwrap_or(raw.as_ref());
+                Path::new(stripped) == executable_path
+            })
             .unwrap_or(false),
     }
 }
 
-/// SIGTERM the PID, wait briefly, then SIGKILL if it is still alive.
+/// SIGTERM the tracked child, wait briefly, then SIGKILL if it is still alive.
+/// The child is always reaped before returning.
 #[cfg(target_os = "linux")]
-fn terminate_linux_pid(pid: u32) {
+fn terminate_linux_game(game: &mut LinuxManagedGame) {
     use nix::sys::signal::{self, Signal};
     use nix::unistd::Pid;
 
-    let target = Pid::from_raw(pid as i32);
+    let target = Pid::from_raw(game.pid as i32);
     if signal::kill(target, Signal::SIGTERM).is_err() {
+        reap_linux_game(game);
         return;
     }
 
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
     while std::time::Instant::now() < deadline {
-        if signal::kill(target, None).is_err() {
-            return; // already exited
+        if linux_game_has_exited(game) {
+            reap_linux_game(game);
+            return;
         }
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
 
     let _ = signal::kill(target, Signal::SIGKILL);
+    reap_linux_game(game);
+}
+
+/// Whether the tracked process is gone. Prefers `Child::try_wait`, which also
+/// reaps the zombie; a bare `kill(pid, 0)` probe would report a zombie as alive.
+#[cfg(target_os = "linux")]
+fn linux_game_has_exited(game: &mut LinuxManagedGame) -> bool {
+    match game.child.as_mut() {
+        Some(child) => !matches!(child.try_wait(), Ok(None)),
+        None => {
+            use nix::sys::signal;
+            use nix::unistd::Pid;
+            signal::kill(Pid::from_raw(game.pid as i32), None).is_err()
+        }
+    }
+}
+
+/// Reap the child so an exited process doesn't linger as a zombie. Only called
+/// once the process is known to be gone (or has been SIGKILLed), so the
+/// underlying `wait()` returns immediately.
+#[cfg(target_os = "linux")]
+fn reap_linux_game(game: &mut LinuxManagedGame) {
+    if let Some(mut child) = game.child.take() {
+        let _ = child.wait();
+    }
 }
 
 /// Track a newly started simulated game process.
@@ -518,7 +591,7 @@ fn cleanup_all_tracked_games() {
 /// matches the runner we launched.
 #[cfg(target_os = "linux")]
 fn cleanup_all_linux_games() {
-    let games: Vec<LinuxManagedGame> = match RUNNING_LINUX_GAMES.lock() {
+    let mut games: Vec<LinuxManagedGame> = match RUNNING_LINUX_GAMES.lock() {
         Ok(mut games) => games.drain().map(|(_, value)| value).collect(),
         Err(poisoned) => poisoned
             .into_inner()
@@ -535,10 +608,12 @@ fn cleanup_all_linux_games() {
         "Cleaning up {} simulated game process(es) on exit...",
         games.len()
     );
-    for game in &games {
+    for game in &mut games {
         if linux_pid_is_runner(game.pid, &game.executable_path) {
             println!("  Stopping pid {}", game.pid);
-            terminate_linux_pid(game.pid);
+            terminate_linux_game(game);
+        } else {
+            reap_linux_game(game);
         }
     }
 }

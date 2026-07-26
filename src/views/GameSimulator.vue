@@ -13,13 +13,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Loader2, Play, Hammer, List, Terminal, FolderOpen, ChevronDown, Check } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useQuestsStore } from '@/stores/quests'
-import { getCompatibleExecutables } from '@/utils/executables'
+import { getSimulationExecutables } from '@/utils/executables'
 
 const { t } = useI18n()
 const store = useQuestsStore()
 
 // Executable OS preference for this platform (Linux: linux → win32; else win32).
 const executablePriority = computed(() => store.platformCapabilities?.executableOsPriority ?? ['win32'])
+const hostOs = computed(() => store.platformCapabilities?.os ?? 'win32')
 
 // Mode: 'select' = pick from detectable games list, 'custom' = enter any process name
 const mode = ref<'select' | 'custom'>('select')
@@ -43,14 +44,24 @@ onMounted(async () => {
   installPath.value = `${docDir}${separator}DiscordQuestGames`
 })
 
-// Executables usable on the host platform (Linux prefers a native `linux`
-// binary, then `win32`; Windows/macOS stay win32-only) — not just Windows ones.
+// Executables the simulator can actually launch here: Linux only runs a native
+// `linux` binary (a win32 exe is refused by the quest-start path too), while
+// Windows/macOS stay win32-only.
 const compatibleExecutables = computed(() => {
   if (!selectedGame.value) return []
-  return getCompatibleExecutables(selectedGame.value.executables, executablePriority.value).executables
+  return getSimulationExecutables(selectedGame.value.executables, hostOs.value, executablePriority.value)
 })
 
 const hasCompatibleExecutables = computed(() => compatibleExecutables.value.length > 0)
+
+// On Linux a win32-only game isn't "unknown to Discord" — it just can't be
+// process-simulated here, so explain that instead of the generic hint.
+const isWin32OnlyOnLinux = computed(
+  () =>
+    hostOs.value === 'linux' &&
+    !hasCompatibleExecutables.value &&
+    !!selectedGame.value?.executables.some((exe) => exe.os === 'win32')
+)
 
 // The executable name that will actually be used for run/create
 const effectiveExecutable = computed(() => {
@@ -101,7 +112,7 @@ function switchMode(m: 'select' | 'custom') {
 
 function selectGame(game: DetectableGame) {
   selectedGame.value = game
-  const compatible = getCompatibleExecutables(game.executables, executablePriority.value).executables
+  const compatible = getSimulationExecutables(game.executables, hostOs.value, executablePriority.value)
   selectedExecutable.value = compatible[0]?.name ?? ''
   selectModeCustomExe.value = ''
   error.value = null
@@ -241,10 +252,10 @@ async function handleRunGame() {
                 <div class="text-xs text-muted-foreground font-mono">App ID: {{ selectedGame.id }}</div>
               </div>
 
-              <!-- No known Windows executables — let user enter a custom name -->
+              <!-- No simulator-compatible executables — let user enter a custom name -->
               <template v-if="!hasCompatibleExecutables">
                 <div class="p-3 bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 rounded-md text-sm border border-yellow-500/20 space-y-1">
-                  <p>{{ t('game_sim.no_exe_hint') }}</p>
+                  <p>{{ isWin32OnlyOnLinux ? t('game_sim.no_linux_exe_hint') : t('game_sim.no_exe_hint') }}</p>
                   <p>{{ t('game_sim.no_exe_custom_warning') }}</p>
                 </div>
 

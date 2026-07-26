@@ -11,8 +11,8 @@
     "clear": "Temizle"
   },
   "auth": {
-    "cdp_login": "Log in with Discord Client",
-    "cdp_login_hint": "Use the Discord app you're already signed in to — no token needed. Requires Discord running with CDP.",
+    "cdp_login": "Discord istemcisiyle giriş yap",
+    "cdp_login_hint": "Zaten giriş yapmış olduğunuz Discord uygulamasını kullanır — token gerekmez. Discord’un CDP etkin şekilde çalışıyor olması gerekir.",
     "auto_detect": "Otomatik Algıla Token",
     "login": "Giriş yap",
     "or_manually": "Veya Manuel olarak",
@@ -122,10 +122,10 @@
     "activity_navigate_error": "Discord görev sayfasına gidilemedi. Lütfen Discord'ı manuel olarak açın ve Quests sayfasına gidin."
   },
   "quest": {
-    "soft_error_title": "Can't simulate this game here",
-    "soft_error_win32_only": "{game} only provides a Windows executable, which can't be process-simulated on Linux. Switch to CDP mode to complete this quest.",
-    "soft_error_not_found": "{game} has no compatible executable for simulation mode. Switch to CDP mode to complete this quest.",
-    "soft_error_switch_cdp": "Switch to CDP and retry",
+    "soft_error_title": "Bu oyun burada simüle edilemiyor",
+    "soft_error_win32_only": "{game} yalnızca bir Windows yürütülebilir dosyası sunuyor ve bu dosya Linux’ta işlem olarak simüle edilemiyor. Bu görevi tamamlamak için CDP moduna geçin.",
+    "soft_error_not_found": "{game} için simülasyon modunda kullanılabilecek uyumlu bir yürütülebilir dosya yok. Bu görevi tamamlamak için CDP moduna geçin.",
+    "soft_error_switch_cdp": "CDP’ye geç ve yeniden dene",
     "progress": "İlerleme",
     "required": "{duration} gerekli",
     "expires": "Süresi doluyor",
@@ -318,6 +318,7 @@
     "starting": "Başlıyor...",
     "exe_count": "{count} yürütülebilir dosyalar",
     "no_exe_hint": "Bu oyunun Discord veritabanında bilinen yürütülebilir dosyası yok. Simüle etmek için özel bir işlem adı girebilirsiniz.",
+    "no_linux_exe_hint": "Bu oyun yalnızca bir Windows yürütülebilir dosyası sunuyor ve bu dosya Linux'ta işlem olarak simüle edilemiyor. Özel bir işlem adı girebilir veya bunun yerine CDP modunu kullanabilirsiniz.",
     "no_exe_custom_warning": "Yanlış bir işlem adı Discord tarafından tespit edilemeyebilir.",
     "mode_from_list": "Listeden Seç",
     "mode_custom": "Özel Süreç",

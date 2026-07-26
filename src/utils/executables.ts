@@ -28,6 +28,25 @@ export function getCompatibleExecutables(
   return { sourceOs: null, executables: [] }
 }
 
+/**
+ * Executables the *process simulator* can actually launch on this host.
+ *
+ * Mirrors `resolveSimulationExecutable`'s platform rule: Linux only ever runs a
+ * native `linux` executable, so win32 entries must not be offered there even
+ * though they stay in `executableOsPriority` for CDP mode. Other hosts keep the
+ * plain priority-order behavior.
+ */
+export function getSimulationExecutables(
+  executables: DetectableExecutable[],
+  hostOs: string,
+  priority: string[]
+): DetectableExecutable[] {
+  if (hostOs === 'linux') {
+    return executables.filter((executable) => executable.os === 'linux')
+  }
+  return getCompatibleExecutables(executables, priority).executables
+}
+
 export type SimulationExecutableResolution =
   | { kind: 'supported'; executable: DetectableExecutable }
   | { kind: 'win32_only_on_linux'; windowsExecutables: DetectableExecutable[] }

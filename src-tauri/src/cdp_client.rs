@@ -761,12 +761,33 @@ fn is_discord_api_url(url: &str) -> bool {
     path.starts_with("/api/") && !path.starts_with("/api/webhooks") && !path.contains("/webhooks/")
 }
 
+/// Correlation state for the two CDP events that together describe one request.
+///
+/// Chromium emits `Network.requestWillBeSent` (which carries the URL) and
+/// `Network.requestWillBeSentExtraInfo` (which carries the real, on-the-wire
+/// header set) from different layers, with **no ordering guarantee** between
+/// them. So ExtraInfo headers seen before their counterpart are buffered by
+/// `requestId` and reconciled once the URL classification arrives.
+#[derive(Default)]
+struct CdpAuthCorrelator {
+    /// `requestId` → whether it is a first-party Discord API request.
+    classified: std::collections::HashMap<String, bool>,
+    /// `requestId` → headers from an ExtraInfo event whose `requestWillBeSent`
+    /// hasn't been seen yet.
+    unmatched_extra_info: std::collections::HashMap<String, (Zeroizing<String>, Option<String>)>,
+}
+
+/// Cap on buffered, still-unclassified ExtraInfo headers. A capture window is a
+/// few seconds long, so this is only a guard against a pathologically chatty
+/// client; hitting it just means we fall back to the in-order path.
+const MAX_UNMATCHED_EXTRA_INFO: usize = 256;
+
 /// Pull an `(authorization, super_properties)` pair out of a single CDP Network
-/// event, correlating `...ExtraInfo` events (which some Chromium builds use for
-/// the real header set) back to a known Discord API request by `requestId`.
+/// event, correlating `...ExtraInfo` events back to a known Discord API request
+/// by `requestId` regardless of which of the two events arrives first.
 fn extract_auth_from_cdp_event(
     text: &str,
-    pending_api_requests: &mut std::collections::HashMap<String, bool>,
+    state: &mut CdpAuthCorrelator,
 ) -> Option<(String, Option<String>)> {
     let json: serde_json::Value = serde_json::from_str(text).ok()?;
     let method = json.get("method").and_then(|v| v.as_str())?;
@@ -781,26 +802,54 @@ fn extract_auth_from_cdp_event(
             let request = params.get("request")?;
             let url = request.get("url").and_then(|u| u.as_str()).unwrap_or("");
             let is_api = is_discord_api_url(url);
-            if !request_id.is_empty() {
-                pending_api_requests.insert(request_id.to_string(), is_api);
-            }
+
+            let buffered = if request_id.is_empty() {
+                None
+            } else {
+                state.classified.insert(request_id.to_string(), is_api);
+                state.unmatched_extra_info.remove(request_id)
+            };
+
             if !is_api {
                 return None;
             }
-            let headers = request.get("headers")?.as_object()?;
-            let authorization = cdp_header_value(headers, "authorization")?;
-            let super_properties = cdp_header_value(headers, "x-super-properties");
-            Some((authorization, super_properties))
+
+            // The request's own header map often omits `authorization`; that is
+            // exactly what ExtraInfo exists for, so fall back to the buffer.
+            if let Some(headers) = request.get("headers").and_then(|h| h.as_object()) {
+                if let Some(authorization) = cdp_header_value(headers, "authorization") {
+                    return Some((
+                        authorization,
+                        cdp_header_value(headers, "x-super-properties"),
+                    ));
+                }
+            }
+
+            buffered.map(|(authorization, super_properties)| {
+                (authorization.to_string(), super_properties)
+            })
         }
         "Network.requestWillBeSentExtraInfo" => {
             let request_id = params.get("requestId").and_then(|v| v.as_str())?;
-            if pending_api_requests.get(request_id) != Some(&true) {
-                return None;
-            }
             let headers = params.get("headers")?.as_object()?;
             let authorization = cdp_header_value(headers, "authorization")?;
             let super_properties = cdp_header_value(headers, "x-super-properties");
-            Some((authorization, super_properties))
+
+            match state.classified.get(request_id) {
+                Some(true) => Some((authorization, super_properties)),
+                // Known non-API request: drop the headers, never buffer them.
+                Some(false) => None,
+                // Arrived first — hold on to it until the URL is classified.
+                None => {
+                    if state.unmatched_extra_info.len() < MAX_UNMATCHED_EXTRA_INFO {
+                        state.unmatched_extra_info.insert(
+                            request_id.to_string(),
+                            (Zeroizing::new(authorization), super_properties),
+                        );
+                    }
+                    None
+                }
+            }
         }
         _ => None,
     }
@@ -818,7 +867,6 @@ pub async fn capture_discord_auth_via_cdp(
     timeout: Duration,
 ) -> Result<CapturedDiscordSession> {
     use crate::logger::{log, LogCategory, LogLevel};
-    use std::collections::HashMap;
 
     let targets = get_cdp_targets(port).await?;
     let target = pick_discord_target(&targets).context("No Discord target found")?;
@@ -848,7 +896,7 @@ pub async fn capture_discord_auth_via_cdp(
         .await
         .context("Failed to send Network.enable")?;
 
-    let mut pending_api_requests: HashMap<String, bool> = HashMap::new();
+    let mut correlator = CdpAuthCorrelator::default();
 
     let outcome = tokio::time::timeout(timeout, async {
         // Fire the JS nudge once, a couple of seconds in, so a chatty client's
@@ -875,7 +923,7 @@ pub async fn capture_discord_auth_via_cdp(
                         Ok(_) => continue,
                         Err(_) => break,
                     };
-                    if let Some(found) = extract_auth_from_cdp_event(&text, &mut pending_api_requests) {
+                    if let Some(found) = extract_auth_from_cdp_event(&text, &mut correlator) {
                         return Some(found);
                     }
                 }
@@ -1568,5 +1616,113 @@ mod tests {
         ];
         let fallback_none = select_discord_targets(&fallback_missing_ws);
         assert_eq!(fallback_none.len(), 0);
+    }
+
+    fn request_will_be_sent(request_id: &str, url: &str, authorization: Option<&str>) -> String {
+        let headers = match authorization {
+            Some(value) => serde_json::json!({ "authorization": value }),
+            None => serde_json::json!({ "accept": "*/*" }),
+        };
+        serde_json::json!({
+            "method": "Network.requestWillBeSent",
+            "params": { "requestId": request_id, "request": { "url": url, "headers": headers } }
+        })
+        .to_string()
+    }
+
+    fn extra_info(request_id: &str, authorization: &str) -> String {
+        serde_json::json!({
+            "method": "Network.requestWillBeSentExtraInfo",
+            "params": {
+                "requestId": request_id,
+                "headers": {
+                    "authorization": authorization,
+                    "x-super-properties": "eyJvcyI6ICJXaW5kb3dzIn0="
+                }
+            }
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn test_is_discord_api_url_rejects_cdn_and_webhooks() {
+        assert!(is_discord_api_url("https://discord.com/api/v9/users/@me"));
+        assert!(is_discord_api_url(
+            "https://canary.discord.com/api/v9/users/@me"
+        ));
+        assert!(!is_discord_api_url("https://cdn.discordapp.com/api/v9/x"));
+        assert!(!is_discord_api_url(
+            "https://discord.com/api/webhooks/1/abc"
+        ));
+        assert!(!is_discord_api_url("http://discord.com/api/v9/users/@me"));
+        assert!(!is_discord_api_url(
+            "https://evil.example.com/api/v9/users/@me"
+        ));
+    }
+
+    #[test]
+    fn test_extract_auth_matches_extra_info_after_request() {
+        let mut state = CdpAuthCorrelator::default();
+        let api = request_will_be_sent("req-1", "https://discord.com/api/v9/users/@me", None);
+        assert_eq!(extract_auth_from_cdp_event(&api, &mut state), None);
+
+        let found = extract_auth_from_cdp_event(&extra_info("req-1", "token-a"), &mut state);
+        assert_eq!(
+            found.as_ref().map(|(auth, _)| auth.as_str()),
+            Some("token-a")
+        );
+        assert!(found.unwrap().1.is_some());
+    }
+
+    #[test]
+    fn test_extract_auth_buffers_extra_info_arriving_first() {
+        let mut state = CdpAuthCorrelator::default();
+        // CDP gives no ordering guarantee between the two events.
+        assert_eq!(
+            extract_auth_from_cdp_event(&extra_info("req-2", "token-b"), &mut state),
+            None
+        );
+
+        let api = request_will_be_sent("req-2", "https://discord.com/api/v9/users/@me", None);
+        let found = extract_auth_from_cdp_event(&api, &mut state);
+        assert_eq!(
+            found.as_ref().map(|(auth, _)| auth.as_str()),
+            Some("token-b")
+        );
+        assert!(found.unwrap().1.is_some());
+    }
+
+    #[test]
+    fn test_extract_auth_ignores_extra_info_for_non_api_requests() {
+        let mut state = CdpAuthCorrelator::default();
+
+        // ExtraInfo first, then a non-Discord-API URL: nothing must be emitted.
+        assert_eq!(
+            extract_auth_from_cdp_event(&extra_info("req-3", "not-a-session"), &mut state),
+            None
+        );
+        let cdn = request_will_be_sent("req-3", "https://cdn.discordapp.com/avatars/1/a.png", None);
+        assert_eq!(extract_auth_from_cdp_event(&cdn, &mut state), None);
+
+        // The buffer must also be dropped, not replayed by a later ExtraInfo.
+        assert_eq!(
+            extract_auth_from_cdp_event(&extra_info("req-3", "not-a-session"), &mut state),
+            None
+        );
+    }
+
+    #[test]
+    fn test_extract_auth_prefers_request_headers_when_present() {
+        let mut state = CdpAuthCorrelator::default();
+        let api = request_will_be_sent(
+            "req-4",
+            "https://discord.com/api/v9/users/@me",
+            Some("token-inline"),
+        );
+        let found = extract_auth_from_cdp_event(&api, &mut state);
+        assert_eq!(
+            found.as_ref().map(|(auth, _)| auth.as_str()),
+            Some("token-inline")
+        );
     }
 }

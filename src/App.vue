@@ -33,8 +33,11 @@ const questsStore = useQuestsStore()
 
 // Local token extraction (Auto Detect) is unavailable on Linux, where the
 // backend returns a "use manual entry or CDP" error. Hide the button there and
-// lead with CDP auto-login instead.
+// lead with CDP auto-login instead. Capabilities load asynchronously, so stay
+// hidden until that first attempt settles rather than flashing a button Linux
+// users can't use.
 const showAutoDetect = computed(() => {
+  if (!questsStore.platformCapabilitiesReady) return false
   const level = questsStore.platformCapabilities?.tokenAutoDetection
   return level !== 'manual_only' && level !== 'unavailable'
 })

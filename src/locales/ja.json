@@ -318,6 +318,7 @@
     "starting": "起動中...",
     "exe_count": "{count}個の実行ファイル",
     "no_exe_hint": "Discord のデータベースには、このゲームの既知の実行可能ファイルはありません。シミュレートするカスタム プロセス名を入力できます。",
+    "no_linux_exe_hint": "このゲームは Windows 実行ファイルのみを提供しており、Linux ではプロセスをシミュレートできません。カスタムプロセス名を入力するか、CDP モードをご利用ください。",
     "no_exe_custom_warning": "不正確なプロセス名は Discord に検出されない可能性があります。",
     "mode_from_list": "リストから選択",
     "mode_custom": "カスタムプロセス",

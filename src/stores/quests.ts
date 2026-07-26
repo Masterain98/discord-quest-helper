@@ -123,6 +123,9 @@ export const useQuestsStore = defineStore('quests', () => {
 
   // Read-only platform capability descriptor (loaded once from the backend).
   const platformCapabilities = ref<PlatformCapabilities | null>(null)
+  // True once the first load attempt has settled (success or failure), so the UI
+  // can avoid rendering platform-dependent affordances against a null descriptor.
+  const platformCapabilitiesReady = ref(false)
 
   /**
    * Load the platform capability descriptor. On first run (no saved mode) this
@@ -147,6 +150,8 @@ export const useQuestsStore = defineStore('quests', () => {
     } catch (error) {
       console.warn('Failed to load platform capabilities:', error)
       return null
+    } finally {
+      platformCapabilitiesReady.value = true
     }
   }
 
@@ -1073,6 +1078,11 @@ export const useQuestsStore = defineStore('quests', () => {
     detectableGames.value = []
     fetchingGames.value = false
     cdpAvailable.value = false
+    // Recoverable-error state is per-session: a dialog left open (or a queued
+    // retry) must not reappear against the next account's quests.
+    softError.value = null
+    queuePauseReason.value = null
+    lastPlayRequest.value = null
     stopProgressSimulation()
     cleanupListeners()
     stopPolling()
@@ -1204,6 +1214,7 @@ export const useQuestsStore = defineStore('quests', () => {
     initCdpMode,
     // Platform capabilities + Linux soft-error recovery
     platformCapabilities,
+    platformCapabilitiesReady,
     initPlatformCapabilities,
     softError,
     queuePauseReason,

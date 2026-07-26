@@ -14,6 +14,12 @@ on:
 permissions:
   contents: read
 
+# Superseded PR updates / develop pushes cancel their in-flight run instead of
+# queueing another full 3-platform build.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
   CARGO_TARGET_DIR: ${{ github.workspace }}/target
@@ -82,6 +88,11 @@ jobs:
 
       - name: Run frontend tests
         run: pnpm test
+
+      # `tauri::generate_context!` resolves `frontendDist` (../dist) at compile
+      # time, so the bundle has to exist before any cargo step touches src-tauri.
+      - name: Build frontend
+        run: pnpm run build
 
       - name: Rust format
         run: |

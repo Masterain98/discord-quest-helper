@@ -1681,7 +1681,6 @@ fn create_platform_cdp_launcher_shortcut(
     port: u16,
     channel: Option<discord_cdp_launch_core::DiscordChannel>,
 ) -> Result<String, String> {
-    use std::io::Write;
     use std::os::unix::fs::PermissionsExt;
 
     let home = std::env::var_os("HOME").ok_or_else(|| "Could not get HOME".to_string())?;
@@ -1787,13 +1786,16 @@ fn create_platform_cdp_launcher_shortcut(
 
 /// Escape a value for use inside a double-quoted Desktop Entry `Exec` argument.
 /// Reserved characters are escaped with a backslash; backslash is escaped first.
+/// Field codes (`%f`, `%u`, …) are expanded before quoting is undone, so a
+/// literal percent sign must be written as `%%` even inside quotes.
 #[cfg(target_os = "linux")]
 fn desktop_entry_exec_quote(value: &str) -> String {
     let escaped = value
         .replace('\\', "\\\\")
         .replace('"', "\\\"")
         .replace('`', "\\`")
-        .replace('$', "\\$");
+        .replace('$', "\\$")
+        .replace('%', "%%");
     format!("\"{}\"", escaped)
 }
 
@@ -1804,4 +1806,35 @@ fn create_platform_cdp_launcher_shortcut(
     _channel: Option<discord_cdp_launch_core::DiscordChannel>,
 ) -> Result<String, String> {
     Err("Shortcut creation is only supported on Windows and macOS.".to_string())
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod desktop_entry_tests {
+    use super::desktop_entry_exec_quote;
+
+    #[test]
+    fn quotes_plain_paths() {
+        assert_eq!(
+            desktop_entry_exec_quote("/usr/bin/discord-cdp-launcher"),
+            "\"/usr/bin/discord-cdp-launcher\""
+        );
+    }
+
+    #[test]
+    fn escapes_reserved_shell_characters() {
+        assert_eq!(
+            desktop_entry_exec_quote(r#"/tmp/we"ir$d`\path"#),
+            r#""/tmp/we\"ir\$d\`\\path""#
+        );
+    }
+
+    #[test]
+    fn doubles_literal_percent_so_it_is_not_read_as_a_field_code() {
+        // `%f`/`%u` are expanded before quoting is undone, so a path containing
+        // a percent sign must be written `%%` or the entry silently mangles it.
+        assert_eq!(
+            desktop_entry_exec_quote("/opt/My %f App/launcher"),
+            "\"/opt/My %%f App/launcher\""
+        );
+    }
 }

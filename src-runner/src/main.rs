@@ -208,7 +208,7 @@ fn main() {
                 }
 
                 Event::WindowEvent {
-                    event: WindowEvent::Resized(size),
+                    event: WindowEvent::Resized(_),
                     window_id,
                 } if window_id == window.id() => {
                     window.request_redraw();
