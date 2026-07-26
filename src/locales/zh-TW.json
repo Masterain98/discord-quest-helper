@@ -11,6 +11,8 @@
     "clear": "清除"
   },
   "auth": {
+    "cdp_login": "使用 Discord 用戶端登入",
+    "cdp_login_hint": "使用你已登入的 Discord 用戶端，無需 Token。需要 Discord 已開啟 CDP 除錯連接埠執行。",
     "auto_detect": "自動偵測 Token",
     "login": "登入",
     "or_manually": "或手動輸入",
@@ -120,6 +122,10 @@
     "activity_navigate_error": "無法將 Discord 導航到任務頁面。請手動開啟 Discord 並前往任務頁面。"
   },
   "quest": {
+    "soft_error_title": "無法在此模擬此遊戲",
+    "soft_error_win32_only": "{game} 僅提供 Windows 可執行檔，無法在 Linux 上進行行程模擬。請切換到 CDP 模式來完成此任務。",
+    "soft_error_not_found": "{game} 沒有適用於模擬模式的可執行檔。請切換到 CDP 模式來完成此任務。",
+    "soft_error_switch_cdp": "切換到 CDP 並重試",
     "progress": "進度",
     "required": "需要 {duration}",
     "expires": "到期",
@@ -242,7 +248,7 @@
     "cdp_dialog_confirm": "重新啟動 Discord",
     "cdp_shortcut_title": "桌面啟動器",
     "cdp_shortcut_desc": "建立長期可用的桌面捷徑，每次都會動態啟動目前版本的 Discord 並啟用 CDP。",
-    "cdp_create_shortcut": "建立 CDP 啟動器捷徑",
+    "cdp_create_shortcut": "建立啟動器",
     "cdp_shortcut_success": "CDP 啟動器捷徑已建立到桌面",
     "cdp_sync_success": "客戶端資訊同步成功",
     "client_emulation": "Discord 客戶端模擬",

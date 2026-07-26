@@ -47,6 +47,10 @@ fn main() {
             "aarch64-apple-darwin".to_string()
         } else if cfg!(target_os = "macos") {
             "x86_64-apple-darwin".to_string()
+        } else if cfg!(target_os = "linux") && cfg!(target_arch = "x86_64") {
+            "x86_64-unknown-linux-gnu".to_string()
+        } else if cfg!(target_os = "linux") && cfg!(target_arch = "aarch64") {
+            "aarch64-unknown-linux-gnu".to_string()
         } else {
             "unknown".to_string()
         }

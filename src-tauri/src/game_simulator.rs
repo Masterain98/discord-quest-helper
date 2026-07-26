@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use serde::Serialize;
+#[cfg(not(target_os = "linux"))]
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -11,7 +12,27 @@ use once_cell::sync::Lazy;
 /// Global set that tracks image names of running simulated game processes.
 /// Entries are added in `run_simulated_game` and removed in `stop_simulated_game`.
 /// Used by `cleanup_all_simulated_games` to kill orphaned children on app exit.
+///
+/// Windows/macOS match by process *name*; Linux tracks exact PIDs instead (see
+/// `RUNNING_LINUX_GAMES`) so it never risks killing a real game with the same
+/// executable name.
+#[cfg(not(target_os = "linux"))]
 static RUNNING_GAMES: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| Mutex::new(HashSet::new()));
+
+/// A simulated-game child process tracked by exact PID on Linux.
+#[cfg(target_os = "linux")]
+#[derive(Debug, Clone)]
+struct LinuxManagedGame {
+    pid: u32,
+    executable_path: PathBuf,
+}
+
+/// Linux tracks simulated games by PID (keyed on executable name) so it can
+/// verify `/proc/<pid>/exe` before signalling and never kill an unrelated
+/// process that merely shares the game's executable name.
+#[cfg(target_os = "linux")]
+static RUNNING_LINUX_GAMES: Lazy<Mutex<std::collections::HashMap<String, LinuxManagedGame>>> =
+    Lazy::new(|| Mutex::new(std::collections::HashMap::new()));
 
 // Embed the runner binary at compile time from the data/ directory.
 // build.rs ensures an empty placeholder exists if the runner hasn't been built yet,
@@ -22,7 +43,10 @@ const RUNNER_BYTES: &[u8] = include_bytes!("../data/discord-quest-runner.exe");
 #[cfg(target_os = "macos")]
 const RUNNER_BYTES: &[u8] = include_bytes!("../data/discord-quest-runner");
 
-#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+#[cfg(target_os = "linux")]
+const RUNNER_BYTES: &[u8] = include_bytes!("../data/discord-quest-runner");
+
+#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
 const RUNNER_BYTES: &[u8] = &[];
 
 /// Embedded runner version info (commit hash + build timestamp).
@@ -60,7 +84,11 @@ pub fn get_runner_info() -> RunnerInfo {
 /// Write the embedded runner binary to the target path
 fn ensure_runner_bytes(target_path: &Path) -> Result<()> {
     if RUNNER_BYTES.is_empty() {
-        if cfg!(any(target_os = "windows", target_os = "macos")) {
+        if cfg!(any(
+            target_os = "windows",
+            target_os = "macos",
+            target_os = "linux"
+        )) {
             anyhow::bail!("Runner binary not embedded (run `npm run build:runner`)");
         } else {
             anyhow::bail!("Runner binary not available for this platform");
@@ -213,14 +241,56 @@ pub fn run_simulated_game(
     Ok(())
 }
 
-#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+#[cfg(target_os = "linux")]
+pub fn run_simulated_game(
+    name: &str,
+    path: &str,
+    executable_name: &str,
+    _app_id: &str,
+) -> Result<()> {
+    use std::process::Stdio;
+
+    let exe_to_run = PathBuf::from(path).join(executable_name);
+
+    // Refresh the runner bytes when possible; a running instance keeps the file
+    // busy (ETXTBSY), which is fine — we fall back to the existing binary.
+    match ensure_runner_bytes(&exe_to_run) {
+        Ok(_) => println!("Successfully updated simulated game executable"),
+        Err(e) => println!(
+            "Could not update simulated game executable (might be running?): {}",
+            e
+        ),
+    }
+
+    if !exe_to_run.exists() {
+        anyhow::bail!("Executable does not exist: {:?}", exe_to_run);
+    }
+
+    let child = Command::new(&exe_to_run)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .context("Could not start simulated game")?;
+
+    let pid = child.id();
+    track_linux_game(executable_name, exe_to_run.clone(), pid);
+
+    println!(
+        "Simulated game {} started from {:?} with PID {}",
+        name, exe_to_run, pid
+    );
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
 pub fn run_simulated_game(
     _name: &str,
     _path: &str,
     _executable_name: &str,
     _app_id: &str,
 ) -> Result<()> {
-    anyhow::bail!("Game simulation is only supported on Windows and macOS")
+    anyhow::bail!("Game simulation is only supported on Windows, macOS, and Linux")
 }
 
 /// Stop the simulated game
@@ -289,12 +359,97 @@ pub fn stop_simulated_game(exec_name: &str) -> Result<()> {
     Ok(())
 }
 
-#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+#[cfg(target_os = "linux")]
+pub fn stop_simulated_game(exec_name: &str) -> Result<()> {
+    let key = file_name_key(exec_name);
+
+    let managed = RUNNING_LINUX_GAMES
+        .lock()
+        .ok()
+        .and_then(|mut games| games.remove(&key));
+
+    let Some(managed) = managed else {
+        println!("No tracked Linux simulated game for '{}'", key);
+        return Ok(());
+    };
+
+    // Only signal the PID if it still points at the runner we launched, so a
+    // recycled PID (or a real game with the same name) is never killed.
+    if linux_pid_is_runner(managed.pid, &managed.executable_path) {
+        terminate_linux_pid(managed.pid);
+        println!("Simulated game '{}' (pid {}) stopped", key, managed.pid);
+    } else {
+        println!(
+            "Tracked pid {} no longer refers to '{}'; not signalling",
+            managed.pid, key
+        );
+    }
+
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
 pub fn stop_simulated_game(_exec_name: &str) -> Result<()> {
-    anyhow::bail!("Game simulation is only supported on Windows and macOS")
+    anyhow::bail!("Game simulation is only supported on Windows, macOS, and Linux")
+}
+
+/// Reduce an executable name/path to its bare file-name key.
+#[cfg(target_os = "linux")]
+fn file_name_key(name: &str) -> String {
+    name.rsplit(['/', '\\']).next().unwrap_or(name).to_string()
+}
+
+/// Record a started simulated game keyed on its executable name.
+#[cfg(target_os = "linux")]
+fn track_linux_game(executable_name: &str, executable_path: PathBuf, pid: u32) {
+    let key = file_name_key(executable_name);
+    if let Ok(mut games) = RUNNING_LINUX_GAMES.lock() {
+        games.insert(key.clone(), LinuxManagedGame { pid, executable_path });
+        println!("Tracked Linux game '{}' pid {}", key, pid);
+    }
+}
+
+/// True when `/proc/<pid>/exe` still resolves to the runner we launched.
+#[cfg(target_os = "linux")]
+fn linux_pid_is_runner(pid: u32, executable_path: &Path) -> bool {
+    let exe_link = PathBuf::from("/proc").join(pid.to_string()).join("exe");
+    match (
+        std::fs::canonicalize(&exe_link),
+        std::fs::canonicalize(executable_path),
+    ) {
+        (Ok(actual), Ok(expected)) => actual == expected,
+        // If the target file was replaced/removed we can still compare the raw
+        // symlink target against the tracked path.
+        _ => std::fs::read_link(&exe_link)
+            .map(|target| target == *executable_path)
+            .unwrap_or(false),
+    }
+}
+
+/// SIGTERM the PID, wait briefly, then SIGKILL if it is still alive.
+#[cfg(target_os = "linux")]
+fn terminate_linux_pid(pid: u32) {
+    use nix::sys::signal::{self, Signal};
+    use nix::unistd::Pid;
+
+    let target = Pid::from_raw(pid as i32);
+    if signal::kill(target, Signal::SIGTERM).is_err() {
+        return;
+    }
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    while std::time::Instant::now() < deadline {
+        if signal::kill(target, None).is_err() {
+            return; // already exited
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+
+    let _ = signal::kill(target, Signal::SIGKILL);
 }
 
 /// Track a newly started simulated game process.
+#[cfg(not(target_os = "linux"))]
 fn track_running_game(executable_name: &str) {
     let file_name = executable_name
         .rsplit(['/', '\\'])
@@ -308,6 +463,7 @@ fn track_running_game(executable_name: &str) {
 }
 
 /// Remove a game from the tracking set (called after explicit stop).
+#[cfg(not(target_os = "linux"))]
 fn untrack_running_game(executable_name: &str) {
     let file_name = executable_name
         .rsplit(['/', '\\'])
@@ -329,18 +485,19 @@ fn untrack_running_game(executable_name: &str) {
 /// Called on application exit to ensure no orphaned child processes are left
 /// running after the main app (and its RPC connection) closes.
 pub fn cleanup_all_simulated_games() {
-    let games: Vec<String> = {
-        match RUNNING_GAMES.lock() {
-            Ok(mut set) => {
-                let list: Vec<String> = set.drain().collect();
-                list
-            }
-            Err(poisoned) => {
-                let mut set = poisoned.into_inner();
-                let list: Vec<String> = set.drain().collect();
-                list
-            }
-        }
+    #[cfg(target_os = "linux")]
+    cleanup_all_linux_games();
+
+    #[cfg(not(target_os = "linux"))]
+    cleanup_all_tracked_games();
+}
+
+/// Windows/macOS: stop every tracked game by name.
+#[cfg(not(target_os = "linux"))]
+fn cleanup_all_tracked_games() {
+    let games: Vec<String> = match RUNNING_GAMES.lock() {
+        Ok(mut set) => set.drain().collect(),
+        Err(poisoned) => poisoned.into_inner().drain().collect(),
     };
 
     if games.is_empty() {
@@ -354,6 +511,35 @@ pub fn cleanup_all_simulated_games() {
     for name in &games {
         println!("  Stopping: {}", name);
         let _ = stop_simulated_game(name);
+    }
+}
+
+/// Linux: SIGTERM/SIGKILL every tracked PID whose `/proc/<pid>/exe` still
+/// matches the runner we launched.
+#[cfg(target_os = "linux")]
+fn cleanup_all_linux_games() {
+    let games: Vec<LinuxManagedGame> = match RUNNING_LINUX_GAMES.lock() {
+        Ok(mut games) => games.drain().map(|(_, value)| value).collect(),
+        Err(poisoned) => poisoned
+            .into_inner()
+            .drain()
+            .map(|(_, value)| value)
+            .collect(),
+    };
+
+    if games.is_empty() {
+        return;
+    }
+
+    println!(
+        "Cleaning up {} simulated game process(es) on exit...",
+        games.len()
+    );
+    for game in &games {
+        if linux_pid_is_runner(game.pid, &game.executable_path) {
+            println!("  Stopping pid {}", game.pid);
+            terminate_linux_pid(game.pid);
+        }
     }
 }
 

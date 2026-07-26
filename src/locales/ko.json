@@ -11,6 +11,8 @@
     "clear": "지우기"
   },
   "auth": {
+    "cdp_login": "Discord 클라이언트로 로그인",
+    "cdp_login_hint": "이미 로그인된 Discord 앱을 사용합니다. 토큰이 필요 없습니다. CDP가 활성화된 Discord가 실행 중이어야 합니다.",
     "auto_detect": "토큰 자동 감지",
     "login": "로그인",
     "or_manually": "또는 수동으로 입력",
@@ -120,6 +122,10 @@
     "activity_navigate_error": "Discord의 퀘스트 페이지로 이동하지 못했습니다. Discord를 직접 열고 퀘스트 페이지로 이동하세요."
   },
   "quest": {
+    "soft_error_title": "여기서는 이 게임을 시뮬레이션할 수 없습니다",
+    "soft_error_win32_only": "{game}은(는) Windows 실행 파일만 제공하여 Linux에서 프로세스를 시뮬레이션할 수 없습니다. CDP 모드로 전환하여 이 퀘스트를 완료하세요.",
+    "soft_error_not_found": "{game}에는 시뮬레이션 모드에서 사용할 수 있는 실행 파일이 없습니다. CDP 모드로 전환하여 이 퀘스트를 완료하세요.",
+    "soft_error_switch_cdp": "CDP로 전환하고 다시 시도",
     "progress": "진행률",
     "required": "{duration} 필요",
     "expires": "만료",
@@ -242,7 +248,7 @@
     "cdp_dialog_confirm": "Discord 재시작",
     "cdp_shortcut_title": "데스크톱 런처",
     "cdp_shortcut_desc": "현재 Discord 버전을 동적으로 찾아 CDP로 시작하는 오래 쓰는 데스크톱 바로가기를 만듭니다.",
-    "cdp_create_shortcut": "CDP 런처 바로가기 생성",
+    "cdp_create_shortcut": "런처 만들기",
     "cdp_shortcut_success": "CDP 런처 바로가기가 바탕화면에 생성되었습니다",
     "cdp_sync_success": "클라이언트 정보 동기화 성공",
     "client_emulation": "Discord 클라이언트 에뮬레이션",

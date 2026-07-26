@@ -34,6 +34,11 @@ jobs:
             x-target: 'darwin-arm64'
             cdp_target: 'aarch64-apple-darwin'
             runner-ext: ''
+          - platform: 'ubuntu-22.04'  # AppImage baseline (WebKitGTK 4.1)
+            args: '--bundles deb,appimage'
+            x-target: 'linux-x64'
+            cdp_target: 'x86_64-unknown-linux-gnu'
+            runner-ext: ''
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -55,6 +60,22 @@ jobs:
         with:
           toolchain: stable
           targets: ${{ matrix.platform == 'macos-14' && 'aarch64-apple-darwin' || '' }}
+
+      # Tauri 2 build dependencies for Debian/Ubuntu (WebKitGTK 4.1 baseline).
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
 
       - name: Cache Cargo registry
         uses: actions/cache@v5
@@ -164,6 +185,16 @@ jobs:
           path: |
             target/aarch64-apple-darwin/release/bundle/
 
+      # Upload Linux artifacts (AppImage + DEB)
+      - name: Upload Linux artifacts
+        if: matrix.platform == 'ubuntu-22.04'
+        uses: actions/upload-artifact@v7
+        with:
+          name: tauri-linux-x64-release
+          path: |
+            target/release/bundle/deb/*.deb
+            target/release/bundle/appimage/*.AppImage
+
   release:
     needs: build-tauri
     runs-on: ubuntu-latest
@@ -200,6 +231,12 @@ jobs:
           name: tauri-macos-arm64-release
           path: tauri-macos-arm64-release
 
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: tauri-linux-x64-release
+          path: tauri-linux-x64-release
+
       - name: prepare files
         env:
           version: ${{ env.version }}
@@ -223,10 +260,21 @@ jobs:
             zip -r ../build/discord-quest-helper-MacOS-arm64-${{ env.version }}.zip macos/
           fi
           cd ..
-          
+
+          # Copy Linux AppImage + DEB (paths are flattened by upload-artifact)
+          appimage=$(find tauri-linux-x64-release -name '*.AppImage' | head -n 1)
+          deb=$(find tauri-linux-x64-release -name '*.deb' | head -n 1)
+          if [ -n "$appimage" ]; then
+            cp "$appimage" ./build/discord-quest-helper-Linux-x86_64-${{ env.version }}.AppImage
+          fi
+          if [ -n "$deb" ]; then
+            cp "$deb" ./build/discord-quest-helper-Linux-x86_64-${{ env.version }}.deb
+          fi
+
           echo "win_portable=discord-quest-helper-Windows-x64-${{ env.version }}-portable" >> $GITHUB_ENV
           echo "win_msi=discord-quest-helper-Windows-x64-${{ env.version }}-setup" >> $GITHUB_ENV
           echo "macos_build_release=discord-quest-helper-MacOS-arm64-${{ env.version }}" >> $GITHUB_ENV
+          echo "linux_build_release=discord-quest-helper-Linux-x86_64-${{ env.version }}" >> $GITHUB_ENV
 
       - name: Create and Upload Release
         id: create_release
@@ -240,6 +288,8 @@ jobs:
             ./build/${{ env.win_msi }}.msi
             ./build/${{ env.macos_build_release }}.dmg
             ./build/${{ env.macos_build_release }}.zip
+            ./build/${{ env.linux_build_release }}.AppImage
+            ./build/${{ env.linux_build_release }}.deb
           prerelease: ${{ env.PRERELEASE }}
           draft: true
         env:

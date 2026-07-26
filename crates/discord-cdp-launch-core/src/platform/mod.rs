@@ -1,6 +1,8 @@
+#[cfg(target_os = "linux")]
+pub mod linux;
 #[cfg(target_os = "macos")]
 pub mod macos;
-#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
 mod unsupported;
 #[cfg(target_os = "windows")]
 pub mod windows;
@@ -59,7 +61,31 @@ impl PlatformBackend for SystemPlatform {
     }
 }
 
-#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+#[cfg(target_os = "linux")]
+impl PlatformBackend for SystemPlatform {
+    fn find_installs(&self) -> Result<Vec<DiscordInstall>, LaunchError> {
+        linux::find_installs()
+    }
+
+    fn is_running(&self, channel: Option<DiscordChannel>) -> Result<bool, LaunchError> {
+        linux::is_running(channel)
+    }
+
+    fn terminate(&self, channel: Option<DiscordChannel>) -> Result<(), LaunchError> {
+        linux::terminate(channel)
+    }
+
+    fn spawn(
+        &self,
+        install: &DiscordInstall,
+        port: u16,
+        allow_origins: bool,
+    ) -> Result<u32, LaunchError> {
+        linux::spawn(install, port, allow_origins)
+    }
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
 impl PlatformBackend for SystemPlatform {
     fn find_installs(&self) -> Result<Vec<DiscordInstall>, LaunchError> {
         unsupported::unsupported()

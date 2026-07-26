@@ -11,6 +11,8 @@
     "clear": "Effacer"
   },
   "auth": {
+    "cdp_login": "Se connecter avec le client Discord",
+    "cdp_login_hint": "Utilise l'application Discord où tu es déjà connecté, sans jeton. Nécessite Discord lancé avec CDP.",
     "auto_detect": "Détection automatique Token",
     "login": "Connexion",
     "or_manually": "Ou manuellement",
@@ -120,6 +122,10 @@
     "activity_navigate_error": "Échec de la navigation de Discord vers la page de quête. Veuillez ouvrir Discord manuellement et accéder à la page Quests."
   },
   "quest": {
+    "soft_error_title": "Impossible de simuler ce jeu ici",
+    "soft_error_win32_only": "{game} ne fournit qu’un exécutable Windows, qui ne peut pas être simulé en tant que processus sous Linux. Passe en mode CDP pour terminer cette quête.",
+    "soft_error_not_found": "{game} n’a aucun exécutable compatible pour le mode simulation. Passe en mode CDP pour terminer cette quête.",
+    "soft_error_switch_cdp": "Passer en CDP et réessayer",
     "progress": "Progrès",
     "required": "{duration} requis",
     "expires": "Expire",
@@ -242,7 +248,7 @@
     "cdp_dialog_confirm": "Redémarrer Discord",
     "cdp_shortcut_title": "Lanceur de bureau",
     "cdp_shortcut_desc": "Créez un raccourci de longue durée sur le bureau qui lance la version actuelle de Discord avec CDP activé.",
-    "cdp_create_shortcut": "Créer un raccourci de lancement CDP",
+    "cdp_create_shortcut": "Créer un lanceur",
     "cdp_shortcut_success": "CDP raccourci du lanceur créé sur le bureau",
     "cdp_sync_success": "Les informations client ont été synchronisées avec succès",
     "client_emulation": "Discord Émulation client",

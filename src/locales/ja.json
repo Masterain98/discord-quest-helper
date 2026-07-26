@@ -11,6 +11,8 @@
     "clear": "クリア"
   },
   "auth": {
+    "cdp_login": "Discord クライアントでログイン",
+    "cdp_login_hint": "すでにログイン済みの Discord アプリを使用します。トークンは不要です。CDP を有効にした Discord が必要です。",
     "auto_detect": "トークン自動検出",
     "login": "ログイン",
     "or_manually": "または手動で入力",
@@ -120,6 +122,10 @@
     "activity_navigate_error": "Discord のクエストページへ移動できませんでした。手動で Discord を開き、クエストページへ移動してください。"
   },
   "quest": {
+    "soft_error_title": "このゲームはここでシミュレートできません",
+    "soft_error_win32_only": "{game} は Windows 実行ファイルのみを提供しており、Linux ではプロセスをシミュレートできません。CDP モードに切り替えてこのクエストを完了してください。",
+    "soft_error_not_found": "{game} にはシミュレーションモードで使用できる実行ファイルがありません。CDP モードに切り替えてこのクエストを完了してください。",
+    "soft_error_switch_cdp": "CDP に切り替えて再試行",
     "progress": "進捗",
     "required": "{duration} 必要",
     "expires": "期限",
@@ -242,7 +248,7 @@
     "cdp_dialog_confirm": "Discord を再起動",
     "cdp_shortcut_title": "デスクトップランチャー",
     "cdp_shortcut_desc": "現在の Discord バージョンを動的に探して CDP 付きで起動する、長期利用できるショートカットを作成します。",
-    "cdp_create_shortcut": "CDP ランチャーショートカットを作成",
+    "cdp_create_shortcut": "ランチャーを作成",
     "cdp_shortcut_success": "CDP ランチャーショートカットをデスクトップに作成しました",
     "cdp_sync_success": "クライアント情報の同期に成功しました",
     "client_emulation": "Discordクライアントエミュレーション",

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import Home from './views/Home.vue'
 import GameSimulator from './views/GameSimulator.vue'
 import Settings from './views/Settings.vue'
@@ -8,6 +8,7 @@ import TitleBar from './components/TitleBar.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useAuthStore } from '@/stores/auth'
+import { useQuestsStore } from '@/stores/quests'
 import { useVersionStore } from '@/stores/version'
 import type { ExtractedAccount } from '@/api/tauri'
 import { useI18n } from 'vue-i18n'
@@ -28,6 +29,15 @@ import {
 const { t, locale } = useI18n()
 const currentTab = ref<'home' | 'game' | 'settings' | 'debug'>('home')
 const authStore = useAuthStore()
+const questsStore = useQuestsStore()
+
+// Local token extraction (Auto Detect) is unavailable on Linux, where the
+// backend returns a "use manual entry or CDP" error. Hide the button there and
+// lead with CDP auto-login instead.
+const showAutoDetect = computed(() => {
+  const level = questsStore.platformCapabilities?.tokenAutoDetection
+  return level !== 'manual_only' && level !== 'unavailable'
+})
 
 // Theme Logic
 const isDark = ref(true) // Default to dark
@@ -51,6 +61,10 @@ async function handleManualLogin() {
 
 async function handleAutoDetect() {
   await authStore.tryAutoDetect()
+}
+
+async function handleCdpLogin() {
+  await authStore.loginViaCdp()
 }
 
 function toggleTheme(event: MouseEvent) {
@@ -311,16 +325,31 @@ function openSettingsSection(section: 'discord_integration' | 'quest_behavior' |
           
           <!-- Login Form (show when no accounts detected) -->
           <div v-else class="space-y-4">
-            <Button 
-              size="lg" 
-              class="w-full gap-2" 
+            <Button
+              v-if="showAutoDetect"
+              size="lg"
+              class="w-full gap-2"
               @click="handleAutoDetect"
               :disabled="authStore.loading"
             >
               <Loader2 v-if="authStore.loading" class="w-4 h-4 animate-spin" />
               {{ t('auth.auto_detect') }}
             </Button>
-            
+
+            <!-- CDP auto-login: sign in from the running Discord client, no token
+                 needed. Primary path on Linux. -->
+            <Button
+              size="lg"
+              :variant="showAutoDetect ? 'outline' : 'default'"
+              class="w-full gap-2"
+              @click="handleCdpLogin"
+              :disabled="authStore.loading"
+            >
+              <Loader2 v-if="authStore.loading" class="w-4 h-4 animate-spin" />
+              {{ t('auth.cdp_login') }}
+            </Button>
+            <p class="text-center text-xs text-muted-foreground">{{ t('auth.cdp_login_hint') }}</p>
+
             <div class="relative">
               <div class="absolute inset-0 flex items-center">
                 <span class="w-full border-t" />

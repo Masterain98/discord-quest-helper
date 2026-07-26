@@ -11,6 +11,8 @@
     "clear": "Wyczyść"
   },
   "auth": {
+    "cdp_login": "Log in with Discord Client",
+    "cdp_login_hint": "Use the Discord app you're already signed in to — no token needed. Requires Discord running with CDP.",
     "auto_detect": "Automatyczne wykrywanie Token",
     "login": "Zaloguj się",
     "or_manually": "Lub ręcznie",
@@ -120,6 +122,10 @@
     "activity_navigate_error": "Nie udało się przejść Discord do strony zadań. Proszę otworzyć Discord ręcznie i przejść do strony Quests."
   },
   "quest": {
+    "soft_error_title": "Can't simulate this game here",
+    "soft_error_win32_only": "{game} only provides a Windows executable, which can't be process-simulated on Linux. Switch to CDP mode to complete this quest.",
+    "soft_error_not_found": "{game} has no compatible executable for simulation mode. Switch to CDP mode to complete this quest.",
+    "soft_error_switch_cdp": "Switch to CDP and retry",
     "progress": "Postęp",
     "required": "{duration} wymagane",
     "expires": "Wygasa",

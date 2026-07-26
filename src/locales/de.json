@@ -11,6 +11,8 @@
     "clear": "Löschen"
   },
   "auth": {
+    "cdp_login": "Mit Discord-Client anmelden",
+    "cdp_login_hint": "Nutzt die Discord-App, in der du bereits angemeldet bist – kein Token nötig. Erfordert laufendes Discord mit CDP.",
     "auto_detect": "Automatische Erkennung Token",
     "login": "Anmelden",
     "or_manually": "Oder manuell",
@@ -120,6 +122,10 @@
     "activity_navigate_error": "Die Navigation von Discord zur Questseite ist fehlgeschlagen. Bitte öffnen Sie Discord manuell und gehen Sie zur Seite Quests."
   },
   "quest": {
+    "soft_error_title": "Dieses Spiel kann hier nicht simuliert werden",
+    "soft_error_win32_only": "{game} bietet nur eine Windows-Datei, die unter Linux nicht als Prozess simuliert werden kann. Wechsle in den CDP-Modus, um diese Quest abzuschließen.",
+    "soft_error_not_found": "{game} hat keine kompatible Datei für den Simulationsmodus. Wechsle in den CDP-Modus, um diese Quest abzuschließen.",
+    "soft_error_switch_cdp": "Zu CDP wechseln und erneut versuchen",
     "progress": "Fortschritt",
     "required": "{duration} erforderlich",
     "expires": "Läuft ab",
@@ -242,7 +248,7 @@
     "cdp_dialog_confirm": "Discord neu starten",
     "cdp_shortcut_title": "Desktop-Launcher",
     "cdp_shortcut_desc": "Erstellen Sie eine langlebige Desktop-Verknüpfung, die die aktuelle Discord-Version mit aktiviertem CDP startet.",
-    "cdp_create_shortcut": "CDP-Starterverknüpfung erstellen",
+    "cdp_create_shortcut": "Launcher erstellen",
     "cdp_shortcut_success": "CDP Launcher-Verknüpfung auf dem Desktop erstellt",
     "cdp_sync_success": "Kundeninformationen wurden erfolgreich synchronisiert",
     "client_emulation": "Discord Client-Emulation",

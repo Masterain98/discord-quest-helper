@@ -11,6 +11,8 @@
     "clear": "Limpar"
   },
   "auth": {
+    "cdp_login": "Iniciar sessão com o cliente do Discord",
+    "cdp_login_hint": "Usa a aplicação do Discord onde já tens sessão iniciada, sem token. Requer o Discord em execução com CDP.",
     "auto_detect": "Detecção automática Token",
     "login": "Entrar",
     "or_manually": "Ou manualmente",
@@ -120,6 +122,10 @@
     "activity_navigate_error": "Falha ao navegar Discord para a página da missão. Abra Discord manualmente e vá para a página Quests."
   },
   "quest": {
+    "soft_error_title": "Não é possível simular este jogo aqui",
+    "soft_error_win32_only": "{game} fornece apenas um executável do Windows, que não pode ser simulado como processo no Linux. Muda para o modo CDP para concluir esta missão.",
+    "soft_error_not_found": "{game} não tem um executável compatível para o modo de simulação. Muda para o modo CDP para concluir esta missão.",
+    "soft_error_switch_cdp": "Mudar para CDP e tentar novamente",
     "progress": "Progresso",
     "required": "{duration} obrigatório",
     "expires": "Expira",
@@ -242,7 +248,7 @@
     "cdp_dialog_confirm": "Reiniciar Discord",
     "cdp_shortcut_title": "Iniciador de ambiente de trabalho",
     "cdp_shortcut_desc": "Crie um atalho de longa duração no ambiente de trabalho que inicie a versão atual do Discord com o CDP ativado.",
-    "cdp_create_shortcut": "Criar atalho do iniciador CDP",
+    "cdp_create_shortcut": "Criar lançador",
     "cdp_shortcut_success": "CDP atalho do iniciador criado no ambiente de trabalho",
     "cdp_sync_success": "Informações do cliente sincronizadas com sucesso",
     "client_emulation": "Discord Emulação de cliente",

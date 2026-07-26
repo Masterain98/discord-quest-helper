@@ -11,6 +11,8 @@
     "clear": "Temizle"
   },
   "auth": {
+    "cdp_login": "Log in with Discord Client",
+    "cdp_login_hint": "Use the Discord app you're already signed in to — no token needed. Requires Discord running with CDP.",
     "auto_detect": "Otomatik Algıla Token",
     "login": "Giriş yap",
     "or_manually": "Veya Manuel olarak",
@@ -120,6 +122,10 @@
     "activity_navigate_error": "Discord görev sayfasına gidilemedi. Lütfen Discord'ı manuel olarak açın ve Quests sayfasına gidin."
   },
   "quest": {
+    "soft_error_title": "Can't simulate this game here",
+    "soft_error_win32_only": "{game} only provides a Windows executable, which can't be process-simulated on Linux. Switch to CDP mode to complete this quest.",
+    "soft_error_not_found": "{game} has no compatible executable for simulation mode. Switch to CDP mode to complete this quest.",
+    "soft_error_switch_cdp": "Switch to CDP and retry",
     "progress": "İlerleme",
     "required": "{duration} gerekli",
     "expires": "Süresi doluyor",

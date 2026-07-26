@@ -520,6 +520,26 @@
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <!-- Recoverable simulation soft error (e.g. a win32-only game on Linux):
+         steer the user to CDP mode instead of failing the quest. -->
+    <AlertDialog
+      :open="!!questsStore.softError"
+      @update:open="(value: boolean) => { if (!value) questsStore.dismissSoftError() }"
+    >
+      <AlertDialogContent class="max-w-[560px]">
+        <AlertDialogHeader>
+          <AlertDialogTitle>{{ t('quest.soft_error_title') }}</AlertDialogTitle>
+          <AlertDialogDescription>{{ softErrorMessage }}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel @click="questsStore.dismissSoftError()">{{ t('dialog.cancel') }}</AlertDialogCancel>
+          <AlertDialogAction @click="questsStore.switchToCdpAndRetry()">
+            {{ t('quest.soft_error_switch_cdp') }}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   </div>
 </template>
 
@@ -593,6 +613,18 @@ const authStore = useAuthStore()
 const questsStore = useQuestsStore()
 const versionStore = useVersionStore()
 const toast = useToastStore()
+
+// Localized body for the recoverable simulation soft error:
+// e.g. a win32-only game selected while running the Linux process simulator.
+const softErrorMessage = computed(() => {
+  const softError = questsStore.softError
+  if (!softError) return ''
+  const key =
+    softError.code === 'SIMULATION_EXECUTABLE_OS_UNSUPPORTED'
+      ? 'quest.soft_error_win32_only'
+      : 'quest.soft_error_not_found'
+  return t(key, { game: softError.gameName })
+})
 
 const props = defineProps<{
   debugModeEnabled?: boolean

@@ -11,6 +11,8 @@ use futures_util::{future::join_all, SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
+use url::Url;
+use zeroize::Zeroizing;
 
 /// Default CDP debugging port
 pub use discord_cdp_launch_core::DEFAULT_CDP_PORT;
@@ -659,6 +661,260 @@ pub async fn capture_discord_headers_via_cdp(
         header_kv_counts,
         capture_duration_secs: duration_secs,
     })
+}
+
+/// An authenticated Discord session captured over CDP.
+///
+/// Capturing the raw `Authorization` token is the whole point of this type, so
+/// it is deliberately hard to leak: it does **not** implement `Serialize`, its
+/// `Debug` redacts the token, and the token is zeroized on drop. It never
+/// crosses the Tauri IPC boundary — `auto_login_via_cdp` returns only the
+/// resolved `DiscordUser`.
+pub struct CapturedDiscordSession {
+    /// Bearer/user token from a Discord API request's `Authorization` header.
+    pub authorization: Zeroizing<String>,
+    /// `x-super-properties` (base64) from the same request, when present.
+    pub super_properties: Option<String>,
+}
+
+impl std::fmt::Debug for CapturedDiscordSession {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CapturedDiscordSession")
+            .field("authorization", &"[redacted]")
+            .field(
+                "super_properties",
+                &self.super_properties.as_ref().map(|_| "[present]"),
+            )
+            .finish()
+    }
+}
+
+/// JavaScript nudge: ask Discord's own HTTP client to issue an authenticated,
+/// side-effect-free `GET /users/@me`. The token is **not** returned to JS — the
+/// Rust-side Network domain captures the `Authorization` header. Best-effort:
+/// if Discord's internal module can't be located, natural background requests
+/// still satisfy the capture.
+const JS_TRIGGER_AUTH_REQUEST: &str = r#"
+(() => {
+    try {
+        if (typeof window === "undefined" || !window.webpackChunkdiscord_app) {
+            return "no-webpack";
+        }
+        const req = webpackChunkdiscord_app.push([[Symbol()], {}, r => r]);
+        webpackChunkdiscord_app.pop();
+        for (const m of Object.values(req.c)) {
+            try {
+                const d = m && m.exports && m.exports.default;
+                if (
+                    d &&
+                    typeof d.get === "function" &&
+                    typeof d.post === "function" &&
+                    typeof d.patch === "function" &&
+                    typeof d.put === "function"
+                ) {
+                    d.get({ url: "/users/@me" }).catch(() => {});
+                    return "triggered";
+                }
+            } catch (e) { /* keep scanning */ }
+        }
+        return "no-module";
+    } catch (e) {
+        return "err:" + String(e);
+    }
+})()
+"#;
+
+/// Case-insensitive header lookup that rejects empty / `undefined` values.
+fn cdp_header_value(
+    headers: &serde_json::Map<String, serde_json::Value>,
+    name: &str,
+) -> Option<String> {
+    headers
+        .iter()
+        .find(|(key, _)| key.eq_ignore_ascii_case(name))
+        .and_then(|(_, value)| value.as_str())
+        .map(str::to_string)
+        .filter(|value| !value.is_empty() && value != "undefined")
+}
+
+/// True only for first-party Discord REST API requests (`https://<discord
+/// host>/api/...`), excluding CDN and webhook URLs, so we never treat an
+/// unrelated bearer token as the client's session.
+fn is_discord_api_url(url: &str) -> bool {
+    let Ok(parsed) = Url::parse(url) else {
+        return false;
+    };
+    if parsed.scheme() != "https" {
+        return false;
+    }
+    let Some(host) = parsed.host_str() else {
+        return false;
+    };
+    let is_api_host = matches!(
+        host.to_ascii_lowercase().as_str(),
+        "discord.com" | "www.discord.com" | "canary.discord.com" | "ptb.discord.com"
+    );
+    if !is_api_host {
+        return false;
+    }
+    let path = parsed.path();
+    path.starts_with("/api/") && !path.starts_with("/api/webhooks") && !path.contains("/webhooks/")
+}
+
+/// Pull an `(authorization, super_properties)` pair out of a single CDP Network
+/// event, correlating `...ExtraInfo` events (which some Chromium builds use for
+/// the real header set) back to a known Discord API request by `requestId`.
+fn extract_auth_from_cdp_event(
+    text: &str,
+    pending_api_requests: &mut std::collections::HashMap<String, bool>,
+) -> Option<(String, Option<String>)> {
+    let json: serde_json::Value = serde_json::from_str(text).ok()?;
+    let method = json.get("method").and_then(|v| v.as_str())?;
+    let params = json.get("params")?;
+
+    match method {
+        "Network.requestWillBeSent" => {
+            let request_id = params
+                .get("requestId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let request = params.get("request")?;
+            let url = request.get("url").and_then(|u| u.as_str()).unwrap_or("");
+            let is_api = is_discord_api_url(url);
+            if !request_id.is_empty() {
+                pending_api_requests.insert(request_id.to_string(), is_api);
+            }
+            if !is_api {
+                return None;
+            }
+            let headers = request.get("headers")?.as_object()?;
+            let authorization = cdp_header_value(headers, "authorization")?;
+            let super_properties = cdp_header_value(headers, "x-super-properties");
+            Some((authorization, super_properties))
+        }
+        "Network.requestWillBeSentExtraInfo" => {
+            let request_id = params.get("requestId").and_then(|v| v.as_str())?;
+            if pending_api_requests.get(request_id) != Some(&true) {
+                return None;
+            }
+            let headers = params.get("headers")?.as_object()?;
+            let authorization = cdp_header_value(headers, "authorization")?;
+            let super_properties = cdp_header_value(headers, "x-super-properties");
+            Some((authorization, super_properties))
+        }
+        _ => None,
+    }
+}
+
+/// Capture the currently logged-in Discord session over CDP.
+///
+/// Enables the Network domain on the primary Discord target and watches for a
+/// first-party authenticated API request. Idle clients are nudged with a
+/// side-effect-free `GET /users/@me` after a short delay (over the *same*
+/// WebSocket — a CDP target only accepts one client at a time). The raw token
+/// never leaves Rust; callers validate it and keep it in the API client only.
+pub async fn capture_discord_auth_via_cdp(
+    port: u16,
+    timeout: Duration,
+) -> Result<CapturedDiscordSession> {
+    use crate::logger::{log, LogCategory, LogLevel};
+    use std::collections::HashMap;
+
+    let targets = get_cdp_targets(port).await?;
+    let target = pick_discord_target(&targets).context("No Discord target found")?;
+    let ws_url = target
+        .web_socket_debugger_url
+        .as_ref()
+        .context("Target has no WebSocket URL")?;
+
+    log(
+        LogLevel::Info,
+        LogCategory::TokenExtraction,
+        &format!("CDP auto-login: connecting to target '{}'", target.title),
+        None,
+    );
+
+    let (ws_stream, _) = connect_async(ws_url)
+        .await
+        .context("Failed to connect to CDP WebSocket")?;
+    let (mut write, mut read) = ws_stream.split();
+
+    write
+        .send(Message::Text(
+            serde_json::json!({ "id": 1, "method": "Network.enable", "params": {} })
+                .to_string()
+                .into(),
+        ))
+        .await
+        .context("Failed to send Network.enable")?;
+
+    let mut pending_api_requests: HashMap<String, bool> = HashMap::new();
+
+    let outcome = tokio::time::timeout(timeout, async {
+        // Fire the JS nudge once, a couple of seconds in, so a chatty client's
+        // natural request is preferred but an idle one still gets triggered.
+        let trigger_delay = tokio::time::sleep(Duration::from_millis(2500));
+        tokio::pin!(trigger_delay);
+        let mut triggered = false;
+
+        loop {
+            tokio::select! {
+                _ = &mut trigger_delay, if !triggered => {
+                    triggered = true;
+                    let cmd = serde_json::json!({
+                        "id": 2,
+                        "method": "Runtime.evaluate",
+                        "params": { "expression": JS_TRIGGER_AUTH_REQUEST, "awaitPromise": false }
+                    });
+                    let _ = write.send(Message::Text(cmd.to_string().into())).await;
+                }
+                maybe_msg = read.next() => {
+                    let Some(msg) = maybe_msg else { break };
+                    let text = match msg {
+                        Ok(Message::Text(text)) => text,
+                        Ok(_) => continue,
+                        Err(_) => break,
+                    };
+                    if let Some(found) = extract_auth_from_cdp_event(&text, &mut pending_api_requests) {
+                        return Some(found);
+                    }
+                }
+            }
+        }
+        None
+    })
+    .await
+    .ok()
+    .flatten();
+
+    // Best-effort teardown — disable the Network domain and close cleanly.
+    let _ = write
+        .send(Message::Text(
+            serde_json::json!({ "id": 3, "method": "Network.disable", "params": {} })
+                .to_string()
+                .into(),
+        ))
+        .await;
+    let _ = write.close().await;
+
+    match outcome {
+        Some((authorization, super_properties)) => {
+            log(
+                LogLevel::Info,
+                LogCategory::TokenExtraction,
+                "CDP auto-login: captured an authenticated Discord API request",
+                None,
+            );
+            Ok(CapturedDiscordSession {
+                authorization: Zeroizing::new(authorization),
+                super_properties,
+            })
+        }
+        None => anyhow::bail!(
+            "No authenticated Discord API request was observed over CDP before the timeout. \
+             Make sure Discord is running with CDP enabled and you are logged in."
+        ),
+    }
 }
 
 /// Execute JS on every Discord-like CDP page target.

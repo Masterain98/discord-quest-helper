@@ -55,7 +55,7 @@ impl fmt::Display for LaunchError {
             }
             Self::UnsupportedPlatform => write!(
                 formatter,
-                "Discord CDP launcher is only supported on Windows and macOS."
+                "Discord CDP launcher is only supported on Windows, macOS, and Linux."
             ),
             Self::InstallNotFound {
                 channel: Some(channel),

@@ -495,3 +495,34 @@ export async function startCdpQuest(
 export async function navigateDiscordSpa(targetPath: string, cdpPort: number): Promise<void> {
   return await invoke('navigate_discord_spa', { targetPath, cdpPort })
 }
+
+// Platform capabilities (read-only descriptor; brand-new command)
+//
+// `tokenAutoDetection` mirrors the backend descriptor: `full` (local keyring
+// extraction implemented, Windows/macOS), `manual_only` (manual token entry +
+// CDP auto-login; Linux first release), or `unavailable` (no token flow).
+export type CapabilityLevel = 'full' | 'manual_only' | 'unavailable'
+
+export interface PlatformCapabilities {
+  os: string
+  arch: string
+  cdpLauncher: boolean
+  launcherEntry: boolean
+  gameSimulation: boolean
+  tokenAutoDetection: CapabilityLevel
+  /** Preferred order of GameExecutable.os values when picking an executable. */
+  executableOsPriority: string[]
+  defaultGameQuestMode: 'simulate' | 'heartbeat' | 'cdp'
+}
+
+export async function getPlatformCapabilities(): Promise<PlatformCapabilities> {
+  return await invoke('get_platform_capabilities')
+}
+
+// CDP auto-login: capture the currently logged-in Discord session over CDP and
+// establish a DQH login from it. The raw token is captured, validated, and
+// stored entirely on the Rust side — only the resolved DiscordUser is returned
+// to the frontend. Requires Discord to be running with CDP enabled.
+export async function autoLoginViaCdp(port?: number): Promise<DiscordUser> {
+  return await invoke('auto_login_via_cdp', { port })
+}
