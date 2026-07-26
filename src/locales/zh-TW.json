@@ -81,6 +81,14 @@
     "include_expired": "包括過期的任務",
     "include_expired_desc": "顯示過期條目以供檢查和恢復。",
     "current_orbs": "目前 Orbs",
+
+    "nitro_next_orbs_title": "Nitro 每月 Orbs — 下次領取倒數",
+
+    "nitro_next_orbs_days": "下次 Orbs 空投剩餘 {days} 天",
+
+    "nitro_next_orbs_hours": "下次 Orbs 空投剩餘 {hours} 小時",
+
+    "nitro_next_orbs_minutes": "下次 Orbs 空投剩餘 {minutes} 分鐘",
     "claim_reward": "領取獎勵",
     "claim_navigated": "Discord 已跳轉到對應任務頁面，請在 Discord 中領取獎勵。",
     "next_error_title": "有件事需要注意",

@@ -81,6 +81,14 @@
     "include_expired": "Süresi dolmuş görevleri dahil et",
     "include_expired_desc": "İnceleme ve kurtarma için süresi dolmuş girişleri gösterin.",
     "current_orbs": "Mevcut Orbs",
+
+    "nitro_next_orbs_title": "Aylık Nitro Orbs — bir sonraki alma geri sayımı",
+
+    "nitro_next_orbs_days": "Sonraki Orbs airdropu: {days} gün",
+
+    "nitro_next_orbs_hours": "Sonraki Orbs airdropu: {hours} saat",
+
+    "nitro_next_orbs_minutes": "Sonraki Orbs airdropu: {minutes} dakika",
     "claim_reward": "Ödül Talebi",
     "claim_navigated": "Discord görev sayfasına yönlendirildi. Lütfen ödülünüzü orada isteyin.",
     "next_error_title": "Bir şeyin dikkat edilmesi gerekiyor",

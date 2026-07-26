@@ -81,6 +81,14 @@
     "include_expired": "Включить просроченные квесты",
     "include_expired_desc": "Показывать просроченные записи для проверки и восстановления.",
     "current_orbs": "Текущие Orbs",
+
+    "nitro_next_orbs_title": "Ежемесячные Orbs Nitro — обратный отсчёт до следующего получения",
+
+    "nitro_next_orbs_days": "Следующий эирдроп Orbs через {days} дн",
+
+    "nitro_next_orbs_hours": "Следующий эирдроп Orbs через {hours} ч",
+
+    "nitro_next_orbs_minutes": "Следующий эирдроп Orbs через {minutes} мин",
     "claim_reward": "Получить награду",
     "claim_navigated": "Discord перенаправлен на страницу квеста. Получите награду в Discord.",
     "next_error_title": "Что-то требует внимания",

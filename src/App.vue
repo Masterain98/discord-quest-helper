@@ -8,15 +8,14 @@ import TitleBar from './components/TitleBar.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useAuthStore } from '@/stores/auth'
-import { useQuestsStore } from '@/stores/quests'
 import { useVersionStore } from '@/stores/version'
 import type { ExtractedAccount } from '@/api/tauri'
 import { useI18n } from 'vue-i18n'
-import { Moon, Sun, Loader2, Languages, RotateCw } from 'lucide-vue-next'
+import { Moon, Sun, Loader2, Languages } from 'lucide-vue-next'
 import AccountMenu from './components/AccountMenu.vue'
+import OrbsNitroStatus from './components/OrbsNitroStatus.vue'
 import QuestModeIndicator from './components/QuestModeIndicator.vue'
 import Toaster from './components/Toaster.vue'
-import { cn } from '@/lib/utils'
 import { persistSettingsSection } from '@/composables/useSettingsNavigation'
 import { supportedLocales } from '@/locales/meta'
 import {
@@ -29,7 +28,6 @@ import {
 const { t, locale } = useI18n()
 const currentTab = ref<'home' | 'game' | 'settings' | 'debug'>('home')
 const authStore = useAuthStore()
-const questsStore = useQuestsStore()
 
 // Theme Logic
 const isDark = ref(true) // Default to dark
@@ -262,26 +260,8 @@ function openSettingsSection(section: 'discord_integration' | 'quest_behavior' |
           </Button>
         </div>
 
-        <!-- Orbs Balance (compact, right-aligned) -->
-        <div
-          v-if="authStore.user && questsStore.showOrbsBalance"
-          class="ml-auto flex shrink-0 items-center gap-1.5 rounded-md border bg-card px-2.5 py-1.5 text-xs"
-        >
-          <img src="/icons/orbs.png" alt="" class="h-4 w-4 object-contain" />
-          <span class="text-muted-foreground">{{ t('home.current_orbs') }}:</span>
-          <span class="font-semibold">
-            {{ questsStore.orbsBalance == null ? '—' : questsStore.orbsBalance.toLocaleString() }}
-          </span>
-          <Button
-            variant="ghost"
-            size="icon"
-            class="h-5 w-5"
-            @click="questsStore.fetchOrbsBalance(true)"
-            :disabled="questsStore.orbsBalanceLoading || !authStore.user"
-          >
-            <RotateCw :class="cn('h-3 w-3', questsStore.orbsBalanceLoading && 'animate-spin')" />
-          </Button>
-        </div>
+        <!-- Orbs Balance + Nitro membership status (compact, right-aligned) -->
+        <OrbsNitroStatus v-if="authStore.user" />
       </div>
       
       <main class="fade-in flex-1">

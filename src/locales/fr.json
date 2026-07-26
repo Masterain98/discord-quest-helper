@@ -81,6 +81,14 @@
     "include_expired": "Inclure les quêtes expirées",
     "include_expired_desc": "Afficher les entrées expirées pour inspection et récupération.",
     "current_orbs": "Orbs actuel",
+
+    "nitro_next_orbs_title": "Orbs Nitro mensuelles — compte à rebours jusqu’à la prochaine réclamation",
+
+    "nitro_next_orbs_days": "Prochain airdrop d’Orbs dans {days} jours",
+
+    "nitro_next_orbs_hours": "Prochain airdrop d’Orbs dans {hours} heures",
+
+    "nitro_next_orbs_minutes": "Prochain airdrop d’Orbs dans {minutes} minutes",
     "claim_reward": "Réclamez une récompense",
     "claim_navigated": "Discord a été redirigé vers la page de quête. Veuillez y réclamer votre récompense.",
     "next_error_title": "Quelque chose a besoin d'attention",

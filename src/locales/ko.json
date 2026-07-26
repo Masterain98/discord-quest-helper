@@ -81,6 +81,14 @@
     "include_expired": "만료된 퀘스트 포함",
     "include_expired_desc": "검사 및 복구를 위해 만료된 항목을 표시합니다.",
     "current_orbs": "현재 Orbs",
+
+    "nitro_next_orbs_title": "Nitro 월간 Orbs — 다음 받기까지 남은 시간",
+
+    "nitro_next_orbs_days": "다음 Orbs 에어드롭까지 {days}일",
+
+    "nitro_next_orbs_hours": "다음 Orbs 에어드롭까지 {hours}시간",
+
+    "nitro_next_orbs_minutes": "다음 Orbs 에어드롭까지 {minutes}분",
     "claim_reward": "보상 받기",
     "claim_navigated": "Discord가 퀘스트 페이지로 이동되었습니다. Discord에서 보상을 수령하세요.",
     "next_error_title": "뭔가 주의가 필요해요",

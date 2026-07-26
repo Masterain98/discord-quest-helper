@@ -11,6 +11,16 @@ export interface DiscordUser {
   premium_type?: number | null
 }
 
+/** A Discord billing subscription (subset of fields used by the UI). */
+export interface BillingSubscription {
+  id: string
+  status: number
+  current_period_start: string | null
+  current_period_end: string | null
+  payment_gateway_plan_id?: string | null
+  items?: Array<{ id: string; plan_id: string; quantity: number }>
+}
+
 export interface Quest {
   id: string
   traffic_metadata_raw?: string | null
@@ -160,6 +170,11 @@ export async function getQuestsFull(): Promise<CurrentUserQuestsResponse> {
 export async function getVirtualCurrencyBalance(): Promise<number> {
   const response = await invoke<{ balance?: number }>('get_virtual_currency_balance')
   return response.balance ?? 0
+}
+
+export async function getBillingSubscriptions(): Promise<BillingSubscription[]> {
+  const response = await invoke<BillingSubscription[]>('get_billing_subscriptions')
+  return response ?? []
 }
 
 export async function getQuestDecisionDebug(placement: number): Promise<unknown> {

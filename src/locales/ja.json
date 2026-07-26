@@ -81,6 +81,14 @@
     "include_expired": "期限切れのクエストを含める",
     "include_expired_desc": "検査と回復のために期限切れのエントリを表示します。",
     "current_orbs": "現在の Orbs",
+
+    "nitro_next_orbs_title": "Nitro 月額 Orbs — 次回受取までのカウントダウン",
+
+    "nitro_next_orbs_days": "次回の Orbs エアドロップまで {days} 日",
+
+    "nitro_next_orbs_hours": "次回の Orbs エアドロップまで {hours} 時間",
+
+    "nitro_next_orbs_minutes": "次回の Orbs エアドロップまで {minutes} 分",
     "claim_reward": "報酬を受け取る",
     "claim_navigated": "Discord をクエストページに移動しました。Discord で報酬を受け取ってください。",
     "next_error_title": "何か注意が必要です",

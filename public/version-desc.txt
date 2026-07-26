@@ -1,5 +1,7 @@
 ## ✨ What's Changed
 
-1. Fixed the bug during the start, restart and ending phase of the Activity quests.
-2. bump dependencies the latest patched versions.
-3. Update default client build number to 574548, default native build number to 85420, and default client version to 1.0.9244.
+1. Fixed the activity quest mismatch issue.
+2. Refreshed the Nitro membership panel area.
+3. Added Nitro membership monthly Orbs Drop estimated countdown.
+4. bump dependencies the latest patched versions.
+5. Update default client build number to 582977, default native build number to 86777, and default client version to 1.0.9249.

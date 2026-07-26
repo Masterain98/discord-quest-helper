@@ -323,6 +323,7 @@ impl DiscordApiClient {
 
         if path.starts_with("/api/v9/quests")
             || path == "/api/v9/users/@me/virtual-currency/balance"
+            || path.starts_with("/api/v9/users/@me/billing/subscriptions")
         {
             Some(QUEST_HOME_REFERER)
         } else {
@@ -608,6 +609,35 @@ impl DiscordApiClient {
         }
 
         serde_json::from_str(&body).context("Failed to parse virtual currency balance")
+    }
+
+    /// Get the current user's billing subscriptions.
+    ///
+    /// Used to derive Nitro membership period info (e.g. the monthly Orbs
+    /// grant anchor via `current_period_start`) for the UI.
+    pub async fn get_billing_subscriptions(&self) -> Result<serde_json::Value> {
+        let url = format!(
+            "{}/users/@me/billing/subscriptions?sync_level=2",
+            DISCORD_API_BASE
+        );
+
+        let response = self
+            .request(Method::GET, &url)
+            .send()
+            .await
+            .context("Request for billing subscriptions failed")?;
+
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        if !status.is_success() {
+            anyhow::bail!(
+                "Failed to get billing subscriptions: {} - {}",
+                status,
+                body
+            );
+        }
+
+        serde_json::from_str(&body).context("Failed to parse billing subscriptions")
     }
 
     pub async fn claim_quest_reward(

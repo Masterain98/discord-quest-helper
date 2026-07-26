@@ -81,6 +81,14 @@
     "include_expired": "รวมภารกิจที่หมดอายุ",
     "include_expired_desc": "แสดงรายการที่หมดอายุสำหรับการตรวจสอบและการกู้คืน",
     "current_orbs": "ปัจจุบัน Orbs",
+
+    "nitro_next_orbs_title": "Orbs รายเดือนของ Nitro — นับถอยหลังการรับครั้งถัดไป",
+
+    "nitro_next_orbs_days": "Airdrop Orbs ครั้งต่อไปในอีก {days} วัน",
+
+    "nitro_next_orbs_hours": "Airdrop Orbs ครั้งต่อไปในอีก {hours} ชั่วโมง",
+
+    "nitro_next_orbs_minutes": "Airdrop Orbs ครั้งต่อไปในอีก {minutes} นาที",
     "claim_reward": "รับรางวัล",
     "claim_navigated": "Discord ถูกเปลี่ยนเส้นทางไปยังหน้าภารกิจ กรุณารับรางวัลของคุณที่นั่น",
     "next_error_title": "บางสิ่งต้องการความสนใจ",

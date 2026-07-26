@@ -81,6 +81,14 @@
     "include_expired": "Sertakan misi yang sudah kadaluwarsa",
     "include_expired_desc": "Tampilkan entri kedaluwarsa untuk pemeriksaan dan pemulihan.",
     "current_orbs": "Saat ini Orbs",
+
+    "nitro_next_orbs_title": "Orbs Nitro bulanan — hitung mundur klaim berikutnya",
+
+    "nitro_next_orbs_days": "Airdrop Orbs berikutnya dalam {days} hari",
+
+    "nitro_next_orbs_hours": "Airdrop Orbs berikutnya dalam {hours} jam",
+
+    "nitro_next_orbs_minutes": "Airdrop Orbs berikutnya dalam {minutes} menit",
     "claim_reward": "Klaim Hadiah",
     "claim_navigated": "Discord telah dialihkan ke halaman pencarian. Silakan klaim hadiah Anda di sana.",
     "next_error_title": "Ada sesuatu yang memerlukan perhatian",

@@ -53,3 +53,6 @@ discord-quest-helper-v*.zip
 
 # i18n validation/audit reports
 reports/
+
+.workbuddy/
+.codebuddy/

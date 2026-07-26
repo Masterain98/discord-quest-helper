@@ -15,6 +15,23 @@ import { settingToneClass } from './settingTones'
 
 const { t } = useI18n()
 const questsStore = useQuestsStore()
+
+// Validation is deferred until the input loses focus (@blur). The `Input`
+// component uses `useVModel` in passive mode, which means it does NOT emit
+// `update:modelValue` while typing — so a two-way binding would never capture
+// the user's keystrokes. Instead we bind the display value one-way to the
+// store and, on blur, read the raw value straight from the DOM and commit it
+// to the store. The store's watcher then normalizes/persists it, and the
+// one-way binding reflects the corrected value back.
+function commitCheckpointMin(event: FocusEvent) {
+  const raw = (event.target as HTMLInputElement).value
+  questsStore.activityCheckpointMin = raw === '' ? Number.NaN : Number(raw)
+}
+
+function commitCheckpointMax(event: FocusEvent) {
+  const raw = (event.target as HTMLInputElement).value
+  questsStore.activityCheckpointMax = raw === '' ? Number.NaN : Number(raw)
+}
 </script>
 
 <template>
@@ -184,11 +201,12 @@ const questsStore = useQuestsStore()
             <div class="flex items-center gap-2">
               <Input
                 type="number"
-                v-model.number="questsStore.activityCheckpointMin"
+                :model-value="questsStore.activityCheckpointMin"
                 min="30"
                 :max="questsStore.activityCheckpointMax"
                 :aria-label="t('settings.activity_checkpoint_min')"
                 class="w-24"
+                @blur="commitCheckpointMin"
               />
               <span class="text-sm text-muted-foreground">{{ t('settings.activity_checkpoint_unit') }}</span>
             </div>
@@ -199,11 +217,12 @@ const questsStore = useQuestsStore()
             <div class="flex items-center gap-2">
               <Input
                 type="number"
-                v-model.number="questsStore.activityCheckpointMax"
+                :model-value="questsStore.activityCheckpointMax"
                 :min="questsStore.activityCheckpointMin"
                 max="900"
                 :aria-label="t('settings.activity_checkpoint_max')"
                 class="w-24"
+                @blur="commitCheckpointMax"
               />
               <span class="text-sm text-muted-foreground">{{ t('settings.activity_checkpoint_unit') }}</span>
             </div>
