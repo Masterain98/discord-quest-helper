@@ -31,6 +31,9 @@ pub(crate) fn enable_dpi_awareness() {
 #[cfg(not(target_os = "windows"))]
 pub(crate) fn enable_dpi_awareness() {}
 
+#[cfg(target_os = "linux")]
+const LINUX_ICON_NAME: &str = "com.masterain.discord-quest-helper.cdp";
+
 #[cfg(target_os = "windows")]
 pub(crate) fn system_ui_language() -> u16 {
     unsafe { win32::GetUserDefaultUILanguage() }
@@ -50,6 +53,25 @@ pub(crate) fn show_info_dialog(title: &str, message: &str) {
     }
 }
 
+#[cfg(target_os = "linux")]
+pub(crate) fn show_info_dialog(title: &str, message: &str) {
+    let result = std::process::Command::new("zenity")
+        .args([
+            "--info",
+            "--title",
+            title,
+            "--text",
+            message,
+            "--icon",
+            LINUX_ICON_NAME,
+            "--no-wrap",
+        ])
+        .status();
+    if result.is_err() {
+        eprintln!("{title}: {message}");
+    }
+}
+
 #[cfg(target_os = "windows")]
 pub(crate) fn show_confirm_dialog(title: &str, message: &str) -> bool {
     let title = to_wide(title);
@@ -62,6 +84,23 @@ pub(crate) fn show_confirm_dialog(title: &str, message: &str) -> bool {
             win32::MB_YESNO | win32::MB_ICONQUESTION,
         ) == win32::IDYES
     }
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn show_confirm_dialog(title: &str, message: &str) -> bool {
+    std::process::Command::new("zenity")
+        .args([
+            "--question",
+            "--title",
+            title,
+            "--text",
+            message,
+            "--icon",
+            LINUX_ICON_NAME,
+            "--no-wrap",
+        ])
+        .status()
+        .is_ok_and(|status| status.success())
 }
 
 #[cfg(target_os = "windows")]

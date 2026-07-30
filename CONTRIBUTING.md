@@ -232,14 +232,25 @@ Run `pnpm run i18n:check` before submitting translation changes.
 | `pnpm not found` | Run `npm install -g pnpm` |
 | `Rust outdated` | Run `rustup update stable` |
 
-### Frontend-Only Development (Linux)
+### Linux Development
+
+For frontend-only development:
 
 ```bash
 pnpm install
 pnpm dev  # Runs Vite dev server only on port 1420
 ```
 
-> Note: Full Tauri backend builds require Windows or macOS. On Linux, only the frontend dev server is available.
+For a local Ubuntu Tauri build, including `.deb` and AppImage packages:
+
+```bash
+pnpm install
+./build-ubuntu.sh --install-deps
+```
+
+The build artifacts are written under `target/release/bundle/`. After the first run, omit `--install-deps` unless the system dependencies change.
+
+> Automatic local Discord token extraction is not yet available on Linux. Use the CDP login flow instead.
 
 ---
 

@@ -1056,6 +1056,27 @@ pub fn run() {
             quest_state: Mutex::new(None),
         })
         .setup(|app| {
+            // `pnpm tauri:dev` rebuilds the bundled launcher before Tauri
+            // starts. If a Linux launcher entry was created previously,
+            // refresh its binary, desktop entry, and icon on every dev start
+            // so developers always test the current launcher build.
+            #[cfg(all(debug_assertions, target_os = "linux"))]
+            if let Some((port, channel)) = linux_existing_cdp_launcher_options() {
+                let app_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    match create_discord_cdp_launcher_shortcut_internal(&app_handle, port, channel)
+                        .await
+                    {
+                        Ok(path) => {
+                            println!("[cdp-launcher-dev] Refreshed existing Linux launcher: {path}")
+                        }
+                        Err(error) => eprintln!(
+                            "[cdp-launcher-dev] Failed to refresh existing Linux launcher: {error}"
+                        ),
+                    }
+                });
+            }
+
             // Set random window title in stealth mode
             if stealth::is_stealth_mode() {
                 if let Some(window) = app.get_webview_window("main") {
@@ -1440,15 +1461,7 @@ fn stable_cdp_launcher_path() -> Result<std::path::PathBuf, String> {
 
     #[cfg(target_os = "linux")]
     {
-        let data_home = std::env::var_os("XDG_DATA_HOME")
-            .map(std::path::PathBuf::from)
-            .filter(|path| path.is_absolute())
-            .or_else(|| {
-                std::env::var_os("HOME")
-                    .map(|home| std::path::PathBuf::from(home).join(".local").join("share"))
-            })
-            .ok_or_else(|| "Could not determine XDG data home".to_string())?;
-        Ok(data_home
+        Ok(linux_xdg_data_home()?
             .join("discord-quest-helper")
             .join("bin")
             .join("discord-cdp-launcher"))
@@ -1458,6 +1471,69 @@ fn stable_cdp_launcher_path() -> Result<std::path::PathBuf, String> {
     {
         Err("Discord CDP launcher is only supported on Windows, macOS and Linux.".to_string())
     }
+}
+
+#[cfg(target_os = "linux")]
+fn linux_xdg_data_home() -> Result<std::path::PathBuf, String> {
+    std::env::var_os("XDG_DATA_HOME")
+        .map(std::path::PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .map(|home| std::path::PathBuf::from(home).join(".local").join("share"))
+        })
+        .ok_or_else(|| "Could not determine XDG data home".to_string())
+}
+
+#[cfg(target_os = "linux")]
+fn linux_cdp_launcher_desktop_path() -> Result<std::path::PathBuf, String> {
+    Ok(linux_xdg_data_home()?
+        .join("applications")
+        .join("com.masterain.discord-quest-helper.cdp.desktop"))
+}
+
+#[cfg(target_os = "linux")]
+fn linux_existing_cdp_launcher_options(
+) -> Option<(u16, Option<discord_cdp_launch_core::DiscordChannel>)> {
+    let desktop_path = linux_cdp_launcher_desktop_path().ok()?;
+    if !desktop_path.exists() {
+        return None;
+    }
+
+    let contents = std::fs::read_to_string(desktop_path).unwrap_or_default();
+    Some(linux_cdp_launcher_options_from_desktop(&contents))
+}
+
+#[cfg(target_os = "linux")]
+fn linux_cdp_launcher_options_from_desktop(
+    contents: &str,
+) -> (u16, Option<discord_cdp_launch_core::DiscordChannel>) {
+    let mut port = cdp_client::DEFAULT_CDP_PORT;
+    let mut channel = None;
+    let Some(exec) = contents.lines().find_map(|line| line.strip_prefix("Exec=")) else {
+        return (port, channel);
+    };
+    let args: Vec<&str> = exec.split_whitespace().collect();
+
+    for pair in args.windows(2) {
+        match pair[0] {
+            "--port" => {
+                if let Ok(value) = pair[1].parse::<u16>() {
+                    if value != 0 {
+                        port = value;
+                    }
+                }
+            }
+            "--channel" => {
+                if let Ok(value) = discord_cdp_launch_core::parse_discord_channel(Some(pair[1])) {
+                    channel = value;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    (port, channel)
 }
 
 fn find_bundled_cdp_launcher(app_handle: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
@@ -1721,20 +1797,28 @@ fn create_platform_cdp_launcher_shortcut(
         return Err("CDP port must be between 1 and 65535.".to_string());
     }
 
-    let data_home = std::env::var_os("XDG_DATA_HOME")
-        .map(std::path::PathBuf::from)
-        .filter(|path| path.is_absolute())
-        .or_else(|| {
-            std::env::var_os("HOME")
-                .map(|home| std::path::PathBuf::from(home).join(".local").join("share"))
-        })
-        .ok_or_else(|| "Could not determine XDG data home".to_string())?;
+    let data_home = linux_xdg_data_home()?;
 
     let applications_dir = data_home.join("applications");
     std::fs::create_dir_all(&applications_dir)
         .map_err(|e| format!("Failed to create applications directory: {}", e))?;
 
-    let desktop_path = applications_dir.join("com.masterain.discord-quest-helper.cdp.desktop");
+    // Desktop Entry icon names resolve through the freedesktop icon theme, not
+    // through Tauri's bundled resources. Install the launcher's dedicated icon
+    // alongside the .desktop entry so GNOME/KDE do not fall back to a generic
+    // executable icon (especially in dev builds where the main app is not
+    // installed system-wide).
+    const ICON_NAME: &str = "com.masterain.discord-quest-helper.cdp";
+    const ICON_BYTES: &[u8] = include_bytes!("../../public/icons/launcher-logo.png");
+    let icon_theme_dir = data_home.join("icons").join("hicolor");
+    let icon_dir = icon_theme_dir.join("512x512").join("apps");
+    std::fs::create_dir_all(&icon_dir)
+        .map_err(|e| format!("Failed to create launcher icon directory: {}", e))?;
+    let icon_path = icon_dir.join(format!("{ICON_NAME}.png"));
+    std::fs::write(&icon_path, ICON_BYTES)
+        .map_err(|e| format!("Failed to install CDP launcher icon: {}", e))?;
+
+    let desktop_path = linux_cdp_launcher_desktop_path()?;
 
     // `channel` is a Rust enum, so `as_str()` is always a fixed, safe token.
     let channel_arg = channel.map(|c| c.as_str()).unwrap_or("auto");
@@ -1758,7 +1842,7 @@ fn create_platform_cdp_launcher_shortcut(
          Comment=Launch Discord with CDP enabled\n\
          Exec={exec} --port {port} --channel {channel}\n\
          TryExec={tryexec}\n\
-         Icon=com.masterain.discord-quest-helper\n\
+         Icon={icon}\n\
          Terminal=false\n\
          Categories=Utility;\n\
          StartupNotify=true\n",
@@ -1766,9 +1850,14 @@ fn create_platform_cdp_launcher_shortcut(
         port = port,
         channel = channel_arg,
         tryexec = launcher_display,
+        // Use the absolute path in the desktop entry. GNOME Shell can retain a
+        // generic fallback cached before a newly installed themed icon exists;
+        // a direct path avoids that stale theme lookup entirely.
+        icon = icon_path.to_string_lossy(),
     );
 
-    // Write to a temp file in the same directory, then atomically rename into place.
+    // Write to a temp file in the same directory, then atomically replace any
+    // existing desktop entry. `rename` replaces the destination on Linux.
     let tmp_path = applications_dir.join(format!(
         ".com.masterain.discord-quest-helper.cdp.desktop.{}.tmp",
         std::process::id()
@@ -1789,6 +1878,10 @@ fn create_platform_cdp_launcher_shortcut(
     // Best-effort refresh of the desktop database; failure is non-fatal.
     let _ = std::process::Command::new("update-desktop-database")
         .arg(&applications_dir)
+        .status();
+    let _ = std::process::Command::new("gtk-update-icon-cache")
+        .args(["-f", "-t"])
+        .arg(&icon_theme_dir)
         .status();
 
     Ok(desktop_path.to_string_lossy().to_string())
@@ -1820,7 +1913,8 @@ fn create_platform_cdp_launcher_shortcut(
 
 #[cfg(all(test, target_os = "linux"))]
 mod desktop_entry_tests {
-    use super::desktop_entry_exec_quote;
+    use super::{desktop_entry_exec_quote, linux_cdp_launcher_options_from_desktop};
+    use discord_cdp_launch_core::DiscordChannel;
 
     #[test]
     fn quotes_plain_paths() {
@@ -1845,6 +1939,26 @@ mod desktop_entry_tests {
         assert_eq!(
             desktop_entry_exec_quote("/opt/My %f App/launcher"),
             "\"/opt/My %%f App/launcher\""
+        );
+    }
+
+    #[test]
+    fn keeps_existing_launcher_port_and_channel_during_dev_refresh() {
+        let desktop = r#"[Desktop Entry]
+Exec="/opt/Discord Quest Helper/discord-cdp-launcher" --port 9444 --channel canary
+"#;
+        assert_eq!(
+            linux_cdp_launcher_options_from_desktop(desktop),
+            (9444, Some(DiscordChannel::Canary))
+        );
+    }
+
+    #[test]
+    fn invalid_existing_launcher_options_fall_back_to_defaults() {
+        let desktop = "Exec=/tmp/launcher --port 0 --channel unsupported\n";
+        assert_eq!(
+            linux_cdp_launcher_options_from_desktop(desktop),
+            (super::cdp_client::DEFAULT_CDP_PORT, None)
         );
     }
 }

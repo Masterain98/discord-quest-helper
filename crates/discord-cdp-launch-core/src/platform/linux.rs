@@ -12,7 +12,7 @@ use std::ffi::{OsStr, OsString};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 /// Native install layout for a single Discord channel.
@@ -388,9 +388,15 @@ pub(crate) fn spawn(
     allow_origins: bool,
 ) -> Result<u32, LaunchError> {
     let mut command = Command::new(&install.executable_path);
+    apply_desktop_proxy_if_missing(&mut command);
     command
         .current_dir(&install.working_dir)
-        .args(build_launch_args(port, allow_origins));
+        .args(build_launch_args(port, allow_origins))
+        // Discord/Electron is a GUI child process. Inheriting the launcher's
+        // terminal floods Tauri dev output with Chromium GPU/shared-surface
+        // and preload diagnostics that are unrelated to quest simulation.
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
     command
         .spawn()
         .map(|child| child.id())
@@ -398,4 +404,125 @@ pub(crate) fn spawn(
             path: install.executable_path.clone(),
             source,
         })
+}
+
+/// Applications launched from GNOME's app grid do not necessarily inherit the
+/// proxy variables present in a terminal. Discord's native updater uses those
+/// variables but does not read GNOME GSettings itself, which can leave its
+/// splash screen retrying forever even though the desktop proxy is configured.
+/// Preserve each explicit environment value and only synthesize missing
+/// variables from GNOME's manual proxy settings.
+fn apply_desktop_proxy_if_missing(command: &mut Command) {
+    if gsettings_string("org.gnome.system.proxy", "mode").as_deref() != Some("manual") {
+        return;
+    }
+
+    if proxy_env_missing("HTTP_PROXY", "http_proxy") {
+        if let Some(proxy) = gsettings_proxy_url("http", "http") {
+            command.env("HTTP_PROXY", &proxy).env("http_proxy", proxy);
+        }
+    }
+    if proxy_env_missing("HTTPS_PROXY", "https_proxy") {
+        if let Some(proxy) = gsettings_proxy_url("https", "http") {
+            command.env("HTTPS_PROXY", &proxy).env("https_proxy", proxy);
+        }
+    }
+    if proxy_env_missing("ALL_PROXY", "all_proxy") {
+        if let Some(proxy) = gsettings_proxy_url("socks", "socks5") {
+            command.env("ALL_PROXY", &proxy).env("all_proxy", proxy);
+        }
+    }
+
+    if proxy_env_missing("NO_PROXY", "no_proxy") {
+        if let Some(ignore_hosts) = gsettings_string_list("org.gnome.system.proxy", "ignore-hosts")
+        {
+            command
+                .env("NO_PROXY", &ignore_hosts)
+                .env("no_proxy", ignore_hosts);
+        }
+    }
+}
+
+fn proxy_env_missing(upper: &str, lower: &str) -> bool {
+    std::env::var_os(upper).is_none() && std::env::var_os(lower).is_none()
+}
+
+fn gsettings_proxy_url(section: &str, scheme: &str) -> Option<String> {
+    let schema = format!("org.gnome.system.proxy.{section}");
+    let host = gsettings_string(&schema, "host")?;
+    if host.is_empty() {
+        return None;
+    }
+    let port = gsettings_raw(&schema, "port")?.parse::<u16>().ok()?;
+    if port == 0 {
+        return None;
+    }
+    Some(format!("{scheme}://{host}:{port}"))
+}
+
+fn gsettings_string(schema: &str, key: &str) -> Option<String> {
+    let value = gsettings_raw(schema, key)?;
+    parse_gvariant_string(&value)
+}
+
+fn gsettings_string_list(schema: &str, key: &str) -> Option<String> {
+    let value = gsettings_raw(schema, key)?;
+    parse_gvariant_string_list(&value)
+}
+
+fn parse_gvariant_string_list(value: &str) -> Option<String> {
+    let inner = value.trim().strip_prefix('[')?.strip_suffix(']')?;
+    let values: Vec<String> = inner
+        .split(',')
+        .filter_map(|item| parse_gvariant_string(item.trim()))
+        .filter(|item| !item.is_empty())
+        .collect();
+    (!values.is_empty()).then(|| values.join(","))
+}
+
+fn gsettings_raw(schema: &str, key: &str) -> Option<String> {
+    let output = Command::new("gsettings")
+        .args(["get", schema, key])
+        .output()
+        .ok()?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+fn parse_gvariant_string(value: &str) -> Option<String> {
+    let value = value.trim();
+    if value.len() < 2 {
+        return None;
+    }
+    let quote = value.as_bytes()[0];
+    if !matches!(quote, b'\'' | b'"') || value.as_bytes()[value.len() - 1] != quote {
+        return None;
+    }
+    Some(value[1..value.len() - 1].to_string())
+}
+
+#[cfg(test)]
+mod proxy_setting_tests {
+    use super::{parse_gvariant_string, parse_gvariant_string_list};
+
+    #[test]
+    fn parses_gsettings_strings() {
+        assert_eq!(parse_gvariant_string("'manual'"), Some("manual".into()));
+        assert_eq!(
+            parse_gvariant_string("\"localhost\""),
+            Some("localhost".into())
+        );
+        assert_eq!(parse_gvariant_string("manual"), None);
+    }
+
+    #[test]
+    fn parses_gsettings_ignore_host_list_for_no_proxy() {
+        assert_eq!(
+            parse_gvariant_string_list("['localhost', '127.0.0.0/8', '::1']"),
+            Some("localhost,127.0.0.0/8,::1".into())
+        );
+        assert_eq!(parse_gvariant_string_list("[]"), None);
+    }
 }

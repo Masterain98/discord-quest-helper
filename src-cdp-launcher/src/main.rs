@@ -18,10 +18,10 @@ fn main() {
     match run(strings) {
         Ok(code) => std::process::exit(code),
         Err(error) => {
-            #[cfg(target_os = "windows")]
+            #[cfg(any(target_os = "windows", target_os = "linux"))]
             dialogs::show_info_dialog(strings.title, &error);
 
-            #[cfg(not(target_os = "windows"))]
+            #[cfg(not(any(target_os = "windows", target_os = "linux")))]
             eprintln!("{error}");
 
             std::process::exit(1);
@@ -46,10 +46,10 @@ fn run(strings: &Strings) -> Result<i32, String> {
     }
 
     if cdp_launch::is_cdp_available(options.port) {
-        #[cfg(target_os = "windows")]
+        #[cfg(any(target_os = "windows", target_os = "linux"))]
         dialogs::show_info_dialog(strings.title, strings.cdp_already_running);
 
-        #[cfg(not(target_os = "windows"))]
+        #[cfg(not(any(target_os = "windows", target_os = "linux")))]
         println!("{}", strings.cdp_already_running);
 
         return Ok(0);
@@ -59,12 +59,12 @@ fn run(strings: &Strings) -> Result<i32, String> {
         cdp_launch::is_discord_running(options.channel).map_err(|error| error.to_string())?;
     if running && !options.restart {
         let want_restart = {
-            #[cfg(target_os = "windows")]
+            #[cfg(any(target_os = "windows", target_os = "linux"))]
             {
                 dialogs::show_confirm_dialog(strings.title, strings.restart_confirm)
             }
 
-            #[cfg(not(target_os = "windows"))]
+            #[cfg(not(any(target_os = "windows", target_os = "linux")))]
             {
                 eprintln!(
                     "Discord is already running without CDP. Re-run with --restart to close it and relaunch with CDP."

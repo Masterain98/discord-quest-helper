@@ -12,7 +12,7 @@
   },
   "auth": {
     "cdp_login": "Log in with Discord Client",
-    "cdp_login_hint": "Use the Discord app you're already signed in to — no token needed. Requires Discord running with CDP.",
+    "cdp_login_hint": "Use the Discord app you're already signed in to — no token needed. Discord will be launched with CDP automatically when needed.",
     "auto_detect": "Auto Detect Token",
     "login": "Login",
     "or_manually": "Or Manually",

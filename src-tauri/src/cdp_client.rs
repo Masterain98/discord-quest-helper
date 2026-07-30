@@ -4,9 +4,7 @@
 //! After starting Discord with the --remote-debugging-port parameter, it can communicate with the client via WebSocket.
 
 use anyhow::{Context, Result};
-use discord_cdp_launch_core::{
-    is_discord_target, pick_discord_target, CdpTarget,
-};
+use discord_cdp_launch_core::{is_discord_target, pick_discord_target, CdpTarget};
 use futures_util::{future::join_all, SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -689,40 +687,59 @@ impl std::fmt::Debug for CapturedDiscordSession {
     }
 }
 
-/// JavaScript nudge: ask Discord's own HTTP client to issue an authenticated,
-/// side-effect-free `GET /users/@me`. The token is **not** returned to JS — the
-/// Rust-side Network domain captures the `Authorization` header. Best-effort:
-/// if Discord's internal module can't be located, natural background requests
-/// still satisfy the capture.
-const JS_TRIGGER_AUTH_REQUEST: &str = r#"
+/// Read the current Discord session from the client's in-memory auth store.
+///
+/// Discord's webpack export shape changes frequently, so inspect the root
+/// export, its default export, and its named exports. The value travels only
+/// over the loopback CDP WebSocket into Rust; it is never returned across Tauri
+/// IPC or logged. Natural Network events remain the fallback if no compatible
+/// auth store is found.
+const JS_READ_AUTH_TOKEN: &str = r#"
 (() => {
     try {
         if (typeof window === "undefined" || !window.webpackChunkdiscord_app) {
-            return "no-webpack";
+            return "";
         }
         const req = webpackChunkdiscord_app.push([[Symbol()], {}, r => r]);
         webpackChunkdiscord_app.pop();
         for (const m of Object.values(req.c)) {
             try {
-                const d = m && m.exports && m.exports.default;
-                if (
-                    d &&
-                    typeof d.get === "function" &&
-                    typeof d.post === "function" &&
-                    typeof d.patch === "function" &&
-                    typeof d.put === "function"
-                ) {
-                    d.get({ url: "/users/@me" }).catch(() => {});
-                    return "triggered";
+                const root = m && m.exports;
+                const candidates = [
+                    root,
+                    root && root.default,
+                    ...(root && typeof root === "object" ? Object.values(root) : [])
+                ];
+                for (const candidate of candidates) {
+                    if (!candidate || typeof candidate.getToken !== "function") continue;
+                    const token = candidate.getToken();
+                    if (typeof token === "string" && token.length > 20) return token;
                 }
             } catch (e) { /* keep scanning */ }
         }
-        return "no-module";
+        return "";
     } catch (e) {
-        return "err:" + String(e);
+        return "";
     }
 })()
 "#;
+
+const AUTH_TOKEN_EVALUATION_ID: u64 = 2;
+
+/// Extract a non-empty string from our `Runtime.evaluate` response. Responses
+/// to every other CDP command/event are ignored. The caller immediately wraps
+/// the value in `Zeroizing` so it cannot leak through allocator reuse.
+fn extract_auth_from_runtime_response(text: &str) -> Option<Zeroizing<String>> {
+    let json: serde_json::Value = serde_json::from_str(text).ok()?;
+    if json.get("id").and_then(|value| value.as_u64()) != Some(AUTH_TOKEN_EVALUATION_ID) {
+        return None;
+    }
+    let token = json.get("result")?.get("result")?.get("value")?.as_str()?;
+    if token.len() <= 20 || token == "undefined" {
+        return None;
+    }
+    Some(Zeroizing::new(token.to_string()))
+}
 
 /// Case-insensitive header lookup that rejects empty / `undefined` values.
 fn cdp_header_value(
@@ -869,10 +886,10 @@ fn extract_auth_from_cdp_event(
 /// Capture the currently logged-in Discord session over CDP.
 ///
 /// Enables the Network domain on the primary Discord target and watches for a
-/// first-party authenticated API request. Idle clients are nudged with a
-/// side-effect-free `GET /users/@me` after a short delay (over the *same*
-/// WebSocket — a CDP target only accepts one client at a time). The raw token
-/// never leaves Rust; callers validate it and keep it in the API client only.
+/// first-party authenticated API request. For idle clients, a Runtime query
+/// reads Discord's in-memory auth store over the same loopback WebSocket. The
+/// raw token never leaves Rust; callers validate it and keep it in the API
+/// client only.
 pub async fn capture_discord_auth_via_cdp(
     port: u16,
     timeout: Duration,
@@ -907,37 +924,40 @@ pub async fn capture_discord_auth_via_cdp(
         .await
         .context("Failed to send Network.enable")?;
 
+    // An idle Discord client may not emit any REST request during the capture
+    // window. Query its in-memory auth store immediately; Network events below
+    // remain a compatibility fallback for future webpack changes.
+    write
+        .send(Message::Text(
+            serde_json::json!({
+                "id": AUTH_TOKEN_EVALUATION_ID,
+                "method": "Runtime.evaluate",
+                "params": {
+                    "expression": JS_READ_AUTH_TOKEN,
+                    "returnByValue": true,
+                    "awaitPromise": false
+                }
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .context("Failed to query Discord auth state over CDP")?;
+
     let mut correlator = CdpAuthCorrelator::default();
 
     let outcome = tokio::time::timeout(timeout, async {
-        // Fire the JS nudge once, a couple of seconds in, so a chatty client's
-        // natural request is preferred but an idle one still gets triggered.
-        let trigger_delay = tokio::time::sleep(Duration::from_millis(2500));
-        tokio::pin!(trigger_delay);
-        let mut triggered = false;
-
-        loop {
-            tokio::select! {
-                _ = &mut trigger_delay, if !triggered => {
-                    triggered = true;
-                    let cmd = serde_json::json!({
-                        "id": 2,
-                        "method": "Runtime.evaluate",
-                        "params": { "expression": JS_TRIGGER_AUTH_REQUEST, "awaitPromise": false }
-                    });
-                    let _ = write.send(Message::Text(cmd.to_string().into())).await;
-                }
-                maybe_msg = read.next() => {
-                    let Some(msg) = maybe_msg else { break };
-                    let text = match msg {
-                        Ok(Message::Text(text)) => text,
-                        Ok(_) => continue,
-                        Err(_) => break,
-                    };
-                    if let Some(found) = extract_auth_from_cdp_event(&text, &mut correlator) {
-                        return Some(found);
-                    }
-                }
+        while let Some(msg) = read.next().await {
+            let text = match msg {
+                Ok(Message::Text(text)) => text,
+                Ok(_) => continue,
+                Err(_) => break,
+            };
+            if let Some(authorization) = extract_auth_from_runtime_response(&text) {
+                return Some((authorization, None));
+            }
+            if let Some(found) = extract_auth_from_cdp_event(&text, &mut correlator) {
+                return Some(found);
             }
         }
         None
@@ -1735,5 +1755,35 @@ mod tests {
             found.as_ref().map(|(auth, _)| auth.as_str()),
             Some("token-inline")
         );
+    }
+
+    #[test]
+    fn test_extract_auth_from_runtime_response_accepts_only_our_evaluation() {
+        let response = serde_json::json!({
+            "id": AUTH_TOKEN_EVALUATION_ID,
+            "result": { "result": { "type": "string", "value": "a-valid-looking-session-token" } }
+        })
+        .to_string();
+        let token = extract_auth_from_runtime_response(&response).unwrap();
+        assert_eq!(token.as_str(), "a-valid-looking-session-token");
+
+        let unrelated = serde_json::json!({
+            "id": 99,
+            "result": { "result": { "type": "string", "value": "must-not-be-read" } }
+        })
+        .to_string();
+        assert!(extract_auth_from_runtime_response(&unrelated).is_none());
+    }
+
+    #[test]
+    fn test_extract_auth_from_runtime_response_rejects_empty_or_short_values() {
+        for value in ["", "undefined", "too-short"] {
+            let response = serde_json::json!({
+                "id": AUTH_TOKEN_EVALUATION_ID,
+                "result": { "result": { "type": "string", "value": value } }
+            })
+            .to_string();
+            assert!(extract_auth_from_runtime_response(&response).is_none());
+        }
     }
 }

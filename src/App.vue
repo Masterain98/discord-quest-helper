@@ -10,7 +10,13 @@ import { Input } from '@/components/ui/input'
 import { useAuthStore } from '@/stores/auth'
 import { useQuestsStore } from '@/stores/quests'
 import { useVersionStore } from '@/stores/version'
-import type { ExtractedAccount } from '@/api/tauri'
+import {
+  checkCdpStatus,
+  isDiscordRunning,
+  launchDiscordCdp,
+  restartDiscordCdp,
+  type ExtractedAccount,
+} from '@/api/tauri'
 import { useI18n } from 'vue-i18n'
 import { Moon, Sun, Loader2, Languages } from 'lucide-vue-next'
 import AccountMenu from './components/AccountMenu.vue'
@@ -25,6 +31,16 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 
 const { t, locale } = useI18n()
 const currentTab = ref<'home' | 'game' | 'settings' | 'debug'>('home')
@@ -55,6 +71,8 @@ const selectedAccountId = ref<string | null>(null)
 
 // Manual login
 const manualTokenInput = ref('')
+const cdpLoginPreparing = ref(false)
+const cdpLoginRestartDialogOpen = ref(false)
 
 async function handleManualLogin() {
   if (!manualTokenInput.value) return
@@ -67,7 +85,54 @@ async function handleAutoDetect() {
 }
 
 async function handleCdpLogin() {
-  await authStore.loginViaCdp()
+  if (cdpLoginPreparing.value || authStore.loading) return
+  cdpLoginPreparing.value = true
+  authStore.error = null
+  try {
+    const status = await checkCdpStatus(questsStore.cdpPort)
+    // A reachable CDP endpoint may briefly report no selected Discord target
+    // while Discord is initializing. Reuse it and let the login command perform
+    // the authoritative target/session check instead of restarting Discord.
+    if (!status.available) {
+      try {
+        // This command is idempotent: if Discord CDP is already ready, the
+        // launcher core returns AlreadyAvailable without restarting it.
+        await launchDiscordCdp(questsStore.cdpPort, 'auto')
+      } catch (launchError) {
+        // Close the race where CDP became available between the first probe and
+        // the launch attempt. A reachable endpoint must never trigger restart.
+        const retryStatus = await checkCdpStatus(questsStore.cdpPort)
+        if (!retryStatus.available) {
+          const running = await isDiscordRunning('auto')
+          if (running) {
+            cdpLoginRestartDialogOpen.value = true
+            return
+          }
+          throw launchError
+        }
+      }
+    }
+    await authStore.loginViaCdp()
+  } catch (error) {
+    authStore.error = error instanceof Error ? error.message : String(error)
+  } finally {
+    cdpLoginPreparing.value = false
+  }
+}
+
+async function confirmCdpLoginRestart() {
+  if (cdpLoginPreparing.value || authStore.loading) return
+  cdpLoginRestartDialogOpen.value = false
+  cdpLoginPreparing.value = true
+  authStore.error = null
+  try {
+    await restartDiscordCdp(questsStore.cdpPort, 'auto')
+    await authStore.loginViaCdp()
+  } catch (error) {
+    authStore.error = error instanceof Error ? error.message : String(error)
+  } finally {
+    cdpLoginPreparing.value = false
+  }
 }
 
 function toggleTheme(event: MouseEvent) {
@@ -197,6 +262,27 @@ function openSettingsSection(section: 'discord_integration' | 'quest_behavior' |
 
 <template>
   <div class="h-screen bg-background text-foreground font-sans flex flex-col overflow-hidden">
+    <AlertDialog
+      :open="cdpLoginRestartDialogOpen"
+      @update:open="cdpLoginRestartDialogOpen = $event"
+    >
+      <AlertDialogContent class="max-w-[520px]">
+        <AlertDialogHeader>
+          <AlertDialogTitle>{{ t('settings.cdp_dialog_title_disconnected') }}</AlertDialogTitle>
+          <AlertDialogDescription>{{ t('settings.cdp_dialog_desc_disconnected') }}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>{{ t('dialog.cancel') }}</AlertDialogCancel>
+          <AlertDialogAction
+            :disabled="cdpLoginPreparing || authStore.loading"
+            @click="confirmCdpLoginRestart"
+          >
+            {{ t('settings.cdp_dialog_confirm') }}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+
     <TitleBar />
     
     <div class="flex-1 overflow-auto">
@@ -346,9 +432,9 @@ function openSettingsSection(section: 'discord_integration' | 'quest_behavior' |
               :variant="showAutoDetect ? 'outline' : 'default'"
               class="w-full gap-2"
               @click="handleCdpLogin"
-              :disabled="authStore.loading"
+              :disabled="authStore.loading || cdpLoginPreparing"
             >
-              <Loader2 v-if="authStore.loading" class="w-4 h-4 animate-spin" />
+              <Loader2 v-if="authStore.loading || cdpLoginPreparing" class="w-4 h-4 animate-spin" />
               {{ t('auth.cdp_login') }}
             </Button>
             <p class="text-center text-xs text-muted-foreground">{{ t('auth.cdp_login_hint') }}</p>
@@ -416,5 +502,3 @@ function openSettingsSection(section: 'discord_integration' | 'quest_behavior' |
   to { opacity: 1; transform: translateY(0); }
 }
 </style>
-
-
