@@ -303,6 +303,7 @@
     "download": "Güncellemeyi İndir"
   },
   "game_sim": {
+    "platform_capabilities_unavailable": "Platform özellikleri kullanılamıyor. Uygulamayı yeniden başlatıp tekrar deneyin.",
     "title": "Oyun Simülatörü",
     "select_title": "Oyunu Seç",
     "search": "Oyun ara...",

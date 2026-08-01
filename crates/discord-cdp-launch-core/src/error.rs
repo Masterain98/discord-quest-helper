@@ -68,9 +68,10 @@ impl fmt::Display for LaunchError {
                 write!(formatter, "Could not find Discord installation.")
             }
             Self::DiscordAlreadyRunning { channel } => {
-                let channel = channel
-                    .map(DiscordChannel::display_name)
-                    .unwrap_or("Discord");
+                let channel = channel.map_or_else(
+                    || "Discord".to_string(),
+                    |channel| format!("Discord {}", channel.display_name()),
+                );
                 write!(
                     formatter,
                     "{channel} is already running without CDP. Restart it to close it and relaunch with CDP."
@@ -119,5 +120,23 @@ impl Error for LaunchError {
             }
             _ => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn running_channel_errors_keep_the_discord_product_name() {
+        let stable = LaunchError::DiscordAlreadyRunning {
+            channel: Some(DiscordChannel::Stable),
+        };
+        let any = LaunchError::DiscordAlreadyRunning { channel: None };
+
+        assert!(stable
+            .to_string()
+            .starts_with("Discord Stable is already running"));
+        assert!(any.to_string().starts_with("Discord is already running"));
     }
 }

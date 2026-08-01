@@ -303,6 +303,7 @@
     "download": "アップデートをダウンロード"
   },
   "game_sim": {
+    "platform_capabilities_unavailable": "プラットフォーム機能を利用できません。アプリを再起動して、もう一度お試しください。",
     "title": "ゲームシミュレーター",
     "select_title": "ゲームを選択",
     "search": "ゲームを検索...",

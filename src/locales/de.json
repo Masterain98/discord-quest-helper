@@ -303,6 +303,7 @@
     "download": "Laden Sie das Update herunter"
   },
   "game_sim": {
+    "platform_capabilities_unavailable": "Plattformfunktionen sind nicht verfügbar. Starte die App neu und versuche es erneut.",
     "title": "Spielsimulator",
     "select_title": "Spiel auswählen",
     "search": "Spiele suchen...",

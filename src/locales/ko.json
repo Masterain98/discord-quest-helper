@@ -303,6 +303,7 @@
     "download": "업데이트 다운로드"
   },
   "game_sim": {
+    "platform_capabilities_unavailable": "플랫폼 기능을 사용할 수 없습니다. 앱을 다시 시작한 후 재시도하세요.",
     "title": "게임 시뮬레이터",
     "select_title": "게임 선택",
     "search": "게임 검색...",

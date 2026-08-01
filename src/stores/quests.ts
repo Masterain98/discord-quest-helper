@@ -1148,7 +1148,6 @@ export const useQuestsStore = defineStore('quests', () => {
     // with no active quest and no way to retry from the dialog.
     await initCdpMode()
     if (!cdpAvailable.value) {
-      gameQuestMode.value = 'cdp' // keep the user's chosen mode selected
       error.value =
         'CDP mode is not available. Start Discord with CDP enabled (Settings → Discord integration), then try again.'
       return

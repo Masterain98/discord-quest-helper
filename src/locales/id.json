@@ -303,6 +303,7 @@
     "download": "Unduh Pembaruan"
   },
   "game_sim": {
+    "platform_capabilities_unavailable": "Kemampuan platform tidak tersedia. Mulai ulang aplikasi lalu coba lagi.",
     "title": "Simulator Permainan",
     "select_title": "Pilih Permainan",
     "search": "Cari permainan...",

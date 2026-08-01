@@ -124,8 +124,15 @@ pub(crate) fn show_confirm_dialog(title: &str, message: &str) -> Result<bool, St
 pub(crate) fn show_confirm_dialog(title: &str, message: &str) -> Result<bool, String> {
     zenity_dialog("--question", title, message)
         .status()
-        .map(|status| status.success())
         .map_err(|error| format!("Could not show the Zenity confirmation dialog: {error}"))
+        .and_then(|status| match status.code() {
+            Some(0) => Ok(true),
+            Some(1) => Ok(false),
+            Some(code) => Err(format!(
+                "The Zenity confirmation dialog failed with exit code {code}."
+            )),
+            None => Err("The Zenity confirmation dialog was terminated by a signal.".to_string()),
+        })
 }
 
 #[cfg(target_os = "windows")]

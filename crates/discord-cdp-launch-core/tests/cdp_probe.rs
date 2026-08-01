@@ -1,7 +1,7 @@
 use discord_cdp_launch_core::{CdpProbe, CdpProbeStatus, StdCdpProbe};
 use std::io::{Read, Write};
 use std::net::TcpListener;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 fn serve_once(response: Option<&'static str>, delay: Duration) -> u16 {
     let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
@@ -124,10 +124,15 @@ fn complete_content_length_does_not_wait_for_connection_close() {
         let mut request = [0_u8; 1024];
         let _ = stream.read(&mut request);
         stream.write_all(response.as_bytes()).unwrap();
-        std::thread::sleep(Duration::from_millis(200));
+        std::thread::sleep(Duration::from_secs(2));
     });
+    let started = Instant::now();
     assert!(matches!(
-        fast_probe().probe(port),
+        StdCdpProbe::with_timeouts(Duration::from_millis(500), Duration::from_secs(3)).probe(port),
         CdpProbeStatus::DiscordReady { .. }
     ));
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "probe waited for the server to close the connection"
+    );
 }

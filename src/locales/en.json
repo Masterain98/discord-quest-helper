@@ -301,6 +301,7 @@
     "download": "Download Update"
   },
   "game_sim": {
+    "platform_capabilities_unavailable": "Platform capabilities are unavailable. Restart the app and try again.",
     "title": "Game Simulator",
     "select_title": "Select Game",
     "search": "Search games...",

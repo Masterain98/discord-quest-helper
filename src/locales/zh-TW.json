@@ -303,6 +303,7 @@
     "download": "下載更新"
   },
   "game_sim": {
+    "platform_capabilities_unavailable": "平台功能資訊無法使用。請重新啟動應用程式後再試。",
     "title": "遊戲模擬",
     "select_title": "選擇遊戲",
     "search": "搜尋遊戲...",

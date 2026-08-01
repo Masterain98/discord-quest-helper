@@ -303,6 +303,7 @@
     "download": "Baixar atualização"
   },
   "game_sim": {
+    "platform_capabilities_unavailable": "Os recursos da plataforma estão indisponíveis. Reinicie o aplicativo e tente novamente.",
     "title": "Simulador de jogo",
     "select_title": "Selecione o jogo",
     "search": "Pesquisar jogos...",

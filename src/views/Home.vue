@@ -567,7 +567,7 @@ import QuestListHeader from '@/components/home/QuestListHeader.vue'
 import QuestViewTabs from '@/components/home/QuestViewTabs.vue'
 import QuestCard from '@/components/QuestCard.vue'
 import QuestProgress from '@/components/QuestProgress.vue'
-import type { DetectableGame, Quest } from '@/api/tauri'
+import type { DetectableGame, PlatformCapabilities, Quest } from '@/api/tauri'
 import {
   acceptQuest as acceptQuestApi,
   claimQuestReward,
@@ -632,9 +632,7 @@ const toast = useToastStore()
 // native `linux` only; Windows/macOS: win32). Keeping the pre-selection flows on
 // this helper prevents them from offering (or auto-picking) a win32 name that
 // startPlay would immediately refuse on Linux.
-function simulationExesFor(game: DetectableGame) {
-  const capabilities = questsStore.platformCapabilities
-  if (!capabilities) return []
+function simulationExesFor(game: DetectableGame, capabilities: PlatformCapabilities) {
   const { executableOsPriority: priority, os: hostOs } = capabilities
   return getSimulationExecutables(game.executables, hostOs, priority)
 }
@@ -1353,7 +1351,8 @@ async function confirmBatchComplete() {
 async function preselectExesForGameQuests(gameQuests: Quest[]): Promise<void> {
   // Capabilities drive the win32/linux rule below, so make sure they're loaded
   // before deciding what to offer (resolves instantly once cached).
-  await questsStore.initPlatformCapabilities()
+  const capabilities = await questsStore.initPlatformCapabilities()
+  if (!capabilities) throw new Error(t('game_sim.platform_capabilities_unavailable'))
   const gamesList = await questsStore.getDetectableGames()
 
   for (const quest of gameQuests) {
@@ -1363,7 +1362,7 @@ async function preselectExesForGameQuests(gameQuests: Quest[]): Promise<void> {
     const game = gamesList.find(g => g.id === appId)
     if (!game) continue
 
-    const simExes = simulationExesFor(game)
+    const simExes = simulationExesFor(game, capabilities)
 
     if (simExes.length > 1) {
       // Multiple executables — show selection dialog
@@ -1544,11 +1543,12 @@ async function startQuest(quest: Quest) {
         if (questsStore.gameQuestMode === 'simulate') {
           const appId = quest.config.application?.id
           if (appId) {
-            await questsStore.initPlatformCapabilities()
+            const capabilities = await questsStore.initPlatformCapabilities()
+            if (!capabilities) throw new Error(t('game_sim.platform_capabilities_unavailable'))
             const gamesList = await questsStore.getDetectableGames()
             const game = gamesList.find(g => g.id === appId)
             if (game) {
-              const simExes = simulationExesFor(game)
+              const simExes = simulationExesFor(game, capabilities)
               if (simExes.length > 1) {
                 // Multiple executables — show selection dialog
                 exeSelectOptions.value = simExes.map(e => e.name)

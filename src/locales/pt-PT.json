@@ -303,6 +303,7 @@
     "download": "Transferir atualização"
   },
   "game_sim": {
+    "platform_capabilities_unavailable": "As capacidades da plataforma não estão disponíveis. Reinicie a aplicação e tente novamente.",
     "title": "Simulador de jogo",
     "select_title": "Selecione o jogo",
     "search": "Pesquisar jogos...",

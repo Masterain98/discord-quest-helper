@@ -303,6 +303,7 @@
     "download": "Pobierz aktualizację"
   },
   "game_sim": {
+    "platform_capabilities_unavailable": "Funkcje platformy są niedostępne. Uruchom aplikację ponownie i spróbuj jeszcze raz.",
     "title": "Symulator gry",
     "select_title": "Wybierz opcję Gra",
     "search": "Wyszukaj gry...",

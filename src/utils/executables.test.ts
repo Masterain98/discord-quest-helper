@@ -11,6 +11,13 @@ const lin: DetectableExecutable = { name: 'game', os: 'linux' }
 const mac: DetectableExecutable = { name: 'game.app', os: 'darwin' }
 
 describe('getCompatibleExecutables', () => {
+  it('returns an empty result when the priority list is unavailable', () => {
+    expect(getCompatibleExecutables([win, lin], [])).toEqual({
+      sourceOs: null,
+      executables: [],
+    })
+  })
+
   it('prefers the first OS in the priority list that has a match', () => {
     const result = getCompatibleExecutables([win, lin], ['linux', 'win32'])
     expect(result.sourceOs).toBe('linux')

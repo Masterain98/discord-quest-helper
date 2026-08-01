@@ -951,7 +951,15 @@ pub async fn capture_discord_auth_via_cdp(
             let text = match msg {
                 Ok(Message::Text(text)) => text,
                 Ok(_) => continue,
-                Err(_) => break,
+                Err(error) => {
+                    log(
+                        LogLevel::Warn,
+                        LogCategory::TokenExtraction,
+                        &format!("CDP auto-login WebSocket receive failed: {error}"),
+                        None,
+                    );
+                    break;
+                }
             };
             if let Some(authorization) = extract_auth_from_runtime_response(&text) {
                 return Some((authorization, None));

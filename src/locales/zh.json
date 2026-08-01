@@ -301,6 +301,7 @@
     "download": "下载更新"
   },
   "game_sim": {
+    "platform_capabilities_unavailable": "平台能力信息不可用。请重启应用后重试。",
     "title": "游戏模拟",
     "select_title": "选择游戏",
     "search": "搜索游戏...",

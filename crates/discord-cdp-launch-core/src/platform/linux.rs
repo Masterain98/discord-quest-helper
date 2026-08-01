@@ -343,14 +343,10 @@ pub(crate) fn terminate(channel: Option<DiscordChannel>) -> Result<(), LaunchErr
             }
         }
     }
-    if let Some(error) = first_error {
-        return Err(error);
-    }
-
     let deadline = Instant::now() + TERMINATE_GRACE;
     while Instant::now() < deadline {
         if targets.iter().all(|pid| !process_is_alive(*pid)) {
-            return Ok(());
+            return first_error.map_or(Ok(()), Err);
         }
         std::thread::sleep(Duration::from_millis(100));
     }
@@ -370,14 +366,19 @@ pub(crate) fn terminate(channel: Option<DiscordChannel>) -> Result<(), LaunchErr
             .iter()
             .all(|pid| !process_is_alive(*pid) || !still_matches_discord(*pid, channel, &installs))
         {
-            return Ok(());
+            return first_error.map_or(Ok(()), Err);
         }
         std::thread::sleep(Duration::from_millis(100));
     }
 
-    Err(LaunchError::ShutdownTimeout {
-        timeout: TERMINATE_GRACE,
-    })
+    first_error.map_or_else(
+        || {
+            Err(LaunchError::ShutdownTimeout {
+                timeout: TERMINATE_GRACE,
+            })
+        },
+        Err,
+    )
 }
 
 /// Liveness check via `kill(pid, 0)`, which performs error checking without

@@ -1,6 +1,6 @@
 use crate::launcher::build_launch_args;
 use crate::{DiscordChannel, DiscordInstall, LaunchError};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
 
@@ -133,6 +133,3 @@ fn process_name(channel: DiscordChannel) -> &'static str {
         DiscordChannel::Canary => "Discord Canary",
     }
 }
-
-#[allow(dead_code)]
-fn _path_type_check(_path: &Path) {}

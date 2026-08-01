@@ -677,8 +677,12 @@ async fn run_simulated_game(
     executable_name: String,
     app_id: String,
 ) -> Result<(), String> {
-    game_simulator::run_simulated_game(&name, &path, &executable_name, &app_id)
-        .map_err(|e| format!("Failed to run simulated game: {}", e))
+    tauri::async_runtime::spawn_blocking(move || {
+        game_simulator::run_simulated_game(&name, &path, &executable_name, &app_id)
+    })
+    .await
+    .map_err(|e| format!("Game simulator task failed: {}", e))?
+    .map_err(|e| format!("Failed to run simulated game: {}", e))
 }
 
 /// Stop simulated game

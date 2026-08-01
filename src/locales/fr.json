@@ -303,6 +303,7 @@
     "download": "Télécharger la mise à jour"
   },
   "game_sim": {
+    "platform_capabilities_unavailable": "Les fonctionnalités de la plateforme sont indisponibles. Redémarrez l’application et réessayez.",
     "title": "Simulateur de jeu",
     "select_title": "Sélectionnez un jeu",
     "search": "Rechercher des jeux...",

@@ -41,17 +41,18 @@ const showCreateDialog = ref(false)
 const dialogSavePath = ref('')
 
 onMounted(async () => {
-  const docDir = await documentDir()
-  const separator = await sep()
+  const capabilities = store.initPlatformCapabilities()
+  const [docDir, separator] = await Promise.all([documentDir(), sep()])
   installPathPlaceholder.value = `${docDir}${separator}DiscordQuestGames`
   installPath.value = installPathPlaceholder.value
+  await capabilities
 })
 
 // Executables the simulator can actually launch here: Linux only runs a native
 // `linux` binary (a win32 exe is refused by the quest-start path too), while
 // Windows/macOS stay win32-only.
 const compatibleExecutables = computed(() => {
-  if (!selectedGame.value) return []
+  if (!selectedGame.value || !store.platformCapabilities) return []
   return getSimulationExecutables(selectedGame.value.executables, hostOs.value, executablePriority.value)
 })
 
@@ -101,7 +102,7 @@ onUnmounted(() => document.removeEventListener('mousedown', handleClickOutsideEx
 // Whether the footer action buttons should be shown
 const canProceed = computed(() => {
   if (mode.value === 'custom') return !!customExeName.value
-  if (!selectedGame.value) return false
+  if (!selectedGame.value || !store.platformCapabilities) return false
   // Game has no known executables — allow proceeding with a custom name
   if (!hasCompatibleExecutables.value) return !!selectModeCustomExe.value
   return !!selectedExecutable.value
@@ -115,7 +116,9 @@ function switchMode(m: 'select' | 'custom') {
 
 function selectGame(game: DetectableGame) {
   selectedGame.value = game
-  const compatible = getSimulationExecutables(game.executables, hostOs.value, executablePriority.value)
+  const compatible = store.platformCapabilities
+    ? getSimulationExecutables(game.executables, hostOs.value, executablePriority.value)
+    : []
   selectedExecutable.value = compatible[0]?.name ?? ''
   selectModeCustomExe.value = ''
   error.value = null
@@ -251,8 +254,16 @@ async function handleRunGame() {
                 <div class="text-xs text-muted-foreground font-mono">App ID: {{ selectedGame.id }}</div>
               </div>
 
+              <div v-if="!store.platformCapabilitiesReady" class="text-center py-4 text-muted-foreground">
+                {{ t('general.loading') }}
+              </div>
+
+              <div v-else-if="!store.platformCapabilities" class="p-3 bg-destructive/10 text-destructive rounded-md text-sm">
+                {{ t('game_sim.platform_capabilities_unavailable') }}
+              </div>
+
               <!-- No simulator-compatible executables — let user enter a custom name -->
-              <template v-if="!hasCompatibleExecutables">
+              <template v-else-if="!hasCompatibleExecutables">
                 <div class="p-3 bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 rounded-md text-sm border border-yellow-500/20 space-y-1">
                   <p>{{ isWin32OnlyOnLinux ? t('game_sim.no_linux_exe_hint') : t('game_sim.no_exe_hint') }}</p>
                   <p>{{ t('game_sim.no_exe_custom_warning') }}</p>

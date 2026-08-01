@@ -20,7 +20,7 @@ const output = execFileSync(
 const forbidden = output
   .split(/\r?\n/)
   .map(line => line.trim())
-  .filter(line => line.startsWith('tauri ') || line.startsWith('tauri-plugin-'));
+  .filter(line => /^tauri(?:\s|-)/.test(line));
 
 if (forbidden.length > 0) {
   throw new Error(`discord-cdp-launch-core must not depend on Tauri:\n${forbidden.join('\n')}`);
