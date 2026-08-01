@@ -708,7 +708,9 @@ async fn fetch_detectable_games(state: State<'_, AppState>) -> Result<Vec<Detect
 
     // ── Unauthenticated fallback ──────────────────────────────────────────
     let http = reqwest::Client::builder()
-        .user_agent(super_properties::discord_user_agent(super_properties::DEFAULT_CLIENT_VERSION))
+        .user_agent(super_properties::discord_user_agent(
+            super_properties::DEFAULT_CLIENT_VERSION,
+        ))
         .connect_timeout(std::time::Duration::from_secs(8))
         .timeout(std::time::Duration::from_secs(20))
         .build()
@@ -1403,9 +1405,7 @@ async fn install_discord_cdp_launcher_internal(
     let source = find_bundled_cdp_launcher(app_handle)?;
     let target = stable_cdp_launcher_path()?;
 
-    let source_size = fs::metadata(&source)
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let source_size = fs::metadata(&source).map(|m| m.len()).unwrap_or(0);
     println!(
         "[cdp-launcher-install] source='{}' ({} bytes), target='{}'",
         source.display(),

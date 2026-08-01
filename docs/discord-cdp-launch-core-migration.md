@@ -7,7 +7,7 @@ two copied Discord launch implementations to the shared
 ## Architecture
 
 - `crates/discord-cdp-launch-core` owns channel and install models, typed
-  errors, Windows/macOS discovery and process lifecycle code, the synchronous
+  errors, Windows/macOS/Linux discovery and process lifecycle code, the synchronous
   localhost `/json` probe, launch argument construction, readiness polling, and
   the launch/restart state machine.
 - `src-tauri/src/discord_cdp_commands.rs` is a Tauri-only adapter. It preserves

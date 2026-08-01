@@ -594,7 +594,10 @@ export const useQuestsStore = defineStore('quests', () => {
         // the case the soft error below exists to prevent. Resolves instantly
         // once loaded.
         const caps = await initPlatformCapabilities()
-        const hostOs = caps?.os ?? 'win32'
+        if (!caps) {
+          throw new Error('Unable to determine platform capabilities. Please try again.')
+        }
+        const hostOs = caps.os
         const resolution = resolveSimulationExecutable(game.executables, hostOs, selectedExeName)
         if (resolution.kind === 'win32_only_on_linux') {
           softError.value = {
@@ -1158,7 +1161,13 @@ export const useQuestsStore = defineStore('quests', () => {
     if (isQueueRunning.value) {
       await processQueue()
     } else if (req) {
-      await startPlay(req.quest, req.secondsNeeded, req.initialProgress, req.selectedExeName)
+      try {
+        await startPlay(req.quest, req.secondsNeeded, req.initialProgress, req.selectedExeName)
+      } catch (error) {
+        // startPlay already records the user-facing error; do not let the
+        // dialog action become an unhandled rejection.
+        console.warn('CDP retry failed:', error)
+      }
     }
   }
 

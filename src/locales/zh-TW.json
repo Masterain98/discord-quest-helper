@@ -12,7 +12,7 @@
   },
   "auth": {
     "cdp_login": "使用 Discord 用戶端登入",
-    "cdp_login_hint": "使用你已登入的 Discord 用戶端，無需 Token。需要 Discord 已開啟 CDP 除錯連接埠執行。",
+    "cdp_login_hint": "使用你已登入的 Discord 用戶端，無需 Token。",
     "auto_detect": "自動偵測 Token",
     "login": "登入",
     "or_manually": "或手動輸入",

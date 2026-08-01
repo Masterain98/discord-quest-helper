@@ -12,7 +12,7 @@
   },
   "auth": {
     "cdp_login": "เข้าสู่ระบบด้วยไคลเอ็นต์ Discord",
-    "cdp_login_hint": "ใช้แอป Discord ที่คุณเข้าสู่ระบบไว้แล้ว โดยไม่ต้องใช้ Token ต้องเปิด Discord พร้อมเปิดใช้งาน CDP",
+    "cdp_login_hint": "ใช้แอป Discord ที่คุณเข้าสู่ระบบไว้แล้ว โดยไม่ต้องใช้ Token",
     "auto_detect": "ตรวจจับอัตโนมัติ Token",
     "login": "เข้าสู่ระบบ",
     "or_manually": "หรือด้วยตนเอง",

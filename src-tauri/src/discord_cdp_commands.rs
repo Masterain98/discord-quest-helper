@@ -20,10 +20,13 @@ impl From<cdp_launch::LaunchResult> for DiscordCdpLaunchResultDto {
 }
 
 #[tauri::command]
-pub(crate) fn is_discord_running(channel: Option<String>) -> Result<bool, String> {
+pub(crate) async fn is_discord_running(channel: Option<String>) -> Result<bool, String> {
     let channel =
         cdp_launch::parse_discord_channel(channel.as_deref()).map_err(|error| error.to_string())?;
-    cdp_launch::is_discord_running(channel).map_err(|error| error.to_string())
+    tauri::async_runtime::spawn_blocking(move || cdp_launch::is_discord_running(channel))
+        .await
+        .map_err(|error| format!("Discord process scan task failed: {error}"))?
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]

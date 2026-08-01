@@ -73,21 +73,21 @@ pub(crate) fn show_info_dialog(title: &str, message: &str) {
 }
 
 #[cfg(target_os = "windows")]
-pub(crate) fn show_confirm_dialog(title: &str, message: &str) -> bool {
+pub(crate) fn show_confirm_dialog(title: &str, message: &str) -> Result<bool, String> {
     let title = to_wide(title);
     let message = to_wide(message);
-    unsafe {
+    Ok(unsafe {
         win32::MessageBoxW(
             core::ptr::null_mut(),
             message.as_ptr(),
             title.as_ptr(),
             win32::MB_YESNO | win32::MB_ICONQUESTION,
         ) == win32::IDYES
-    }
+    })
 }
 
 #[cfg(target_os = "linux")]
-pub(crate) fn show_confirm_dialog(title: &str, message: &str) -> bool {
+pub(crate) fn show_confirm_dialog(title: &str, message: &str) -> Result<bool, String> {
     std::process::Command::new("zenity")
         .args([
             "--question",
@@ -100,7 +100,8 @@ pub(crate) fn show_confirm_dialog(title: &str, message: &str) -> bool {
             "--no-wrap",
         ])
         .status()
-        .is_ok_and(|status| status.success())
+        .map(|status| status.success())
+        .map_err(|error| format!("Could not show the Zenity confirmation dialog: {error}"))
 }
 
 #[cfg(target_os = "windows")]

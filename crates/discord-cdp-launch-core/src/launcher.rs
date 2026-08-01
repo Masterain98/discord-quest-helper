@@ -79,14 +79,7 @@ where
 
     match cdp.probe(options.port) {
         CdpProbeStatus::DiscordReady { .. } => {
-            let install = select_preferred_install(&platform.find_installs()?, options.channel)?;
-            return Ok(result_for(
-                &install,
-                &options,
-                LaunchOutcome::AlreadyAvailable,
-                None,
-                true,
-            ));
+            return already_available_result(&options, platform.find_installs()?);
         }
         CdpProbeStatus::PortOccupied => {
             return Err(LaunchError::PortOccupied { port: options.port });
@@ -108,14 +101,7 @@ where
     match cdp.probe(options.port) {
         CdpProbeStatus::Unreachable => {}
         CdpProbeStatus::DiscordReady { .. } => {
-            let install = select_preferred_install(&platform.find_installs()?, options.channel)?;
-            return Ok(result_for(
-                &install,
-                &options,
-                LaunchOutcome::AlreadyAvailable,
-                None,
-                true,
-            ));
+            return already_available_result(&options, platform.find_installs()?);
         }
         CdpProbeStatus::PortOccupied => {
             return Err(LaunchError::PortOccupied { port: options.port });
@@ -154,6 +140,33 @@ where
     Err(LaunchError::ReadinessTimeout {
         port: options.port,
         timeout: options.readiness_timeout,
+    })
+}
+
+fn already_available_result(
+    options: &LaunchOptions,
+    installs: Vec<DiscordInstall>,
+) -> Result<LaunchResult, LaunchError> {
+    if let Ok(install) = select_preferred_install(&installs, options.channel) {
+        return Ok(result_for(
+            &install,
+            options,
+            LaunchOutcome::AlreadyAvailable,
+            None,
+            true,
+        ));
+    }
+
+    // CDP is authoritative: a working Discord CDP target may come from a
+    // portable, Flatpak, or otherwise undiscoverable install. Do not reject an
+    // already-usable session merely because no local executable path is known.
+    Ok(LaunchResult {
+        outcome: LaunchOutcome::AlreadyAvailable,
+        launched_path: std::path::PathBuf::new(),
+        channel: options.channel.unwrap_or(DiscordChannel::Stable),
+        port: options.port,
+        pid: None,
+        cdp_connected: true,
     })
 }
 

@@ -304,10 +304,7 @@ pub fn run_simulated_game(
 pub fn stop_simulated_game(exec_name: &str) -> Result<()> {
     // taskkill /IM needs image name (filename), not path.
     // Robustly handle both / and \\ separators
-    let file_name = exec_name
-        .rsplit(['/', '\\'])
-        .next()
-        .unwrap_or(exec_name);
+    let file_name = exec_name.rsplit(['/', '\\']).next().unwrap_or(exec_name);
 
     println!(
         "Stopping simulated game: Input='{}' -> Image='{}'",

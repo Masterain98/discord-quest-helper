@@ -252,8 +252,7 @@ fn decrypt_with_dpapi(data: &[u8]) -> Result<Vec<u8>> {
             pbData: ptr::null_mut(),
         };
 
-        let result =
-            CryptUnprotectData(&input_blob, None, None, None, None, 0, &mut output_blob);
+        let result = CryptUnprotectData(&input_blob, None, None, None, None, 0, &mut output_blob);
 
         if result.is_err() {
             anyhow::bail!("DPAPI decryption failed");

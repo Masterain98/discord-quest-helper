@@ -97,7 +97,7 @@ jobs:
       - name: Rust format
         run: |
           cargo fmt --package discord-cdp-launch-core --package discord-cdp-launcher -- --check
-          rustfmt --edition 2021 --check src-tauri/src/discord_cdp_commands.rs
+          cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 
       - name: Rust clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings

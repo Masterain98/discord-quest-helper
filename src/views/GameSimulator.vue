@@ -18,9 +18,10 @@ import { getSimulationExecutables } from '@/utils/executables'
 const { t } = useI18n()
 const store = useQuestsStore()
 
-// Executable OS preference for this platform (Linux: linux → win32; else win32).
-const executablePriority = computed(() => store.platformCapabilities?.executableOsPriority ?? ['win32'])
-const hostOs = computed(() => store.platformCapabilities?.os ?? 'win32')
+// Avoid offering a platform-specific executable until the backend descriptor is
+// known; otherwise a failed capability load could silently select win32 on Linux.
+const executablePriority = computed(() => store.platformCapabilities?.executableOsPriority ?? [])
+const hostOs = computed(() => store.platformCapabilities?.os ?? '')
 
 // Mode: 'select' = pick from detectable games list, 'custom' = enter any process name
 const mode = ref<'select' | 'custom'>('select')
@@ -29,6 +30,7 @@ const selectedGame = ref<DetectableGame | null>(null)
 const selectedExecutable = ref('')
 const customExeName = ref('')
 const installPath = ref('')
+const installPathPlaceholder = ref('DiscordQuestGames')
 const running = ref(false)
 const creating = ref(false)
 const error = ref<string | null>(null)
@@ -41,7 +43,8 @@ const dialogSavePath = ref('')
 onMounted(async () => {
   const docDir = await documentDir()
   const separator = await sep()
-  installPath.value = `${docDir}${separator}DiscordQuestGames`
+  installPathPlaceholder.value = `${docDir}${separator}DiscordQuestGames`
+  installPath.value = installPathPlaceholder.value
 })
 
 // Executables the simulator can actually launch here: Linux only runs a native
@@ -135,9 +138,7 @@ async function pickDialogFolder() {
 }
 
 async function handleCreateGame() {
-  const exeName = mode.value === 'custom'
-    ? customExeName.value
-    : (hasCompatibleExecutables.value ? selectedExecutable.value : selectModeCustomExe.value)
+  const exeName = effectiveExecutable.value
   if (!exeName || !dialogSavePath.value) return
 
   creating.value = true
@@ -158,9 +159,7 @@ async function handleCreateGame() {
 
 async function handleRunGame() {
   // Resolve which exe name to use
-  const exeName = mode.value === 'custom'
-    ? customExeName.value
-    : (hasCompatibleExecutables.value ? selectedExecutable.value : selectModeCustomExe.value)
+  const exeName = effectiveExecutable.value
   if (!exeName || !installPath.value) return
 
   running.value = true
@@ -270,7 +269,7 @@ async function handleRunGame() {
                 <div class="space-y-2">
                   <Label>{{ t('game_sim.install_path') }}</Label>
                   <div class="flex gap-2">
-                    <Input v-model="installPath" :placeholder="installPath" class="flex-1" />
+                    <Input v-model="installPath" :placeholder="installPathPlaceholder" class="flex-1" />
                     <Button type="button" variant="outline" size="icon" @click="pickInstallFolder" class="shrink-0">
                       <FolderOpen class="w-4 h-4" />
                     </Button>
@@ -327,7 +326,7 @@ async function handleRunGame() {
                 <div class="space-y-2">
                   <Label>{{ t('game_sim.install_path') }}</Label>
                   <div class="flex gap-2">
-                    <Input v-model="installPath" :placeholder="installPath" class="flex-1" />
+                    <Input v-model="installPath" :placeholder="installPathPlaceholder" class="flex-1" />
                     <Button type="button" variant="outline" size="icon" @click="pickInstallFolder" class="shrink-0">
                       <FolderOpen class="w-4 h-4" />
                     </Button>
@@ -355,7 +354,7 @@ async function handleRunGame() {
               <div class="space-y-2">
                 <Label>{{ t('game_sim.install_path') }}</Label>
                 <div class="flex gap-2">
-                  <Input v-model="installPath" :placeholder="installPath" class="flex-1" />
+                  <Input v-model="installPath" :placeholder="installPathPlaceholder" class="flex-1" />
                   <Button type="button" variant="outline" size="icon" @click="pickInstallFolder" class="shrink-0">
                     <FolderOpen class="w-4 h-4" />
                   </Button>

@@ -12,7 +12,7 @@
   },
   "auth": {
     "cdp_login": "Iniciar sesión con el cliente de Discord",
-    "cdp_login_hint": "Usa la app de Discord en la que ya iniciaste sesión, sin token. Requiere Discord en ejecución con CDP.",
+    "cdp_login_hint": "Usa la app de Discord en la que ya iniciaste sesión, sin token.",
     "auto_detect": "Detectar token automáticamente",
     "login": "Iniciar sesión",
     "or_manually": "O manualmente",

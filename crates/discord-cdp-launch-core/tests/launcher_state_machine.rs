@@ -128,6 +128,18 @@ fn already_available_does_not_spawn() {
 }
 
 #[test]
+fn already_available_without_a_discoverable_install_does_not_fail() {
+    let platform = FakePlatform::new(Vec::new(), &[false]);
+    let probe = FakeProbe::new(vec![CdpProbeStatus::DiscordReady {
+        target_title: Some("Discord".to_string()),
+    }]);
+    let result = launch_with_backends(fast_options(), &platform, &probe).unwrap();
+    assert_eq!(result.outcome, LaunchOutcome::AlreadyAvailable);
+    assert!(result.launched_path.as_os_str().is_empty());
+    assert_eq!(platform.spawn_count.load(Ordering::SeqCst), 0);
+}
+
+#[test]
 fn running_without_restart_is_rejected() {
     let platform = FakePlatform::new(vec![install(DiscordChannel::Stable)], &[true]);
     let probe = FakeProbe::new(vec![CdpProbeStatus::Unreachable]);

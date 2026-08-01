@@ -294,8 +294,8 @@ impl DiscordApiClient {
         // Log the generated properties for audit purposes
         #[cfg(debug_assertions)]
         {
-            use base64::Engine as _;
             use crate::logger::{log, LogCategory, LogLevel};
+            use base64::Engine as _;
             // Decode only to validate shape; avoid logging decoded payload contents
             if base64::engine::general_purpose::STANDARD
                 .decode(&super_props)
@@ -306,7 +306,10 @@ impl DiscordApiClient {
                 log(
                     LogLevel::Debug,
                     LogCategory::Api,
-                    &format!("Injecting X-Super-Properties (base64_len={})", super_props.len()),
+                    &format!(
+                        "Injecting X-Super-Properties (base64_len={})",
+                        super_props.len()
+                    ),
                     None,
                 );
             }
@@ -632,11 +635,7 @@ impl DiscordApiClient {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
         if !status.is_success() {
-            anyhow::bail!(
-                "Failed to get billing subscriptions: {} - {}",
-                status,
-                body
-            );
+            anyhow::bail!("Failed to get billing subscriptions: {} - {}", status, body);
         }
 
         serde_json::from_str(&body).context("Failed to parse billing subscriptions")

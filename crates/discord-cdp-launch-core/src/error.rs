@@ -67,10 +67,15 @@ impl fmt::Display for LaunchError {
             Self::InstallNotFound { channel: None } => {
                 write!(formatter, "Could not find Discord installation.")
             }
-            Self::DiscordAlreadyRunning { .. } => write!(
-                formatter,
-                "Discord is already running without CDP. Restart Discord to close it and relaunch with CDP."
-            ),
+            Self::DiscordAlreadyRunning { channel } => {
+                let channel = channel
+                    .map(DiscordChannel::display_name)
+                    .unwrap_or("Discord");
+                write!(
+                    formatter,
+                    "{channel} is already running without CDP. Restart it to close it and relaunch with CDP."
+                )
+            }
             Self::ProcessInspection { operation, source } => {
                 write!(formatter, "Could not execute {operation}: {source}")
             }

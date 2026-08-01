@@ -12,7 +12,7 @@
   },
   "auth": {
     "cdp_login": "使用 Discord 客户端登录",
-    "cdp_login_hint": "使用你已登录的 Discord 客户端，无需 Token。需要 Discord 已开启 CDP 调试端口运行。",
+    "cdp_login_hint": "使用你已登录的 Discord 客户端，无需 Token。",
     "auto_detect": "自动检测 Token",
     "login": "登录",
     "or_manually": "或手动输入",

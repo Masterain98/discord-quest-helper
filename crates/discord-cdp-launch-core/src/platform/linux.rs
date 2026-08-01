@@ -399,7 +399,16 @@ pub(crate) fn spawn(
         .stderr(Stdio::null());
     command
         .spawn()
-        .map(|child| child.id())
+        .map(|mut child| {
+            let pid = child.id();
+            // Keep a reaper alive after this short-lived launch operation
+            // returns. Dropping Child leaks a zombie into the long-lived Tauri
+            // parent, and kill(pid, 0) would then mistake it for Discord.
+            std::thread::spawn(move || {
+                let _ = child.wait();
+            });
+            pid
+        })
         .map_err(|source| LaunchError::SpawnFailed {
             path: install.executable_path.clone(),
             source,

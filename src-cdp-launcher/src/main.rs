@@ -61,7 +61,7 @@ fn run(strings: &Strings) -> Result<i32, String> {
         let want_restart = {
             #[cfg(any(target_os = "windows", target_os = "linux"))]
             {
-                dialogs::show_confirm_dialog(strings.title, strings.restart_confirm)
+                dialogs::show_confirm_dialog(strings.title, strings.restart_confirm)?
             }
 
             #[cfg(not(any(target_os = "windows", target_os = "linux")))]

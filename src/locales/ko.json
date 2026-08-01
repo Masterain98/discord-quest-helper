@@ -12,7 +12,7 @@
   },
   "auth": {
     "cdp_login": "Discord 클라이언트로 로그인",
-    "cdp_login_hint": "이미 로그인된 Discord 앱을 사용합니다. 토큰이 필요 없습니다. CDP가 활성화된 Discord가 실행 중이어야 합니다.",
+    "cdp_login_hint": "이미 로그인된 Discord 앱을 사용합니다. 토큰이 필요 없습니다.",
     "auto_detect": "토큰 자동 감지",
     "login": "로그인",
     "or_manually": "또는 수동으로 입력",

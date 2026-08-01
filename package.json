@@ -1,6 +1,6 @@
 {
   "name": "discord-quest-helper",
-  "version": "0.9.3",
+  "version": "0.10.0",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.28.0",

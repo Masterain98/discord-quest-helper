@@ -11,42 +11,36 @@ const EN: Strings = Strings {
     restart_confirm: "Discord is already running. Do you want to restart it with CDP mode enabled?",
 };
 
-#[cfg(target_os = "windows")]
 const ZH: Strings = Strings {
     title: "Discord CDP 启动器",
     cdp_already_running: "Discord 已在 CDP 模式下运行。",
     restart_confirm: "Discord 正在运行。是否要重启并启用 CDP 模式？",
 };
 
-#[cfg(target_os = "windows")]
 const ZH_TW: Strings = Strings {
     title: "Discord CDP 啟動器",
     cdp_already_running: "Discord 已在 CDP 模式下執行。",
     restart_confirm: "Discord 正在執行。是否要重新啟動並啟用 CDP 模式？",
 };
 
-#[cfg(target_os = "windows")]
 const JA: Strings = Strings {
     title: "Discord CDP ランチャー",
     cdp_already_running: "Discord は既に CDP モードで実行中です。",
     restart_confirm: "Discord は実行中です。CDP モードを有効にして再起動しますか？",
 };
 
-#[cfg(target_os = "windows")]
 const KO: Strings = Strings {
     title: "Discord CDP 런처",
     cdp_already_running: "Discord가 이미 CDP 모드로 실행 중입니다.",
     restart_confirm: "Discord가 실행 중입니다. CDP 모드를 활성화하여 재시작하시겠습니까?",
 };
 
-#[cfg(target_os = "windows")]
 const RU: Strings = Strings {
     title: "Discord CDP Лаунчер",
     cdp_already_running: "Discord уже запущен в режиме CDP.",
     restart_confirm: "Discord уже запущен. Хотите перезапустить его с включенным CDP?",
 };
 
-#[cfg(target_os = "windows")]
 const ES: Strings = Strings {
     title: "Discord CDP Lanzador",
     cdp_already_running: "Discord ya está ejecutándose con el modo CDP activado.",
@@ -71,6 +65,19 @@ pub(crate) fn get_strings() -> &'static Strings {
 
     #[cfg(not(target_os = "windows"))]
     {
-        &EN
+        let locale = std::env::var("LC_ALL")
+            .or_else(|_| std::env::var("LC_MESSAGES"))
+            .or_else(|_| std::env::var("LANG"))
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        match locale.as_str() {
+            value if value.starts_with("zh_tw") || value.starts_with("zh-hant") => &ZH_TW,
+            value if value.starts_with("zh") => &ZH,
+            value if value.starts_with("ja") => &JA,
+            value if value.starts_with("ko") => &KO,
+            value if value.starts_with("ru") => &RU,
+            value if value.starts_with("es") => &ES,
+            _ => &EN,
+        }
     }
 }

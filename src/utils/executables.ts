@@ -68,7 +68,7 @@ export function resolveSimulationExecutable(
 ): SimulationExecutableResolution {
   if (hostOs !== 'linux') {
     const selected = selectedName
-      ? executables.find((executable) => executable.name === selectedName)
+      ? executables.find((executable) => executable.name === selectedName && executable.os === 'win32')
       : executables.find((executable) => executable.os === 'win32')
 
     return selected ? { kind: 'supported', executable: selected } : { kind: 'not_found' }

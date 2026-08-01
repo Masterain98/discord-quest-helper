@@ -116,10 +116,15 @@ jobs:
       - name: Run frontend tests
         run: pnpm test
 
+      # `tauri::generate_context!` resolves `frontendDist` (../dist) at
+      # compile time, so the bundle must exist before Cargo touches src-tauri.
+      - name: Build frontend
+        run: pnpm run build
+
       - name: Rust format
         run: |
           cargo fmt --package discord-cdp-launch-core --package discord-cdp-launcher -- --check
-          rustfmt --edition 2021 --check src-tauri/src/discord_cdp_commands.rs
+          cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 
       - name: Rust clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
@@ -276,17 +281,17 @@ jobs:
             echo "::error::No Linux AppImage found in tauri-linux-x64-release"
             exit 1
           fi
-          cp "$appimage" ./build/discord-quest-helper-Linux-x86_64-${{ env.version }}.AppImage
+          cp "$appimage" ./build/discord-quest-helper-Linux-x86_64-$version.AppImage
           if [ -z "$deb" ]; then
             echo "::error::No Linux .deb found in tauri-linux-x64-release"
             exit 1
           fi
-          cp "$deb" ./build/discord-quest-helper-Linux-x86_64-${{ env.version }}.deb
+          cp "$deb" ./build/discord-quest-helper-Linux-x86_64-$version.deb
 
-          echo "win_portable=discord-quest-helper-Windows-x64-${{ env.version }}-portable" >> $GITHUB_ENV
-          echo "win_msi=discord-quest-helper-Windows-x64-${{ env.version }}-setup" >> $GITHUB_ENV
-          echo "macos_build_release=discord-quest-helper-MacOS-arm64-${{ env.version }}" >> $GITHUB_ENV
-          echo "linux_build_release=discord-quest-helper-Linux-x86_64-${{ env.version }}" >> $GITHUB_ENV
+          echo "win_portable=discord-quest-helper-Windows-x64-$version-portable" >> $GITHUB_ENV
+          echo "win_msi=discord-quest-helper-Windows-x64-$version-setup" >> $GITHUB_ENV
+          echo "macos_build_release=discord-quest-helper-MacOS-arm64-$version" >> $GITHUB_ENV
+          echo "linux_build_release=discord-quest-helper-Linux-x86_64-$version" >> $GITHUB_ENV
 
       - name: Create and Upload Release
         id: create_release

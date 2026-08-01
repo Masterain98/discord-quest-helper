@@ -12,7 +12,7 @@
   },
   "auth": {
     "cdp_login": "Đăng nhập bằng ứng dụng Discord",
-    "cdp_login_hint": "Dùng ứng dụng Discord mà bạn đã đăng nhập — không cần Token. Yêu cầu Discord đang chạy với CDP.",
+    "cdp_login_hint": "Dùng ứng dụng Discord mà bạn đã đăng nhập — không cần Token.",
     "auto_detect": "Tự động phát hiện Token",
     "login": "Đăng nhập",
     "or_manually": "Hoặc thủ công",

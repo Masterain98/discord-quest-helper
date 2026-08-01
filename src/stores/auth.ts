@@ -71,26 +71,7 @@ export const useAuthStore = defineStore('auth', () => {
         const questsStore = useQuestsStore()
         await autoFetchSuperProperties(questsStore.cdpPort)
 
-        // Check CDP availability and update banner immediately after login
-        questsStore.initCdpMode().catch(err => {
-          console.warn('CDP init on login failed:', err)
-        })
-
-        // Pre-fetch game list in background to avoid waiting later
-        // do not await - let it run async
-        questsStore.getDetectableGames().catch(err => {
-          console.warn('Background game list fetch failed:', err)
-        })
-
-        // If enabled, load the account Orbs balance immediately after login.
-        questsStore.fetchOrbsBalance().catch(err => {
-          console.warn('Background Orbs balance fetch failed:', err)
-        })
-
-        // Load billing subscriptions (for Nitro monthly Orbs countdown)
-        fetchBillingSubscription().catch(err => {
-          console.warn('Background billing subscriptions fetch failed:', err)
-        })
+        bootstrapAfterLogin(questsStore, 'CDP init on login failed:')
       } catch (e) {
         // SuperProperties fetch failure should not block login
         console.warn('Failed to fetch SuperProperties:', e)
@@ -122,23 +103,8 @@ export const useAuthStore = defineStore('auth', () => {
       // token. Authenticated backend commands use the client in AppState.
       token.value = null
 
-      try {
-        // CDP is available by definition here (we just used it); refresh state.
-        questsStore.initCdpMode().catch(err => {
-          console.warn('CDP init after CDP login failed:', err)
-        })
-        questsStore.getDetectableGames().catch(err => {
-          console.warn('Background game list fetch failed:', err)
-        })
-        questsStore.fetchOrbsBalance().catch(err => {
-          console.warn('Background Orbs balance fetch failed:', err)
-        })
-        fetchBillingSubscription().catch(err => {
-          console.warn('Background billing subscriptions fetch failed:', err)
-        })
-      } catch (e) {
-        console.warn('Post-login bootstrap failed:', e)
-      }
+      // CDP is available by definition here (we just used it); refresh state.
+      bootstrapAfterLogin(questsStore, 'CDP init after CDP login failed:')
 
       return true
     } catch (e) {
@@ -147,6 +113,22 @@ export const useAuthStore = defineStore('auth', () => {
     } finally {
       loading.value = false
     }
+  }
+
+  // Keep post-login refresh work non-blocking for both authentication paths.
+  function bootstrapAfterLogin(questsStore: ReturnType<typeof useQuestsStore>, cdpWarning: string) {
+    questsStore.initCdpMode().catch(err => {
+      console.warn(cdpWarning, err)
+    })
+    questsStore.getDetectableGames().catch(err => {
+      console.warn('Background game list fetch failed:', err)
+    })
+    questsStore.fetchOrbsBalance().catch(err => {
+      console.warn('Background Orbs balance fetch failed:', err)
+    })
+    fetchBillingSubscription().catch(err => {
+      console.warn('Background billing subscriptions fetch failed:', err)
+    })
   }
 
   async function logout() {

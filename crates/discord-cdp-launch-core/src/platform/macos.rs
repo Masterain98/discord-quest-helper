@@ -72,6 +72,7 @@ pub(crate) fn terminate(channel: Option<DiscordChannel>) -> Result<(), LaunchErr
         let _ = Command::new("osascript").args(["-e", &script]).output();
     }
     std::thread::sleep(Duration::from_secs(3));
+    let mut first_error = None;
     for name in process_names_for(channel) {
         let output = Command::new("pkill")
             .args(["-x", name])
@@ -80,14 +81,14 @@ pub(crate) fn terminate(channel: Option<DiscordChannel>) -> Result<(), LaunchErr
                 operation: "pkill",
                 source,
             })?;
-        if !output.status.success() && output.status.code() != Some(1) {
-            return Err(LaunchError::ProcessTermination {
+        if !output.status.success() && output.status.code() != Some(1) && first_error.is_none() {
+            first_error = Some(LaunchError::ProcessTermination {
                 process: name.to_string(),
                 details: String::from_utf8_lossy(&output.stderr).trim().to_string(),
             });
         }
     }
-    Ok(())
+    first_error.map_or(Ok(()), Err)
 }
 
 pub(crate) fn spawn(

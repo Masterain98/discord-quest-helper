@@ -12,7 +12,7 @@
   },
   "auth": {
     "cdp_login": "Zaloguj się przez klienta Discord",
-    "cdp_login_hint": "Używa aplikacji Discord, w której już jesteś zalogowany — bez tokenu. Wymaga uruchomionego Discorda z CDP.",
+    "cdp_login_hint": "Używa aplikacji Discord, w której już jesteś zalogowany — bez tokenu.",
     "auto_detect": "Automatyczne wykrywanie Token",
     "login": "Zaloguj się",
     "or_manually": "Lub ręcznie",

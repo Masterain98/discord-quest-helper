@@ -633,8 +633,9 @@ const toast = useToastStore()
 // this helper prevents them from offering (or auto-picking) a win32 name that
 // startPlay would immediately refuse on Linux.
 function simulationExesFor(game: DetectableGame) {
-  const priority = questsStore.platformCapabilities?.executableOsPriority ?? ['win32']
-  const hostOs = questsStore.platformCapabilities?.os ?? 'win32'
+  const capabilities = questsStore.platformCapabilities
+  if (!capabilities) return []
+  const { executableOsPriority: priority, os: hostOs } = capabilities
   return getSimulationExecutables(game.executables, hostOs, priority)
 }
 

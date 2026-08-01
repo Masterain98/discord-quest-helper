@@ -68,7 +68,7 @@ pub enum CdpProbeStatus {
 pub struct CdpTarget {
     #[cfg_attr(feature = "serde", serde(default))]
     pub id: String,
-    #[cfg_attr(feature = "serde", serde(rename = "type"))]
+    #[cfg_attr(feature = "serde", serde(default, rename = "type"))]
     pub target_type: String,
     #[cfg_attr(feature = "serde", serde(default))]
     pub title: String,

@@ -2,7 +2,9 @@ use crate::{CdpProbeStatus, CdpTarget};
 use serde_json::Value;
 use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+const MAX_HTTP_RESPONSE_BYTES: usize = 1024 * 1024;
 
 pub trait CdpProbe {
     fn probe(&self, port: u16) -> CdpProbeStatus;
@@ -86,19 +88,26 @@ fn probe_with_timeouts(
         return CdpProbeStatus::PortOccupied;
     }
 
-    let Some(response) = read_http_response(&mut stream) else {
+    let Some(response) = read_http_response(&mut stream, io_timeout) else {
         return CdpProbeStatus::PortOccupied;
     };
     parse_http_response(&response)
 }
 
-fn read_http_response(stream: &mut TcpStream) -> Option<Vec<u8>> {
+fn read_http_response(stream: &mut TcpStream, timeout: Duration) -> Option<Vec<u8>> {
     let mut response = Vec::new();
     let mut buffer = [0_u8; 4096];
+    let deadline = Instant::now() + timeout;
     loop {
+        if Instant::now() >= deadline {
+            break;
+        }
         match stream.read(&mut buffer) {
             Ok(0) => break,
             Ok(read) => {
+                if response.len().saturating_add(read) > MAX_HTTP_RESPONSE_BYTES {
+                    return None;
+                }
                 response.extend_from_slice(&buffer[..read]);
                 if http_response_is_complete(&response) {
                     break;
@@ -118,6 +127,15 @@ fn read_http_response(stream: &mut TcpStream) -> Option<Vec<u8>> {
     (!response.is_empty()).then_some(response)
 }
 
+fn http_content_length(head: &str) -> Option<usize> {
+    head.lines().find_map(|line| {
+        let (name, value) = line.split_once(':')?;
+        name.eq_ignore_ascii_case("content-length")
+            .then(|| value.trim().parse::<usize>().ok())
+            .flatten()
+    })
+}
+
 fn http_response_is_complete(response: &[u8]) -> bool {
     let Some(header_end) = response.windows(4).position(|window| window == b"\r\n\r\n") else {
         return false;
@@ -125,12 +143,7 @@ fn http_response_is_complete(response: &[u8]) -> bool {
     let Ok(head) = std::str::from_utf8(&response[..header_end]) else {
         return false;
     };
-    let content_length = head.lines().find_map(|line| {
-        let (name, value) = line.split_once(':')?;
-        name.eq_ignore_ascii_case("content-length")
-            .then(|| value.trim().parse::<usize>().ok())
-            .flatten()
-    });
+    let content_length = http_content_length(head);
     content_length.is_some_and(|length| response.len() >= header_end + 4 + length)
 }
 
@@ -143,12 +156,7 @@ fn parse_http_response(response: &[u8]) -> CdpProbeStatus {
     let Ok(head) = std::str::from_utf8(head) else {
         return CdpProbeStatus::PortOccupied;
     };
-    if let Some(content_length) = head.lines().find_map(|line| {
-        let (name, value) = line.split_once(':')?;
-        name.eq_ignore_ascii_case("content-length")
-            .then(|| value.trim().parse::<usize>().ok())
-            .flatten()
-    }) {
+    if let Some(content_length) = http_content_length(head) {
         if body.len() < content_length {
             return CdpProbeStatus::PortOccupied;
         }

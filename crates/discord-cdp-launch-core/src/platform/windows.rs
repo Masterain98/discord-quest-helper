@@ -2,7 +2,7 @@ use crate::launcher::{build_launch_args, PlatformBackend};
 use crate::{DiscordChannel, DiscordInstall, LaunchError};
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 pub(crate) fn find_installs() -> Result<Vec<DiscordInstall>, LaunchError> {
     let Some(local_appdata) = std::env::var_os("LOCALAPPDATA") else {
@@ -40,6 +40,12 @@ pub(crate) fn is_running(channel: Option<DiscordChannel>) -> Result<bool, Launch
             operation: "tasklist",
             source,
         })?;
+    if !output.status.success() {
+        return Err(LaunchError::ProcessTermination {
+            process: "tasklist".to_string(),
+            details: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        });
+    }
     let stdout = String::from_utf8_lossy(&output.stdout).to_ascii_lowercase();
     Ok(process_names_for(channel)
         .iter()
@@ -71,7 +77,9 @@ pub(crate) fn spawn(
     let mut command = Command::new(&install.executable_path);
     command
         .current_dir(&install.working_dir)
-        .args(build_launch_args(port, allow_origins));
+        .args(build_launch_args(port, allow_origins))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
     command
         .spawn()
         .map(|child| child.id())
@@ -139,8 +147,10 @@ fn find_channel_executable(channel_path: &Path, executable: &str) -> Option<Path
 }
 
 fn parse_app_version(name: &OsStr) -> Vec<u32> {
-    name.to_string_lossy()
-        .strip_prefix("app-")
+    let name = name.to_string_lossy();
+    name.get(..4)
+        .filter(|prefix| prefix.eq_ignore_ascii_case("app-"))
+        .map(|_| &name[4..])
         .unwrap_or_default()
         .split('.')
         .filter_map(|part| part.parse().ok())
@@ -172,5 +182,10 @@ mod tests {
             parse_app_version(OsStr::new("app-1.1.0"))
                 > parse_app_version(OsStr::new("app-1.0.99999"))
         );
+    }
+
+    #[test]
+    fn parses_case_insensitive_app_directory_prefix() {
+        assert_eq!(parse_app_version(OsStr::new("App-1.2.3")), vec![1, 2, 3]);
     }
 }

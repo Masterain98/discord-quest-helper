@@ -12,7 +12,7 @@
   },
   "auth": {
     "cdp_login": "Masuk dengan klien Discord",
-    "cdp_login_hint": "Gunakan aplikasi Discord yang sudah Anda masuki — tanpa token. Discord harus berjalan dengan CDP aktif.",
+    "cdp_login_hint": "Gunakan aplikasi Discord yang sudah Anda masuki — tanpa token.",
     "auto_detect": "Deteksi Otomatis Token",
     "login": "Masuk",
     "or_manually": "Atau Secara Manual",

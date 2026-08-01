@@ -52,11 +52,12 @@ describe('resolveSimulationExecutable', () => {
     })
   })
 
-  it('non-Linux hosts honor an explicit selection', () => {
-    expect(resolveSimulationExecutable([win, lin], 'darwin', 'game')).toEqual({
+  it('non-Linux hosts only honor an explicit win32 selection', () => {
+    expect(resolveSimulationExecutable([win, lin], 'darwin', 'game.exe')).toEqual({
       kind: 'supported',
-      executable: lin,
+      executable: win,
     })
+    expect(resolveSimulationExecutable([win, lin], 'darwin', 'game')).toEqual({ kind: 'not_found' })
   })
 
   it('Linux prefers a native linux executable', () => {

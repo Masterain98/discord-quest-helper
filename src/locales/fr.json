@@ -12,7 +12,7 @@
   },
   "auth": {
     "cdp_login": "Se connecter avec le client Discord",
-    "cdp_login_hint": "Utilise l'application Discord où tu es déjà connecté, sans jeton. Nécessite Discord lancé avec CDP.",
+    "cdp_login_hint": "Utilisez l'application Discord à laquelle vous êtes déjà connecté, sans jeton.",
     "auto_detect": "Détection automatique Token",
     "login": "Connexion",
     "or_manually": "Ou manuellement",
@@ -123,8 +123,8 @@
   },
   "quest": {
     "soft_error_title": "Impossible de simuler ce jeu ici",
-    "soft_error_win32_only": "{game} ne fournit qu’un exécutable Windows, qui ne peut pas être simulé en tant que processus sous Linux. Passe en mode CDP pour terminer cette quête.",
-    "soft_error_not_found": "{game} n’a aucun exécutable compatible pour le mode simulation. Passe en mode CDP pour terminer cette quête.",
+    "soft_error_win32_only": "{game} ne fournit qu’un exécutable Windows, qui ne peut pas être simulé en tant que processus sous Linux. Passez en mode CDP pour terminer cette quête.",
+    "soft_error_not_found": "{game} n’a aucun exécutable compatible pour le mode simulation. Passez en mode CDP pour terminer cette quête.",
     "soft_error_switch_cdp": "Passer en CDP et réessayer",
     "progress": "Progrès",
     "required": "{duration} requis",
