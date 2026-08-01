@@ -32,7 +32,52 @@ pub(crate) fn enable_dpi_awareness() {
 pub(crate) fn enable_dpi_awareness() {}
 
 #[cfg(target_os = "linux")]
+use std::process::Command;
+
+#[cfg(target_os = "linux")]
 const LINUX_ICON_NAME: &str = "com.masterain.discord-quest-helper.cdp";
+
+#[cfg(target_os = "linux")]
+fn zenity_icon_flag() -> &'static str {
+    let version = Command::new("zenity")
+        .arg("--version")
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .and_then(|version| {
+            let mut components = version.trim().split('.');
+            Some((
+                components.next()?.parse::<u32>().ok()?,
+                components.next()?.parse::<u32>().ok()?,
+            ))
+        });
+
+    // Ubuntu 22.04's GTK3 Zenity accepts --icon-name, whereas the newer
+    // libadwaita builds use --icon. Keep both supported release families from
+    // rejecting the whole dialog just because its decorative icon is unknown.
+    match version {
+        Some((major, _)) if major >= 4 => "--icon",
+        Some((3, minor)) if minor >= 90 => "--icon",
+        _ => "--icon-name",
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn zenity_dialog(kind: &str, title: &str, message: &str) -> Command {
+    let mut command = Command::new("zenity");
+    command.args([
+        kind,
+        "--title",
+        title,
+        "--text",
+        message,
+        zenity_icon_flag(),
+        LINUX_ICON_NAME,
+        "--no-wrap",
+    ]);
+    command
+}
 
 #[cfg(target_os = "windows")]
 pub(crate) fn system_ui_language() -> u16 {
@@ -55,19 +100,8 @@ pub(crate) fn show_info_dialog(title: &str, message: &str) {
 
 #[cfg(target_os = "linux")]
 pub(crate) fn show_info_dialog(title: &str, message: &str) {
-    let result = std::process::Command::new("zenity")
-        .args([
-            "--info",
-            "--title",
-            title,
-            "--text",
-            message,
-            "--icon",
-            LINUX_ICON_NAME,
-            "--no-wrap",
-        ])
-        .status();
-    if result.is_err() {
+    let result = zenity_dialog("--info", title, message).status();
+    if !result.is_ok_and(|status| status.success()) {
         eprintln!("{title}: {message}");
     }
 }
@@ -88,17 +122,7 @@ pub(crate) fn show_confirm_dialog(title: &str, message: &str) -> Result<bool, St
 
 #[cfg(target_os = "linux")]
 pub(crate) fn show_confirm_dialog(title: &str, message: &str) -> Result<bool, String> {
-    std::process::Command::new("zenity")
-        .args([
-            "--question",
-            "--title",
-            title,
-            "--text",
-            message,
-            "--icon",
-            LINUX_ICON_NAME,
-            "--no-wrap",
-        ])
+    zenity_dialog("--question", title, message)
         .status()
         .map(|status| status.success())
         .map_err(|error| format!("Could not show the Zenity confirmation dialog: {error}"))

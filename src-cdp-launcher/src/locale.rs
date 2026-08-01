@@ -53,7 +53,7 @@ pub(crate) fn get_strings() -> &'static Strings {
         let primary = crate::dialogs::system_ui_language() & 0x3ff;
         let full = crate::dialogs::system_ui_language();
         match primary {
-            0x04 if full == 0x0404 => &ZH_TW,
+            0x04 if matches!(full, 0x0404 | 0x0c04 | 0x1404) => &ZH_TW,
             0x04 => &ZH,
             0x11 => &JA,
             0x12 => &KO,
@@ -71,7 +71,14 @@ pub(crate) fn get_strings() -> &'static Strings {
             .unwrap_or_default()
             .to_ascii_lowercase();
         match locale.as_str() {
-            value if value.starts_with("zh_tw") || value.starts_with("zh-hant") => &ZH_TW,
+            value
+                if value.starts_with("zh_tw")
+                    || value.starts_with("zh_hk")
+                    || value.starts_with("zh_mo")
+                    || value.starts_with("zh-hant") =>
+            {
+                &ZH_TW
+            }
             value if value.starts_with("zh") => &ZH,
             value if value.starts_with("ja") => &JA,
             value if value.starts_with("ko") => &KO,

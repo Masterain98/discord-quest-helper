@@ -248,7 +248,7 @@
     "cdp_dialog_confirm": "Uruchom ponownie Discord",
     "cdp_shortcut_title": "Program uruchamiający pulpit",
     "cdp_shortcut_desc": "Utwórz długotrwały skrót na pulpicie, który uruchomi bieżącą wersję Discord z włączoną opcją CDP.",
-    "cdp_create_shortcut": "Utwórz CDP skrót do programu uruchamiającego",
+    "cdp_create_shortcut": "Utwórz skrót do programu uruchamiającego",
     "cdp_shortcut_success": "CDP skrót do programu uruchamiającego utworzony na pulpicie",
     "cdp_sync_success": "Informacje o kliencie zostały pomyślnie zsynchronizowane",
     "client_emulation": "Discord Emulacja klienta",

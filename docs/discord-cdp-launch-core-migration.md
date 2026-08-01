@@ -84,6 +84,7 @@ The shared crate tests cover:
 
 - all documented channel aliases and invalid input;
 - numeric Windows `app-*` ordering and direct executable fallback;
+- Linux install discovery, de-duplication, and process classification;
 - requested and automatic install selection;
 - launch arguments with and without `--remote-allow-origins=*`;
 - already-ready, running-without-restart, restart, shutdown timeout, occupied
@@ -94,6 +95,9 @@ The shared crate tests cover:
   `Content-Length`, and unreachable-port probe cases;
 - Tauri DTO JSON compatibility and standalone CLI parsing.
 
+Linux CI additionally compiles the Linux-only process lifecycle backend and
+validates its target-specific discovery and process-matching test suites.
+
 ## External platform acceptance
 
 The macOS platform implementation and the standalone Launcher compile for
@@ -103,3 +107,7 @@ produced on the Windows validation host because Objective-C dependencies
 require an Apple-target C compiler and macOS frameworks. The macOS CI runner
 remains responsible for the real Stable/PTB/Canary process-name check, launcher
 size, app bundle, and sidecar-content acceptance.
+
+The Ubuntu CI runner is responsible for the Linux backend and sidecar build.
+Release packaging produces both Debian and AppImage artifacts; their final
+bundle acceptance remains Linux CI-only when validation runs on Windows.

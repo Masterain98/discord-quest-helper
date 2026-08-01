@@ -11,6 +11,7 @@ const output = execFileSync(
     '--manifest-path', join(rootDir, 'Cargo.toml'),
     '--package', 'discord-cdp-launch-core',
     '--all-features',
+    '--target', 'all',
     '--prefix', 'none',
   ],
   { cwd: rootDir, encoding: 'utf8' },

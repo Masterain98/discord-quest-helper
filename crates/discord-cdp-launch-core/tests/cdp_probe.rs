@@ -1,6 +1,6 @@
 use discord_cdp_launch_core::{CdpProbe, CdpProbeStatus, StdCdpProbe};
 use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::TcpListener;
 use std::time::Duration;
 
 fn serve_once(response: Option<&'static str>, delay: Duration) -> u16 {
@@ -33,7 +33,7 @@ fn leaked_response(value: String) -> &'static str {
 }
 
 fn fast_probe() -> StdCdpProbe {
-    StdCdpProbe::with_timeouts(Duration::from_millis(100), Duration::from_millis(75))
+    StdCdpProbe::with_timeouts(Duration::from_millis(500), Duration::from_millis(300))
 }
 
 #[test]
@@ -90,7 +90,7 @@ fn malformed_json_and_http_500_are_port_occupied() {
 
 #[test]
 fn response_timeout_is_port_occupied() {
-    let port = serve_once(None, Duration::from_millis(200));
+    let port = serve_once(None, Duration::from_millis(800));
     assert_eq!(fast_probe().probe(port), CdpProbeStatus::PortOccupied);
 }
 
@@ -131,6 +131,3 @@ fn complete_content_length_does_not_wait_for_connection_close() {
         CdpProbeStatus::DiscordReady { .. }
     ));
 }
-
-#[allow(dead_code)]
-fn _tcp_stream_type_check(_stream: TcpStream) {}

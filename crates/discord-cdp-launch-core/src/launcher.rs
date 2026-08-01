@@ -143,6 +143,9 @@ where
     })
 }
 
+#[allow(dead_code)]
+fn _assert_backend_object_safe(_backend: &dyn PlatformBackend) {}
+
 fn already_available_result(
     options: &LaunchOptions,
     installs: Vec<DiscordInstall>,

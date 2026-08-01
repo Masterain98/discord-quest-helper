@@ -1,4 +1,4 @@
-use crate::launcher::{build_launch_args, PlatformBackend};
+use crate::launcher::build_launch_args;
 use crate::{DiscordChannel, DiscordInstall, LaunchError};
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -41,9 +41,11 @@ pub(crate) fn is_running(channel: Option<DiscordChannel>) -> Result<bool, Launch
             source,
         })?;
     if !output.status.success() {
-        return Err(LaunchError::ProcessTermination {
-            process: "tasklist".to_string(),
-            details: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        return Err(LaunchError::ProcessInspection {
+            operation: "tasklist",
+            source: std::io::Error::other(
+                String::from_utf8_lossy(&output.stderr).trim().to_string(),
+            ),
         });
     }
     let stdout = String::from_utf8_lossy(&output.stdout).to_ascii_lowercase();
@@ -164,9 +166,6 @@ fn no_window_cmd(program: &str) -> Command {
     command.creation_flags(CREATE_NO_WINDOW);
     command
 }
-
-#[allow(dead_code)]
-fn _assert_backend_object_safe(_backend: &dyn PlatformBackend) {}
 
 #[cfg(test)]
 mod tests {

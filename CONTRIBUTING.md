@@ -52,6 +52,7 @@ Output location: `target/release/bundle/`
 | `pnpm build:cdp-launcher` | Build CDP launcher sidecar binary |
 | `pnpm analyze:har` | Analyze HAR files for quest data (Python) |
 | `cargo fmt --package discord-cdp-launch-core --package discord-cdp-launcher` | Shared CDP core and launcher formatting (run from the repository root) |
+| `cargo fmt --manifest-path src-tauri/Cargo.toml` | Tauri backend formatting (run from the repository root) |
 | `cargo clippy --workspace --all-targets --all-features` | Rust workspace linting (run from the repository root) |
 
 ## 🐛 Debugging
@@ -123,7 +124,9 @@ discord-quest-helper/
 
 ```rust
 // Use standard rustfmt formatting
-// Run from the repository root: cargo fmt --package discord-cdp-launch-core --package discord-cdp-launcher
+// Run from the repository root:
+// cargo fmt --package discord-cdp-launch-core --package discord-cdp-launcher
+// cargo fmt --manifest-path src-tauri/Cargo.toml
 
 // Module structure
 mod module_name;         // snake_case for modules
@@ -265,7 +268,7 @@ The build artifacts are written under `target/release/bundle/`. After the first 
 ### Checklist
 
 - [ ] Code follows conventions above
-- [ ] Scoped Rust formatting checks and `cargo clippy --workspace --all-targets --all-features` pass from the repository root
+- [ ] Scoped Rust formatting checks, including `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check`, and `cargo clippy --workspace --all-targets --all-features` pass from the repository root
 - [ ] `pnpm test` passes (frontend tests)
 - [ ] `pnpm i18n:check` passes (if touching locale files)
 - [ ] Console output is in English

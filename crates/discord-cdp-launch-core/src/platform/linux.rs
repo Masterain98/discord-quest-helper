@@ -331,16 +331,20 @@ pub(crate) fn terminate(channel: Option<DiscordChannel>) -> Result<(), LaunchErr
     let installs = find_installs()?;
     let targets = running_discord_pids(channel)?;
 
+    let mut first_error = None;
     for pid in &targets {
         match signal::kill(Pid::from_raw(*pid as i32), Signal::SIGTERM) {
             Ok(()) | Err(nix::errno::Errno::ESRCH) => {}
             Err(errno) => {
-                return Err(LaunchError::ProcessTermination {
+                first_error.get_or_insert(LaunchError::ProcessTermination {
                     process: pid.to_string(),
                     details: errno.to_string(),
                 });
             }
         }
+    }
+    if let Some(error) = first_error {
+        return Err(error);
     }
 
     let deadline = Instant::now() + TERMINATE_GRACE;

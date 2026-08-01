@@ -68,7 +68,7 @@ pub(crate) fn help_text() -> &'static str {
 
 Options:
   --port <port>                 CDP debugging port. Defaults to 9223.
-  --channel <auto|stable|ptb|canary>
+  --channel <auto|stable|discord|ptb|discordptb|discord-ptb|canary|discordcanary|discord-canary>
                                 Discord channel to launch. Defaults to auto.
   --restart                     Close the selected Discord client before launching.
   --status                      Check whether CDP is already available.
@@ -104,7 +104,8 @@ mod tests {
     fn defaults_and_help_remain_compatible() {
         assert_eq!(parse_args(Vec::new()).unwrap(), CliOptions::default());
         assert!(parse_args(values(&["--help"])).unwrap().help);
-        assert!(help_text().contains("--channel <auto|stable|ptb|canary>"));
+        assert!(help_text().contains("discord-ptb"));
+        assert!(help_text().contains("discordcanary"));
     }
 
     #[test]

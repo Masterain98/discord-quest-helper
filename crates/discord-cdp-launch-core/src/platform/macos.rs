@@ -102,7 +102,13 @@ pub(crate) fn spawn(
         .args(build_launch_args(port, allow_origins));
     command
         .spawn()
-        .map(|child| child.id())
+        .map(|mut child| {
+            let pid = child.id();
+            std::thread::spawn(move || {
+                let _ = child.wait();
+            });
+            pid
+        })
         .map_err(|source| LaunchError::SpawnFailed {
             path: install.executable_path.clone(),
             source,
