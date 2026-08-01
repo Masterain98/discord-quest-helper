@@ -10,6 +10,7 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+/build/
 *.local
 
 # Editor directories and files
@@ -24,9 +25,11 @@ dist-ssr
 *.sw?
 
 # Tauri
+/target
 src-tauri/target
 src-runner/target
 src-cdp-launcher/target
+src-tauri/binaries/
 *.pdb
 
 # Platform-specific runner executables (only keep .exe for Windows, macOS version is built locally)

@@ -9,6 +9,7 @@ use tokio::time::sleep;
 ///
 /// Simulates watching a video by incrementally sending video progress
 /// Based on power0matin's approach: POST { timestamp: seconds } to /quests/{id}/video-progress
+#[allow(clippy::too_many_arguments)]
 pub async fn complete_video_quest(
     client: &DiscordApiClient,
     quest_id: String,
@@ -29,7 +30,7 @@ pub async fn complete_video_quest(
     let interval = heartbeat_interval;
 
     // Convert initial progress (percentage) to seconds
-    let mut current_seconds = (initial_progress / 100.0 * seconds_needed as f64) as f64;
+    let mut current_seconds = initial_progress / 100.0 * seconds_needed as f64;
 
     println!("Starting video quest: quest_id={}, target={}s, current_progress={:.1}s, speed={:.1}x, interval={}s", 
              quest_id, seconds_needed, current_seconds, speed, interval);
@@ -105,7 +106,7 @@ pub async fn complete_stream_quest(
 ) -> Result<()> {
     // Heartbeat interval (30 seconds)
     let heartbeat_interval = 30;
-    let total_heartbeats = (seconds_needed + heartbeat_interval - 1) / heartbeat_interval;
+    let total_heartbeats = seconds_needed.div_ceil(heartbeat_interval);
 
     // Start from initial progress
     let start_heartbeat = (initial_progress / 100.0 * total_heartbeats as f64) as u32;
@@ -161,7 +162,7 @@ pub async fn complete_game_quest_via_heartbeat(
     // Fixed heartbeat interval: 60 seconds (based on Discord client behavior)
     const HEARTBEAT_INTERVAL: u64 = 60;
 
-    let total_heartbeats = (seconds_needed as u64 + HEARTBEAT_INTERVAL - 1) / HEARTBEAT_INTERVAL;
+    let total_heartbeats = (seconds_needed as u64).div_ceil(HEARTBEAT_INTERVAL);
 
     // Start from initial progress
     let start_heartbeat = (initial_progress / 100.0 * total_heartbeats as f64) as u64;

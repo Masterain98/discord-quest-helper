@@ -1,7 +1,10 @@
 use anyhow::{Context, Result};
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use regex::Regex;
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 use std::fs;
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 use std::path::PathBuf;
 
 // Windows-specific imports
@@ -61,6 +64,19 @@ impl DiscordClient {
 /// Auto-detect and extract Discord tokens (returns all unique tokens found)
 pub fn extract_tokens() -> Result<Vec<String>> {
     use crate::logger::{log, sanitize_path, LogCategory, LogLevel};
+
+    // First Linux release: local credential extraction (Secret Service /
+    // KWallet / basic_text) is a later phase. Fail with a clear
+    // "auto-detection unavailable" signal rather than the generic
+    // "no accounts found" message, so the UI can steer the user to manual token
+    // entry or CDP auto-login. `cfg!` (not `#[cfg]`) keeps the rest of the
+    // function type-reachable and the Windows/macOS logic unchanged.
+    if cfg!(target_os = "linux") {
+        anyhow::bail!(
+            "Automatic Discord token detection is not available on Linux yet. \
+             Use manual token entry, or start Discord with CDP and use CDP auto-login."
+        );
+    }
 
     log(
         LogLevel::Info,
@@ -226,7 +242,7 @@ fn decrypt_with_dpapi(data: &[u8]) -> Result<Vec<u8>> {
     use std::ptr;
 
     unsafe {
-        let mut input_blob = CRYPT_INTEGER_BLOB {
+        let input_blob = CRYPT_INTEGER_BLOB {
             cbData: data.len() as u32,
             pbData: data.as_ptr() as *mut u8,
         };
@@ -236,8 +252,7 @@ fn decrypt_with_dpapi(data: &[u8]) -> Result<Vec<u8>> {
             pbData: ptr::null_mut(),
         };
 
-        let result =
-            CryptUnprotectData(&mut input_blob, None, None, None, None, 0, &mut output_blob);
+        let result = CryptUnprotectData(&input_blob, None, None, None, None, 0, &mut output_blob);
 
         if result.is_err() {
             anyhow::bail!("DPAPI decryption failed");
@@ -397,6 +412,7 @@ fn try_extract_from_client(_client: &DiscordClient) -> Result<Vec<String>> {
     anyhow::bail!("Token extraction is only supported on Windows and macOS")
 }
 
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 fn find_and_decrypt_tokens(data: &[u8], master_key: &[u8]) -> Vec<String> {
     let mut tokens = Vec::new();
 
@@ -512,10 +528,9 @@ fn decrypt_token(encrypted_data: &[u8], key: &[u8]) -> Result<String> {
     }
 }
 
-#[cfg(not(any(target_os = "windows", target_os = "macos")))]
-fn decrypt_token(_encrypted_data: &[u8], _key: &[u8]) -> Result<String> {
-    anyhow::bail!("Token decryption is only supported on Windows and macOS")
-}
+// `find_and_decrypt_tokens` (the only caller of `decrypt_token`) is compiled
+// only on Windows/macOS, so no other-platform variant of `decrypt_token` is
+// needed. Linux short-circuits in `extract_tokens` before any scanning.
 
 /// Get the latest client_build_number from Discord JavaScript files
 ///
@@ -627,7 +642,7 @@ async fn fetch_build_number_from_scripts(
                                         // Upper bound (9999999): Allow for future growth to 7 digits
                                         // If Discord changes their numbering scheme significantly,
                                         // these bounds may need adjustment.
-                                        if build_num >= 100000 && build_num <= 9_999_999 {
+                                        if (100000..=9_999_999).contains(&build_num) {
                                             log(
                                                 LogLevel::Info,
                                                 LogCategory::TokenExtraction,

@@ -8,8 +8,8 @@ const __dirname = dirname(__filename);
 
 const rootDir = resolve(__dirname, '..');
 const tauriDir = join(rootDir, 'src-tauri');
-const launcherDir = join(rootDir, 'src-cdp-launcher');
 const binariesDir = join(tauriDir, 'binaries');
+const manifestPath = join(rootDir, 'Cargo.toml');
 
 function rustHostTriple() {
   const output = execFileSync('rustc', ['-vV'], { encoding: 'utf8' });
@@ -24,9 +24,17 @@ const targetTriple = process.env.CARGO_BUILD_TARGET || process.env.TAURI_TARGET_
 const isWindowsTarget = targetTriple.includes('windows');
 const exeExt = isWindowsTarget ? '.exe' : '';
 const exeName = `discord-cdp-launcher${exeExt}`;
-const targetArgs = process.env.CARGO_BUILD_TARGET || process.env.TAURI_TARGET_TRIPLE
-  ? ['--target', targetTriple]
-  : [];
+const metadata = JSON.parse(execFileSync(
+  'cargo',
+  [
+    'metadata',
+    '--format-version', '1',
+    '--no-deps',
+    '--manifest-path', manifestPath,
+  ],
+  { cwd: rootDir, encoding: 'utf8' },
+));
+const cargoTargetDir = metadata.target_directory;
 
 mkdirSync(binariesDir, { recursive: true });
 
@@ -38,16 +46,18 @@ const stalePatterns = [
   'discord-cdp-launcher',
   'discord-cdp-launcher-sidecar',
 ];
-for (const target of ['release', 'debug']) {
-  const targetDir = join(tauriDir, 'target', target);
-  for (const name of stalePatterns) {
-    const stale = join(targetDir, name);
-    if (existsSync(stale)) {
-      try {
-        unlinkSync(stale);
-        console.log(`Removed stale legacy binary: ${stale}`);
-      } catch (error) {
-        console.warn(`Could not remove stale legacy binary ${stale}: ${error instanceof Error ? error.message : String(error)}`);
+for (const baseTargetDir of [cargoTargetDir, join(tauriDir, 'target')]) {
+  for (const target of ['release', 'debug']) {
+    const targetDir = join(baseTargetDir, target);
+    for (const name of stalePatterns) {
+      const stale = join(targetDir, name);
+      if (existsSync(stale)) {
+        try {
+          unlinkSync(stale);
+          console.log(`Removed stale legacy binary: ${stale}`);
+        } catch (error) {
+          console.warn(`Could not remove stale legacy binary ${stale}: ${error instanceof Error ? error.message : String(error)}`);
+        }
       }
     }
   }
@@ -60,16 +70,18 @@ if (!existsSync(destExe)) {
 
 console.log(`Building discord-cdp-launcher for ${targetTriple}...`);
 
-execFileSync('cargo', ['build', '--release', ...targetArgs], {
-  cwd: launcherDir,
+execFileSync('cargo', [
+  'build',
+  '--manifest-path', manifestPath,
+  '--package', 'discord-cdp-launcher',
+  '--profile', 'sidecar-release',
+  '--target', targetTriple,
+], {
+  cwd: rootDir,
   stdio: 'inherit',
 });
 
-const targetDir = targetArgs.length > 0
-  ? join(launcherDir, 'target', targetTriple, 'release')
-  : join(launcherDir, 'target', 'release');
-
-const sourceExe = join(targetDir, exeName);
+const sourceExe = join(cargoTargetDir, targetTriple, 'sidecar-release', exeName);
 if (!existsSync(sourceExe)) {
   throw new Error(`Expected launcher binary was not built: ${sourceExe}`);
 }

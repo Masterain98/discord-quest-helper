@@ -11,6 +11,8 @@
     "clear": "Xóa"
   },
   "auth": {
+    "cdp_login": "Đăng nhập bằng ứng dụng Discord",
+    "cdp_login_hint": "Dùng ứng dụng Discord mà bạn đã đăng nhập — không cần Token.",
     "auto_detect": "Tự động phát hiện Token",
     "login": "Đăng nhập",
     "or_manually": "Hoặc thủ công",
@@ -120,6 +122,10 @@
     "activity_navigate_error": "Không thể điều hướng Discord tới trang nhiệm vụ. Vui lòng mở Discord theo cách thủ công và truy cập trang Quests."
   },
   "quest": {
+    "soft_error_title": "Không thể mô phỏng trò chơi này ở đây",
+    "soft_error_win32_only": "{game} chỉ cung cấp tệp thực thi Windows, không thể mô phỏng quy trình trên Linux. Hãy chuyển sang chế độ CDP để hoàn thành nhiệm vụ này.",
+    "soft_error_not_found": "{game} không có tệp thực thi tương thích cho chế độ mô phỏng. Hãy chuyển sang chế độ CDP để hoàn thành nhiệm vụ này.",
+    "soft_error_switch_cdp": "Chuyển sang CDP và thử lại",
     "progress": "Tiến độ",
     "required": "{duration} bắt buộc",
     "expires": "Hết hạn",
@@ -297,6 +303,7 @@
     "download": "Tải xuống bản cập nhật"
   },
   "game_sim": {
+    "platform_capabilities_unavailable": "Không thể sử dụng các khả năng của nền tảng. Hãy khởi động lại ứng dụng và thử lại.",
     "title": "Trình mô phỏng trò chơi",
     "select_title": "Chọn trò chơi",
     "search": "Tìm kiếm trò chơi...",
@@ -312,6 +319,7 @@
     "starting": "Đang bắt đầu...",
     "exe_count": "{count} tệp thực thi",
     "no_exe_hint": "Trò chơi này không có tệp thực thi nào được biết đến trong cơ sở dữ liệu của Discord. Bạn có thể nhập tên quy trình tùy chỉnh để mô phỏng.",
+    "no_linux_exe_hint": "Trò chơi này chỉ cung cấp tệp thực thi Windows, không thể mô phỏng quy trình trên Linux. Bạn có thể nhập tên quy trình tùy chỉnh, hoặc dùng chế độ CDP.",
     "no_exe_custom_warning": "Tên quy trình không chính xác có thể không được phát hiện bởi Discord.",
     "mode_from_list": "Chọn từ danh sách",
     "mode_custom": "Quy trình tùy chỉnh",

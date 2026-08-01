@@ -24,8 +24,7 @@ fn main() {
     if !data_runner_path.exists() {
         println!(
             "cargo:warning=Runner executable not found at data/{}. \
-             Build src-runner first with: cd src-runner && cargo build --release, \
-             then run the build-runner script to copy it to src-tauri/data/.",
+             Run `pnpm run build:runner` to build and copy it to src-tauri/data/.",
             runner_exe_name
         );
         fs::write(&data_runner_path, b"").expect("Failed to create runner placeholder");
@@ -48,6 +47,10 @@ fn main() {
             "aarch64-apple-darwin".to_string()
         } else if cfg!(target_os = "macos") {
             "x86_64-apple-darwin".to_string()
+        } else if cfg!(target_os = "linux") && cfg!(target_arch = "x86_64") {
+            "x86_64-unknown-linux-gnu".to_string()
+        } else if cfg!(target_os = "linux") && cfg!(target_arch = "aarch64") {
+            "aarch64-unknown-linux-gnu".to_string()
         } else {
             "unknown".to_string()
         }

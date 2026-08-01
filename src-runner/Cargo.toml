@@ -10,11 +10,3 @@ softbuffer = "0.4"
 [[bin]]
 name = "discord-quest-runner"
 path = "src/main.rs"
-
-# Minimize executable size
-[profile.release]
-opt-level = "z"
-lto = true
-codegen-units = 1
-panic = "abort"
-strip = true

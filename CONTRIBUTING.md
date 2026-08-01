@@ -34,7 +34,7 @@ pnpm tauri:build
 
 The `tauri:build` script automatically runs version sync, builds the game runner (`src-runner`) and CDP launcher (`src-cdp-launcher`) sidecar binaries, then builds the full Tauri application.
 
-Output location: `src-tauri/target/release/bundle/`
+Output location: `target/release/bundle/`
 
 ## 📝 Commands
 
@@ -51,8 +51,9 @@ Output location: `src-tauri/target/release/bundle/`
 | `pnpm build:runner` | Build game runner sidecar binary |
 | `pnpm build:cdp-launcher` | Build CDP launcher sidecar binary |
 | `pnpm analyze:har` | Analyze HAR files for quest data (Python) |
-| `cargo fmt` | Rust formatting (run from `src-tauri/`) |
-| `cargo clippy` | Rust linting (run from `src-tauri/`) |
+| `cargo fmt --package discord-cdp-launch-core --package discord-cdp-launcher` | Shared CDP core and launcher formatting (run from the repository root) |
+| `cargo fmt --manifest-path src-tauri/Cargo.toml` | Tauri backend formatting (run from the repository root) |
+| `cargo clippy --workspace --all-targets --all-features` | Rust workspace linting (run from the repository root) |
 
 ## 🐛 Debugging
 
@@ -123,7 +124,9 @@ discord-quest-helper/
 
 ```rust
 // Use standard rustfmt formatting
-// Run: cargo fmt
+// Run from the repository root:
+// cargo fmt --package discord-cdp-launch-core --package discord-cdp-launcher
+// cargo fmt --manifest-path src-tauri/Cargo.toml
 
 // Module structure
 mod module_name;         // snake_case for modules
@@ -232,14 +235,25 @@ Run `pnpm run i18n:check` before submitting translation changes.
 | `pnpm not found` | Run `npm install -g pnpm` |
 | `Rust outdated` | Run `rustup update stable` |
 
-### Frontend-Only Development (Linux)
+### Linux Development
+
+For frontend-only development:
 
 ```bash
 pnpm install
 pnpm dev  # Runs Vite dev server only on port 1420
 ```
 
-> Note: Full Tauri backend builds require Windows or macOS. On Linux, only the frontend dev server is available.
+For a local Ubuntu Tauri build, including `.deb` and AppImage packages:
+
+```bash
+pnpm install
+./build-ubuntu.sh --install-deps
+```
+
+The build artifacts are written under `target/release/bundle/`. After the first run, omit `--install-deps` unless the system dependencies change.
+
+> Automatic local Discord token extraction is not yet available on Linux. Use the CDP login flow instead.
 
 ---
 
@@ -254,7 +268,7 @@ pnpm dev  # Runs Vite dev server only on port 1420
 ### Checklist
 
 - [ ] Code follows conventions above
-- [ ] `cargo fmt` and `cargo clippy` pass (from `src-tauri/`)
+- [ ] Scoped Rust formatting checks, including `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check`, and `cargo clippy --workspace --all-targets --all-features` pass from the repository root
 - [ ] `pnpm test` passes (frontend tests)
 - [ ] `pnpm i18n:check` passes (if touching locale files)
 - [ ] Console output is in English

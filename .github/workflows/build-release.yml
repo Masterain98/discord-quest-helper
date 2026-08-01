@@ -14,6 +14,7 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_TARGET_DIR: ${{ github.workspace }}/target
 
 jobs:
   build-tauri:
@@ -32,6 +33,11 @@ jobs:
             args: '--target aarch64-apple-darwin'
             x-target: 'darwin-arm64'
             cdp_target: 'aarch64-apple-darwin'
+            runner-ext: ''
+          - platform: 'ubuntu-22.04'  # AppImage baseline (WebKitGTK 4.1)
+            args: '--bundles deb,appimage'
+            x-target: 'linux-x64'
+            cdp_target: 'x86_64-unknown-linux-gnu'
             runner-ext: ''
 
     runs-on: ${{ matrix.platform }}
@@ -55,6 +61,25 @@ jobs:
           toolchain: stable
           targets: ${{ matrix.platform == 'macos-14' && 'aarch64-apple-darwin' || '' }}
 
+      # Tauri 2 build dependencies for Debian/Ubuntu (WebKitGTK 4.1 baseline).
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            pkg-config \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            xdg-utils
+
       - name: Cache Cargo registry
         uses: actions/cache@v5
         with:
@@ -77,13 +102,10 @@ jobs:
       
 
 
-      - name: Rust cache (Tauri App)
+      - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: |
-            ./src-tauri -> target
-            ./src-runner -> target
-            ./src-cdp-launcher -> target
+          workspaces: '. -> target'
     
       - name: install frontend dependencies
         run: pnpm install --frozen-lockfile
@@ -94,10 +116,31 @@ jobs:
       - name: Run frontend tests
         run: pnpm test
 
+      # `tauri::generate_context!` resolves `frontendDist` (../dist) at
+      # compile time, so the bundle must exist before Cargo touches src-tauri.
+      - name: Build frontend
+        run: pnpm run build
+
+      - name: Rust format
+        run: |
+          cargo fmt --package discord-cdp-launch-core --package discord-cdp-launcher -- --check
+          cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+
+      - name: Rust clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Rust tests
+        run: cargo test --workspace
+
+      - name: Verify CDP core dependency boundary
+        run: pnpm run check:cdp-core-deps
+
       - name: Sync version from public/version.txt
         run: pnpm run sync-version
 
       - name: Build runner sidecar
+        env:
+          TAURI_TARGET_TRIPLE: ${{ matrix.cdp_target }}
         run: pnpm run build:runner
 
       - name: Build Discord CDP launcher sidecar
@@ -105,7 +148,7 @@ jobs:
           TAURI_TARGET_TRIPLE: ${{ matrix.cdp_target }}
         run: pnpm run build:cdp-launcher
 
-      - uses: tauri-apps/tauri-action@v0
+      - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -119,7 +162,7 @@ jobs:
         run: |
           $portableDir = 'build/windows-portable'
           New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
-          Copy-Item 'src-tauri/target/release/discord-quest-helper.exe' "$portableDir/discord-quest-helper.exe"
+          Copy-Item 'target/release/discord-quest-helper.exe' "$portableDir/discord-quest-helper.exe"
           Copy-Item "src-tauri/binaries/discord-cdp-launcher-sidecar-$env:CDP_TARGET.exe" "$portableDir/discord-cdp-launcher-sidecar.exe"
       
       # Upload Windows artifact (portable)
@@ -139,7 +182,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: tauri-win-msi
-          path: src-tauri/target/release/bundle/msi/*.msi
+          path: target/release/bundle/msi/*.msi
 
       # Upload macOS artifact
       - name: Upload macOS artifact
@@ -148,7 +191,17 @@ jobs:
         with:
           name: tauri-macos-arm64-release
           path: |
-            src-tauri/target/aarch64-apple-darwin/release/bundle/
+            target/aarch64-apple-darwin/release/bundle/
+
+      # Upload Linux artifacts (AppImage + DEB)
+      - name: Upload Linux artifacts
+        if: matrix.platform == 'ubuntu-22.04'
+        uses: actions/upload-artifact@v7
+        with:
+          name: tauri-linux-x64-release
+          path: |
+            target/release/bundle/deb/*.deb
+            target/release/bundle/appimage/*.AppImage
 
   release:
     needs: build-tauri
@@ -186,6 +239,12 @@ jobs:
           name: tauri-macos-arm64-release
           path: tauri-macos-arm64-release
 
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: tauri-linux-x64-release
+          path: tauri-linux-x64-release
+
       - name: prepare files
         env:
           version: ${{ env.version }}
@@ -201,18 +260,38 @@ jobs:
           # Copy Windows MSI installer
           cp tauri-win-msi/*.msi ./build/discord-quest-helper-Windows-x64-${{ env.version }}-setup.msi
           
-          # Package macOS build (find the .dmg file)
+          # Package macOS build (find the .dmg file).
+          # softprops/action-gh-release skips missing `files:` entries silently,
+          # so every platform validates its own artifact here instead.
           cd tauri-macos-arm64-release
           if [ -d "dmg" ]; then
             cp dmg/*.dmg ../build/discord-quest-helper-MacOS-arm64-${{ env.version }}.dmg
           elif [ -d "macos" ]; then
             zip -r ../build/discord-quest-helper-MacOS-arm64-${{ env.version }}.zip macos/
+          else
+            echo "::error::No macOS dmg/ or macos/ output in tauri-macos-arm64-release"
+            exit 1
           fi
           cd ..
-          
-          echo "win_portable=discord-quest-helper-Windows-x64-${{ env.version }}-portable" >> $GITHUB_ENV
-          echo "win_msi=discord-quest-helper-Windows-x64-${{ env.version }}-setup" >> $GITHUB_ENV
-          echo "macos_build_release=discord-quest-helper-MacOS-arm64-${{ env.version }}" >> $GITHUB_ENV
+
+          # Copy Linux AppImage + DEB (paths are flattened by upload-artifact)
+          appimage=$(find tauri-linux-x64-release -name '*.AppImage' | head -n 1)
+          deb=$(find tauri-linux-x64-release -name '*.deb' | head -n 1)
+          if [ -z "$appimage" ]; then
+            echo "::error::No Linux AppImage found in tauri-linux-x64-release"
+            exit 1
+          fi
+          cp "$appimage" ./build/discord-quest-helper-Linux-x86_64-$version.AppImage
+          if [ -z "$deb" ]; then
+            echo "::error::No Linux .deb found in tauri-linux-x64-release"
+            exit 1
+          fi
+          cp "$deb" ./build/discord-quest-helper-Linux-x86_64-$version.deb
+
+          echo "win_portable=discord-quest-helper-Windows-x64-$version-portable" >> $GITHUB_ENV
+          echo "win_msi=discord-quest-helper-Windows-x64-$version-setup" >> $GITHUB_ENV
+          echo "macos_build_release=discord-quest-helper-MacOS-arm64-$version" >> $GITHUB_ENV
+          echo "linux_build_release=discord-quest-helper-Linux-x86_64-$version" >> $GITHUB_ENV
 
       - name: Create and Upload Release
         id: create_release
@@ -226,6 +305,8 @@ jobs:
             ./build/${{ env.win_msi }}.msi
             ./build/${{ env.macos_build_release }}.dmg
             ./build/${{ env.macos_build_release }}.zip
+            ./build/${{ env.linux_build_release }}.AppImage
+            ./build/${{ env.linux_build_release }}.deb
           prerelease: ${{ env.PRERELEASE }}
           draft: true
         env:

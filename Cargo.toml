@@ -1,0 +1,26 @@
+[workspace]
+members = [
+    "crates/discord-cdp-launch-core",
+    "src-tauri",
+    "src-cdp-launcher",
+    "src-runner",
+]
+default-members = [
+    "src-tauri",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.sidecar-release]
+inherits = "release"
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = "symbols"

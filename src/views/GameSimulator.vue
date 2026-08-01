@@ -12,8 +12,16 @@ import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Loader2, Play, Hammer, List, Terminal, FolderOpen, ChevronDown, Check } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
+import { useQuestsStore } from '@/stores/quests'
+import { getSimulationExecutables } from '@/utils/executables'
 
 const { t } = useI18n()
+const store = useQuestsStore()
+
+// Avoid offering a platform-specific executable until the backend descriptor is
+// known; otherwise a failed capability load could silently select win32 on Linux.
+const executablePriority = computed(() => store.platformCapabilities?.executableOsPriority ?? [])
+const hostOs = computed(() => store.platformCapabilities?.os ?? '')
 
 // Mode: 'select' = pick from detectable games list, 'custom' = enter any process name
 const mode = ref<'select' | 'custom'>('select')
@@ -22,6 +30,7 @@ const selectedGame = ref<DetectableGame | null>(null)
 const selectedExecutable = ref('')
 const customExeName = ref('')
 const installPath = ref('')
+const installPathPlaceholder = ref('DiscordQuestGames')
 const running = ref(false)
 const creating = ref(false)
 const error = ref<string | null>(null)
@@ -32,22 +41,36 @@ const showCreateDialog = ref(false)
 const dialogSavePath = ref('')
 
 onMounted(async () => {
-  const docDir = await documentDir()
-  const separator = await sep()
-  installPath.value = `${docDir}${separator}DiscordQuestGames`
+  const capabilities = store.initPlatformCapabilities()
+  const [docDir, separator] = await Promise.all([documentDir(), sep()])
+  installPathPlaceholder.value = `${docDir}${separator}DiscordQuestGames`
+  installPath.value = installPathPlaceholder.value
+  await capabilities
 })
 
-const windowsExecutables = computed(() => {
-  if (!selectedGame.value) return []
-  return selectedGame.value.executables.filter(e => e.os === 'win32')
+// Executables the simulator can actually launch here: Linux only runs a native
+// `linux` binary (a win32 exe is refused by the quest-start path too), while
+// Windows/macOS stay win32-only.
+const compatibleExecutables = computed(() => {
+  if (!selectedGame.value || !store.platformCapabilities) return []
+  return getSimulationExecutables(selectedGame.value.executables, hostOs.value, executablePriority.value)
 })
 
-const hasWindowsExecutables = computed(() => windowsExecutables.value.length > 0)
+const hasCompatibleExecutables = computed(() => compatibleExecutables.value.length > 0)
+
+// On Linux a win32-only game isn't "unknown to Discord" — it just can't be
+// process-simulated here, so explain that instead of the generic hint.
+const isWin32OnlyOnLinux = computed(
+  () =>
+    hostOs.value === 'linux' &&
+    !hasCompatibleExecutables.value &&
+    !!selectedGame.value?.executables.some((exe) => exe.os === 'win32')
+)
 
 // The executable name that will actually be used for run/create
 const effectiveExecutable = computed(() => {
   if (mode.value === 'custom') return customExeName.value
-  if (hasWindowsExecutables.value) return selectedExecutable.value
+  if (hasCompatibleExecutables.value) return selectedExecutable.value
   return selectModeCustomExe.value
 })
 
@@ -79,9 +102,9 @@ onUnmounted(() => document.removeEventListener('mousedown', handleClickOutsideEx
 // Whether the footer action buttons should be shown
 const canProceed = computed(() => {
   if (mode.value === 'custom') return !!customExeName.value
-  if (!selectedGame.value) return false
+  if (!selectedGame.value || !store.platformCapabilities) return false
   // Game has no known executables — allow proceeding with a custom name
-  if (!hasWindowsExecutables.value) return !!selectModeCustomExe.value
+  if (!hasCompatibleExecutables.value) return !!selectModeCustomExe.value
   return !!selectedExecutable.value
 })
 
@@ -93,8 +116,10 @@ function switchMode(m: 'select' | 'custom') {
 
 function selectGame(game: DetectableGame) {
   selectedGame.value = game
-  const winExe = game.executables.find(e => e.os === 'win32')
-  selectedExecutable.value = winExe ? winExe.name : ''
+  const compatible = store.platformCapabilities
+    ? getSimulationExecutables(game.executables, hostOs.value, executablePriority.value)
+    : []
+  selectedExecutable.value = compatible[0]?.name ?? ''
   selectModeCustomExe.value = ''
   error.value = null
   success.value = null
@@ -116,9 +141,7 @@ async function pickDialogFolder() {
 }
 
 async function handleCreateGame() {
-  const exeName = mode.value === 'custom'
-    ? customExeName.value
-    : (hasWindowsExecutables.value ? selectedExecutable.value : selectModeCustomExe.value)
+  const exeName = effectiveExecutable.value
   if (!exeName || !dialogSavePath.value) return
 
   creating.value = true
@@ -139,9 +162,7 @@ async function handleCreateGame() {
 
 async function handleRunGame() {
   // Resolve which exe name to use
-  const exeName = mode.value === 'custom'
-    ? customExeName.value
-    : (hasWindowsExecutables.value ? selectedExecutable.value : selectModeCustomExe.value)
+  const exeName = effectiveExecutable.value
   if (!exeName || !installPath.value) return
 
   running.value = true
@@ -233,10 +254,18 @@ async function handleRunGame() {
                 <div class="text-xs text-muted-foreground font-mono">App ID: {{ selectedGame.id }}</div>
               </div>
 
-              <!-- No known Windows executables — let user enter a custom name -->
-              <template v-if="!hasWindowsExecutables">
+              <div v-if="!store.platformCapabilitiesReady" class="text-center py-4 text-muted-foreground">
+                {{ t('general.loading') }}
+              </div>
+
+              <div v-else-if="!store.platformCapabilities" class="p-3 bg-destructive/10 text-destructive rounded-md text-sm">
+                {{ t('game_sim.platform_capabilities_unavailable') }}
+              </div>
+
+              <!-- No simulator-compatible executables — let user enter a custom name -->
+              <template v-else-if="!hasCompatibleExecutables">
                 <div class="p-3 bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 rounded-md text-sm border border-yellow-500/20 space-y-1">
-                  <p>{{ t('game_sim.no_exe_hint') }}</p>
+                  <p>{{ isWin32OnlyOnLinux ? t('game_sim.no_linux_exe_hint') : t('game_sim.no_exe_hint') }}</p>
                   <p>{{ t('game_sim.no_exe_custom_warning') }}</p>
                 </div>
 
@@ -251,7 +280,7 @@ async function handleRunGame() {
                 <div class="space-y-2">
                   <Label>{{ t('game_sim.install_path') }}</Label>
                   <div class="flex gap-2">
-                    <Input v-model="installPath" placeholder="C:\Games\MyGame" class="flex-1" />
+                    <Input v-model="installPath" :placeholder="installPathPlaceholder" class="flex-1" />
                     <Button type="button" variant="outline" size="icon" @click="pickInstallFolder" class="shrink-0">
                       <FolderOpen class="w-4 h-4" />
                     </Button>
@@ -288,7 +317,7 @@ async function handleRunGame() {
                       >
                         <div class="max-h-48 overflow-y-auto p-1">
                           <button
-                            v-for="exe in windowsExecutables"
+                            v-for="exe in compatibleExecutables"
                             :key="exe.name"
                             type="button"
                             class="flex w-full items-center gap-2 rounded-sm px-2.5 py-1.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground"
@@ -308,7 +337,7 @@ async function handleRunGame() {
                 <div class="space-y-2">
                   <Label>{{ t('game_sim.install_path') }}</Label>
                   <div class="flex gap-2">
-                    <Input v-model="installPath" placeholder="C:\Games\MyGame" class="flex-1" />
+                    <Input v-model="installPath" :placeholder="installPathPlaceholder" class="flex-1" />
                     <Button type="button" variant="outline" size="icon" @click="pickInstallFolder" class="shrink-0">
                       <FolderOpen class="w-4 h-4" />
                     </Button>
@@ -336,7 +365,7 @@ async function handleRunGame() {
               <div class="space-y-2">
                 <Label>{{ t('game_sim.install_path') }}</Label>
                 <div class="flex gap-2">
-                  <Input v-model="installPath" placeholder="C:\Games\MyGame" class="flex-1" />
+                  <Input v-model="installPath" :placeholder="installPathPlaceholder" class="flex-1" />
                   <Button type="button" variant="outline" size="icon" @click="pickInstallFolder" class="shrink-0">
                     <FolderOpen class="w-4 h-4" />
                   </Button>

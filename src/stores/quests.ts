@@ -1,12 +1,38 @@
 import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
-import type { Quest, DetectableGame, ExcludedQuest } from '@/api/tauri'
+import type { Quest, DetectableGame, ExcludedQuest, PlatformCapabilities } from '@/api/tauri'
 import { getQuestKind } from '@/utils/questTasks'
+import { resolveSimulationExecutable } from '@/utils/executables'
 
 /** Quest with optional pre-selected executable name for batch game quest processing */
 interface QueueItem extends Quest {
   selectedExeName?: string
 }
+
+/**
+ * A recoverable, non-fatal quest condition surfaced to the UI.
+ *
+ * Unlike a thrown Error, a soft error does not abort the queue or read as a
+ * system failure — it drives a dialog that can steer the user to a working mode
+ * (e.g. CDP) without losing quest context.
+ */
+export interface QuestSoftError {
+  code: 'SIMULATION_EXECUTABLE_OS_UNSUPPORTED' | 'SIMULATION_EXECUTABLE_NOT_FOUND'
+  /** English fallback message; the UI localizes by `code` using `gameName`. */
+  message: string
+  /** Detectable-game name, so the dialog can render a localized message. */
+  gameName: string
+  questId: string
+  recommendedMode?: 'cdp'
+  recoverable: true
+}
+
+/** Why the quest queue is currently paused. */
+export type QueuePauseReason =
+  | 'user'
+  | 'simulation_incompatible'
+  | 'cdp_restart_required'
+  | 'authentication_required'
 import {
   getQuestsFull,
   startVideoQuest,
@@ -25,9 +51,10 @@ import {
   forceVideoProgress,
   startCdpQuest,
   checkCdpStatus,
-  getVirtualCurrencyBalance
+  getVirtualCurrencyBalance,
+  getPlatformCapabilities
 } from '@/api/tauri'
-import { homeDir, sep } from '@tauri-apps/api/path'
+import { documentDir, join } from '@tauri-apps/api/path'
 import { emit } from '@tauri-apps/api/event'
 
 
@@ -89,10 +116,68 @@ export const useQuestsStore = defineStore('quests', () => {
   const STORAGE_GAME_QUEST_MODE_KEY = 'questHelper_gameQuestMode'
   const savedGameQuestMode = localStorage.getItem(STORAGE_GAME_QUEST_MODE_KEY)
   const gameQuestMode = ref<'simulate' | 'heartbeat' | 'cdp'>(
-    savedGameQuestMode === 'heartbeat' ? 'heartbeat' 
-    : savedGameQuestMode === 'cdp' ? 'cdp' 
+    savedGameQuestMode === 'heartbeat' ? 'heartbeat'
+    : savedGameQuestMode === 'cdp' ? 'cdp'
     : 'simulate'
   )
+
+  // Read-only platform capability descriptor (loaded once from the backend).
+  const platformCapabilities = ref<PlatformCapabilities | null>(null)
+  // True once the first load attempt has settled (success or failure), so the UI
+  // can avoid rendering platform-dependent affordances against a null descriptor.
+  const platformCapabilitiesReady = ref(false)
+  // In-flight load, so the fire-and-forget call at store creation and the
+  // awaiting callers (startPlay, the Home pre-selection flows) share one fetch.
+  let platformCapabilitiesInFlight: Promise<PlatformCapabilities | null> | null = null
+
+  /**
+   * Load the platform capability descriptor. On first run (no saved mode) this
+   * applies the platform's default Play-Quest mode — 'cdp' on Linux, 'simulate'
+   * on Windows/macOS — without ever overriding a preference the user has set.
+   * Safe to call more than once and from several callers concurrently; only the
+   * first call fetches, and later ones resolve from the cached descriptor.
+   */
+  async function initPlatformCapabilities(): Promise<PlatformCapabilities | null> {
+    if (platformCapabilities.value) return platformCapabilities.value
+    if (platformCapabilitiesInFlight) return platformCapabilitiesInFlight
+
+    platformCapabilitiesInFlight = (async () => {
+      try {
+        const caps = await getPlatformCapabilities()
+        platformCapabilities.value = caps
+        // Re-read at resolve time rather than trusting `savedGameQuestMode`,
+        // which is a store-setup snapshot. If the user picked a mode from
+        // Settings while this fetch was in flight, the `gameQuestMode` watcher
+        // has already persisted it, and applying the platform default here
+        // would silently clobber that fresh choice.
+        const currentSavedMode = localStorage.getItem(STORAGE_GAME_QUEST_MODE_KEY)
+        if (
+          currentSavedMode === null &&
+          (caps.defaultGameQuestMode === 'simulate' ||
+            caps.defaultGameQuestMode === 'heartbeat' ||
+            caps.defaultGameQuestMode === 'cdp')
+        ) {
+          gameQuestMode.value = caps.defaultGameQuestMode
+        }
+        return caps
+      } catch (error) {
+        console.warn('Failed to load platform capabilities:', error)
+        return null
+      } finally {
+        platformCapabilitiesReady.value = true
+        platformCapabilitiesInFlight = null
+      }
+    })()
+
+    return platformCapabilitiesInFlight
+  }
+
+  // Recoverable soft error (e.g. win32-only game on Linux simulate mode) that
+  // the UI surfaces as an actionable dialog rather than a fatal error.
+  const softError = ref<QuestSoftError | null>(null)
+  const queuePauseReason = ref<QueuePauseReason | null>(null)
+  // Remember the last Play-Quest request so "switch to CDP and retry" can resume it.
+  const lastPlayRequest = ref<{ quest: Quest; secondsNeeded: number; initialProgress: number; selectedExeName?: string } | null>(null)
 
   // CDP availability status
   const cdpAvailable = ref(false)
@@ -437,6 +522,8 @@ export const useQuestsStore = defineStore('quests', () => {
   async function startPlay(quest: Quest, secondsNeeded: number, initialProgress: number, selectedExeName?: string) {
     loading.value = true
     error.value = null
+    // Remember the request so a soft error can offer "switch to CDP and retry".
+    lastPlayRequest.value = { quest, secondsNeeded, initialProgress, selectedExeName }
     try {
       // 1. Get Application ID
       const appId = quest.config.application?.id
@@ -497,22 +584,54 @@ export const useQuestsStore = defineStore('quests', () => {
         const game = gamesList.find(g => g.id === appId)
         if (!game) throw new Error(`Game not found in Discord's detectable list (AppID: ${appId})`)
 
-        // Use caller-selected exe if provided, otherwise pick the first win32 executable
-        let exeName: string
-        if (selectedExeName) {
-          exeName = selectedExeName
-        } else {
-          const winExe = game.executables.find(e => e.os === 'win32')
-          if (!winExe) throw new Error(`No Windows executable definition for game ${game.name}`)
-          exeName = winExe.name
+        // Resolve a platform-compatible executable. On Windows/macOS this stays
+        // win32-first; on Linux a native `linux` executable is preferred and a
+        // win32-only game raises a recoverable soft error steering the user to
+        // CDP mode (a Windows binary can't be process-simulated on Linux).
+        // Await rather than reading the ref: capabilities load fire-and-forget
+        // at store creation, and a null descriptor here would fall back to
+        // 'win32' and happily accept a Windows executable on Linux — exactly
+        // the case the soft error below exists to prevent. Resolves instantly
+        // once loaded.
+        const caps = await initPlatformCapabilities()
+        if (!caps) {
+          throw new Error('Unable to determine platform capabilities. Please try again.')
         }
+        const hostOs = caps.os
+        const resolution = resolveSimulationExecutable(game.executables, hostOs, selectedExeName)
+        if (resolution.kind === 'win32_only_on_linux') {
+          softError.value = {
+            code: 'SIMULATION_EXECUTABLE_OS_UNSUPPORTED',
+            message: `"${game.name}" only provides a Windows executable, which cannot be process-simulated on Linux. Switch to CDP mode to complete this quest.`,
+            gameName: game.name,
+            questId: quest.id,
+            recommendedMode: 'cdp',
+            recoverable: true,
+          }
+          if (isQueueRunning.value) queuePauseReason.value = 'simulation_incompatible'
+          loading.value = false
+          return
+        }
+        if (resolution.kind === 'not_found') {
+          softError.value = {
+            code: 'SIMULATION_EXECUTABLE_NOT_FOUND',
+            message: `No compatible executable definition for game ${game.name}. Switch to CDP mode to complete this quest.`,
+            gameName: game.name,
+            questId: quest.id,
+            recommendedMode: 'cdp',
+            recoverable: true,
+          }
+          if (isQueueRunning.value) queuePauseReason.value = 'simulation_incompatible'
+          loading.value = false
+          return
+        }
+        const exeName = resolution.executable.name
 
         console.log(`Starting simulated game for ${game.name} (${exeName})...`)
 
-        // 3. Setup path
-        const home = await homeDir()
-        const separator = await sep()
-        const installPath = `${home}${separator}Documents${separator}DiscordQuestGames`
+        // 3. Setup path (use the localized Documents dir; avoids assuming ~/Documents)
+        const documents = await documentDir()
+        const installPath = await join(documents, 'DiscordQuestGames')
 
         // 4. Create simulated game executable
         await createSimulatedGame(installPath, exeName, appId)
@@ -985,6 +1104,11 @@ export const useQuestsStore = defineStore('quests', () => {
     detectableGames.value = []
     fetchingGames.value = false
     cdpAvailable.value = false
+    // Recoverable-error state is per-session: a dialog left open (or a queued
+    // retry) must not reappear against the next account's quests.
+    softError.value = null
+    queuePauseReason.value = null
+    lastPlayRequest.value = null
     stopProgressSimulation()
     cleanupListeners()
     stopPolling()
@@ -1007,6 +1131,65 @@ export const useQuestsStore = defineStore('quests', () => {
       }
     }
   }
+
+  /**
+   * Recover from a recoverable soft error (e.g. a win32-only game on Linux) by
+   * switching to CDP mode and retrying the same quest / resuming the queue.
+   * Falls back to a clear error if CDP can't be reached.
+   */
+  async function switchToCdpAndRetry(): Promise<void> {
+    const req = lastPlayRequest.value
+    gameQuestMode.value = 'cdp'
+
+    // Confirm the CDP port is actually reachable; initCdpMode flips back to
+    // simulate when it isn't, so re-check availability afterward. The soft
+    // error and pause reason are only cleared once CDP is confirmed: dropping
+    // them on a failed check would leave a paused queue reporting "running"
+    // with no active quest and no way to retry from the dialog.
+    await initCdpMode()
+    if (!cdpAvailable.value) {
+      error.value =
+        'CDP mode is not available. Start Discord with CDP enabled (Settings → Discord integration), then try again.'
+      return
+    }
+
+    error.value = null
+    softError.value = null
+    queuePauseReason.value = null
+
+    if (isQueueRunning.value) {
+      await processQueue()
+    } else if (req) {
+      try {
+        await startPlay(req.quest, req.secondsNeeded, req.initialProgress, req.selectedExeName)
+      } catch (error) {
+        // startPlay already records the user-facing error; do not let the
+        // dialog action become an unhandled rejection.
+        console.warn('CDP retry failed:', error)
+      }
+    }
+  }
+
+  /**
+   * Dismiss a soft error without switching modes. If a queue was paused because
+   * the current item is simulation-incompatible, the user's cancel means
+   * "skip it" — drop the head item and continue the queue.
+   */
+  function dismissSoftError(): void {
+    const wasSimIncompatible = queuePauseReason.value === 'simulation_incompatible'
+    softError.value = null
+    queuePauseReason.value = null
+
+    if (wasSimIncompatible && isQueueRunning.value && questQueue.value.length > 0) {
+      questQueue.value.shift()
+      void processQueue()
+    }
+  }
+
+  // Load platform capabilities on store creation so the Linux CDP-first default
+  // and platform-aware executable resolution are ready before any quest runs.
+  // Fire-and-forget; failure is handled inside the action.
+  void initPlatformCapabilities()
 
   return {
     quests,
@@ -1064,6 +1247,15 @@ export const useQuestsStore = defineStore('quests', () => {
     detectableGames,
     getDetectableGames,
     resetForLogout,
-    initCdpMode
+    initCdpMode,
+    // Platform capabilities + Linux soft-error recovery
+    platformCapabilities,
+    platformCapabilitiesReady,
+    initPlatformCapabilities,
+    softError,
+    queuePauseReason,
+    lastPlayRequest,
+    switchToCdpAndRetry,
+    dismissSoftError
   }
 })

@@ -61,24 +61,12 @@ const claimText = computed(() => {
       class="inline-flex items-center gap-1.5"
       :title="t('home.nitro_next_orbs_title')"
     >
-      <svg
-        viewBox="0 0 24 24"
-        class="h-4 w-4 text-violet-500 dark:text-violet-400"
+      <img
+        src="/icons/nitro.svg"
+        alt=""
+        class="h-4 w-4 object-contain"
         aria-hidden="true"
-      >
-        <path
-          fill="currentColor"
-          fill-rule="evenodd"
-          clip-rule="evenodd"
-          d="M15 5.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM7.5 12a7.5 7.5 0 1 1 15 0 7.5 7.5 0 0 1-15 0Z"
-        />
-        <path
-          fill="currentColor"
-          fill-rule="evenodd"
-          clip-rule="evenodd"
-          d="M6 4.5h9v1H6v-1zM5.5 8h3v1h-3V8zM2 8h1.5v1H2V8zm2 4h4v1H4v-1zm8.584-3.277A.5.5 0 0 1 13 8.5h4a.5.5 0 0 1 .416.223l2 3a.5.5 0 0 1 0 .554l-2 3A.5.5 0 0 1 17 15.5h-4a.5.5 0 0 1-.416-.223l-2-3a.5.5 0 0 1 0-.554l2-3zm.684.777L11.6 12l1.667 2.5h3.464L18.4 12l-1.667-2.5h-3.464z"
-        />
-      </svg>
+      />
       <span :class="['font-semibold', authStore.nitroStatus?.class]">
         {{ authStore.nitroStatus?.label }}
       </span>

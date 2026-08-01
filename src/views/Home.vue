@@ -520,6 +520,38 @@
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <!-- Recoverable simulation soft error (e.g. a win32-only game on Linux):
+         steer the user to CDP mode instead of failing the quest. -->
+    <AlertDialog
+      :open="!!questsStore.softError"
+      @update:open="(value: boolean) => { if (!value && !switchingToCdp) questsStore.dismissSoftError() }"
+    >
+      <AlertDialogContent class="max-w-[560px]">
+        <AlertDialogHeader>
+          <AlertDialogTitle>{{ t('quest.soft_error_title') }}</AlertDialogTitle>
+          <AlertDialogDescription>{{ softErrorMessage }}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <!-- A failed "switch to CDP" keeps the dialog open; surface the reason
+             here since the modal hides the page-level error banner. -->
+        <p v-if="questsStore.error" class="text-sm text-destructive">
+          {{ questsStore.error }}
+        </p>
+        <AlertDialogFooter>
+          <!-- Cancel closes the dialog, and `update:open` dismisses the soft
+               error (which also skips a queue item paused as incompatible). -->
+          <AlertDialogCancel :disabled="switchingToCdp">{{ t('dialog.cancel') }}</AlertDialogCancel>
+          <!-- Deliberately a plain Button, not AlertDialogAction: that closes
+               the dialog on click, which would run dismissSoftError() — losing
+               the error and skipping the paused queue item — while the CDP
+               switch is still awaiting initCdpMode(). -->
+          <Button :disabled="switchingToCdp" @click="handleSwitchToCdp">
+            <Loader2 v-if="switchingToCdp" class="w-4 h-4 mr-2 animate-spin" />
+            {{ t('quest.soft_error_switch_cdp') }}
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   </div>
 </template>
 
@@ -535,7 +567,7 @@ import QuestListHeader from '@/components/home/QuestListHeader.vue'
 import QuestViewTabs from '@/components/home/QuestViewTabs.vue'
 import QuestCard from '@/components/QuestCard.vue'
 import QuestProgress from '@/components/QuestProgress.vue'
-import type { Quest } from '@/api/tauri'
+import type { DetectableGame, PlatformCapabilities, Quest } from '@/api/tauri'
 import {
   acceptQuest as acceptQuestApi,
   claimQuestReward,
@@ -577,6 +609,7 @@ import {
   isVideoTask,
 } from '@/utils/questTasks'
 import { getQuestRewardCategory } from '@/utils/questRewards'
+import { getSimulationExecutables } from '@/utils/executables'
 import { useToastStore } from '@/stores/toast'
 import { navigateToTab } from '@/utils/navigate'
 import {
@@ -593,6 +626,44 @@ const authStore = useAuthStore()
 const questsStore = useQuestsStore()
 const versionStore = useVersionStore()
 const toast = useToastStore()
+
+// Executables the process simulator can launch on this host — the same rule the
+// Game Simulator view and quests.ts's resolveSimulationExecutable apply (Linux:
+// native `linux` only; Windows/macOS: win32). Keeping the pre-selection flows on
+// this helper prevents them from offering (or auto-picking) a win32 name that
+// startPlay would immediately refuse on Linux.
+function simulationExesFor(game: DetectableGame, capabilities: PlatformCapabilities) {
+  const { executableOsPriority: priority, os: hostOs } = capabilities
+  return getSimulationExecutables(game.executables, hostOs, priority)
+}
+
+const isLinuxHost = computed(() => questsStore.platformCapabilities?.os === 'linux')
+
+// The soft-error dialog stays open for the whole CDP switch: dismissing it
+// mid-flight would clear the error and skip the paused queue item.
+const switchingToCdp = ref(false)
+
+async function handleSwitchToCdp() {
+  if (switchingToCdp.value) return
+  switchingToCdp.value = true
+  try {
+    await questsStore.switchToCdpAndRetry()
+  } finally {
+    switchingToCdp.value = false
+  }
+}
+
+// Localized body for the recoverable simulation soft error:
+// e.g. a win32-only game selected while running the Linux process simulator.
+const softErrorMessage = computed(() => {
+  const softError = questsStore.softError
+  if (!softError) return ''
+  const key =
+    softError.code === 'SIMULATION_EXECUTABLE_OS_UNSUPPORTED'
+      ? 'quest.soft_error_win32_only'
+      : 'quest.soft_error_not_found'
+  return t(key, { game: softError.gameName })
+})
 
 const props = defineProps<{
   debugModeEnabled?: boolean
@@ -1270,12 +1341,18 @@ async function confirmBatchComplete() {
 
 /**
  * Pre-select executables for all game quests in a batch.
- * Shows selection dialogs sequentially for games that have multiple win32 executables.
- * For games with no known executables, shows a custom input dialog.
+ * Shows selection dialogs sequentially for games that have multiple
+ * simulator-compatible executables; for games with none, shows a custom input
+ * dialog (except on Linux, where startPlay's recoverable soft error steers the
+ * user to CDP mode instead).
  * Results are stored in batchExeSelections map.
  * Resolves when all selections are done, rejects if user cancels any.
  */
 async function preselectExesForGameQuests(gameQuests: Quest[]): Promise<void> {
+  // Capabilities drive the win32/linux rule below, so make sure they're loaded
+  // before deciding what to offer (resolves instantly once cached).
+  const capabilities = await questsStore.initPlatformCapabilities()
+  if (!capabilities) throw new Error(t('game_sim.platform_capabilities_unavailable'))
   const gamesList = await questsStore.getDetectableGames()
 
   for (const quest of gameQuests) {
@@ -1285,21 +1362,26 @@ async function preselectExesForGameQuests(gameQuests: Quest[]): Promise<void> {
     const game = gamesList.find(g => g.id === appId)
     if (!game) continue
 
-    const winExes = game.executables.filter(e => e.os === 'win32')
+    const simExes = simulationExesFor(game, capabilities)
 
-    if (winExes.length > 1) {
+    if (simExes.length > 1) {
       // Multiple executables — show selection dialog
-      const selected = await showBatchExeSelectDialogAsync(winExes.map(e => e.name), game.name)
+      const selected = await showBatchExeSelectDialogAsync(simExes.map(e => e.name), game.name)
       if (selected === null) throw new Error('User cancelled')
       batchExeSelections.value.set(quest.id, selected)
-    } else if (winExes.length === 0) {
+    } else if (simExes.length === 0) {
+      // On Linux an empty list means the game is win32-only (or has nothing at
+      // all): don't prompt for a name the simulator will refuse anyway — leave
+      // the selection unset so startPlay raises the recoverable soft error
+      // steering to CDP mode when the queue reaches this quest.
+      if (isLinuxHost.value) continue
       // No known executables — show custom input dialog
       const custom = await showBatchCustomExeDialogAsync(game.name)
       if (custom === null) throw new Error('User cancelled')
       batchExeSelections.value.set(quest.id, custom)
     } else {
       // Exactly one executable — auto-select
-      batchExeSelections.value.set(quest.id, winExes[0].name)
+      batchExeSelections.value.set(quest.id, simExes[0].name)
     }
   }
 }
@@ -1455,23 +1537,26 @@ async function startQuest(quest: Quest) {
     const gameName = quest.config.messages.game_title || quest.config.messages.quest_name
     console.log(`Starting play quest for ${gameName}`)
     try {
-        // Check if there are multiple win32 executables — let user choose
-        // Skip exe selection entirely for CDP mode (doesn't need executables)
+        // Check if there are multiple simulator-compatible executables — let
+        // user choose. Skip exe selection entirely for CDP mode (doesn't need
+        // executables)
         if (questsStore.gameQuestMode === 'simulate') {
           const appId = quest.config.application?.id
           if (appId) {
+            const capabilities = await questsStore.initPlatformCapabilities()
+            if (!capabilities) throw new Error(t('game_sim.platform_capabilities_unavailable'))
             const gamesList = await questsStore.getDetectableGames()
             const game = gamesList.find(g => g.id === appId)
             if (game) {
-              const winExes = game.executables.filter(e => e.os === 'win32')
-              if (winExes.length > 1) {
-                // Multiple win32 executables — show selection dialog
-                exeSelectOptions.value = winExes.map(e => e.name)
+              const simExes = simulationExesFor(game, capabilities)
+              if (simExes.length > 1) {
+                // Multiple executables — show selection dialog
+                exeSelectOptions.value = simExes.map(e => e.name)
                 exeSelectGameName.value = game.name
                 pendingPlayQuest.value = { quest, secondsNeeded, initialProgress }
                 showExeSelectDialog.value = true
                 return // Wait for user selection
-              } else if (winExes.length === 0) {
+              } else if (simExes.length === 0 && !isLinuxHost.value) {
                 // No known executables — show custom input dialog
                 customExeGameName.value = game.name
                 customExeInput.value = ''
@@ -1479,6 +1564,8 @@ async function startQuest(quest: Quest) {
                 showCustomExeDialog.value = true
                 return // Wait for user input
               }
+              // On Linux an empty list falls through: startPlay raises the
+              // recoverable soft error that steers the user to CDP mode.
             }
           }
         }

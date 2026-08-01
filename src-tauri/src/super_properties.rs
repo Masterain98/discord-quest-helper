@@ -523,10 +523,12 @@ impl XSuperPropertiesManager {
             return cached.clone();
         }
 
-        let mut props = SuperProperties::default();
-        props.launch_signature = Some(self.launch_signature.clone());
-        props.client_launch_id = Some(self.client_launch_id.clone());
-        props.client_heartbeat_session_id = Some(self.client_heartbeat_session_id.clone());
+        let mut props = SuperProperties {
+            launch_signature: Some(self.launch_signature.clone()),
+            client_launch_id: Some(self.client_launch_id.clone()),
+            client_heartbeat_session_id: Some(self.client_heartbeat_session_id.clone()),
+            ..Default::default()
+        };
 
         if let Some(build_number) = self.cached_build_number {
             props.client_build_number = build_number;

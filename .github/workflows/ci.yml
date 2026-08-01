@@ -1,0 +1,119 @@
+name: CI
+
+# Continuous integration checks for every pull request and develop push.
+# Release bundling stays in build-release.yml.
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+  push:
+    branches:
+      - develop
+
+permissions:
+  contents: read
+
+# Superseded PR updates / develop pushes cancel their in-flight run instead of
+# queueing another full 3-platform build.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_TARGET_DIR: ${{ github.workspace }}/target
+
+jobs:
+  checks:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'windows-latest'
+            cdp_target: 'x86_64-pc-windows-msvc'
+          - platform: 'macos-14' # Apple Silicon
+            cdp_target: 'aarch64-apple-darwin'
+          - platform: 'ubuntu-22.04'
+            cdp_target: 'x86_64-unknown-linux-gnu'
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+        name: Install pnpm
+        with:
+          run_install: false
+
+      - name: Setup node
+        uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: 'pnpm'
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+          targets: ${{ matrix.platform == 'macos-14' && 'aarch64-apple-darwin' || '' }}
+
+      # Tauri 2 build dependencies for Debian/Ubuntu (WebKitGTK 4.1 baseline).
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: '. -> target'
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate i18n
+        run: pnpm run i18n:check
+
+      - name: Run frontend tests
+        run: pnpm test
+
+      # `tauri::generate_context!` resolves `frontendDist` (../dist) at compile
+      # time, so the bundle has to exist before any cargo step touches src-tauri.
+      - name: Build frontend
+        run: pnpm run build
+
+      - name: Rust format
+        run: |
+          cargo fmt --package discord-cdp-launch-core --package discord-cdp-launcher -- --check
+          cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+
+      - name: Rust clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Rust tests
+        run: cargo test --workspace
+
+      - name: Verify CDP core dependency boundary
+        run: pnpm run check:cdp-core-deps
+
+      - name: Build runner sidecar
+        env:
+          TAURI_TARGET_TRIPLE: ${{ matrix.cdp_target }}
+        run: pnpm run build:runner
+
+      - name: Build Discord CDP launcher sidecar
+        env:
+          TAURI_TARGET_TRIPLE: ${{ matrix.cdp_target }}
+        run: pnpm run build:cdp-launcher

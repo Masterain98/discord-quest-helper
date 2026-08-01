@@ -1,7 +1,10 @@
 ## ✨ What's Changed
 
-1. Fixed the activity quest mismatch issue.
-2. Refreshed the Nitro membership panel area.
-3. Added Nitro membership monthly Orbs Drop estimated countdown.
-4. bump dependencies the latest patched versions.
-5. Update default client build number to 582977, default native build number to 86777, and default client version to 1.0.9249.
+1. Added support for Linux (x86_64) desktop
+  - Currently support only target: Ubuntu 26.04
+  - Added automatic Discord login through the built-in browser connection on Linux (CDP)
+  - Added a desktop shortcut (launcher) option on Linux for quicker access.
+2. Fixed several cases where the app could pick the wrong game or get stuck after an error, especially right after launch.
+3. Refreshed the Nitro badge icon.
+4. Bumped dependencies to the latest patched versions.
+

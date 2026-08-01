@@ -11,6 +11,8 @@
     "clear": "Limpar"
   },
   "auth": {
+    "cdp_login": "Entrar com o cliente do Discord",
+    "cdp_login_hint": "Usa o app do Discord em que você já está conectado, sem token.",
     "auto_detect": "Detecção automática Token",
     "login": "Entrar",
     "or_manually": "Ou manualmente",
@@ -120,6 +122,10 @@
     "activity_navigate_error": "Falha ao navegar Discord para a página da missão. Abra Discord manualmente e vá para a página Quests."
   },
   "quest": {
+    "soft_error_title": "Não é possível simular este jogo aqui",
+    "soft_error_win32_only": "{game} fornece apenas um executável do Windows, que não pode ser simulado como processo no Linux. Mude para o modo CDP para concluir esta missão.",
+    "soft_error_not_found": "{game} não tem um executável compatível para o modo de simulação. Mude para o modo CDP para concluir esta missão.",
+    "soft_error_switch_cdp": "Mudar para CDP e tentar novamente",
     "progress": "Progresso",
     "required": "{duration} obrigatório",
     "expires": "Expira",
@@ -242,7 +248,7 @@
     "cdp_dialog_confirm": "Reinicie Discord",
     "cdp_shortcut_title": "Iniciador de área de trabalho",
     "cdp_shortcut_desc": "Crie um atalho de longa duração na área de trabalho que inicie a versão atual do Discord com CDP ativado.",
-    "cdp_create_shortcut": "Criar atalho do iniciador CDP",
+    "cdp_create_shortcut": "Criar inicializador",
     "cdp_shortcut_success": "CDP atalho do iniciador criado na área de trabalho",
     "cdp_sync_success": "Informações do cliente sincronizadas com sucesso",
     "client_emulation": "Discord Emulação de cliente",
@@ -297,6 +303,7 @@
     "download": "Baixar atualização"
   },
   "game_sim": {
+    "platform_capabilities_unavailable": "Os recursos da plataforma estão indisponíveis. Reinicie o aplicativo e tente novamente.",
     "title": "Simulador de jogo",
     "select_title": "Selecione o jogo",
     "search": "Pesquisar jogos...",
@@ -312,6 +319,7 @@
     "starting": "Começando...",
     "exe_count": "{count} executáveis",
     "no_exe_hint": "Este jogo não possui executáveis conhecidos no banco de dados do Discord. Você pode inserir um nome de processo personalizado para simular.",
+    "no_linux_exe_hint": "Este jogo fornece apenas um executável do Windows, que não pode ser simulado como processo no Linux. Você pode digitar um nome de processo personalizado ou usar o modo CDP.",
     "no_exe_custom_warning": "Um nome de processo incorreto pode não ser detectado por Discord.",
     "mode_from_list": "Selecione na lista",
     "mode_custom": "Processo personalizado",

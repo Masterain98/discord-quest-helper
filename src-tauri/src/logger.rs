@@ -194,7 +194,7 @@ pub fn log(level: LogLevel, category: LogCategory, message: &str, details: Optio
 
     // Sanitize message and details before storing
     let sanitized_message = sanitize_message(message);
-    let sanitized_details = details.map(|s| sanitize_message(s));
+    let sanitized_details = details.map(sanitize_message);
 
     let entry = LogEntry {
         timestamp: Utc::now().to_rfc3339(),

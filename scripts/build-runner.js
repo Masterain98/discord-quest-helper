@@ -1,4 +1,4 @@
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { copyFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { join, resolve } from 'path';
 import { fileURLToPath } from 'url';
@@ -8,13 +8,32 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const rootDir = resolve(__dirname, '..');
-const runnerDir = join(rootDir, 'src-runner');
 const tauriDataDir = join(rootDir, 'src-tauri', 'data');
-const runnerTargetDir = join(runnerDir, 'target', 'release');
+const manifestPath = join(rootDir, 'Cargo.toml');
 
-const platform = process.platform;
-const ext = platform === 'win32' ? '.exe' : '';
+function rustHostTriple() {
+    const output = execFileSync('rustc', ['-vV'], { encoding: 'utf8' });
+    const hostLine = output.split(/\r?\n/).find(line => line.startsWith('host:'));
+    if (!hostLine) {
+        throw new Error('Could not determine rust host triple from `rustc -vV`.');
+    }
+    return hostLine.replace('host:', '').trim();
+}
+
+const targetTriple = process.env.CARGO_BUILD_TARGET || process.env.TAURI_TARGET_TRIPLE || rustHostTriple();
+const ext = targetTriple.includes('windows') ? '.exe' : '';
 const exeName = `discord-quest-runner${ext}`;
+const metadata = JSON.parse(execFileSync(
+    'cargo',
+    [
+        'metadata',
+        '--format-version', '1',
+        '--no-deps',
+        '--manifest-path', manifestPath,
+    ],
+    { cwd: rootDir, encoding: 'utf8' },
+));
+const runnerTargetDir = join(metadata.target_directory, targetTriple, 'sidecar-release');
 
 const sourceExe = join(runnerTargetDir, exeName);
 const destExe = join(tauriDataDir, exeName);
@@ -22,8 +41,14 @@ const destExe = join(tauriDataDir, exeName);
 console.log('🚀 Building discord-quest-runner...');
 
 try {
-    execSync('cargo build --release', {
-        cwd: runnerDir,
+    execFileSync('cargo', [
+        'build',
+        '--manifest-path', manifestPath,
+        '--package', 'discord-quest-runner',
+        '--profile', 'sidecar-release',
+        '--target', targetTriple,
+    ], {
+        cwd: rootDir,
         stdio: 'inherit'
     });
     console.log('✅ Build successful.');
@@ -39,8 +64,8 @@ try {
     // Write runner version info (git hash + build timestamp)
     let commitHash = 'unknown';
     try {
-        commitHash = execSync('git rev-parse --short HEAD', {
-            cwd: runnerDir,
+        commitHash = execFileSync('git', ['rev-parse', '--short', 'HEAD'], {
+            cwd: rootDir,
             encoding: 'utf-8'
         }).trim();
     } catch {

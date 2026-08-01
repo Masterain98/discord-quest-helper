@@ -1,0 +1,16 @@
+[package]
+name = "discord-cdp-launch-core"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+
+[features]
+default = []
+serde = ["dep:serde"]
+
+[dependencies]
+serde = { workspace = true, optional = true }
+serde_json.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+nix = { version = "0.30", features = ["signal", "process"] }

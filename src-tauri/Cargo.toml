@@ -1,6 +1,6 @@
 [package]
 name = "discord-quest-helper"
-version = "0.9.0"
+version = "0.10.0"
 edition = "2021"
 default-run = "discord-quest-helper"
 
@@ -13,9 +13,10 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2.11", features = [] }
-tauri-plugin-shell = "2"
+tauri-plugin-shell = "=2.3.5"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+discord-cdp-launch-core = { path = "../crates/discord-cdp-launch-core", features = ["serde"] }
 discord-sdk = "0.4.0"
 once_cell = "1.21"
 
@@ -34,8 +35,11 @@ tokio-tungstenite = { version = "0.28", features = ["native-tls"] }
 futures-util = "0.3"
 flate2 = "1"
 url = "2"
-tauri-plugin-fs = "2"
-tauri-plugin-dialog = "2"
+tauri-plugin-fs = "=2.4.5"
+tauri-plugin-dialog = "=2.6.0"
+# Zero-on-drop wrapper for the Authorization token captured by CDP auto-login;
+# the raw token is held only in Rust, never serialized to the frontend or logs.
+zeroize = "1"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62", features = [
@@ -54,6 +58,12 @@ pbkdf2 = "0.12"
 sha1 = "0.10"
 cbc = { version = "0.1", features = ["alloc"] }
 aes = "0.8"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Precise SIGTERM/SIGKILL for the simulated-game runner: Linux tracks exact PIDs
+# (never process names) and verifies /proc/<pid>/exe before signalling, so a
+# recycled PID or a real game with the same name is never killed.
+nix = { version = "0.30", features = ["signal", "process"] }
 
 [features]
 default = ["custom-protocol"]

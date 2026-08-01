@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { DiscordUser, ExtractedAccount, BillingSubscription } from '@/api/tauri'
-import { autoDetectToken, setToken, autoFetchSuperProperties, getBillingSubscriptions } from '@/api/tauri'
+import { autoDetectToken, setToken, autoLoginViaCdp, autoFetchSuperProperties, getBillingSubscriptions } from '@/api/tauri'
 import { useQuestsStore } from './quests'
 import { useI18n } from 'vue-i18n'
 import { useNow } from '@vueuse/core'
@@ -71,26 +71,7 @@ export const useAuthStore = defineStore('auth', () => {
         const questsStore = useQuestsStore()
         await autoFetchSuperProperties(questsStore.cdpPort)
 
-        // Check CDP availability and update banner immediately after login
-        questsStore.initCdpMode().catch(err => {
-          console.warn('CDP init on login failed:', err)
-        })
-
-        // Pre-fetch game list in background to avoid waiting later
-        // do not await - let it run async
-        questsStore.getDetectableGames().catch(err => {
-          console.warn('Background game list fetch failed:', err)
-        })
-
-        // If enabled, load the account Orbs balance immediately after login.
-        questsStore.fetchOrbsBalance().catch(err => {
-          console.warn('Background Orbs balance fetch failed:', err)
-        })
-
-        // Load billing subscriptions (for Nitro monthly Orbs countdown)
-        fetchBillingSubscription().catch(err => {
-          console.warn('Background billing subscriptions fetch failed:', err)
-        })
+        bootstrapAfterLogin(questsStore, 'CDP init on login failed:')
       } catch (e) {
         // SuperProperties fetch failure should not block login
         console.warn('Failed to fetch SuperProperties:', e)
@@ -103,6 +84,51 @@ export const useAuthStore = defineStore('auth', () => {
     } finally {
       loading.value = false
     }
+  }
+
+  /**
+   * Log in by capturing the currently running Discord client's session over CDP
+   * (the primary login path on Linux). The raw token is never exposed to the
+   * frontend: the backend captures, validates, and stores it, returning only the
+   * DiscordUser. Requires Discord to be running with CDP enabled.
+   */
+  async function loginViaCdp() {
+    loading.value = true
+    error.value = null
+    resetBillingState()
+    try {
+      const questsStore = useQuestsStore()
+      user.value = await autoLoginViaCdp(questsStore.cdpPort)
+      // Intentionally leave `token` null: CDP auto-login never surfaces the raw
+      // token. Authenticated backend commands use the client in AppState.
+      token.value = null
+
+      // CDP is available by definition here (we just used it); refresh state.
+      bootstrapAfterLogin(questsStore, 'CDP init after CDP login failed:')
+
+      return true
+    } catch (e) {
+      error.value = e as string
+      return false
+    } finally {
+      loading.value = false
+    }
+  }
+
+  // Keep post-login refresh work non-blocking for both authentication paths.
+  function bootstrapAfterLogin(questsStore: ReturnType<typeof useQuestsStore>, cdpWarning: string) {
+    questsStore.initCdpMode().catch(err => {
+      console.warn(cdpWarning, err)
+    })
+    questsStore.getDetectableGames().catch(err => {
+      console.warn('Background game list fetch failed:', err)
+    })
+    questsStore.fetchOrbsBalance().catch(err => {
+      console.warn('Background Orbs balance fetch failed:', err)
+    })
+    fetchBillingSubscription().catch(err => {
+      console.warn('Background billing subscriptions fetch failed:', err)
+    })
   }
 
   async function logout() {
@@ -129,8 +155,10 @@ export const useAuthStore = defineStore('auth', () => {
   async function fetchBillingSubscription(force = false) {
     if (billingLoading.value) return
     if (!force && billingSubscriptions.value.length > 0) return
+    // CDP auto-login is authenticated on the backend but exposes no frontend
+    // token, so gate on the logged-in user rather than the raw token.
+    if (!user.value) return
     const requestToken = token.value
-    if (!requestToken) return
     const requestRevision = ++billingRequestRevision
     billingLoading.value = true
     billingError.value = null
@@ -237,6 +265,7 @@ export const useAuthStore = defineStore('auth', () => {
     nitroStatus,
     tryAutoDetect,
     loginWithToken,
+    loginViaCdp,
     logout,
     fetchBillingSubscription
   }

@@ -55,40 +55,43 @@ echo -e "${GREEN}Version: $VERSION${NC}"
 echo ""
 
 # Define paths
-SRC_RUNNER="$PROJECT_ROOT/src-runner"
 SRC_TAURI="$PROJECT_ROOT/src-tauri"
-RELEASE_DIR="$SRC_TAURI/target/release"
+RELEASE_DIR="$PROJECT_ROOT/target/release"
 
 # Step 1: Build src-runner
 if [ "$SKIP_RUNNER_BUILD" = false ]; then
-    echo -e "${YELLOW}[1/3] Building src-runner...${NC}"
-    cd "$SRC_RUNNER"
-    cargo build --release
+    echo -e "${YELLOW}[1/4] Building src-runner...${NC}"
+    pnpm run build:runner
     echo -e "${GREEN}  src-runner build complete.${NC}"
-    cd "$PROJECT_ROOT"
 else
-    echo -e "${GRAY}[1/3] Skipping src-runner build (--skip-runner-build)${NC}"
+    echo -e "${GRAY}[1/4] Skipping src-runner build (--skip-runner-build)${NC}"
 fi
 
 # Copy runner to data directory for development
-RUNNER_SRC="$SRC_RUNNER/target/release/discord-quest-runner"
 RUNNER_DST="$SRC_TAURI/data/discord-quest-runner"
-if [ -f "$RUNNER_SRC" ]; then
-    echo -e "${GRAY}  Copying runner to data directory...${NC}"
-    cp "$RUNNER_SRC" "$RUNNER_DST"
+if [ -f "$RUNNER_DST" ]; then
     chmod +x "$RUNNER_DST"
 fi
 
-# Step 2: Build Tauri app
+# Step 2: Build the CDP launcher sidecar required by the Tauri bundle
 if [ "$SKIP_TAURI_BUILD" = false ]; then
-    echo -e "${YELLOW}[2/3] Building Tauri application...${NC}"
+    echo -e "${YELLOW}[2/4] Building CDP launcher sidecar...${NC}"
+    pnpm run build:cdp-launcher
+    echo -e "${GREEN}  CDP launcher sidecar build complete.${NC}"
+else
+    echo -e "${GRAY}[2/4] Skipping CDP launcher sidecar build (--skip-tauri-build)${NC}"
+fi
+
+# Step 3: Build Tauri app
+if [ "$SKIP_TAURI_BUILD" = false ]; then
+    echo -e "${YELLOW}[3/4] Building Tauri application...${NC}"
     pnpm tauri build
     echo -e "${GREEN}  Tauri build complete.${NC}"
 else
-    echo -e "${GRAY}[2/3] Skipping Tauri build (--skip-tauri-build)${NC}"
+    echo -e "${GRAY}[3/4] Skipping Tauri build (--skip-tauri-build)${NC}"
 fi
 
-# Step 3: Summary
+# Step 4: Summary
 echo ""
 echo -e "${CYAN}========================================${NC}"
 echo -e "${GREEN}  Build Complete!${NC}"
