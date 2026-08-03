@@ -173,4 +173,4 @@ if [[ "$artifact_found" == false && "$SKIP_TAURI_BUILD" == false ]]; then
 fi
 
 printf '\n%bBuild complete.%b\n' "$GREEN" "$NC"
-printf '%bNote: Automatic local Discord token extraction is not yet supported on Linux; use CDP login.%b\n' "$YELLOW" "$NC"
+printf '%bNote: Linux local token auto-detection reads supported Discord profiles; CDP login remains available as a fallback.%b\n' "$YELLOW" "$NC"

