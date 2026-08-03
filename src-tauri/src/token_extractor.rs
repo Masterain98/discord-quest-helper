@@ -599,6 +599,9 @@ impl LinuxOscryptKeyCache {
     fn key_for(&mut self, version: &[u8], client: &DiscordClient) -> Result<&[u8]> {
         match version {
             b"v10" => {
+                // Chromium's legacy Linux v10 format deliberately uses this public,
+                // fixed compatibility value. It is only used to decrypt existing local
+                // OSCrypt data; it is not an application credential or secret.
                 let key = self
                     .v10
                     .get_or_insert_with(|| derive_linux_oscrypt_key(b"peanuts"));
