@@ -65,7 +65,7 @@ impl PlatformCapabilities {
                 cdp_launcher: true,
                 launcher_entry: true,
                 game_simulation: true,
-                token_auto_detection: "manual_only",
+                token_auto_detection: "full",
                 executable_os_priority: vec!["linux", "win32"],
                 default_game_quest_mode: "cdp",
             },
@@ -122,8 +122,7 @@ mod tests {
         assert_eq!(caps.os, "linux");
         assert_eq!(caps.executable_os_priority, vec!["linux", "win32"]);
         assert_eq!(caps.default_game_quest_mode, "cdp");
-        // Local token extraction has no Linux implementation.
-        assert_eq!(caps.token_auto_detection, "manual_only");
+        assert_eq!(caps.token_auto_detection, "full");
         assert!(caps.cdp_launcher && caps.launcher_entry && caps.game_simulation);
     }
 

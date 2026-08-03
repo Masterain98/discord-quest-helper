@@ -498,9 +498,9 @@ export async function navigateDiscordSpa(targetPath: string, cdpPort: number): P
 
 // Platform capabilities (read-only descriptor; brand-new command)
 //
-// `tokenAutoDetection` mirrors the backend descriptor: `full` (local keyring
-// extraction implemented, Windows/macOS), `manual_only` (manual token entry +
-// CDP auto-login; Linux first release), or `unavailable` (no token flow).
+// `tokenAutoDetection` mirrors the backend descriptor: `full` (local token
+// extraction), `manual_only` (manual token entry + CDP auto-login), or
+// `unavailable` (no token flow).
 export type CapabilityLevel = 'full' | 'manual_only' | 'unavailable'
 
 export interface PlatformCapabilities {

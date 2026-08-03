@@ -253,7 +253,7 @@ pnpm install
 
 The build artifacts are written under `target/release/bundle/`. After the first run, omit `--install-deps` unless the system dependencies change.
 
-> Automatic local Discord token extraction is not yet available on Linux. Use the CDP login flow instead.
+> Linux supports local Discord token auto-detection. CDP login remains available as a fallback when no local profile token can be read.
 
 ---
 
