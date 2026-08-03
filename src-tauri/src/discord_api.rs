@@ -129,12 +129,12 @@ impl ProxyState {
     fn description(&self) -> &'static str {
         #[cfg(target_os = "linux")]
         {
-            return match (self.environment.has_proxy(), self.desktop_proxy.is_some()) {
+            match (self.environment.has_proxy(), self.desktop_proxy.is_some()) {
                 (true, true) => "environment and GNOME system proxy detected",
                 (true, false) => "environment proxy detected",
                 (false, true) => "GNOME system proxy detected",
                 (false, false) => "no system proxy detected",
-            };
+            }
         }
 
         #[cfg(not(target_os = "linux"))]

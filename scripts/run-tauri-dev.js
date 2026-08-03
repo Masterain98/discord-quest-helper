@@ -22,7 +22,7 @@ const snapRuntimeKeys = [
 
 const hasSnapRuntime = Object.entries(env).some(([key, value]) => {
   if (key === 'SNAP' || key.startsWith('SNAP_')) return true
-  if (!snapRuntimeKeys.includes(key) && !key.startsWith('XDG_DATA_')) return false
+  if (!snapRuntimeKeys.includes(key) && !key.startsWith('XDG_')) return false
   return typeof value === 'string' && (value.includes('/snap/') || value.includes('/snapd/'))
 })
 
@@ -45,14 +45,16 @@ if (process.platform === 'linux' && hasSnapRuntime) {
       .join(':')
   }
   delete env.XDG_DATA_DIRS_VSCODE_SNAP_ORIG
+  if (env.XDG_CONFIG_HOME?.includes('/snap/')) delete env.XDG_CONFIG_HOME
   if (env.XDG_DATA_HOME?.includes('/snap/')) delete env.XDG_DATA_HOME
 }
 
-const result = spawnSync(
-  'tauri',
-  ['dev', '--', '--bin', 'discord-quest-helper'],
-  { stdio: 'inherit', env },
-)
+const tauriCommand = process.platform === 'win32' ? (env.ComSpec || 'cmd.exe') : 'tauri'
+const tauriArgs = process.platform === 'win32'
+  ? ['/d', '/s', '/c', 'tauri.cmd dev -- --bin discord-quest-helper']
+  : ['dev', '--', '--bin', 'discord-quest-helper']
+
+const result = spawnSync(tauriCommand, tauriArgs, { stdio: 'inherit', env })
 
 if (result.error) {
   console.error(`Failed to start Tauri: ${result.error.message}`)
