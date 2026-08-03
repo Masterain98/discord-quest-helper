@@ -13,13 +13,57 @@ const DISCORD_API_BASE: &str = "https://discord.com/api/v9";
 const PROXY_STATE_CHECK_INTERVAL_MS: u64 = 5_000;
 const QUEST_HOME_REFERER: &str = "https://discord.com/quest-home";
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Default, Hash, PartialEq, Eq)]
+struct ProxyEnvironment {
+    http: Option<String>,
+    https: Option<String>,
+    all: Option<String>,
+    no_proxy: Option<String>,
+}
+
+impl ProxyEnvironment {
+    fn current() -> Self {
+        Self::from_lookup(|key| std::env::var(key).ok())
+    }
+
+    fn from_lookup<F>(lookup: F) -> Self
+    where
+        F: Fn(&str) -> Option<String>,
+    {
+        Self {
+            http: Self::read_pair(&lookup, "HTTP_PROXY", "http_proxy"),
+            https: Self::read_pair(&lookup, "HTTPS_PROXY", "https_proxy"),
+            all: Self::read_pair(&lookup, "ALL_PROXY", "all_proxy"),
+            no_proxy: Self::read_pair(&lookup, "NO_PROXY", "no_proxy"),
+        }
+    }
+
+    fn read_pair<F>(lookup: &F, upper: &str, lower: &str) -> Option<String>
+    where
+        F: Fn(&str) -> Option<String>,
+    {
+        [upper, lower].into_iter().find_map(|key| {
+            lookup(key)
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+        })
+    }
+
+    fn has_proxy(&self) -> bool {
+        self.http.is_some() || self.https.is_some() || self.all.is_some()
+    }
+}
+
+#[derive(Clone, PartialEq, Eq)]
 struct ProxyState {
     fingerprint: u64,
     has_proxy: bool,
+    environment: ProxyEnvironment,
+    desktop_proxy: Option<discord_cdp_launch_core::LinuxDesktopProxySettings>,
 }
 
 impl ProxyState {
+    #[cfg(windows)]
     fn hash_setting(hasher: &mut DefaultHasher, key: &str, value: &str) {
         key.hash(hasher);
         value.trim().hash(hasher);
@@ -27,33 +71,20 @@ impl ProxyState {
 
     fn current() -> Self {
         let mut hasher = DefaultHasher::new();
+        let environment = ProxyEnvironment::current();
+        environment.hash(&mut hasher);
 
-        let http_proxy = std::env::var("HTTP_PROXY").unwrap_or_default();
-        let https_proxy = std::env::var("HTTPS_PROXY").unwrap_or_default();
-        let all_proxy = std::env::var("ALL_PROXY").unwrap_or_default();
-        let no_proxy = std::env::var("NO_PROXY").unwrap_or_default();
-        let http_proxy_lower = std::env::var("http_proxy").unwrap_or_default();
-        let https_proxy_lower = std::env::var("https_proxy").unwrap_or_default();
-        let all_proxy_lower = std::env::var("all_proxy").unwrap_or_default();
-        let no_proxy_lower = std::env::var("no_proxy").unwrap_or_default();
-
-        Self::hash_setting(&mut hasher, "HTTP_PROXY", &http_proxy);
-        Self::hash_setting(&mut hasher, "HTTPS_PROXY", &https_proxy);
-        Self::hash_setting(&mut hasher, "ALL_PROXY", &all_proxy);
-        Self::hash_setting(&mut hasher, "NO_PROXY", &no_proxy);
-        Self::hash_setting(&mut hasher, "http_proxy", &http_proxy_lower);
-        Self::hash_setting(&mut hasher, "https_proxy", &https_proxy_lower);
-        Self::hash_setting(&mut hasher, "all_proxy", &all_proxy_lower);
-        Self::hash_setting(&mut hasher, "no_proxy", &no_proxy_lower);
+        #[cfg(target_os = "linux")]
+        let desktop_proxy = discord_cdp_launch_core::linux_desktop_proxy_settings();
+        #[cfg(not(target_os = "linux"))]
+        let desktop_proxy: Option<discord_cdp_launch_core::LinuxDesktopProxySettings> = None;
+        desktop_proxy.hash(&mut hasher);
 
         // Only the Windows branch below augments this from the registry.
         #[cfg_attr(not(windows), allow(unused_mut))]
-        let mut has_proxy = !http_proxy.trim().is_empty()
-            || !https_proxy.trim().is_empty()
-            || !all_proxy.trim().is_empty()
-            || !http_proxy_lower.trim().is_empty()
-            || !https_proxy_lower.trim().is_empty()
-            || !all_proxy_lower.trim().is_empty();
+        let mut has_proxy = environment.has_proxy();
+
+        has_proxy |= desktop_proxy.is_some();
 
         #[cfg(windows)]
         {
@@ -90,6 +121,27 @@ impl ProxyState {
         Self {
             fingerprint: hasher.finish(),
             has_proxy,
+            environment,
+            desktop_proxy,
+        }
+    }
+
+    fn description(&self) -> &'static str {
+        #[cfg(target_os = "linux")]
+        {
+            return match (self.environment.has_proxy(), self.desktop_proxy.is_some()) {
+                (true, true) => "environment and GNOME system proxy detected",
+                (true, false) => "environment proxy detected",
+                (false, true) => "GNOME system proxy detected",
+                (false, false) => "no system proxy detected",
+            };
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        if self.has_proxy {
+            "system proxy detected"
+        } else {
+            "no system proxy detected"
         }
     }
 }
@@ -132,15 +184,51 @@ impl DiscordApiClient {
         Ok(headers)
     }
 
-    fn build_http_client(token: &str) -> Result<reqwest::Client> {
+    fn build_http_client(token: &str, proxy_state: &ProxyState) -> Result<reqwest::Client> {
         let headers = Self::build_default_headers(token)?;
 
-        reqwest::Client::builder()
+        let builder = reqwest::Client::builder()
             .default_headers(headers)
             .connect_timeout(Duration::from_secs(8))
-            .timeout(Duration::from_secs(20))
-            .build()
-            .context("Could not create HTTP client")
+            .timeout(Duration::from_secs(20));
+
+        let builder = Self::apply_desktop_proxy(builder, proxy_state)?;
+
+        builder.build().context("Could not create HTTP client")
+    }
+
+    fn apply_desktop_proxy(
+        mut builder: reqwest::ClientBuilder,
+        proxy_state: &ProxyState,
+    ) -> Result<reqwest::ClientBuilder> {
+        let Some(desktop) = proxy_state.desktop_proxy.as_ref() else {
+            return Ok(builder);
+        };
+
+        let no_proxy = proxy_state
+            .environment
+            .no_proxy
+            .as_deref()
+            .or(desktop.no_proxy.as_deref())
+            .and_then(reqwest::NoProxy::from_string);
+
+        // Explicit environment values retain precedence. The desktop SOCKS
+        // endpoint is only a per-scheme fallback, preventing a broad `all`
+        // proxy from shadowing an explicit HTTP_PROXY or HTTPS_PROXY.
+        if proxy_state.environment.all.is_none() && proxy_state.environment.http.is_none() {
+            if let Some(url) = desktop.http.as_ref().or(desktop.all.as_ref()) {
+                let proxy = reqwest::Proxy::http(url)?.no_proxy(no_proxy.clone());
+                builder = builder.proxy(proxy);
+            }
+        }
+        if proxy_state.environment.all.is_none() && proxy_state.environment.https.is_none() {
+            if let Some(url) = desktop.https.as_ref().or(desktop.all.as_ref()) {
+                let proxy = reqwest::Proxy::https(url)?.no_proxy(no_proxy);
+                builder = builder.proxy(proxy);
+            }
+        }
+
+        Ok(builder)
     }
 
     /// Create a new API client
@@ -148,17 +236,13 @@ impl DiscordApiClient {
         use crate::logger::{log, LogCategory, LogLevel};
 
         let proxy_state = ProxyState::current();
-        let client = Self::build_http_client(&token)?;
+        let client = Self::build_http_client(&token, &proxy_state)?;
 
         log(
             LogLevel::Info,
             LogCategory::Api,
             "HTTP client initialized",
-            Some(if proxy_state.has_proxy {
-                "system proxy detected"
-            } else {
-                "no system proxy detected"
-            }),
+            Some(proxy_state.description()),
         );
 
         let created_at = Arc::new(Instant::now());
@@ -209,7 +293,7 @@ impl DiscordApiClient {
             Some(&details),
         );
 
-        match Self::build_http_client(&self.token) {
+        match Self::build_http_client(&self.token, &latest_proxy_state) {
             Ok(client) => {
                 self.client.store(Arc::new(client));
                 self.proxy_fingerprint
@@ -1023,7 +1107,9 @@ mod tests {
 
     #[test]
     fn proxy_state_fingerprint_changes_when_env_changes() {
-        let _guard = ENV_TEST_LOCK.lock().unwrap();
+        let _guard = ENV_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let snapshot = env_snapshot();
 
         unsafe { std::env::set_var("HTTP_PROXY", "http://127.0.0.1:7890") };
@@ -1038,6 +1124,56 @@ mod tests {
     }
 
     #[test]
+    fn proxy_environment_prefers_uppercase_and_ignores_empty_values() {
+        let values = std::collections::HashMap::from([
+            ("HTTP_PROXY", "   "),
+            ("http_proxy", "http://127.0.0.1:10808"),
+            ("HTTPS_PROXY", "http://127.0.0.1:10809"),
+            ("https_proxy", "http://127.0.0.1:10810"),
+        ]);
+        let environment =
+            ProxyEnvironment::from_lookup(|key| values.get(key).map(|value| value.to_string()));
+
+        assert_eq!(environment.http.as_deref(), Some("http://127.0.0.1:10808"));
+        assert_eq!(environment.https.as_deref(), Some("http://127.0.0.1:10809"));
+    }
+
+    #[test]
+    fn linux_desktop_proxy_builds_client_without_environment_proxy() {
+        let state = ProxyState {
+            fingerprint: 1,
+            has_proxy: true,
+            environment: ProxyEnvironment::default(),
+            desktop_proxy: Some(discord_cdp_launch_core::LinuxDesktopProxySettings {
+                http: Some("http://127.0.0.1:10808".into()),
+                https: Some("http://127.0.0.1:10808".into()),
+                all: Some("socks5://127.0.0.1:10808".into()),
+                no_proxy: Some("localhost,127.0.0.0/8,::1".into()),
+            }),
+        };
+
+        DiscordApiClient::build_http_client("test-token", &state).unwrap();
+    }
+
+    #[test]
+    fn linux_environment_proxy_takes_precedence_over_desktop_proxy() {
+        let state = ProxyState {
+            fingerprint: 1,
+            has_proxy: true,
+            environment: ProxyEnvironment {
+                https: Some("http://127.0.0.1:10808".into()),
+                ..ProxyEnvironment::default()
+            },
+            desktop_proxy: Some(discord_cdp_launch_core::LinuxDesktopProxySettings {
+                https: Some("http://[invalid".into()),
+                ..discord_cdp_launch_core::LinuxDesktopProxySettings::default()
+            }),
+        };
+
+        DiscordApiClient::build_http_client("test-token", &state).unwrap();
+    }
+
+    #[test]
     fn proxy_refresh_respects_interval_and_rebuilds_on_change() {
         let client = DiscordApiClient::new("test-token".to_string()).unwrap();
 
@@ -1046,14 +1182,13 @@ mod tests {
             .store(0, Ordering::Release);
 
         let original_fingerprint = client.proxy_fingerprint.load(Ordering::Acquire);
-        let changed_state = ProxyState {
-            fingerprint: original_fingerprint.wrapping_add(1),
-            has_proxy: !client.proxy_has_proxy.load(Ordering::Acquire),
-        };
+        let mut changed_state = ProxyState::current();
+        changed_state.fingerprint = original_fingerprint.wrapping_add(1);
+        changed_state.has_proxy = !client.proxy_has_proxy.load(Ordering::Acquire);
 
         let before_interval_refresh = client.maybe_refresh_client_for_proxy_state_with(
             PROXY_STATE_CHECK_INTERVAL_MS.saturating_sub(1),
-            || changed_state,
+            || changed_state.clone(),
         );
         assert!(!before_interval_refresh);
         assert_eq!(
@@ -1063,7 +1198,7 @@ mod tests {
 
         let after_interval_refresh = client
             .maybe_refresh_client_for_proxy_state_with(PROXY_STATE_CHECK_INTERVAL_MS, || {
-                changed_state
+                changed_state.clone()
             });
         assert!(after_interval_refresh);
         assert_eq!(
