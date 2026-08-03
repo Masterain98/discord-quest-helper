@@ -15,7 +15,7 @@ pub use launcher::{
 };
 pub use model::{
     CdpProbeStatus, CdpTarget, DiscordInstall, LaunchOptions, LaunchOutcome, LaunchResult,
-    DEFAULT_CDP_PORT,
+    LinuxDesktopProxySettings, DEFAULT_CDP_PORT,
 };
 pub use platform::SystemPlatform;
 
@@ -29,4 +29,7 @@ pub use platform::macos::discover_macos_installs_in;
 
 #[cfg(target_os = "linux")]
 #[doc(hidden)]
-pub use platform::linux::{classify_linux_process, discover_linux_installs_in, LinuxProcessInfo};
+pub use platform::linux::{
+    classify_linux_process, discover_linux_installs_in, linux_desktop_proxy_settings,
+    LinuxProcessInfo,
+};

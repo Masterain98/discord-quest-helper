@@ -5,7 +5,7 @@
 //! must not change the shared `DiscordInstall` model here.
 
 use crate::launcher::build_launch_args;
-use crate::{DiscordChannel, DiscordInstall, LaunchError};
+use crate::{DiscordChannel, DiscordInstall, LaunchError, LinuxDesktopProxySettings};
 use nix::sys::signal::{self, Signal};
 use nix::unistd::Pid;
 use std::ffi::{OsStr, OsString};
@@ -427,29 +427,28 @@ pub(crate) fn spawn(
 /// Preserve each explicit environment value and only synthesize missing
 /// variables from GNOME's manual proxy settings.
 fn apply_desktop_proxy_if_missing(command: &mut Command) {
-    if gsettings_string("org.gnome.system.proxy", "mode").as_deref() != Some("manual") {
+    let Some(settings) = linux_desktop_proxy_settings() else {
         return;
-    }
+    };
 
     if proxy_env_missing("HTTP_PROXY", "http_proxy") {
-        if let Some(proxy) = gsettings_proxy_url("http", "http") {
+        if let Some(proxy) = settings.http {
             command.env("HTTP_PROXY", &proxy).env("http_proxy", proxy);
         }
     }
     if proxy_env_missing("HTTPS_PROXY", "https_proxy") {
-        if let Some(proxy) = gsettings_proxy_url("https", "http") {
+        if let Some(proxy) = settings.https {
             command.env("HTTPS_PROXY", &proxy).env("https_proxy", proxy);
         }
     }
     if proxy_env_missing("ALL_PROXY", "all_proxy") {
-        if let Some(proxy) = gsettings_proxy_url("socks", "socks5") {
+        if let Some(proxy) = settings.all {
             command.env("ALL_PROXY", &proxy).env("all_proxy", proxy);
         }
     }
 
     if proxy_env_missing("NO_PROXY", "no_proxy") {
-        if let Some(ignore_hosts) = gsettings_string_list("org.gnome.system.proxy", "ignore-hosts")
-        {
+        if let Some(ignore_hosts) = settings.no_proxy {
             command
                 .env("NO_PROXY", &ignore_hosts)
                 .env("no_proxy", ignore_hosts);
@@ -459,6 +458,26 @@ fn apply_desktop_proxy_if_missing(command: &mut Command) {
 
 fn proxy_env_missing(upper: &str, lower: &str) -> bool {
     std::env::var_os(upper).is_none() && std::env::var_os(lower).is_none()
+}
+
+/// Read the current GNOME-compatible manual proxy configuration.
+///
+/// This intentionally returns `None` for `none` and `auto` modes. PAC support
+/// requires a resolver rather than a single proxy URL and must not be treated
+/// as if it were a manual endpoint.
+pub fn linux_desktop_proxy_settings() -> Option<LinuxDesktopProxySettings> {
+    if gsettings_string("org.gnome.system.proxy", "mode").as_deref() != Some("manual") {
+        return None;
+    }
+
+    let settings = LinuxDesktopProxySettings {
+        http: gsettings_proxy_url("http", "http"),
+        https: gsettings_proxy_url("https", "http"),
+        all: gsettings_proxy_url("socks", "socks5"),
+        no_proxy: gsettings_string_list("org.gnome.system.proxy", "ignore-hosts"),
+    };
+
+    settings.has_proxy().then_some(settings)
 }
 
 fn gsettings_proxy_url(section: &str, scheme: &str) -> Option<String> {
@@ -519,7 +538,7 @@ fn parse_gvariant_string(value: &str) -> Option<String> {
 
 #[cfg(test)]
 mod proxy_setting_tests {
-    use super::{parse_gvariant_string, parse_gvariant_string_list};
+    use super::{parse_gvariant_string, parse_gvariant_string_list, LinuxDesktopProxySettings};
 
     #[test]
     fn parses_gsettings_strings() {
@@ -538,5 +557,15 @@ mod proxy_setting_tests {
             Some("localhost,127.0.0.0/8,::1".into())
         );
         assert_eq!(parse_gvariant_string_list("[]"), None);
+    }
+
+    #[test]
+    fn desktop_proxy_requires_at_least_one_endpoint() {
+        assert!(!LinuxDesktopProxySettings::default().has_proxy());
+        assert!(LinuxDesktopProxySettings {
+            https: Some("http://127.0.0.1:10808".into()),
+            ..LinuxDesktopProxySettings::default()
+        }
+        .has_proxy());
     }
 }

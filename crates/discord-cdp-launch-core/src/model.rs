@@ -4,6 +4,26 @@ use std::time::Duration;
 
 pub const DEFAULT_CDP_PORT: u16 = 9223;
 
+/// Manual proxy endpoints exposed by a Linux desktop session.
+///
+/// The data model is platform-independent so consumers can test proxy client
+/// construction without requiring a running Linux desktop. Discovery remains
+/// Linux-only.
+#[derive(Clone, Debug, Default, Hash, PartialEq, Eq)]
+pub struct LinuxDesktopProxySettings {
+    pub http: Option<String>,
+    pub https: Option<String>,
+    pub all: Option<String>,
+    pub no_proxy: Option<String>,
+}
+
+#[cfg(target_os = "linux")]
+impl LinuxDesktopProxySettings {
+    pub(crate) fn has_proxy(&self) -> bool {
+        self.http.is_some() || self.https.is_some() || self.all.is_some()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiscordInstall {
     pub channel: DiscordChannel,
