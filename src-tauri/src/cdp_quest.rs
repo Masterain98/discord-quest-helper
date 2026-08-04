@@ -2916,20 +2916,6 @@ pub async fn navigate_discord_spa(port: u16, target_path: &str) -> Result<()> {
     }
 }
 
-fn cdp_play_activity_progress_pct(
-    progress_seconds: f64,
-    seconds_needed: u32,
-    completed: bool,
-) -> f64 {
-    if completed {
-        return 100.0;
-    }
-    if seconds_needed == 0 {
-        return 0.0;
-    }
-    (progress_seconds / seconds_needed as f64 * 100.0).clamp(0.0, 99.0)
-}
-
 async fn confirm_play_activity_via_cdp(
     port: u16,
     quest_id: &str,
@@ -2954,11 +2940,7 @@ async fn confirm_play_activity_via_cdp(
         if let Ok(server_status) = cdp_get_play_activity_status(port, quest_id).await {
             let _ = app_handle.emit(
                 "quest-progress",
-                cdp_play_activity_progress_pct(
-                    server_status.progress_seconds,
-                    seconds_needed,
-                    server_status.completed,
-                ),
+                server_status.progress_percentage(seconds_needed),
             );
             confirmed = server_status.completed;
         }
@@ -3014,9 +2996,10 @@ pub async fn complete_play_activity_via_cdp(
 
     cdp_cleanup(port).await;
     cdp_warmup_quest_route(port).await;
-    cdp_init_modules_on_primary(port)
-        .await
-        .context("Failed to initialize CDP modules for PLAY_ACTIVITY")?;
+    if let Err(error) = cdp_init_modules_on_primary(port).await {
+        cdp_cleanup(port).await;
+        return Err(error.context("Failed to initialize CDP modules for PLAY_ACTIVITY"));
+    }
 
     let remaining_seconds = (seconds_needed as f64 - initial_progress.max(0.0))
         .max(0.0)
@@ -3031,7 +3014,11 @@ pub async fn complete_play_activity_via_cdp(
 
     let _ = app_handle.emit(
         "quest-progress",
-        cdp_play_activity_progress_pct(initial_progress, seconds_needed, false),
+        PlayActivityHeartbeatStatus {
+            progress_seconds: initial_progress,
+            completed: false,
+        }
+        .progress_percentage(seconds_needed),
     );
 
     loop {
@@ -3069,7 +3056,7 @@ pub async fn complete_play_activity_via_cdp(
                 consecutive_errors += 1;
                 log(
                     LogLevel::Warn,
-                    LogCategory::TokenExtraction,
+                    LogCategory::Quest,
                     &format!(
                         "CDP PLAY_ACTIVITY heartbeat failed ({}/{}): {}",
                         consecutive_errors, MAX_CONSECUTIVE_ERRORS, error
@@ -3101,7 +3088,7 @@ pub async fn complete_play_activity_via_cdp(
             }
         };
 
-        if status.completed || status.progress_seconds >= seconds_needed as f64 {
+        if status.reached_target(seconds_needed) {
             return confirm_play_activity_via_cdp(
                 port,
                 &quest_id,
@@ -3138,15 +3125,9 @@ pub async fn complete_play_activity_via_cdp(
                     consecutive_errors = 0;
                     let _ = app_handle.emit(
                         "quest-progress",
-                        cdp_play_activity_progress_pct(
-                            polled_status.progress_seconds,
-                            seconds_needed,
-                            polled_status.completed,
-                        ),
+                        polled_status.progress_percentage(seconds_needed),
                     );
-                    if polled_status.completed
-                        || polled_status.progress_seconds >= seconds_needed as f64
-                    {
+                    if polled_status.reached_target(seconds_needed) {
                         return confirm_play_activity_via_cdp(
                             port,
                             &quest_id,
@@ -3543,8 +3524,22 @@ mod tests {
 
     #[test]
     fn play_activity_cdp_progress_waits_for_server_completion() {
-        assert_eq!(cdp_play_activity_progress_pct(900.0, 900, false), 99.0);
-        assert_eq!(cdp_play_activity_progress_pct(900.0, 900, true), 100.0);
+        assert_eq!(
+            PlayActivityHeartbeatStatus {
+                progress_seconds: 900.0,
+                completed: false,
+            }
+            .progress_percentage(900),
+            99.0
+        );
+        assert_eq!(
+            PlayActivityHeartbeatStatus {
+                progress_seconds: 900.0,
+                completed: true,
+            }
+            .progress_percentage(900),
+            100.0
+        );
     }
 
     #[test]

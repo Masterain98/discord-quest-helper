@@ -8,6 +8,7 @@ import {
   getQuestKind,
   getQuestTasks,
   isPlayActivityTask,
+  playActivityProgressPercentage,
 } from './questTasks'
 
 function playActivityQuest(): Quest {
@@ -45,6 +46,14 @@ describe('PLAY_ACTIVITY task helpers', () => {
     const quest = playActivityQuest()
 
     expect(firstProgressValue(quest, 'PLAY_ACTIVITY')).toBe(48)
+  })
+
+  it('does not report completion before Discord sets completed_at', () => {
+    expect(playActivityProgressPercentage(450, 900)).toBe(50)
+    expect(playActivityProgressPercentage(900, 900)).toBe(99)
+    expect(playActivityProgressPercentage(-1, 900)).toBe(0)
+    expect(playActivityProgressPercentage(900, 0)).toBe(0)
+    expect(playActivityProgressPercentage(900, 900, true)).toBe(100)
   })
 
   it('provides localized cloud-game badge labels', () => {

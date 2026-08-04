@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
-import type { Quest, DetectableGame, ExcludedQuest, PlatformCapabilities } from '@/api/tauri'
-import { getQuestKind } from '@/utils/questTasks'
+import type { Quest, DetectableGame, ExcludedQuest, GameQuestMode, PlatformCapabilities } from '@/api/tauri'
+import { getQuestKind, playActivityProgressPercentage } from '@/utils/questTasks'
 import { resolveSimulationExecutable } from '@/utils/executables'
 
 /** Quest with optional pre-selected executable name for batch game quest processing */
@@ -116,7 +116,7 @@ export const useQuestsStore = defineStore('quests', () => {
   // Game Quest Mode - 'simulate' runs a fake game exe, 'heartbeat' sends direct API heartbeats, 'cdp' injects via CDP
   const STORAGE_GAME_QUEST_MODE_KEY = 'questHelper_gameQuestMode'
   const savedGameQuestMode = localStorage.getItem(STORAGE_GAME_QUEST_MODE_KEY)
-  const gameQuestMode = ref<'simulate' | 'heartbeat' | 'cdp'>(
+  const gameQuestMode = ref<GameQuestMode>(
     savedGameQuestMode === 'heartbeat' ? 'heartbeat'
     : savedGameQuestMode === 'cdp' ? 'cdp'
     : 'simulate'
@@ -769,9 +769,7 @@ export const useQuestsStore = defineStore('quests', () => {
         throw new Error('CDP mode is selected but Discord CDP is not available')
       }
 
-      const progressPct = secondsNeeded > 0
-        ? Math.min(100, Math.max(0, initialProgress / secondsNeeded * 100))
-        : 0
+      const progressPct = playActivityProgressPercentage(initialProgress, secondsNeeded)
 
       console.log(
         `Starting PLAY_ACTIVITY quest: mode=${gameQuestMode.value}, progress=${initialProgress}/${secondsNeeded}s, heartbeat=${heartbeatInterval.value}s, polling=${gamePollingInterval.value}s`
@@ -843,7 +841,7 @@ export const useQuestsStore = defineStore('quests', () => {
 
       // Recovery: If activeGameExe is missing but we have a quest, try to find it
       // Only applies to simulate mode — CDP/heartbeat modes never create a real process
-      if (!exeToStop && activeQuestId.value && activeQuestType.value !== 'video' && gameQuestMode.value === 'simulate') {
+      if (!exeToStop && activeQuestId.value && activeQuestType.value === 'game' && gameQuestMode.value === 'simulate') {
         console.warn('activeGameExe is null, attempting to recover from activeQuestId...')
         const quest = quests.value.find(q => q.id === activeQuestId.value)
         if (quest && quest.config.application?.id) {

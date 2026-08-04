@@ -538,6 +538,46 @@ async fn start_game_heartbeat_quest(
     Ok(())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PlayActivityTransport {
+    DirectApi,
+    Cdp,
+}
+
+impl TryFrom<&str> for PlayActivityTransport {
+    type Error = String;
+
+    fn try_from(mode: &str) -> Result<Self, Self::Error> {
+        match mode {
+            "simulate" | "heartbeat" => Ok(Self::DirectApi),
+            "cdp" => Ok(Self::Cdp),
+            _ => Err(format!("Unsupported PLAY_ACTIVITY mode: {}", mode)),
+        }
+    }
+}
+
+#[cfg(test)]
+mod play_activity_transport_tests {
+    use super::PlayActivityTransport;
+
+    #[test]
+    fn maps_supported_frontend_modes_to_a_transport() {
+        assert_eq!(
+            PlayActivityTransport::try_from("simulate"),
+            Ok(PlayActivityTransport::DirectApi)
+        );
+        assert_eq!(
+            PlayActivityTransport::try_from("heartbeat"),
+            Ok(PlayActivityTransport::DirectApi)
+        );
+        assert_eq!(
+            PlayActivityTransport::try_from("cdp"),
+            Ok(PlayActivityTransport::Cdp)
+        );
+        assert!(PlayActivityTransport::try_from("unknown").is_err());
+    }
+}
+
 /// Start a PLAY_ACTIVITY cloud-game quest using the current game quest mode.
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
@@ -553,9 +593,7 @@ async fn start_play_activity_quest(
     state: State<'_, AppState>,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
-    if !matches!(mode.as_str(), "simulate" | "heartbeat" | "cdp") {
-        return Err(format!("Unsupported PLAY_ACTIVITY mode: {}", mode));
-    }
+    let transport = PlayActivityTransport::try_from(mode.as_str())?;
     if heartbeat_interval == 0 {
         return Err("PLAY_ACTIVITY heartbeat interval must be greater than zero".to_string());
     }
@@ -566,7 +604,7 @@ async fn start_play_activity_quest(
     }
 
     let client = state.client.lock().unwrap().clone();
-    if mode != "cdp" && client.is_none() {
+    if transport == PlayActivityTransport::DirectApi && client.is_none() {
         return Err("Not logged in".to_string());
     }
 
@@ -579,7 +617,7 @@ async fn start_play_activity_quest(
     });
 
     tokio::spawn(async move {
-        let result = if mode == "cdp" {
+        let result = if transport == PlayActivityTransport::Cdp {
             cdp_quest::complete_play_activity_via_cdp(
                 cdp_port,
                 quest_id,

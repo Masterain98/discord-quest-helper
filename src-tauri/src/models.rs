@@ -82,6 +82,22 @@ pub struct PlayActivityHeartbeatStatus {
     pub completed: bool,
 }
 
+impl PlayActivityHeartbeatStatus {
+    pub fn progress_percentage(self, target_seconds: u32) -> f64 {
+        if self.completed {
+            return 100.0;
+        }
+        if target_seconds == 0 {
+            return 0.0;
+        }
+        (self.progress_seconds / target_seconds as f64 * 100.0).clamp(0.0, 99.0)
+    }
+
+    pub fn reached_target(self, target_seconds: u32) -> bool {
+        self.completed || self.progress_seconds >= target_seconds as f64
+    }
+}
+
 // Internal state
 pub struct QuestState {
     #[allow(dead_code)]

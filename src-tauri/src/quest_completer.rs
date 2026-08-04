@@ -11,20 +11,6 @@ const PLAY_ACTIVITY_RETRY_DELAY_SECS: u64 = 5;
 const PLAY_ACTIVITY_MAX_CONSECUTIVE_ERRORS: u32 = 3;
 const PLAY_ACTIVITY_TIMEOUT_GRACE_SECS: u64 = 300;
 
-fn play_activity_progress_pct(progress_seconds: f64, seconds_needed: u32, completed: bool) -> f64 {
-    if completed {
-        return 100.0;
-    }
-    if seconds_needed == 0 {
-        return 0.0;
-    }
-    (progress_seconds / seconds_needed as f64 * 100.0).clamp(0.0, 99.0)
-}
-
-fn play_activity_reached_target(status: PlayActivityHeartbeatStatus, seconds_needed: u32) -> bool {
-    status.completed || status.progress_seconds >= seconds_needed as f64
-}
-
 async fn confirm_play_activity_via_api(
     client: &DiscordApiClient,
     quest_id: &str,
@@ -50,7 +36,11 @@ async fn confirm_play_activity_via_api(
         if let Ok((progress, completed)) = client.get_quest_progress(quest_id).await {
             let _ = app_handle.emit(
                 "quest-progress",
-                play_activity_progress_pct(progress, seconds_needed, completed),
+                PlayActivityHeartbeatStatus {
+                    progress_seconds: progress,
+                    completed,
+                }
+                .progress_percentage(seconds_needed),
             );
             confirmed = completed;
         }
@@ -333,7 +323,11 @@ pub async fn complete_play_activity_via_heartbeat(
 
     let _ = app_handle.emit(
         "quest-progress",
-        play_activity_progress_pct(initial_progress, seconds_needed, false),
+        PlayActivityHeartbeatStatus {
+            progress_seconds: initial_progress,
+            completed: false,
+        }
+        .progress_percentage(seconds_needed),
     );
 
     loop {
@@ -390,7 +384,7 @@ pub async fn complete_play_activity_via_heartbeat(
             }
         };
 
-        if play_activity_reached_target(status, seconds_needed) {
+        if status.reached_target(seconds_needed) {
             return confirm_play_activity_via_api(
                 client,
                 &quest_id,
@@ -431,9 +425,9 @@ pub async fn complete_play_activity_via_heartbeat(
                     };
                     let _ = app_handle.emit(
                         "quest-progress",
-                        play_activity_progress_pct(progress, seconds_needed, completed),
+                        polled_status.progress_percentage(seconds_needed),
                     );
-                    if play_activity_reached_target(polled_status, seconds_needed) {
+                    if polled_status.reached_target(seconds_needed) {
                         return confirm_play_activity_via_api(
                             client,
                             &quest_id,
@@ -486,26 +480,29 @@ mod tests {
 
     #[test]
     fn play_activity_progress_stays_below_complete_until_server_confirmation() {
-        assert_eq!(play_activity_progress_pct(450.0, 900, false), 50.0);
-        assert_eq!(play_activity_progress_pct(900.0, 900, false), 99.0);
-        assert_eq!(play_activity_progress_pct(900.0, 900, true), 100.0);
+        let status = |progress_seconds, completed| PlayActivityHeartbeatStatus {
+            progress_seconds,
+            completed,
+        };
+
+        assert_eq!(status(450.0, false).progress_percentage(900), 50.0);
+        assert_eq!(status(900.0, false).progress_percentage(900), 99.0);
+        assert_eq!(status(900.0, true).progress_percentage(900), 100.0);
+        assert_eq!(status(900.0, false).progress_percentage(0), 0.0);
+        assert_eq!(status(-5.0, false).progress_percentage(900), 0.0);
     }
 
     #[test]
     fn play_activity_target_uses_server_seconds_or_completion() {
-        assert!(!play_activity_reached_target(
-            PlayActivityHeartbeatStatus {
-                progress_seconds: 899.0,
-                completed: false,
-            },
-            900,
-        ));
-        assert!(play_activity_reached_target(
-            PlayActivityHeartbeatStatus {
-                progress_seconds: 900.0,
-                completed: false,
-            },
-            900,
-        ));
+        assert!(!PlayActivityHeartbeatStatus {
+            progress_seconds: 899.0,
+            completed: false,
+        }
+        .reached_target(900));
+        assert!(PlayActivityHeartbeatStatus {
+            progress_seconds: 900.0,
+            completed: false,
+        }
+        .reached_target(900));
     }
 }

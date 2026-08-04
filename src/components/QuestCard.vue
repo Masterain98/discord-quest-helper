@@ -38,9 +38,12 @@ const props = defineProps<{
 const questsStore = useQuestsStore()
 const authStore = useAuthStore()
 
-const isCloudGameActivity = computed(() =>
-  props.questType === 'activity' && getQuestTasks(props.quest).some(isPlayActivityTask)
+const cloudGameActivityTask = computed(() =>
+  props.questType === 'activity'
+    ? getQuestTasks(props.quest).find(isPlayActivityTask) ?? null
+    : null
 )
+const isCloudGameActivity = computed(() => cloudGameActivityTask.value !== null)
 
 const questTypeLabel = computed(() => {
   if (props.questType === 'video') return t('filter.video')
@@ -57,6 +60,9 @@ const targetDuration = computed(() => {
   // For active quests, use the store's target duration (includes calculated checkpoint times)
   if (isActiveQuest.value && questsStore.activeQuestTargetDuration > 0) {
     return questsStore.activeQuestTargetDuration
+  }
+  if (cloudGameActivityTask.value) {
+    return cloudGameActivityTask.value.target ?? 0
   }
   // For activity quests that haven't started, estimate based on checkpoint settings
   const questKind = getQuestKind(props.quest)

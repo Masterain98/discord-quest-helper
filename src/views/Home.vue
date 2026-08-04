@@ -1591,8 +1591,11 @@ async function startQuest(quest: Quest) {
     if (isPlayActivityTask(task)) {
       if (questsStore.gameQuestMode === 'cdp' && !questsStore.cdpAvailable) {
         toast.warning({
-          title: t('toast.activity_cdp_required'),
-          actions: [{ label: t('toast.open_settings'), onClick: () => navigateToTab('settings', 'discord_integration') }],
+          title: t('settings.game_mode_cdp_unavailable'),
+          actions: [
+            { label: t('header.mode.change_mode'), onClick: () => navigateToTab('settings', 'quest_behavior') },
+            { label: t('toast.open_settings'), onClick: () => navigateToTab('settings', 'discord_integration') },
+          ],
         })
         return
       }

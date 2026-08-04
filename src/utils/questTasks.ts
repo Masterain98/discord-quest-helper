@@ -106,6 +106,16 @@ export function isPlayActivityTask(task: QuestTaskView): boolean {
   return task.type === 'PLAY_ACTIVITY'
 }
 
+export function playActivityProgressPercentage(
+  progressSeconds: number,
+  targetSeconds: number,
+  completed = false
+): number {
+  if (completed) return 100
+  if (targetSeconds <= 0) return 0
+  return Math.min(99, Math.max(0, progressSeconds / targetSeconds * 100))
+}
+
 export function firstProgressValue(quest: Quest, taskKey?: string): number {
   const progress = quest.user_status?.progress
   if (!progress || typeof progress !== 'object') return 0

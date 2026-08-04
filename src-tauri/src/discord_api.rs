@@ -910,7 +910,19 @@ impl DiscordApiClient {
 
         if !response.status().is_success() {
             let status = response.status();
-            anyhow::bail!("Failed to send PLAY_ACTIVITY heartbeat: {}", status);
+            let body = response.text().await.unwrap_or_default();
+            let body_length = body.chars().count();
+            let mut body_preview: String = body.chars().take(1024).collect();
+            if body_preview.is_empty() {
+                body_preview.push_str("<empty response body>");
+            } else if body_length > 1024 {
+                body_preview.push_str("… [truncated]");
+            }
+            anyhow::bail!(
+                "Failed to send PLAY_ACTIVITY heartbeat: {} - {}",
+                status,
+                body_preview
+            );
         }
 
         let body: serde_json::Value = response
