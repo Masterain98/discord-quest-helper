@@ -62,4 +62,28 @@ describe('deriveHomeQuestBuckets', () => {
     expect(unavailable.readyToRun).toHaveLength(0)
     expect(available.readyToRun.map(item => item.id)).toEqual(['activity'])
   })
+
+  it('keeps PLAY_ACTIVITY in Activity while allowing it to run without CDP', () => {
+    const cloudActivity = quest({
+      id: 'cloud-activity',
+      user_status: {
+        enrolled_at: '2026-06-20T00:00:00.000Z',
+        progress: { PLAY_ACTIVITY: { value: 48 } },
+      },
+      config: {
+        messages: { quest_name: 'Cloud Activity' },
+        task_config_v2: {
+          tasks: {
+            PLAY_ACTIVITY: { type: 'PLAY_ACTIVITY', target: 900 },
+          },
+        },
+      },
+    })
+
+    const buckets = deriveHomeQuestBuckets([cloudActivity], { now, cdpAvailable: false })
+
+    expect(buckets.readyToRun.map(item => item.id)).toEqual(['cloud-activity'])
+    expect(buckets.attentionNeeded).toHaveLength(0)
+    expect(buckets.activityManual).toHaveLength(0)
+  })
 })

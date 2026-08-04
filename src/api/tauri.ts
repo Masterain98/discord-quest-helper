@@ -239,6 +239,28 @@ export async function startGameHeartbeatQuest(
   })
 }
 
+export async function startPlayActivityQuest(
+  questId: string,
+  applicationId: string,
+  secondsNeeded: number,
+  initialProgress: number,
+  mode: 'simulate' | 'heartbeat' | 'cdp',
+  cdpPort: number,
+  heartbeatInterval: number,
+  progressPollingInterval: number
+): Promise<void> {
+  return await invoke('start_play_activity_quest', {
+    questId,
+    applicationId,
+    secondsNeeded,
+    initialProgress,
+    mode,
+    cdpPort,
+    heartbeatInterval,
+    progressPollingInterval
+  })
+}
+
 // Game simulator commands
 export async function createSimulatedGame(
   path: string,

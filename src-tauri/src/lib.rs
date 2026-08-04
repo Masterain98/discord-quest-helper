@@ -538,6 +538,88 @@ async fn start_game_heartbeat_quest(
     Ok(())
 }
 
+/// Start a PLAY_ACTIVITY cloud-game quest using the current game quest mode.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+async fn start_play_activity_quest(
+    quest_id: String,
+    application_id: String,
+    seconds_needed: u32,
+    initial_progress: f64,
+    mode: String,
+    cdp_port: u16,
+    heartbeat_interval: u64,
+    progress_polling_interval: u64,
+    state: State<'_, AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    if !matches!(mode.as_str(), "simulate" | "heartbeat" | "cdp") {
+        return Err(format!("Unsupported PLAY_ACTIVITY mode: {}", mode));
+    }
+    if heartbeat_interval == 0 {
+        return Err("PLAY_ACTIVITY heartbeat interval must be greater than zero".to_string());
+    }
+    if progress_polling_interval == 0 {
+        return Err(
+            "PLAY_ACTIVITY progress polling interval must be greater than zero".to_string(),
+        );
+    }
+
+    let client = state.client.lock().unwrap().clone();
+    if mode != "cdp" && client.is_none() {
+        return Err("Not logged in".to_string());
+    }
+
+    stop_quest_internal(&state).await;
+
+    let (cancel_tx, cancel_rx) = tokio::sync::mpsc::channel::<()>(1);
+    *state.quest_state.lock().unwrap() = Some(QuestState {
+        quest_id: quest_id.clone(),
+        cancel_flag: cancel_tx,
+    });
+
+    tokio::spawn(async move {
+        let result = if mode == "cdp" {
+            cdp_quest::complete_play_activity_via_cdp(
+                cdp_port,
+                quest_id,
+                application_id,
+                seconds_needed,
+                initial_progress,
+                heartbeat_interval,
+                progress_polling_interval,
+                app_handle.clone(),
+                cancel_rx,
+            )
+            .await
+        } else {
+            quest_completer::complete_play_activity_via_heartbeat(
+                client
+                    .as_ref()
+                    .expect("direct PLAY_ACTIVITY mode validated an API client"),
+                quest_id,
+                application_id,
+                seconds_needed,
+                initial_progress,
+                heartbeat_interval,
+                progress_polling_interval,
+                app_handle.clone(),
+                cancel_rx,
+            )
+            .await
+        };
+
+        if let Err(error) = result {
+            let _ = app_handle.emit(
+                "quest-error",
+                format!("PLAY_ACTIVITY quest failed: {:#}", error),
+            );
+        }
+    });
+
+    Ok(())
+}
+
 /// Start a quest via CDP injection
 ///
 /// Dispatches to the appropriate CDP completion function based on quest_type.
@@ -1168,6 +1250,7 @@ pub fn run() {
             start_video_quest,
             start_stream_quest,
             start_game_heartbeat_quest,
+            start_play_activity_quest,
             start_cdp_quest,
             stop_quest,
             create_simulated_game,

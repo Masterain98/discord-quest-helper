@@ -69,6 +69,19 @@ pub struct GameHeartbeatPayload {
     pub terminal: bool,
 }
 
+#[derive(Debug, Serialize)]
+pub struct PlayActivityHeartbeatPayload {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub application_id: Option<String>,
+    pub terminal: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PlayActivityHeartbeatStatus {
+    pub progress_seconds: f64,
+    pub completed: bool,
+}
+
 // Internal state
 pub struct QuestState {
     #[allow(dead_code)]

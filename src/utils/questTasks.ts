@@ -23,6 +23,7 @@ const TASK_LABELS: Record<string, string> = {
   PLAY_ON_PLAYSTATION: 'PlayStation',
   STREAM_ON_DESKTOP: 'Stream',
   ACHIEVEMENT_IN_ACTIVITY: 'Activity Achievement',
+  PLAY_ACTIVITY: 'Activity - Cloud Game',
 }
 
 export function formatDuration(seconds: number): string {
@@ -99,6 +100,10 @@ export function isStreamTask(task: QuestTaskView): boolean {
 
 export function isActivityTask(task: QuestTaskView): boolean {
   return task.type.includes('ACTIVITY') || task.type.includes('ACHIEVEMENT')
+}
+
+export function isPlayActivityTask(task: QuestTaskView): boolean {
+  return task.type === 'PLAY_ACTIVITY'
 }
 
 export function firstProgressValue(quest: Quest, taskKey?: string): number {

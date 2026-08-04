@@ -14,9 +14,16 @@ import {
   CardFooter,
 } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Clock, Gift, MonitorPlay, Gamepad2, Activity } from 'lucide-vue-next'
+import { Clock, Gift, MonitorPlay, Gamepad2, Activity, Cloud } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
-import { firstProgressValue, firstTargetTask, formatDuration, getQuestKind } from '@/utils/questTasks'
+import {
+  firstProgressValue,
+  firstTargetTask,
+  formatDuration,
+  getQuestKind,
+  getQuestTasks,
+  isPlayActivityTask,
+} from '@/utils/questTasks'
 import { getQuestRewardViews, type QuestRewardView } from '@/utils/questRewards'
 
 const { t } = useI18n()
@@ -30,6 +37,18 @@ const props = defineProps<{
 
 const questsStore = useQuestsStore()
 const authStore = useAuthStore()
+
+const isCloudGameActivity = computed(() =>
+  props.questType === 'activity' && getQuestTasks(props.quest).some(isPlayActivityTask)
+)
+
+const questTypeLabel = computed(() => {
+  if (props.questType === 'video') return t('filter.video')
+  if (props.questType === 'activity') {
+    return t(isCloudGameActivity.value ? 'filter.activity_cloud_game' : 'filter.activity')
+  }
+  return t('filter.stream_play')
+})
 
 // Check if this quest is currently active
 const isActiveQuest = computed(() => questsStore.activeQuestId === props.quest.id)
@@ -219,13 +238,15 @@ const activeTimeText = computed(() => {
                   'mb-1',
                   questType === 'video' && 'border-sky-400/60 bg-sky-500/10 text-sky-600 dark:text-sky-400',
                   questType === 'stream' && 'border-violet-400/60 bg-violet-500/10 text-violet-600 dark:text-violet-400',
-                  questType === 'activity' && 'border-amber-400/60 bg-amber-500/10 text-amber-600 dark:text-amber-400',
+                  questType === 'activity' && !isCloudGameActivity && 'border-amber-400/60 bg-amber-500/10 text-amber-600 dark:text-amber-400',
+                  isCloudGameActivity && 'border-violet-400/60 bg-violet-500/10 text-violet-600 dark:text-violet-400',
                 ]"
               >
                  <MonitorPlay v-if="questType === 'video'" class="w-3 h-3 mr-1" />
                  <Gamepad2 v-else-if="questType === 'stream'" class="w-3 h-3 mr-1" />
+                 <Cloud v-else-if="isCloudGameActivity" class="w-3 h-3 mr-1" />
                  <Activity v-else class="w-3 h-3 mr-1" />
-                 {{ questType === 'video' ? t('filter.video') : (questType === 'activity' ? t('filter.activity') : t('filter.stream_play')) }}
+                 {{ questTypeLabel }}
               </Badge>
             </div>
             <CardTitle :class="density === 'compact' ? 'truncate text-base text-primary sm:text-lg' : 'text-xl text-primary'">

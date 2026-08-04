@@ -48,6 +48,7 @@ import {
   connectToDiscordRpc,
   acceptQuest,
   startGameHeartbeatQuest,
+  startPlayActivityQuest,
   forceVideoProgress,
   startCdpQuest,
   checkCdpStatus,
@@ -690,11 +691,14 @@ export const useQuestsStore = defineStore('quests', () => {
 
       // Get checkpoint count from task config (default 3)
       const tasks = quest.config.task_config_v2?.tasks ?? quest.config.task_config?.tasks
-      const activityTaskEntry = tasks ? Object.entries(tasks).find(([, task]) =>
-        task.type?.includes('ACTIVITY') || task.type?.includes('ACHIEVEMENT')
+      const activityTaskEntry = tasks ? Object.entries(tasks).find(([key, task]) =>
+        (task.type || key) === 'ACHIEVEMENT_IN_ACTIVITY'
       ) : null
       const activityTaskKey = activityTaskEntry?.[0]
       const activityTask = activityTaskEntry?.[1] ?? null
+      if (!activityTaskEntry || !activityTask) {
+        throw new Error('Quest does not contain a supported checkpoint Activity task')
+      }
       const checkpointCount = activityTask?.target || 3
       const currentProgress = quest.user_status?.progress
       const currentCheckpointValue = activityTaskKey && currentProgress?.[activityTaskKey]?.value != null
@@ -747,6 +751,60 @@ export const useQuestsStore = defineStore('quests', () => {
       setupListeners()
 
     } catch (e) {
+      error.value = e instanceof Error ? e.message : String(e)
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function startPlayActivity(quest: Quest, secondsNeeded: number, initialProgress: number) {
+    loading.value = true
+    error.value = null
+    try {
+      const appId = quest.config.application?.id
+      if (!appId) throw new Error('Cloud game Activity quest is missing an application ID')
+
+      if (gameQuestMode.value === 'cdp' && !cdpAvailable.value) {
+        throw new Error('CDP mode is selected but Discord CDP is not available')
+      }
+
+      const progressPct = secondsNeeded > 0
+        ? Math.min(100, Math.max(0, initialProgress / secondsNeeded * 100))
+        : 0
+
+      console.log(
+        `Starting PLAY_ACTIVITY quest: mode=${gameQuestMode.value}, progress=${initialProgress}/${secondsNeeded}s, heartbeat=${heartbeatInterval.value}s, polling=${gamePollingInterval.value}s`
+      )
+
+      activeQuestId.value = quest.id
+      activeQuestType.value = 'activity'
+      activeQuestProgress.value = progressPct
+      activeQuestTargetDuration.value = secondsNeeded
+
+      startProgressSimulation(1.0)
+      setupListeners()
+
+      await startPlayActivityQuest(
+        quest.id,
+        appId,
+        secondsNeeded,
+        initialProgress,
+        gameQuestMode.value,
+        cdpPort.value,
+        heartbeatInterval.value,
+        gamePollingInterval.value
+      )
+    } catch (e) {
+      if (activeQuestId.value === quest.id) {
+        activeQuestId.value = null
+        activeQuestType.value = null
+        activeQuestProgress.value = 0
+        activeQuestTargetDuration.value = 0
+        localProgress.value = 0
+        stopProgressSimulation()
+        cleanupListeners()
+      }
       error.value = e instanceof Error ? e.message : String(e)
       throw e
     } finally {
@@ -1226,6 +1284,7 @@ export const useQuestsStore = defineStore('quests', () => {
     startStream,
     startPlay,
     startActivity,
+    startPlayActivity,
     stop,
     setSpeedMultiplier,
     acceptQuest: acceptQuestWrapper,

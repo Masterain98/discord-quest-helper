@@ -1,6 +1,6 @@
 import { computed, type Ref } from 'vue'
 import type { Quest } from '@/api/tauri'
-import { firstStartableTask, getQuestKind } from '@/utils/questTasks'
+import { firstStartableTask, getQuestKind, getQuestTasks, isPlayActivityTask } from '@/utils/questTasks'
 
 export type QuestViewPreset =
   | 'recommended'
@@ -83,7 +83,10 @@ export function canQuestStart(quest: Quest, cdpAvailable = false): boolean {
   if (!firstStartableTask(quest)) return false
 
   const kind = getQuestKind(quest)
-  if (kind === 'activity') return cdpAvailable
+  if (kind === 'activity') {
+    if (getQuestTasks(quest).some(isPlayActivityTask)) return true
+    return cdpAvailable
+  }
 
   return true
 }
@@ -149,7 +152,7 @@ export function deriveHomeQuestBuckets(quests: Quest[], options: HomeQuestStateO
     }
 
     if (enrolled && !completed && !expired) {
-      if (kind === 'activity') {
+      if (kind === 'activity' && !getQuestTasks(quest).some(isPlayActivityTask)) {
         bucket.activityManual.push(quest)
       }
 
