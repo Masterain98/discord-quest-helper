@@ -3,7 +3,67 @@ use anyhow::Result;
 use rand::RngExt;
 use std::time::Duration;
 use tauri::Emitter;
-use tokio::time::sleep;
+use tokio::time::{sleep, sleep_until, Instant};
+
+use crate::models::PlayActivityHeartbeatStatus;
+
+const PLAY_ACTIVITY_RETRY_DELAY_SECS: u64 = 5;
+const PLAY_ACTIVITY_MAX_CONSECUTIVE_ERRORS: u32 = 3;
+const PLAY_ACTIVITY_TIMEOUT_GRACE_SECS: u64 = 300;
+
+async fn confirm_play_activity_via_api(
+    client: &DiscordApiClient,
+    quest_id: &str,
+    seconds_needed: u32,
+    status: PlayActivityHeartbeatStatus,
+    app_handle: &tauri::AppHandle,
+    cancel_rx: &mut tokio::sync::mpsc::Receiver<()>,
+) -> Result<()> {
+    let terminal_status = client
+        .send_play_activity_heartbeat(quest_id, None, true)
+        .await
+        .ok();
+    let mut confirmed = status.completed
+        || terminal_status
+            .map(|terminal| terminal.completed)
+            .unwrap_or(false);
+
+    for attempt in 1..=6 {
+        if confirmed {
+            break;
+        }
+
+        if let Ok((progress, completed)) = client.get_quest_progress(quest_id).await {
+            let _ = app_handle.emit(
+                "quest-progress",
+                PlayActivityHeartbeatStatus {
+                    progress_seconds: progress,
+                    completed,
+                }
+                .progress_percentage(seconds_needed),
+            );
+            confirmed = completed;
+        }
+
+        if !confirmed && attempt < 6 {
+            tokio::select! {
+                _ = sleep(Duration::from_secs(2)) => {},
+                _ = cancel_rx.recv() => {
+                    let _ = app_handle.emit("quest-stopped", ());
+                    return Ok(());
+                }
+            }
+        }
+    }
+
+    if confirmed {
+        let _ = app_handle.emit("quest-progress", 100.0f64);
+        let _ = app_handle.emit("quest-complete", ());
+        return Ok(());
+    }
+
+    anyhow::bail!("PLAY_ACTIVITY reached its target, but Discord did not confirm completion")
+}
 
 /// Complete a video quest
 ///
@@ -225,6 +285,170 @@ pub async fn complete_game_quest_via_heartbeat(
     Ok(())
 }
 
+/// Complete a PLAY_ACTIVITY cloud-game quest via the authenticated API client.
+///
+/// Progress is server-timed between heartbeat requests. Unlike the legacy game
+/// heartbeat runner, this always trusts `progress.PLAY_ACTIVITY.value` and only
+/// emits completion after Discord reports `completed_at`.
+#[allow(clippy::too_many_arguments)]
+pub async fn complete_play_activity_via_heartbeat(
+    client: &DiscordApiClient,
+    quest_id: String,
+    application_id: String,
+    seconds_needed: u32,
+    initial_progress: f64,
+    heartbeat_interval_secs: u64,
+    progress_polling_interval_secs: u64,
+    app_handle: tauri::AppHandle,
+    mut cancel_rx: tokio::sync::mpsc::Receiver<()>,
+) -> Result<()> {
+    if seconds_needed == 0 {
+        anyhow::bail!("PLAY_ACTIVITY target must be greater than zero");
+    }
+    if heartbeat_interval_secs == 0 || progress_polling_interval_secs == 0 {
+        anyhow::bail!("PLAY_ACTIVITY intervals must be greater than zero");
+    }
+
+    let remaining_seconds = (seconds_needed as f64 - initial_progress.max(0.0))
+        .max(0.0)
+        .ceil() as u64;
+    let max_duration =
+        Duration::from_secs(remaining_seconds.saturating_add(PLAY_ACTIVITY_TIMEOUT_GRACE_SECS));
+    let timeout_at = Instant::now() + max_duration;
+    let heartbeat_interval = Duration::from_secs(heartbeat_interval_secs);
+    let progress_polling_interval = Duration::from_secs(progress_polling_interval_secs);
+    let mut next_progress_poll = Instant::now() + progress_polling_interval;
+    let mut session_started = false;
+    let mut consecutive_errors = 0u32;
+
+    let _ = app_handle.emit(
+        "quest-progress",
+        PlayActivityHeartbeatStatus {
+            progress_seconds: initial_progress,
+            completed: false,
+        }
+        .progress_percentage(seconds_needed),
+    );
+
+    loop {
+        if cancel_rx.try_recv().is_ok() {
+            if session_started {
+                let _ = client
+                    .send_play_activity_heartbeat(&quest_id, None, true)
+                    .await;
+            }
+            let _ = app_handle.emit("quest-stopped", ());
+            return Ok(());
+        }
+
+        if Instant::now() >= timeout_at {
+            if session_started {
+                let _ = client
+                    .send_play_activity_heartbeat(&quest_id, None, true)
+                    .await;
+            }
+            anyhow::bail!("PLAY_ACTIVITY timed out before Discord confirmed completion");
+        }
+
+        let status = match client
+            .send_play_activity_heartbeat(&quest_id, Some(&application_id), false)
+            .await
+        {
+            Ok(status) => {
+                session_started = true;
+                consecutive_errors = 0;
+                status
+            }
+            Err(error) => {
+                consecutive_errors += 1;
+                if consecutive_errors >= PLAY_ACTIVITY_MAX_CONSECUTIVE_ERRORS {
+                    if session_started {
+                        let _ = client
+                            .send_play_activity_heartbeat(&quest_id, None, true)
+                            .await;
+                    }
+                    return Err(error.context("PLAY_ACTIVITY heartbeat failed three times"));
+                }
+
+                tokio::select! {
+                    _ = sleep(Duration::from_secs(PLAY_ACTIVITY_RETRY_DELAY_SECS)) => {},
+                    _ = cancel_rx.recv() => {
+                        if session_started {
+                            let _ = client.send_play_activity_heartbeat(&quest_id, None, true).await;
+                        }
+                        let _ = app_handle.emit("quest-stopped", ());
+                        return Ok(());
+                    }
+                }
+                continue;
+            }
+        };
+
+        if status.reached_target(seconds_needed) {
+            return confirm_play_activity_via_api(
+                client,
+                &quest_id,
+                seconds_needed,
+                status,
+                &app_handle,
+                &mut cancel_rx,
+            )
+            .await;
+        }
+
+        let next_heartbeat = Instant::now() + heartbeat_interval;
+        loop {
+            let wake_at = next_heartbeat.min(next_progress_poll).min(timeout_at);
+            tokio::select! {
+                _ = sleep_until(wake_at) => {},
+                _ = cancel_rx.recv() => {
+                    let _ = client.send_play_activity_heartbeat(&quest_id, None, true).await;
+                    let _ = app_handle.emit("quest-stopped", ());
+                    return Ok(());
+                }
+            }
+
+            let now = Instant::now();
+            if now >= timeout_at {
+                let _ = client
+                    .send_play_activity_heartbeat(&quest_id, None, true)
+                    .await;
+                anyhow::bail!("PLAY_ACTIVITY timed out before Discord confirmed completion");
+            }
+
+            if now >= next_progress_poll {
+                if let Ok((progress, completed)) = client.get_quest_progress(&quest_id).await {
+                    consecutive_errors = 0;
+                    let polled_status = PlayActivityHeartbeatStatus {
+                        progress_seconds: progress,
+                        completed,
+                    };
+                    let _ = app_handle.emit(
+                        "quest-progress",
+                        polled_status.progress_percentage(seconds_needed),
+                    );
+                    if polled_status.reached_target(seconds_needed) {
+                        return confirm_play_activity_via_api(
+                            client,
+                            &quest_id,
+                            seconds_needed,
+                            polled_status,
+                            &app_handle,
+                            &mut cancel_rx,
+                        )
+                        .await;
+                    }
+                }
+                next_progress_poll = Instant::now() + progress_polling_interval;
+            }
+
+            if Instant::now() >= next_heartbeat {
+                break;
+            }
+        }
+    }
+}
+
 #[allow(dead_code)]
 fn generate_stream_key() -> String {
     use rand::distr::Alphanumeric;
@@ -252,5 +476,33 @@ mod tests {
         assert!(key2.starts_with("stream_"));
         assert_ne!(key1, key2);
         assert_eq!(key1.len(), 39); // "stream_" + 32 chars
+    }
+
+    #[test]
+    fn play_activity_progress_stays_below_complete_until_server_confirmation() {
+        let status = |progress_seconds, completed| PlayActivityHeartbeatStatus {
+            progress_seconds,
+            completed,
+        };
+
+        assert_eq!(status(450.0, false).progress_percentage(900), 50.0);
+        assert_eq!(status(900.0, false).progress_percentage(900), 99.0);
+        assert_eq!(status(900.0, true).progress_percentage(900), 100.0);
+        assert_eq!(status(900.0, false).progress_percentage(0), 0.0);
+        assert_eq!(status(-5.0, false).progress_percentage(900), 0.0);
+    }
+
+    #[test]
+    fn play_activity_target_uses_server_seconds_or_completion() {
+        assert!(!PlayActivityHeartbeatStatus {
+            progress_seconds: 899.0,
+            completed: false,
+        }
+        .reached_target(900));
+        assert!(PlayActivityHeartbeatStatus {
+            progress_seconds: 900.0,
+            completed: false,
+        }
+        .reached_target(900));
     }
 }

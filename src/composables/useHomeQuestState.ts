@@ -1,6 +1,6 @@
 import { computed, type Ref } from 'vue'
 import type { Quest } from '@/api/tauri'
-import { firstStartableTask, getQuestKind } from '@/utils/questTasks'
+import { firstStartableTask, isActivityTask, isPlayActivityTask } from '@/utils/questTasks'
 
 export type QuestViewPreset =
   | 'recommended'
@@ -80,10 +80,13 @@ export function isEnrollmentBlocked(blockedUntil: string | null | undefined, now
 
 export function canQuestStart(quest: Quest, cdpAvailable = false): boolean {
   if (quest.user_status?.completed_at) return false
-  if (!firstStartableTask(quest)) return false
+  const startableTask = firstStartableTask(quest)
+  if (!startableTask) return false
 
-  const kind = getQuestKind(quest)
-  if (kind === 'activity') return cdpAvailable
+  if (isActivityTask(startableTask)) {
+    if (isPlayActivityTask(startableTask)) return true
+    return cdpAvailable
+  }
 
   return true
 }
@@ -123,7 +126,7 @@ export function deriveHomeQuestBuckets(quests: Quest[], options: HomeQuestStateO
     const enrolled = isEnrolled(quest)
     const completed = isCompleted(quest)
     const claimed = isClaimed(quest)
-    const kind = getQuestKind(quest)
+    const startableTask = firstStartableTask(quest)
     const startable = canQuestStart(quest, cdpAvailable)
 
     if (expired && !claimed) {
@@ -149,7 +152,7 @@ export function deriveHomeQuestBuckets(quests: Quest[], options: HomeQuestStateO
     }
 
     if (enrolled && !completed && !expired) {
-      if (kind === 'activity') {
+      if (startableTask && isActivityTask(startableTask) && !isPlayActivityTask(startableTask)) {
         bucket.activityManual.push(quest)
       }
 

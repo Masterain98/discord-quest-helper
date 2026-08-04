@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import type { Quest } from '@/api/tauri'
 import { getQuestTasks } from '@/utils/questTasks'
 import { Badge } from '@/components/ui/badge'
-import { Activity, Gamepad2, MonitorPlay, Smartphone, Trophy } from 'lucide-vue-next'
+import { Activity, Cloud, Gamepad2, MonitorPlay, Smartphone, Trophy } from 'lucide-vue-next'
 
 const props = defineProps<{
   quest: Quest
 }>()
+
+const { t } = useI18n()
 
 const tasks = computed(() => getQuestTasks(props.quest))
 
@@ -30,6 +33,9 @@ function taskBadgeClass(type: string): string {
   if (type === 'ACHIEVEMENT_IN_ACTIVITY') {
     return 'border-amber-500/55 bg-amber-500/10 text-amber-700 shadow-[0_1px_5px_rgb(245_158_11_/_0.35)] dark:text-amber-300'
   }
+  if (type === 'PLAY_ACTIVITY') {
+    return 'border-violet-500/55 bg-violet-500/10 text-violet-700 shadow-[0_1px_5px_rgb(139_92_246_/_0.35)] dark:text-violet-300'
+  }
   return 'border-border bg-background text-foreground shadow-[0_1px_4px_rgb(0_0_0_/_0.18)]'
 }
 </script>
@@ -46,9 +52,10 @@ function taskBadgeClass(type: string): string {
       <MonitorPlay v-if="task.type === 'WATCH_VIDEO'" class="h-3 w-3" />
       <Smartphone v-else-if="task.type === 'WATCH_VIDEO_ON_MOBILE'" class="h-3 w-3" />
       <Trophy v-else-if="task.type === 'ACHIEVEMENT_IN_ACTIVITY'" class="h-3 w-3" />
+      <Cloud v-else-if="task.type === 'PLAY_ACTIVITY'" class="h-3 w-3" />
       <Gamepad2 v-else-if="task.type.includes('PLAY')" class="h-3 w-3" />
       <Activity v-else class="h-3 w-3" />
-      <span>{{ task.label }}</span>
+      <span>{{ task.type === 'PLAY_ACTIVITY' ? t('filter.activity_cloud_game') : task.label }}</span>
       <span v-if="task.targetText" class="opacity-70">{{ task.targetText }}</span>
     </Badge>
   </div>

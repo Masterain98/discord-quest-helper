@@ -1,6 +1,8 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 
+export type GameQuestMode = 'simulate' | 'heartbeat' | 'cdp'
+
 export interface DiscordUser {
   id: string
   username: string
@@ -236,6 +238,28 @@ export async function startGameHeartbeatQuest(
     applicationId,
     secondsNeeded,
     initialProgress
+  })
+}
+
+export async function startPlayActivityQuest(
+  questId: string,
+  applicationId: string,
+  secondsNeeded: number,
+  initialProgress: number,
+  mode: GameQuestMode,
+  cdpPort: number,
+  heartbeatInterval: number,
+  progressPollingInterval: number
+): Promise<void> {
+  return await invoke('start_play_activity_quest', {
+    questId,
+    applicationId,
+    secondsNeeded,
+    initialProgress,
+    mode,
+    cdpPort,
+    heartbeatInterval,
+    progressPollingInterval
   })
 }
 
@@ -512,7 +536,7 @@ export interface PlatformCapabilities {
   tokenAutoDetection: CapabilityLevel
   /** Preferred order of GameExecutable.os values when picking an executable. */
   executableOsPriority: string[]
-  defaultGameQuestMode: 'simulate' | 'heartbeat' | 'cdp'
+  defaultGameQuestMode: GameQuestMode
 }
 
 export async function getPlatformCapabilities(): Promise<PlatformCapabilities> {

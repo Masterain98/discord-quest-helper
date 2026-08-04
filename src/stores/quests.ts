@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
-import type { Quest, DetectableGame, ExcludedQuest, PlatformCapabilities } from '@/api/tauri'
-import { getQuestKind } from '@/utils/questTasks'
+import type { Quest, DetectableGame, ExcludedQuest, GameQuestMode, PlatformCapabilities } from '@/api/tauri'
+import { getQuestKind, playActivityProgressPercentage } from '@/utils/questTasks'
 import { resolveSimulationExecutable } from '@/utils/executables'
 
 /** Quest with optional pre-selected executable name for batch game quest processing */
@@ -48,6 +48,7 @@ import {
   connectToDiscordRpc,
   acceptQuest,
   startGameHeartbeatQuest,
+  startPlayActivityQuest,
   forceVideoProgress,
   startCdpQuest,
   checkCdpStatus,
@@ -115,7 +116,7 @@ export const useQuestsStore = defineStore('quests', () => {
   // Game Quest Mode - 'simulate' runs a fake game exe, 'heartbeat' sends direct API heartbeats, 'cdp' injects via CDP
   const STORAGE_GAME_QUEST_MODE_KEY = 'questHelper_gameQuestMode'
   const savedGameQuestMode = localStorage.getItem(STORAGE_GAME_QUEST_MODE_KEY)
-  const gameQuestMode = ref<'simulate' | 'heartbeat' | 'cdp'>(
+  const gameQuestMode = ref<GameQuestMode>(
     savedGameQuestMode === 'heartbeat' ? 'heartbeat'
     : savedGameQuestMode === 'cdp' ? 'cdp'
     : 'simulate'
@@ -690,11 +691,14 @@ export const useQuestsStore = defineStore('quests', () => {
 
       // Get checkpoint count from task config (default 3)
       const tasks = quest.config.task_config_v2?.tasks ?? quest.config.task_config?.tasks
-      const activityTaskEntry = tasks ? Object.entries(tasks).find(([, task]) =>
-        task.type?.includes('ACTIVITY') || task.type?.includes('ACHIEVEMENT')
+      const activityTaskEntry = tasks ? Object.entries(tasks).find(([key, task]) =>
+        (task.type || key) === 'ACHIEVEMENT_IN_ACTIVITY'
       ) : null
       const activityTaskKey = activityTaskEntry?.[0]
       const activityTask = activityTaskEntry?.[1] ?? null
+      if (!activityTaskEntry || !activityTask) {
+        throw new Error('Quest does not contain a supported checkpoint Activity task')
+      }
       const checkpointCount = activityTask?.target || 3
       const currentProgress = quest.user_status?.progress
       const currentCheckpointValue = activityTaskKey && currentProgress?.[activityTaskKey]?.value != null
@@ -754,6 +758,58 @@ export const useQuestsStore = defineStore('quests', () => {
     }
   }
 
+  async function startPlayActivity(quest: Quest, secondsNeeded: number, initialProgress: number) {
+    loading.value = true
+    error.value = null
+    try {
+      const appId = quest.config.application?.id
+      if (!appId) throw new Error('Cloud game Activity quest is missing an application ID')
+
+      if (gameQuestMode.value === 'cdp' && !cdpAvailable.value) {
+        throw new Error('CDP mode is selected but Discord CDP is not available')
+      }
+
+      const progressPct = playActivityProgressPercentage(initialProgress, secondsNeeded)
+
+      console.log(
+        `Starting PLAY_ACTIVITY quest: mode=${gameQuestMode.value}, progress=${initialProgress}/${secondsNeeded}s, heartbeat=${heartbeatInterval.value}s, polling=${gamePollingInterval.value}s`
+      )
+
+      activeQuestId.value = quest.id
+      activeQuestType.value = 'activity'
+      activeQuestProgress.value = progressPct
+      activeQuestTargetDuration.value = secondsNeeded
+
+      startProgressSimulation(1.0)
+      setupListeners()
+
+      await startPlayActivityQuest(
+        quest.id,
+        appId,
+        secondsNeeded,
+        initialProgress,
+        gameQuestMode.value,
+        cdpPort.value,
+        heartbeatInterval.value,
+        gamePollingInterval.value
+      )
+    } catch (e) {
+      if (activeQuestId.value === quest.id) {
+        activeQuestId.value = null
+        activeQuestType.value = null
+        activeQuestProgress.value = 0
+        activeQuestTargetDuration.value = 0
+        localProgress.value = 0
+        stopProgressSimulation()
+        cleanupListeners()
+      }
+      error.value = e instanceof Error ? e.message : String(e)
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
   async function stop() {
     stopping.value = true
     console.log('questsStore.stop() called')
@@ -785,7 +841,7 @@ export const useQuestsStore = defineStore('quests', () => {
 
       // Recovery: If activeGameExe is missing but we have a quest, try to find it
       // Only applies to simulate mode — CDP/heartbeat modes never create a real process
-      if (!exeToStop && activeQuestId.value && activeQuestType.value !== 'video' && gameQuestMode.value === 'simulate') {
+      if (!exeToStop && activeQuestId.value && activeQuestType.value === 'game' && gameQuestMode.value === 'simulate') {
         console.warn('activeGameExe is null, attempting to recover from activeQuestId...')
         const quest = quests.value.find(q => q.id === activeQuestId.value)
         if (quest && quest.config.application?.id) {
@@ -1226,6 +1282,7 @@ export const useQuestsStore = defineStore('quests', () => {
     startStream,
     startPlay,
     startActivity,
+    startPlayActivity,
     stop,
     setSpeedMultiplier,
     acceptQuest: acceptQuestWrapper,

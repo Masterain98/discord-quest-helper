@@ -11,9 +11,10 @@
 use anyhow::{Context, Result};
 use std::time::Duration;
 use tauri::Emitter;
-use tokio::time::sleep;
+use tokio::time::{sleep, sleep_until, Instant};
 
 use crate::cdp_client;
+use crate::models::PlayActivityHeartbeatStatus;
 
 const QUEST_HOME_URL: &str = "https://discord.com/quest-home";
 const QUEST_HOME_DETOUR_URL: &str = "https://discord.com/store";
@@ -153,6 +154,113 @@ const JS_INIT_QUEST_MODULES: &str = r#"
     }
 })()
 "#;
+
+fn js_play_activity_heartbeat(
+    quest_id: &str,
+    application_id: Option<&str>,
+    terminal: bool,
+) -> String {
+    let quest_id_json = serde_json::to_string(quest_id).unwrap_or_else(|_| "\"\"".to_string());
+    let payload = if terminal {
+        serde_json::json!({ "terminal": true })
+    } else {
+        serde_json::json!({
+            "application_id": application_id.unwrap_or_default(),
+            "terminal": false
+        })
+    };
+    let payload_json = payload.to_string();
+
+    format!(
+        r#"
+(async () => {{
+    try {{
+        const dqh = window.__dqh_cdp;
+        if (!dqh?.initialized || !dqh.api) {{
+            return JSON.stringify({{ success: false, error: "Modules not initialized" }});
+        }}
+
+        const questId = {quest_id_json};
+        const response = await Promise.race([
+            dqh.api.post({{
+                url: "/quests/" + questId + "/heartbeat",
+                body: {payload_json}
+            }}),
+            new Promise((_, reject) => setTimeout(
+                () => reject(new Error("PLAY_ACTIVITY heartbeat timed out")),
+                15000
+            ))
+        ]);
+        const body = response?.body;
+        const progress = Number(body?.progress?.PLAY_ACTIVITY?.value);
+        if (!body || !Number.isFinite(progress)) {{
+            return JSON.stringify({{
+                success: false,
+                error: "Heartbeat response missing progress.PLAY_ACTIVITY.value"
+            }});
+        }}
+
+        return JSON.stringify({{
+            success: true,
+            progress,
+            completed: body.completed_at != null
+                || body?.progress?.PLAY_ACTIVITY?.completed_at != null
+        }});
+    }} catch (error) {{
+        return JSON.stringify({{ success: false, error: String(error) }});
+    }}
+}})()
+"#,
+    )
+}
+
+fn js_play_activity_status(quest_id: &str) -> String {
+    let quest_id_json = serde_json::to_string(quest_id).unwrap_or_else(|_| "\"\"".to_string());
+    format!(
+        r#"
+(async () => {{
+    try {{
+        const dqh = window.__dqh_cdp;
+        if (!dqh?.initialized || !dqh.api) {{
+            return JSON.stringify({{ success: false, error: "Modules not initialized" }});
+        }}
+
+        const questId = {quest_id_json};
+        const response = await Promise.race([
+            dqh.api.get({{ url: "/quests/@me" }}),
+            new Promise((_, reject) => setTimeout(
+                () => reject(new Error("PLAY_ACTIVITY status request timed out")),
+                15000
+            ))
+        ]);
+        const body = response?.body;
+        const quests = Array.isArray(body) ? body : body?.quests;
+        if (!Array.isArray(quests)) {{
+            return JSON.stringify({{ success: false, error: "Quest list response has no quests array" }});
+        }}
+
+        const quest = quests.find(item => item?.id === questId);
+        if (!quest) {{
+            return JSON.stringify({{ success: false, error: "Quest not found in /quests/@me" }});
+        }}
+        const userStatus = quest.user_status ?? quest.userStatus;
+        const progress = Number(
+            userStatus?.progress?.PLAY_ACTIVITY?.value ?? 0
+        );
+        const completedAt = userStatus?.completed_at ?? userStatus?.completedAt ?? null;
+
+        return JSON.stringify({{
+            success: true,
+            progress: Number.isFinite(progress) ? progress : 0,
+            completed: completedAt != null
+        }});
+    }} catch (error) {{
+        return JSON.stringify({{ success: false, error: String(error) }});
+    }}
+}})()
+"#,
+    )
+}
 
 /// Generate JS to spoof a running game in RunningGameStore.
 ///
@@ -1268,6 +1376,76 @@ async fn cdp_init_modules(port: u16) -> Result<()> {
     );
 
     Ok(())
+}
+
+fn parse_play_activity_cdp_status(raw: &str) -> Result<PlayActivityHeartbeatStatus> {
+    let parsed: serde_json::Value =
+        serde_json::from_str(raw).context("PLAY_ACTIVITY CDP result was not valid JSON")?;
+    if parsed.get("success").and_then(|value| value.as_bool()) != Some(true) {
+        let error = parsed
+            .get("error")
+            .and_then(|value| value.as_str())
+            .unwrap_or("Unknown PLAY_ACTIVITY CDP error");
+        anyhow::bail!(error.to_string());
+    }
+
+    let progress_seconds = parsed
+        .get("progress")
+        .and_then(|value| value.as_f64())
+        .ok_or_else(|| anyhow::anyhow!("PLAY_ACTIVITY CDP result missing progress"))?;
+    let completed = parsed
+        .get("completed")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+
+    Ok(PlayActivityHeartbeatStatus {
+        progress_seconds,
+        completed,
+    })
+}
+
+async fn cdp_init_modules_on_primary(port: u16) -> Result<()> {
+    let raw =
+        cdp_client::execute_js_via_primary_discord_target(port, JS_INIT_QUEST_MODULES, true, 60)
+            .await
+            .context("Failed to initialize Discord modules on the primary CDP target")?;
+    let parsed: serde_json::Value =
+        serde_json::from_str(&raw).context("CDP module initialization returned invalid JSON")?;
+    if parsed.get("success").and_then(|value| value.as_bool()) == Some(true) {
+        return Ok(());
+    }
+
+    anyhow::bail!(
+        "CDP module initialization failed: {}",
+        parsed
+            .get("error")
+            .and_then(|value| value.as_str())
+            .unwrap_or("unknown error")
+    )
+}
+
+async fn cdp_send_play_activity_heartbeat(
+    port: u16,
+    quest_id: &str,
+    application_id: Option<&str>,
+    terminal: bool,
+) -> Result<PlayActivityHeartbeatStatus> {
+    let js = js_play_activity_heartbeat(quest_id, application_id, terminal);
+    let raw = cdp_client::execute_js_via_primary_discord_target(port, &js, true, 20)
+        .await
+        .context("Failed to execute PLAY_ACTIVITY heartbeat on the primary CDP target")?;
+    parse_play_activity_cdp_status(&raw)
+}
+
+async fn cdp_get_play_activity_status(
+    port: u16,
+    quest_id: &str,
+) -> Result<PlayActivityHeartbeatStatus> {
+    let js = js_play_activity_status(quest_id);
+    let raw = cdp_client::execute_js_via_primary_discord_target(port, &js, true, 20)
+        .await
+        .context("Failed to query PLAY_ACTIVITY status on the primary CDP target")?;
+    parse_play_activity_cdp_status(&raw)
 }
 
 /// Cleanup spoofed stores via CDP.
@@ -2738,6 +2916,239 @@ pub async fn navigate_discord_spa(port: u16, target_path: &str) -> Result<()> {
     }
 }
 
+async fn confirm_play_activity_via_cdp(
+    port: u16,
+    quest_id: &str,
+    seconds_needed: u32,
+    status: PlayActivityHeartbeatStatus,
+    app_handle: &tauri::AppHandle,
+    cancel_rx: &mut tokio::sync::mpsc::Receiver<()>,
+) -> Result<()> {
+    let terminal_status = cdp_send_play_activity_heartbeat(port, quest_id, None, true)
+        .await
+        .ok();
+    let mut confirmed = status.completed
+        || terminal_status
+            .map(|terminal| terminal.completed)
+            .unwrap_or(false);
+
+    for attempt in 1..=6 {
+        if confirmed {
+            break;
+        }
+
+        if let Ok(server_status) = cdp_get_play_activity_status(port, quest_id).await {
+            let _ = app_handle.emit(
+                "quest-progress",
+                server_status.progress_percentage(seconds_needed),
+            );
+            confirmed = server_status.completed;
+        }
+
+        if !confirmed && attempt < 6 {
+            tokio::select! {
+                _ = sleep(Duration::from_secs(2)) => {},
+                _ = cancel_rx.recv() => {
+                    cdp_cleanup(port).await;
+                    let _ = app_handle.emit("quest-stopped", ());
+                    return Ok(());
+                }
+            }
+        }
+    }
+
+    cdp_cleanup(port).await;
+    if confirmed {
+        let _ = app_handle.emit("quest-progress", 100.0f64);
+        let _ = app_handle.emit("quest-complete", ());
+        return Ok(());
+    }
+
+    anyhow::bail!("PLAY_ACTIVITY reached its target, but Discord did not confirm completion")
+}
+
+/// Complete a PLAY_ACTIVITY cloud-game quest through Discord's internal HTTP
+/// module on exactly one primary CDP target.
+#[allow(clippy::too_many_arguments)]
+pub async fn complete_play_activity_via_cdp(
+    port: u16,
+    quest_id: String,
+    application_id: String,
+    seconds_needed: u32,
+    initial_progress: f64,
+    heartbeat_interval_secs: u64,
+    progress_polling_interval_secs: u64,
+    app_handle: tauri::AppHandle,
+    mut cancel_rx: tokio::sync::mpsc::Receiver<()>,
+) -> Result<()> {
+    use crate::logger::{log, LogCategory, LogLevel};
+
+    const RETRY_DELAY_SECS: u64 = 5;
+    const MAX_CONSECUTIVE_ERRORS: u32 = 3;
+    const TIMEOUT_GRACE_SECS: u64 = 300;
+
+    if seconds_needed == 0 {
+        anyhow::bail!("PLAY_ACTIVITY target must be greater than zero");
+    }
+    if heartbeat_interval_secs == 0 || progress_polling_interval_secs == 0 {
+        anyhow::bail!("PLAY_ACTIVITY intervals must be greater than zero");
+    }
+
+    cdp_cleanup(port).await;
+    cdp_warmup_quest_route(port).await;
+    if let Err(error) = cdp_init_modules_on_primary(port).await {
+        cdp_cleanup(port).await;
+        return Err(error.context("Failed to initialize CDP modules for PLAY_ACTIVITY"));
+    }
+
+    let remaining_seconds = (seconds_needed as f64 - initial_progress.max(0.0))
+        .max(0.0)
+        .ceil() as u64;
+    let max_duration = Duration::from_secs(remaining_seconds.saturating_add(TIMEOUT_GRACE_SECS));
+    let timeout_at = Instant::now() + max_duration;
+    let heartbeat_interval = Duration::from_secs(heartbeat_interval_secs);
+    let progress_polling_interval = Duration::from_secs(progress_polling_interval_secs);
+    let mut next_progress_poll = Instant::now() + progress_polling_interval;
+    let mut session_started = false;
+    let mut consecutive_errors = 0u32;
+
+    let _ = app_handle.emit(
+        "quest-progress",
+        PlayActivityHeartbeatStatus {
+            progress_seconds: initial_progress,
+            completed: false,
+        }
+        .progress_percentage(seconds_needed),
+    );
+
+    loop {
+        if cancel_rx.try_recv().is_ok() {
+            if session_started {
+                let _ = cdp_send_play_activity_heartbeat(port, &quest_id, None, true).await;
+            }
+            cdp_cleanup(port).await;
+            let _ = app_handle.emit("quest-stopped", ());
+            return Ok(());
+        }
+
+        if Instant::now() >= timeout_at {
+            if session_started {
+                let _ = cdp_send_play_activity_heartbeat(port, &quest_id, None, true).await;
+            }
+            cdp_cleanup(port).await;
+            anyhow::bail!("PLAY_ACTIVITY timed out before Discord confirmed completion");
+        }
+
+        let status = match cdp_send_play_activity_heartbeat(
+            port,
+            &quest_id,
+            Some(&application_id),
+            false,
+        )
+        .await
+        {
+            Ok(status) => {
+                session_started = true;
+                consecutive_errors = 0;
+                status
+            }
+            Err(error) => {
+                consecutive_errors += 1;
+                log(
+                    LogLevel::Warn,
+                    LogCategory::Quest,
+                    &format!(
+                        "CDP PLAY_ACTIVITY heartbeat failed ({}/{}): {}",
+                        consecutive_errors, MAX_CONSECUTIVE_ERRORS, error
+                    ),
+                    None,
+                );
+
+                if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
+                    if session_started {
+                        let _ = cdp_send_play_activity_heartbeat(port, &quest_id, None, true).await;
+                    }
+                    cdp_cleanup(port).await;
+                    return Err(error.context("CDP PLAY_ACTIVITY heartbeat failed three times"));
+                }
+
+                let _ = cdp_init_modules_on_primary(port).await;
+                tokio::select! {
+                    _ = sleep(Duration::from_secs(RETRY_DELAY_SECS)) => {},
+                    _ = cancel_rx.recv() => {
+                        if session_started {
+                            let _ = cdp_send_play_activity_heartbeat(port, &quest_id, None, true).await;
+                        }
+                        cdp_cleanup(port).await;
+                        let _ = app_handle.emit("quest-stopped", ());
+                        return Ok(());
+                    }
+                }
+                continue;
+            }
+        };
+
+        if status.reached_target(seconds_needed) {
+            return confirm_play_activity_via_cdp(
+                port,
+                &quest_id,
+                seconds_needed,
+                status,
+                &app_handle,
+                &mut cancel_rx,
+            )
+            .await;
+        }
+
+        let next_heartbeat = Instant::now() + heartbeat_interval;
+        loop {
+            let wake_at = next_heartbeat.min(next_progress_poll).min(timeout_at);
+            tokio::select! {
+                _ = sleep_until(wake_at) => {},
+                _ = cancel_rx.recv() => {
+                    let _ = cdp_send_play_activity_heartbeat(port, &quest_id, None, true).await;
+                    cdp_cleanup(port).await;
+                    let _ = app_handle.emit("quest-stopped", ());
+                    return Ok(());
+                }
+            }
+
+            let now = Instant::now();
+            if now >= timeout_at {
+                let _ = cdp_send_play_activity_heartbeat(port, &quest_id, None, true).await;
+                cdp_cleanup(port).await;
+                anyhow::bail!("PLAY_ACTIVITY timed out before Discord confirmed completion");
+            }
+
+            if now >= next_progress_poll {
+                if let Ok(polled_status) = cdp_get_play_activity_status(port, &quest_id).await {
+                    consecutive_errors = 0;
+                    let _ = app_handle.emit(
+                        "quest-progress",
+                        polled_status.progress_percentage(seconds_needed),
+                    );
+                    if polled_status.reached_target(seconds_needed) {
+                        return confirm_play_activity_via_cdp(
+                            port,
+                            &quest_id,
+                            seconds_needed,
+                            polled_status,
+                            &app_handle,
+                            &mut cancel_rx,
+                        )
+                        .await;
+                    }
+                }
+                next_progress_poll = Instant::now() + progress_polling_interval;
+            }
+
+            if Instant::now() >= next_heartbeat {
+                break;
+            }
+        }
+    }
+}
+
 /// Complete an ACHIEVEMENT_IN_ACTIVITY quest via CDP.
 #[allow(clippy::too_many_arguments)]
 pub async fn complete_activity_quest_via_cdp(
@@ -3073,6 +3484,63 @@ pub async fn complete_activity_quest_via_cdp(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn play_activity_cdp_js_matches_har_payload_shapes() {
+        let running =
+            js_play_activity_heartbeat("1523842681770475550", Some("1369749990758678741"), false);
+        let terminal = js_play_activity_heartbeat("1523842681770475550", None, true);
+
+        assert!(running.contains("PLAY_ACTIVITY"));
+        assert!(running.contains("1369749990758678741"));
+        assert!(running.contains(r#""terminal":false"#));
+        assert!(running.contains(r#""application_id":"1369749990758678741""#));
+        assert!(terminal.contains(r#""terminal":true"#));
+        assert!(!terminal.contains("application_id"));
+    }
+
+    #[test]
+    fn play_activity_cdp_status_accepts_both_quest_list_shapes() {
+        let js = js_play_activity_status("1523842681770475550");
+
+        assert!(js.contains("Array.isArray(body) ? body : body?.quests"));
+        assert!(js.contains("progress?.PLAY_ACTIVITY"));
+    }
+
+    #[test]
+    fn play_activity_cdp_result_requires_explicit_success_and_progress() {
+        let parsed =
+            parse_play_activity_cdp_status(r#"{"success":true,"progress":48,"completed":false}"#)
+                .unwrap();
+        assert_eq!(parsed.progress_seconds, 48.0);
+        assert!(!parsed.completed);
+
+        assert!(
+            parse_play_activity_cdp_status(r#"{"success":false,"error":"missing progress"}"#)
+                .is_err()
+        );
+        assert!(parse_play_activity_cdp_status(r#"{"success":true}"#).is_err());
+    }
+
+    #[test]
+    fn play_activity_cdp_progress_waits_for_server_completion() {
+        assert_eq!(
+            PlayActivityHeartbeatStatus {
+                progress_seconds: 900.0,
+                completed: false,
+            }
+            .progress_percentage(900),
+            99.0
+        );
+        assert_eq!(
+            PlayActivityHeartbeatStatus {
+                progress_seconds: 900.0,
+                completed: true,
+            }
+            .progress_percentage(900),
+            100.0
+        );
+    }
 
     #[test]
     fn test_build_quest_route_warmup_plan_for_non_quest_page() {

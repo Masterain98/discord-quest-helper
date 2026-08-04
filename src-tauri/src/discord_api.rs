@@ -13,6 +13,35 @@ const DISCORD_API_BASE: &str = "https://discord.com/api/v9";
 const PROXY_STATE_CHECK_INTERVAL_MS: u64 = 5_000;
 const QUEST_HOME_REFERER: &str = "https://discord.com/quest-home";
 
+pub(crate) fn parse_play_activity_heartbeat_response(
+    body: &serde_json::Value,
+) -> Result<PlayActivityHeartbeatStatus> {
+    let progress_seconds = body
+        .get("progress")
+        .and_then(|progress| progress.get("PLAY_ACTIVITY"))
+        .and_then(|progress| progress.get("value"))
+        .and_then(|value| value.as_f64())
+        .ok_or_else(|| {
+            anyhow::anyhow!("Heartbeat response missing progress.PLAY_ACTIVITY.value")
+        })?;
+
+    let completed = body
+        .get("completed_at")
+        .map(|value| !value.is_null())
+        .unwrap_or(false)
+        || body
+            .get("progress")
+            .and_then(|progress| progress.get("PLAY_ACTIVITY"))
+            .and_then(|progress| progress.get("completed_at"))
+            .map(|value| !value.is_null())
+            .unwrap_or(false);
+
+    Ok(PlayActivityHeartbeatStatus {
+        progress_seconds,
+        completed,
+    })
+}
+
 #[derive(Clone, Default, Hash, PartialEq, Eq)]
 struct ProxyEnvironment {
     http: Option<String>,
@@ -856,6 +885,53 @@ impl DiscordApiClient {
         Ok(completed)
     }
 
+    /// Send a heartbeat for a PLAY_ACTIVITY cloud-game quest.
+    ///
+    /// Discord starts/continues the timer with `application_id` and closes the
+    /// timer session with a terminal-only payload.
+    pub async fn send_play_activity_heartbeat(
+        &self,
+        quest_id: &str,
+        application_id: Option<&str>,
+        terminal: bool,
+    ) -> Result<PlayActivityHeartbeatStatus> {
+        let url = format!("{}/quests/{}/heartbeat", DISCORD_API_BASE, quest_id);
+        let payload = PlayActivityHeartbeatPayload {
+            application_id: application_id.map(ToOwned::to_owned),
+            terminal,
+        };
+
+        let response = self
+            .request(Method::POST, &url)
+            .json(&payload)
+            .send()
+            .await
+            .context("Failed to send PLAY_ACTIVITY heartbeat")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            let body_length = body.chars().count();
+            let mut body_preview: String = body.chars().take(1024).collect();
+            if body_preview.is_empty() {
+                body_preview.push_str("<empty response body>");
+            } else if body_length > 1024 {
+                body_preview.push_str("… [truncated]");
+            }
+            anyhow::bail!(
+                "Failed to send PLAY_ACTIVITY heartbeat: {} - {}",
+                status,
+                body_preview
+            );
+        }
+
+        let body: serde_json::Value = response
+            .json()
+            .await
+            .context("Failed to parse PLAY_ACTIVITY heartbeat response")?;
+        parse_play_activity_heartbeat_response(&body)
+    }
+
     /// Accept quest (enroll in quest)
     pub async fn accept_quest(&self, quest_id: &str) -> Result<serde_json::Value> {
         let url = format!("{}/quests/{}/enroll", DISCORD_API_BASE, quest_id);
@@ -1071,6 +1147,82 @@ fn convert_api_quest_to_quest(quest_json: &serde_json::Value) -> Option<Quest> {
 mod tests {
     use super::*;
     use std::sync::Mutex;
+
+    #[test]
+    fn play_activity_payload_matches_start_and_terminal_har_shapes() {
+        let running = PlayActivityHeartbeatPayload {
+            application_id: Some("1369749990758678741".to_string()),
+            terminal: false,
+        };
+        let terminal = PlayActivityHeartbeatPayload {
+            application_id: None,
+            terminal: true,
+        };
+
+        assert_eq!(
+            serde_json::to_value(running).unwrap(),
+            serde_json::json!({
+                "application_id": "1369749990758678741",
+                "terminal": false
+            })
+        );
+        assert_eq!(
+            serde_json::to_value(terminal).unwrap(),
+            serde_json::json!({ "terminal": true })
+        );
+    }
+
+    #[test]
+    fn play_activity_response_uses_exact_progress_key() {
+        let status = parse_play_activity_heartbeat_response(&serde_json::json!({
+            "completed_at": null,
+            "progress": {
+                "PLAY_ACTIVITY": { "value": 48 }
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            status,
+            PlayActivityHeartbeatStatus {
+                progress_seconds: 48.0,
+                completed: false,
+            }
+        );
+
+        let missing = parse_play_activity_heartbeat_response(&serde_json::json!({
+            "progress": {
+                "PLAY_ON_DESKTOP": { "value": 48 }
+            }
+        }));
+        assert!(missing.is_err());
+    }
+
+    #[test]
+    fn play_activity_response_reads_server_completion() {
+        let status = parse_play_activity_heartbeat_response(&serde_json::json!({
+            "completed_at": "2026-08-04T16:00:00+08:00",
+            "progress": {
+                "PLAY_ACTIVITY": { "value": 900 }
+            }
+        }))
+        .unwrap();
+
+        assert!(status.completed);
+        assert_eq!(status.progress_seconds, 900.0);
+
+        let nested_status = parse_play_activity_heartbeat_response(&serde_json::json!({
+            "completed_at": null,
+            "progress": {
+                "PLAY_ACTIVITY": {
+                    "value": 900,
+                    "completed_at": "2026-08-04T16:00:00+08:00"
+                }
+            }
+        }))
+        .unwrap();
+        assert!(nested_status.completed);
+    }
 
     static ENV_TEST_LOCK: Mutex<()> = Mutex::new(());
 

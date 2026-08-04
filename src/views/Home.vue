@@ -605,6 +605,7 @@ import {
   getQuestTasks,
   isActivityTask,
   isDesktopPlayTask,
+  isPlayActivityTask,
   isStreamTask,
   isVideoTask,
 } from '@/utils/questTasks'
@@ -857,6 +858,7 @@ function getStartButtonText(quest: Quest): string {
   if (isVideoTask(task)) return t('home.start_watching')
   if (isDesktopPlayTask(task)) return t('home.start_playing')
   if (isStreamTask(task)) return t('home.start_streaming')
+  if (isPlayActivityTask(task)) return t('home.start_quest')
   if (isActivityTask(task)) return t('home.launch_activity')
   return t('home.start_quest')
 }
@@ -1586,6 +1588,26 @@ async function startQuest(quest: Quest) {
       actions: [{ label: t('toast.known'), onClick: () => {} }],
     })
   } else if (isActivityQuest) {
+    if (isPlayActivityTask(task)) {
+      if (questsStore.gameQuestMode === 'cdp' && !questsStore.cdpAvailable) {
+        toast.warning({
+          title: t('settings.game_mode_cdp_unavailable'),
+          actions: [
+            { label: t('header.mode.change_mode'), onClick: () => navigateToTab('settings', 'quest_behavior') },
+            { label: t('toast.open_settings'), onClick: () => navigateToTab('settings', 'discord_integration') },
+          ],
+        })
+        return
+      }
+
+      try {
+        await questsStore.startPlayActivity(quest, secondsNeeded, initialProgress)
+      } catch (e) {
+        toast.error({ title: t('toast.failed_start_activity'), description: String(e) })
+      }
+      return
+    }
+
     // Activity quest - requires CDP mode
     if (!questsStore.cdpAvailable) {
       toast.warning({
