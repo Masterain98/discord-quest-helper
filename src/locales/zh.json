@@ -13,11 +13,36 @@
   "auth": {
     "cdp_login": "使用 Discord 客户端登录",
     "cdp_login_hint": "使用你已登录的 Discord 客户端，无需 Token。",
-    "auto_detect": "自动检测 Token",
+    "auto_detect": "自动提取 Token",
+    "extract_token": "提取 Token",
+    "cdp_login_action": "使用 Discord 登录",
     "login": "登录",
     "or_manually": "或手动输入",
     "enter_token": "输入您的 Discord Token",
-    "authenticated_as": "已登录为"
+    "authenticated_as": "已登录为",
+    "local_login_desc": "从 Discord 本地数据库中提取全部已登录的账号 Token",
+    "cdp_login_detail": "使用 Discord 客户端当前登录的账号。Discord 需要在 CDP 启用模式下运行。",
+    "cdp_status_starting": "已发现 CDP，Discord 正在启动",
+    "cdp_status_error": "状态检测失败",
+    "back_to_methods": "返回",
+    "rescan": "重新扫描",
+    "progress": {
+      "extracting_tokens": "正在查找本地保存的 Discord Token...",
+      "validating_tokens": "正在验证第 {current}/{total} 个 Token...",
+      "accounts_found": "找到 {count} 个有效账号，请选择要登录的账号。",
+      "validating_token": "正在验证所选 Token...",
+      "capturing_cdp_session": "正在获取 Discord 当前会话...",
+      "validating_cdp_session": "正在验证 Discord 当前账号...",
+      "preparing_session": "正在初始化登录会话...",
+      "syncing_client_info": "正在同步 Discord 客户端信息...",
+      "complete": "登录完成。",
+      "failed": "登录失败",
+      "checking_cdp": "正在检查 Discord CDP 连接...",
+      "launching_discord": "正在以 CDP 模式启动 Discord...",
+      "restart_required": "Discord 已在运行，需要重启才能启用 CDP。",
+      "restarting_discord": "正在重启 Discord 并启用 CDP...",
+      "restart_cancelled": "已取消重启 Discord，未登录任何账号。"
+    }
   },
   "nav": {
     "home": "首页",

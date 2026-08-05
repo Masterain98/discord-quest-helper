@@ -13,11 +13,36 @@
   "auth": {
     "cdp_login": "Se connecter avec le client Discord",
     "cdp_login_hint": "Utilisez l'application Discord à laquelle vous êtes déjà connecté, sans jeton.",
-    "auto_detect": "Détection automatique Token",
+    "auto_detect": "Extraire automatiquement le Token",
+    "extract_token": "Extraire le Token",
+    "cdp_login_action": "Se connecter avec Discord",
     "login": "Connexion",
     "or_manually": "Ou manuellement",
     "enter_token": "Saisissez votre Discord Token",
-    "authenticated_as": "Authentifié comme"
+    "authenticated_as": "Authentifié comme",
+    "local_login_desc": "Extrait les Tokens de tous les comptes connectés depuis la base locale de Discord.",
+    "cdp_login_detail": "Utilise le compte actuellement connecté dans le client Discord. Discord doit fonctionner avec CDP activé.",
+    "cdp_status_starting": "CDP détecté, Discord démarre",
+    "cdp_status_error": "Échec de la vérification de l’état",
+    "back_to_methods": "Retour",
+    "rescan": "Rechercher à nouveau",
+    "progress": {
+      "extracting_tokens": "Recherche des jetons Discord enregistrés...",
+      "validating_tokens": "Validation du jeton {current} sur {total}...",
+      "accounts_found": "{count} comptes valides trouvés. Choisissez un compte.",
+      "validating_token": "Validation du jeton sélectionné...",
+      "capturing_cdp_session": "Récupération de la session Discord actuelle...",
+      "validating_cdp_session": "Validation du compte Discord actuel...",
+      "preparing_session": "Préparation de la session de connexion...",
+      "syncing_client_info": "Synchronisation des informations du client Discord...",
+      "complete": "Connexion terminée.",
+      "failed": "Échec de la connexion",
+      "checking_cdp": "Vérification de la connexion CDP de Discord...",
+      "launching_discord": "Démarrage de Discord avec CDP activé...",
+      "restart_required": "Discord est déjà ouvert et doit être redémarré avec CDP activé.",
+      "restarting_discord": "Redémarrage de Discord avec CDP activé...",
+      "restart_cancelled": "Le redémarrage de Discord a été annulé. Aucun compte n’a été connecté."
+    }
   },
   "nav": {
     "home": "Accueil",

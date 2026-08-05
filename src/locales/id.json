@@ -13,11 +13,36 @@
   "auth": {
     "cdp_login": "Masuk dengan klien Discord",
     "cdp_login_hint": "Gunakan aplikasi Discord yang sudah Anda masuki — tanpa token.",
-    "auto_detect": "Deteksi Otomatis Token",
+    "auto_detect": "Ekstrak Token Otomatis",
+    "extract_token": "Ekstrak Token",
+    "cdp_login_action": "Masuk dengan Discord",
     "login": "Masuk",
     "or_manually": "Atau Secara Manual",
     "enter_token": "Masukkan Discord Token Anda",
-    "authenticated_as": "Diautentikasi sebagai"
+    "authenticated_as": "Diautentikasi sebagai",
+    "local_login_desc": "Ekstrak token semua akun yang sudah masuk dari basis data lokal Discord.",
+    "cdp_login_detail": "Gunakan akun yang sedang masuk di klien Discord. Discord harus berjalan dengan CDP aktif.",
+    "cdp_status_starting": "CDP ditemukan, Discord sedang dimulai",
+    "cdp_status_error": "Pemeriksaan status gagal",
+    "back_to_methods": "Kembali",
+    "rescan": "Pindai lagi",
+    "progress": {
+      "extracting_tokens": "Mencari token Discord yang tersimpan...",
+      "validating_tokens": "Memvalidasi token {current} dari {total}...",
+      "accounts_found": "Menemukan {count} akun yang valid. Pilih akun untuk melanjutkan.",
+      "validating_token": "Memvalidasi token yang dipilih...",
+      "capturing_cdp_session": "Mengambil sesi Discord saat ini...",
+      "validating_cdp_session": "Memvalidasi akun Discord saat ini...",
+      "preparing_session": "Menyiapkan sesi masuk...",
+      "syncing_client_info": "Menyinkronkan informasi klien Discord...",
+      "complete": "Login selesai.",
+      "failed": "Login gagal",
+      "checking_cdp": "Memeriksa koneksi CDP Discord...",
+      "launching_discord": "Memulai Discord dengan CDP aktif...",
+      "restart_required": "Discord sudah berjalan dan harus dimulai ulang dengan CDP aktif.",
+      "restarting_discord": "Memulai ulang Discord dengan CDP aktif...",
+      "restart_cancelled": "Mulai ulang Discord dibatalkan. Tidak ada akun yang masuk."
+    }
   },
   "nav": {
     "home": "Beranda",

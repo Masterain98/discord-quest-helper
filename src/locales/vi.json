@@ -13,11 +13,36 @@
   "auth": {
     "cdp_login": "Đăng nhập bằng ứng dụng Discord",
     "cdp_login_hint": "Dùng ứng dụng Discord mà bạn đã đăng nhập — không cần Token.",
-    "auto_detect": "Tự động phát hiện Token",
+    "auto_detect": "Tự động trích xuất Token",
+    "extract_token": "Trích xuất Token",
+    "cdp_login_action": "Đăng nhập bằng Discord",
     "login": "Đăng nhập",
     "or_manually": "Hoặc thủ công",
     "enter_token": "Nhập Discord Token của bạn",
-    "authenticated_as": "Được xác thực là"
+    "authenticated_as": "Được xác thực là",
+    "local_login_desc": "Trích xuất Token của mọi tài khoản đã đăng nhập từ cơ sở dữ liệu cục bộ của Discord.",
+    "cdp_login_detail": "Dùng tài khoản hiện đăng nhập trong ứng dụng Discord. Discord phải chạy khi CDP được bật.",
+    "cdp_status_starting": "Đã tìm thấy CDP, Discord đang khởi động",
+    "cdp_status_error": "Không thể kiểm tra trạng thái",
+    "back_to_methods": "Quay lại",
+    "rescan": "Quét lại",
+    "progress": {
+      "extracting_tokens": "Đang tìm Token Discord đã lưu...",
+      "validating_tokens": "Đang xác thực Token {current}/{total}...",
+      "accounts_found": "Đã tìm thấy {count} tài khoản hợp lệ. Hãy chọn một tài khoản.",
+      "validating_token": "Đang xác thực Token đã chọn...",
+      "capturing_cdp_session": "Đang lấy phiên Discord hiện tại...",
+      "validating_cdp_session": "Đang xác thực tài khoản Discord hiện tại...",
+      "preparing_session": "Đang chuẩn bị phiên đăng nhập...",
+      "syncing_client_info": "Đang đồng bộ thông tin ứng dụng Discord...",
+      "complete": "Đăng nhập hoàn tất.",
+      "failed": "Đăng nhập thất bại",
+      "checking_cdp": "Đang kiểm tra kết nối Discord CDP...",
+      "launching_discord": "Đang khởi động Discord với CDP được bật...",
+      "restart_required": "Discord đang chạy và phải được khởi động lại với CDP được bật.",
+      "restarting_discord": "Đang khởi động lại Discord với CDP được bật...",
+      "restart_cancelled": "Đã hủy khởi động lại Discord. Chưa đăng nhập tài khoản nào."
+    }
   },
   "nav": {
     "home": "Trang chủ",

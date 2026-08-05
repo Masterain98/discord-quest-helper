@@ -13,11 +13,36 @@
   "auth": {
     "cdp_login": "เข้าสู่ระบบด้วยไคลเอ็นต์ Discord",
     "cdp_login_hint": "ใช้แอป Discord ที่คุณเข้าสู่ระบบไว้แล้ว โดยไม่ต้องใช้ Token",
-    "auto_detect": "ตรวจจับอัตโนมัติ Token",
+    "auto_detect": "แยก Token อัตโนมัติ",
+    "extract_token": "แยก Token",
+    "cdp_login_action": "เข้าสู่ระบบด้วย Discord",
     "login": "เข้าสู่ระบบ",
     "or_manually": "หรือด้วยตนเอง",
     "enter_token": "ป้อน Discord Token ของคุณ",
-    "authenticated_as": "รับรองความถูกต้องเป็น"
+    "authenticated_as": "รับรองความถูกต้องเป็น",
+    "local_login_desc": "แยก Token ของบัญชีที่เข้าสู่ระบบทั้งหมดจากฐานข้อมูลในเครื่องของ Discord",
+    "cdp_login_detail": "ใช้บัญชีที่กำลังเข้าสู่ระบบในไคลเอนต์ Discord โดยต้องเปิด Discord พร้อมเปิดใช้ CDP",
+    "cdp_status_starting": "พบ CDP แล้ว กำลังเริ่ม Discord",
+    "cdp_status_error": "ตรวจสอบสถานะไม่สำเร็จ",
+    "back_to_methods": "ย้อนกลับ",
+    "rescan": "สแกนอีกครั้ง",
+    "progress": {
+      "extracting_tokens": "กำลังค้นหา Token Discord ที่บันทึกไว้...",
+      "validating_tokens": "กำลังตรวจสอบ Token {current} จาก {total}...",
+      "accounts_found": "พบบัญชีที่ใช้ได้ {count} บัญชี โปรดเลือกบัญชี",
+      "validating_token": "กำลังตรวจสอบ Token ที่เลือก...",
+      "capturing_cdp_session": "กำลังรับเซสชัน Discord ปัจจุบัน...",
+      "validating_cdp_session": "กำลังตรวจสอบบัญชี Discord ปัจจุบัน...",
+      "preparing_session": "กำลังเตรียมเซสชันเข้าสู่ระบบ...",
+      "syncing_client_info": "กำลังซิงค์ข้อมูลไคลเอนต์ Discord...",
+      "complete": "เข้าสู่ระบบเสร็จแล้ว",
+      "failed": "เข้าสู่ระบบไม่สำเร็จ",
+      "checking_cdp": "กำลังตรวจสอบการเชื่อมต่อ Discord CDP...",
+      "launching_discord": "กำลังเริ่ม Discord พร้อมเปิดใช้ CDP...",
+      "restart_required": "Discord กำลังทำงานอยู่และต้องเริ่มใหม่พร้อมเปิดใช้ CDP",
+      "restarting_discord": "กำลังเริ่ม Discord ใหม่พร้อมเปิดใช้ CDP...",
+      "restart_cancelled": "ยกเลิกการเริ่ม Discord ใหม่แล้ว ยังไม่มีบัญชีเข้าสู่ระบบ"
+    }
   },
   "nav": {
     "home": "หน้าแรก",

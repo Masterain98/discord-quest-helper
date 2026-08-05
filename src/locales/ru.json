@@ -13,11 +13,36 @@
   "auth": {
     "cdp_login": "Войти через клиент Discord",
     "cdp_login_hint": "Использует уже авторизованный клиент Discord, токен не нужен.",
-    "auto_detect": "Автоопределение токена",
+    "auto_detect": "Автоматическое извлечение Token",
+    "extract_token": "Извлечь Token",
+    "cdp_login_action": "Войти через Discord",
     "login": "Войти",
     "or_manually": "Или вручную",
     "enter_token": "Введите Discord токен",
-    "authenticated_as": "Авторизован как"
+    "authenticated_as": "Авторизован как",
+    "local_login_desc": "Извлекает Token всех авторизованных аккаунтов из локальной базы данных Discord.",
+    "cdp_login_detail": "Использует аккаунт, открытый в клиенте Discord. Discord должен быть запущен с включённым CDP.",
+    "cdp_status_starting": "CDP обнаружен, Discord запускается",
+    "cdp_status_error": "Не удалось проверить состояние",
+    "back_to_methods": "Назад",
+    "rescan": "Сканировать снова",
+    "progress": {
+      "extracting_tokens": "Поиск сохранённых токенов Discord...",
+      "validating_tokens": "Проверка токена {current} из {total}...",
+      "accounts_found": "Найдено действительных аккаунтов: {count}. Выберите аккаунт.",
+      "validating_token": "Проверка выбранного токена...",
+      "capturing_cdp_session": "Получение текущего сеанса Discord...",
+      "validating_cdp_session": "Проверка текущего аккаунта Discord...",
+      "preparing_session": "Подготовка сеанса входа...",
+      "syncing_client_info": "Синхронизация данных клиента Discord...",
+      "complete": "Вход выполнен.",
+      "failed": "Не удалось войти",
+      "checking_cdp": "Проверка подключения Discord CDP...",
+      "launching_discord": "Запуск Discord с включённым CDP...",
+      "restart_required": "Discord уже запущен. Его необходимо перезапустить с включённым CDP.",
+      "restarting_discord": "Перезапуск Discord с включённым CDP...",
+      "restart_cancelled": "Перезапуск Discord отменён. Вход не выполнен."
+    }
   },
   "nav": {
     "home": "Главная",

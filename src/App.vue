@@ -1,28 +1,20 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import Home from './views/Home.vue'
 import GameSimulator from './views/GameSimulator.vue'
 import Settings from './views/Settings.vue'
 import Debug from './views/Debug.vue'
 import TitleBar from './components/TitleBar.vue'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { useAuthStore } from '@/stores/auth'
-import { useQuestsStore } from '@/stores/quests'
 import { useVersionStore } from '@/stores/version'
-import {
-  checkCdpStatus,
-  isDiscordRunning,
-  launchDiscordCdp,
-  restartDiscordCdp,
-  type ExtractedAccount,
-} from '@/api/tauri'
 import { useI18n } from 'vue-i18n'
-import { Moon, Sun, Loader2, Languages } from 'lucide-vue-next'
+import { Moon, Sun, Languages } from 'lucide-vue-next'
 import AccountMenu from './components/AccountMenu.vue'
 import OrbsNitroStatus from './components/OrbsNitroStatus.vue'
 import QuestModeIndicator from './components/QuestModeIndicator.vue'
 import Toaster from './components/Toaster.vue'
+import LoginPanel from './components/auth/LoginPanel.vue'
 import { persistSettingsSection } from '@/composables/useSettingsNavigation'
 import { supportedLocales } from '@/locales/meta'
 import {
@@ -31,29 +23,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
 
 const { t, locale } = useI18n()
 const currentTab = ref<'home' | 'game' | 'settings' | 'debug'>('home')
 const authStore = useAuthStore()
-const questsStore = useQuestsStore()
-
-// Capabilities load asynchronously, so stay hidden until the descriptor is
-// ready rather than flashing a button that the current platform may not use.
-const showAutoDetect = computed(() => {
-  if (!questsStore.platformCapabilitiesReady) return false
-  const level = questsStore.platformCapabilities?.tokenAutoDetection
-  return level !== 'manual_only' && level !== 'unavailable'
-})
+const authTransitioning = ref(false)
+const showStandardShell = computed(() => Boolean(authStore.user) || currentTab.value !== 'home')
 
 // Theme Logic
 const isDark = ref(true) // Default to dark
@@ -62,75 +37,6 @@ const isDark = ref(true) // Default to dark
 const debugModeEnabled = ref(false)
 
 
-
-// Account selection tracking
-const selectedAccountId = ref<string | null>(null)
-
-// Manual login
-const manualTokenInput = ref('')
-const cdpLoginPreparing = ref(false)
-const cdpLoginRestartDialogOpen = ref(false)
-
-async function handleManualLogin() {
-  if (!manualTokenInput.value) return
-  await authStore.loginWithToken(manualTokenInput.value)
-  manualTokenInput.value = ''
-}
-
-async function handleAutoDetect() {
-  await authStore.tryAutoDetect()
-}
-
-async function handleCdpLogin() {
-  if (cdpLoginPreparing.value || authStore.loading) return
-  cdpLoginPreparing.value = true
-  authStore.error = null
-  try {
-    const status = await checkCdpStatus(questsStore.cdpPort)
-    // A reachable CDP endpoint may briefly report no selected Discord target
-    // while Discord is initializing. Reuse it and let the login command perform
-    // the authoritative target/session check instead of restarting Discord.
-    if (!status.available) {
-      try {
-        // This command is idempotent: if Discord CDP is already ready, the
-        // launcher core returns AlreadyAvailable without restarting it.
-        await launchDiscordCdp(questsStore.cdpPort, 'auto')
-      } catch (launchError) {
-        // Close the race where CDP became available between the first probe and
-        // the launch attempt. A reachable endpoint must never trigger restart.
-        const retryStatus = await checkCdpStatus(questsStore.cdpPort)
-        if (!retryStatus.available) {
-          const running = await isDiscordRunning('auto')
-          if (running) {
-            cdpLoginRestartDialogOpen.value = true
-            return
-          }
-          throw launchError
-        }
-      }
-    }
-    await authStore.loginViaCdp()
-  } catch (error) {
-    authStore.error = error instanceof Error ? error.message : String(error)
-  } finally {
-    cdpLoginPreparing.value = false
-  }
-}
-
-async function confirmCdpLoginRestart() {
-  if (cdpLoginPreparing.value || authStore.loading) return
-  cdpLoginRestartDialogOpen.value = false
-  cdpLoginPreparing.value = true
-  authStore.error = null
-  try {
-    await restartDiscordCdp(questsStore.cdpPort, 'auto')
-    await authStore.loginViaCdp()
-  } catch (error) {
-    authStore.error = error instanceof Error ? error.message : String(error)
-  } finally {
-    cdpLoginPreparing.value = false
-  }
-}
 
 function toggleTheme(event: MouseEvent) {
   // Get click coordinates for ripple origin
@@ -201,17 +107,6 @@ function setLanguage(lang: string) {
   localStorage.removeItem('language')
 }
 
-// Account Selection Logic
-async function selectAccount(account: ExtractedAccount) {
-    selectedAccountId.value = account.user.id
-    try {
-      await authStore.loginWithToken(account.token)
-      authStore.detectedAccounts = [] // Clear after selection
-    } finally {
-      selectedAccountId.value = null
-    }
-}
-
 onMounted(() => {
   // Init Theme
   const savedTheme = localStorage.getItem('theme')
@@ -255,234 +150,190 @@ function openSettingsSection(section: 'discord_integration' | 'quest_behavior' |
   persistSettingsSection(section)
   currentTab.value = 'settings'
 }
+
+watch(
+  () => Boolean(authStore.user),
+  (authenticated, wasAuthenticated) => {
+    if (authenticated === wasAuthenticated || currentTab.value !== 'home') return
+
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (!document.startViewTransition || prefersReducedMotion) {
+      authTransitioning.value = false
+      return
+    }
+
+    authTransitioning.value = true
+    const transition = document.startViewTransition(async () => {
+      await nextTick()
+    })
+
+    transition.finished.finally(() => {
+      authTransitioning.value = false
+    })
+  },
+  { flush: 'sync' },
+)
 </script>
 
 <template>
   <div class="h-screen bg-background text-foreground font-sans flex flex-col overflow-hidden">
-    <AlertDialog
-      :open="cdpLoginRestartDialogOpen"
-      @update:open="cdpLoginRestartDialogOpen = $event"
-    >
-      <AlertDialogContent class="max-w-[520px]">
-        <AlertDialogHeader>
-          <AlertDialogTitle>{{ t('settings.cdp_dialog_title_disconnected') }}</AlertDialogTitle>
-          <AlertDialogDescription>{{ t('settings.cdp_dialog_desc_disconnected') }}</AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>{{ t('dialog.cancel') }}</AlertDialogCancel>
-          <AlertDialogAction
-            :disabled="cdpLoginPreparing || authStore.loading"
-            @click="confirmCdpLoginRestart"
-          >
-            {{ t('settings.cdp_dialog_confirm') }}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-
     <TitleBar />
     
     <div class="flex-1 overflow-auto">
-      <div class="container mx-auto p-6 flex flex-col min-h-full">
-      <header class="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div class="flex items-center gap-3">
-          <img src="/icons/logo.png" alt="logo" class="w-10 h-10" />
-          <div>
-            <h1 class="text-3xl font-bold tracking-tight text-primary select-none">
-              {{ t('general.title') }}
-            </h1>
-            <p class="text-muted-foreground select-none">
-               {{ t('general.subtitle') }}
-            </p>
-          </div>
-        </div>
-        
-        <div class="flex items-center gap-2 select-none">
-          <QuestModeIndicator
-            v-if="authStore.user"
-            @open-settings="openSettingsSection('quest_behavior')"
-          />
-
-          <!-- Theme Toggle -->
-          <Button variant="ghost" size="icon" @click="toggleTheme" :title="t('header.toggle_theme')">
-            <Moon v-if="isDark" class="w-5 h-5" />
-            <Sun v-else class="w-5 h-5" />
-          </Button>
-
-          <!-- Language Toggle -->
-          <DropdownMenu>
-            <DropdownMenuTrigger as-child>
-              <Button variant="ghost" size="icon" :title="t('header.change_language')">
-                <Languages class="w-5 h-5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" class="max-h-[70vh] overflow-y-auto">
-              <DropdownMenuItem
-                v-for="item in supportedLocales"
-                :key="item.code"
-                @click="setLanguage(item.code)"
-              >
-                {{ item.label }}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          <AccountMenu v-if="authStore.user" @logout="authStore.logout" />
-        </div>
-      </header>
-      
-      <div class="mb-8 flex items-center gap-2 border-b border-border pb-4 select-none">
-        <div class="flex gap-2">
-          <Button
-            :variant="currentTab === 'home' ? 'secondary' : 'ghost'"
-            @click="currentTab = 'home'"
-          >
-            {{ t('nav.home') }}
-          </Button>
-           <Button
-            :variant="currentTab === 'game' ? 'secondary' : 'ghost'"
-            @click="currentTab = 'game'"
-          >
-            {{ t('nav.game_simulator') }}
-          </Button>
-           <Button
-            :variant="currentTab === 'settings' ? 'secondary' : 'ghost'"
-            @click="currentTab = 'settings'"
-          >
-            {{ t('nav.settings') }}
-          </Button>
-          <Button
-            v-if="debugModeEnabled"
-            :variant="currentTab === 'debug' ? 'secondary' : 'ghost'"
-            @click="currentTab = 'debug'"
-          >
-            {{ t('nav.debug') }}
-          </Button>
-        </div>
-
-        <!-- Orbs Balance + Nitro membership status (compact, right-aligned) -->
-        <OrbsNitroStatus v-if="authStore.user" />
-      </div>
-      
-      <main class="fade-in flex-1">
-        <!-- Home requires login -->
-        <template v-if="currentTab === 'home'">
-          <Home v-if="authStore.user" :debug-mode-enabled="debugModeEnabled" />
-          <!-- Welcome/Login Screen when not logged in -->
-          <div v-else class="flex items-center justify-center h-full">
-        <div class="max-w-md w-full text-center space-y-8 p-8">
-          <div class="space-y-4">
-          <img src="/icons/logo.png" alt="logo" class="w-20 h-20 mx-auto opacity-80" />
-            <h2 class="text-2xl font-bold">{{ t('general.welcome') }}</h2>
-            <p class="text-muted-foreground">
-              {{ t('general.login_prompt') }}
-            </p>
-          </div>
-          
-          <!-- Account Selection (inline) -->
-          <div v-if="authStore.detectedAccounts.length > 0" class="space-y-3">
-            <p class="text-sm text-muted-foreground">{{ t('account.select_desc') }}</p>
-            <div class="space-y-2 max-h-[200px] overflow-y-auto">
-              <Button 
-                v-for="account in authStore.detectedAccounts" 
-                :key="account.user.id"
-                variant="outline"
-                class="w-full justify-start h-auto py-3 px-4"
-                :disabled="authStore.loading"
-                @click="selectAccount(account)"
-              >
-                <Loader2 
-                  v-if="selectedAccountId === account.user.id"
-                  class="w-5 h-5 rounded-full mr-3 animate-spin shrink-0"
-                />
-                <img 
-                  v-else-if="account.user.avatar"
-                  :src="`https://cdn.discordapp.com/avatars/${account.user.id}/${account.user.avatar}.png`" 
-                  class="w-8 h-8 rounded-full mr-3 shrink-0"
-                  alt="Avatar"
-                />
-                <div class="text-left">
-                  <div class="font-bold">{{ account.user.global_name || account.user.username }}</div>
-                  <div class="text-xs text-muted-foreground">@{{ account.user.username }}</div>
-                </div>
-              </Button>
+      <div
+        :class="[
+          'container mx-auto flex min-h-full flex-col',
+          showStandardShell ? 'p-6' : 'px-4 py-3 sm:px-6',
+        ]"
+      >
+        <header
+          v-if="showStandardShell"
+          class="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center"
+        >
+          <div class="app-brand-lockup flex items-center gap-3">
+            <img src="/icons/logo.png" alt="logo" class="h-10 w-10" />
+            <div>
+              <h1 class="select-none text-3xl font-bold tracking-tight text-primary">
+                {{ t('general.title') }}
+              </h1>
+              <p class="select-none text-muted-foreground">
+                {{ t('general.subtitle') }}
+              </p>
             </div>
           </div>
-          
-          <!-- Login Form (show when no accounts detected) -->
-          <div v-else class="space-y-4">
-            <Button
-              v-if="showAutoDetect"
-              size="lg"
-              class="w-full gap-2"
-              @click="handleAutoDetect"
-              :disabled="authStore.loading"
-            >
-              <Loader2 v-if="authStore.loading" class="w-4 h-4 animate-spin" />
-              {{ t('auth.auto_detect') }}
-            </Button>
 
-            <!-- CDP auto-login: sign in from the running Discord client, no token
-                 needed. Primary path on Linux. -->
-            <Button
-              size="lg"
-              :variant="showAutoDetect ? 'outline' : 'default'"
-              class="w-full gap-2"
-              @click="handleCdpLogin"
-              :disabled="authStore.loading || cdpLoginPreparing"
-            >
-              <Loader2 v-if="authStore.loading || cdpLoginPreparing" class="w-4 h-4 animate-spin" />
-              {{ t('auth.cdp_login') }}
-            </Button>
-            <p class="text-center text-xs text-muted-foreground">{{ t('auth.cdp_login_hint') }}</p>
-
-            <div class="relative">
-              <div class="absolute inset-0 flex items-center">
-                <span class="w-full border-t" />
-              </div>
-              <div class="relative flex justify-center text-xs uppercase">
-                <span class="bg-background px-2 text-muted-foreground">{{ t('auth.or_manually') }}</span>
-              </div>
-            </div>
-            
-            <div class="flex gap-2">
-              <Input 
-                v-model="manualTokenInput" 
-                type="password" 
-                :placeholder="t('auth.enter_token')"
-                class="flex-1"
+          <Transition name="shell-reveal" appear>
+            <div v-if="!authTransitioning" class="flex items-center gap-2 select-none">
+              <QuestModeIndicator
+                v-if="authStore.user"
+                @open-settings="openSettingsSection('quest_behavior')"
               />
-              <Button 
-                @click="handleManualLogin" 
-                :disabled="!manualTokenInput || authStore.loading"
+
+              <Button variant="ghost" size="icon" @click="toggleTheme" :title="t('header.toggle_theme')">
+                <Moon v-if="isDark" class="h-5 w-5" />
+                <Sun v-else class="h-5 w-5" />
+              </Button>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger as-child>
+                  <Button variant="ghost" size="icon" :title="t('header.change_language')">
+                    <Languages class="h-5 w-5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" class="max-h-[70vh] overflow-y-auto">
+                  <DropdownMenuItem
+                    v-for="item in supportedLocales"
+                    :key="item.code"
+                    @click="setLanguage(item.code)"
+                  >
+                    {{ item.label }}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              <AccountMenu v-if="authStore.user" @logout="authStore.logout" />
+            </div>
+          </Transition>
+        </header>
+
+        <Transition name="shell-reveal" appear>
+          <div
+            v-if="showStandardShell && !authTransitioning"
+            class="mb-8 flex items-center gap-2 border-b border-border pb-4 select-none"
+          >
+            <div class="flex gap-2">
+              <Button
+                :variant="currentTab === 'home' ? 'secondary' : 'ghost'"
+                @click="currentTab = 'home'"
               >
-                {{ t('auth.login') }}
+                {{ t('nav.home') }}
+              </Button>
+              <Button
+                :variant="currentTab === 'game' ? 'secondary' : 'ghost'"
+                @click="currentTab = 'game'"
+              >
+                {{ t('nav.game_simulator') }}
+              </Button>
+              <Button
+                :variant="currentTab === 'settings' ? 'secondary' : 'ghost'"
+                @click="currentTab = 'settings'"
+              >
+                {{ t('nav.settings') }}
+              </Button>
+              <Button
+                v-if="debugModeEnabled"
+                :variant="currentTab === 'debug' ? 'secondary' : 'ghost'"
+                @click="currentTab = 'debug'"
+              >
+                {{ t('nav.debug') }}
               </Button>
             </div>
-            
-            <p v-if="authStore.error" class="text-sm text-destructive">{{ authStore.error }}</p>
-          </div>
-        </div>
-          </div>
-        </template>
-        
-        <!-- Game Simulator - no login required -->
-        <GameSimulator v-else-if="currentTab === 'game'" />
-        
-        <!-- Settings - no login required -->
-        <Settings 
-          v-else-if="currentTab === 'settings'" 
-          @navigate-to-home="currentTab = 'home'" 
-          @debug-unlocked="debugModeEnabled = true; currentTab = 'debug'"
-          @debug-disabled="handleDebugDisabled"
-        />
-        
-        <!-- Debug - no login required -->
-        <Debug v-else-if="currentTab === 'debug'" />
-      </main>
 
+            <OrbsNitroStatus v-if="authStore.user" />
+          </div>
+        </Transition>
 
-    </div>
+        <main :class="['fade-in flex-1', !showStandardShell && 'flex min-h-0 w-full']">
+          <template v-if="currentTab === 'home'">
+            <Home v-if="authStore.user" :debug-mode-enabled="debugModeEnabled" />
+            <LoginPanel v-else>
+              <template #toolbar>
+                <nav class="login-toolbar select-none" :aria-label="t('general.title')">
+                  <div class="flex flex-wrap items-center justify-center gap-1">
+                    <Button size="sm" variant="secondary" @click="currentTab = 'home'">
+                      {{ t('nav.home') }}
+                    </Button>
+                    <Button size="sm" variant="ghost" @click="currentTab = 'game'">
+                      {{ t('nav.game_simulator') }}
+                    </Button>
+                    <Button size="sm" variant="ghost" @click="currentTab = 'settings'">
+                      {{ t('nav.settings') }}
+                    </Button>
+                    <Button v-if="debugModeEnabled" size="sm" variant="ghost" @click="currentTab = 'debug'">
+                      {{ t('nav.debug') }}
+                    </Button>
+
+                    <span class="mx-1 hidden h-5 w-px bg-border sm:block" aria-hidden="true" />
+
+                    <Button variant="ghost" size="icon" class="h-9 w-9" @click="toggleTheme" :title="t('header.toggle_theme')">
+                      <Moon v-if="isDark" class="h-4 w-4" />
+                      <Sun v-else class="h-4 w-4" />
+                    </Button>
+
+                    <DropdownMenu>
+                      <DropdownMenuTrigger as-child>
+                        <Button variant="ghost" size="icon" class="h-9 w-9" :title="t('header.change_language')">
+                          <Languages class="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="center" class="max-h-[70vh] overflow-y-auto">
+                        <DropdownMenuItem
+                          v-for="item in supportedLocales"
+                          :key="item.code"
+                          @click="setLanguage(item.code)"
+                        >
+                          {{ item.label }}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </nav>
+              </template>
+            </LoginPanel>
+          </template>
+        
+          <GameSimulator v-else-if="currentTab === 'game'" />
+        
+          <Settings
+            v-else-if="currentTab === 'settings'"
+            @navigate-to-home="currentTab = 'home'"
+            @debug-unlocked="debugModeEnabled = true; currentTab = 'debug'"
+            @debug-disabled="handleDebugDisabled"
+          />
+        
+          <Debug v-else-if="currentTab === 'debug'" />
+        </main>
+      </div>
     </div>
     <Toaster />
   </div>
@@ -490,6 +341,103 @@ function openSettingsSection(section: 'discord_integration' | 'quest_behavior' |
 
 <style>
 /* Global transitions */
+.app-brand-lockup {
+  view-transition-name: app-brand;
+}
+
+html.account-view-transition .login-brand-stage {
+  view-transition-name: login-brand !important;
+}
+
+html.account-view-transition .login-toolbar {
+  view-transition-name: login-toolbar;
+}
+
+html.account-view-transition .login-card-shell {
+  view-transition-name: login-card;
+}
+
+.login-toolbar {
+  max-width: 100%;
+  padding: 0.375rem;
+  border: 1px solid hsl(var(--border) / 0.75);
+  border-radius: 0.875rem;
+  background: hsl(var(--card) / 0.72);
+  box-shadow: 0 12px 32px -24px hsl(var(--foreground) / 0.45);
+  backdrop-filter: blur(14px);
+}
+
+.shell-reveal-enter-active,
+.shell-reveal-leave-active {
+  transition:
+    opacity 260ms ease,
+    transform 420ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.shell-reveal-enter-from,
+.shell-reveal-leave-to {
+  opacity: 0;
+  transform: translateY(-0.5rem);
+}
+
+::view-transition-group(app-brand) {
+  z-index: 20;
+  animation-duration: 680ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+::view-transition-old(app-brand),
+::view-transition-new(app-brand) {
+  height: 100%;
+  mix-blend-mode: normal;
+}
+
+html.account-view-transition::view-transition-old(root) {
+  animation: none !important;
+  display: none;
+  mix-blend-mode: normal;
+  opacity: 0 !important;
+}
+
+html.account-view-transition::view-transition-new(root) {
+  animation: none !important;
+  mix-blend-mode: normal;
+  opacity: 1 !important;
+}
+
+::view-transition-group(login-brand),
+::view-transition-group(login-toolbar) {
+  animation-duration: 760ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+::view-transition-group(login-card) {
+  animation-duration: 760ms;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  perspective: 70rem;
+}
+
+::view-transition-old(login-brand),
+::view-transition-new(login-brand),
+::view-transition-old(login-toolbar),
+::view-transition-new(login-toolbar) {
+  mix-blend-mode: normal;
+}
+
+::view-transition-old(login-card) {
+  animation: loginCardOut 440ms cubic-bezier(0.4, 0, 0.8, 1) both;
+  mix-blend-mode: normal;
+  transform-origin: center;
+  will-change: filter, opacity, transform;
+}
+
+::view-transition-new(login-card) {
+  animation: loginCardIn 590ms 140ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  mix-blend-mode: normal;
+  transform-origin: center;
+  will-change: filter, opacity, transform;
+}
+
 .fade-in {
   animation: fadeIn 0.3s ease-in-out;
 }
@@ -497,5 +445,40 @@ function openSettingsSection(section: 'discord_integration' | 'quest_behavior' |
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(5px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes loginCardOut {
+  from {
+    opacity: 1;
+    filter: blur(0) brightness(1);
+    transform: perspective(70rem) translate3d(0, 0, 0) rotateY(0);
+  }
+  to {
+    opacity: 0;
+    filter: blur(1.5px) brightness(0.96);
+    transform: perspective(70rem) translate3d(-3.75rem, 0, -5.5rem) rotateY(2.5deg);
+  }
+}
+
+@keyframes loginCardIn {
+  from {
+    opacity: 0;
+    filter: blur(1.5px) brightness(0.96);
+    transform: perspective(70rem) translate3d(3.75rem, 0, -5.5rem) rotateY(-2.5deg);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0) brightness(1);
+    transform: perspective(70rem) translate3d(0, 0, 0) rotateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fade-in,
+  .shell-reveal-enter-active,
+  .shell-reveal-leave-active {
+    animation-duration: 1ms;
+    transition-duration: 1ms;
+  }
 }
 </style>

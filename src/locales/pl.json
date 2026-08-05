@@ -13,11 +13,36 @@
   "auth": {
     "cdp_login": "Zaloguj się przez klienta Discord",
     "cdp_login_hint": "Używa aplikacji Discord, w której już jesteś zalogowany — bez tokenu.",
-    "auto_detect": "Automatyczne wykrywanie Token",
+    "auto_detect": "Automatyczne wyodrębnianie Token",
+    "extract_token": "Wyodrębnij Token",
+    "cdp_login_action": "Zaloguj przez Discord",
     "login": "Zaloguj się",
     "or_manually": "Lub ręcznie",
     "enter_token": "Wpisz swój Discord Token",
-    "authenticated_as": "Uwierzytelnione jako"
+    "authenticated_as": "Uwierzytelnione jako",
+    "local_login_desc": "Wyodrębnia Tokeny wszystkich zalogowanych kont z lokalnej bazy danych Discorda.",
+    "cdp_login_detail": "Używa konta aktualnie zalogowanego w kliencie Discord. Discord musi działać z włączonym CDP.",
+    "cdp_status_starting": "Wykryto CDP, Discord się uruchamia",
+    "cdp_status_error": "Sprawdzanie stanu nie powiodło się",
+    "back_to_methods": "Wstecz",
+    "rescan": "Skanuj ponownie",
+    "progress": {
+      "extracting_tokens": "Wyszukiwanie zapisanych tokenów Discorda...",
+      "validating_tokens": "Sprawdzanie tokenu {current} z {total}...",
+      "accounts_found": "Znaleziono {count} prawidłowych kont. Wybierz konto.",
+      "validating_token": "Sprawdzanie wybranego tokenu...",
+      "capturing_cdp_session": "Pobieranie bieżącej sesji Discorda...",
+      "validating_cdp_session": "Sprawdzanie bieżącego konta Discord...",
+      "preparing_session": "Przygotowywanie sesji logowania...",
+      "syncing_client_info": "Synchronizowanie informacji klienta Discord...",
+      "complete": "Logowanie zakończone.",
+      "failed": "Logowanie nie powiodło się",
+      "checking_cdp": "Sprawdzanie połączenia Discord CDP...",
+      "launching_discord": "Uruchamianie Discorda z włączonym CDP...",
+      "restart_required": "Discord już działa i musi zostać uruchomiony ponownie z włączonym CDP.",
+      "restarting_discord": "Ponowne uruchamianie Discorda z włączonym CDP...",
+      "restart_cancelled": "Anulowano ponowne uruchomienie Discorda. Nie zalogowano żadnego konta."
+    }
   },
   "nav": {
     "home": "Strona główna",

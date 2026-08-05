@@ -13,11 +13,36 @@
   "auth": {
     "cdp_login": "使用 Discord 用戶端登入",
     "cdp_login_hint": "使用你已登入的 Discord 用戶端，無需 Token。",
-    "auto_detect": "自動偵測 Token",
+    "auto_detect": "自動擷取 Token",
+    "extract_token": "擷取 Token",
+    "cdp_login_action": "使用 Discord 登入",
     "login": "登入",
     "or_manually": "或手動輸入",
     "enter_token": "輸入您的 Discord Token",
-    "authenticated_as": "已驗證為"
+    "authenticated_as": "已驗證為",
+    "local_login_desc": "從 Discord 本機資料庫擷取所有已登入帳號的 Token。",
+    "cdp_login_detail": "使用 Discord 用戶端目前登入的帳號。Discord 必須以啟用 CDP 的模式執行。",
+    "cdp_status_starting": "已偵測到 CDP，Discord 正在啟動",
+    "cdp_status_error": "狀態檢查失敗",
+    "back_to_methods": "返回",
+    "rescan": "重新掃描",
+    "progress": {
+      "extracting_tokens": "正在尋找本機儲存的 Discord Token...",
+      "validating_tokens": "正在驗證第 {current}/{total} 個 Token...",
+      "accounts_found": "找到 {count} 個有效帳號，請選擇要登入的帳號。",
+      "validating_token": "正在驗證所選 Token...",
+      "capturing_cdp_session": "正在取得 Discord 目前的工作階段...",
+      "validating_cdp_session": "正在驗證 Discord 目前的帳號...",
+      "preparing_session": "正在初始化登入工作階段...",
+      "syncing_client_info": "正在同步 Discord 用戶端資訊...",
+      "complete": "登入完成。",
+      "failed": "登入失敗",
+      "checking_cdp": "正在檢查 Discord CDP 連線...",
+      "launching_discord": "正在以 CDP 模式啟動 Discord...",
+      "restart_required": "Discord 已在執行，必須重新啟動才能啟用 CDP。",
+      "restarting_discord": "正在重新啟動 Discord 並啟用 CDP...",
+      "restart_cancelled": "已取消重新啟動 Discord，未登入任何帳號。"
+    }
   },
   "nav": {
     "home": "首頁",

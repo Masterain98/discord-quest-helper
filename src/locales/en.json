@@ -13,11 +13,36 @@
   "auth": {
     "cdp_login": "Log in with Discord Client",
     "cdp_login_hint": "Use the Discord app you're already signed in to — no token needed.",
-    "auto_detect": "Auto Detect Token",
+    "auto_detect": "Automatically Extract Token",
+    "extract_token": "Extract Token",
+    "cdp_login_action": "Use Discord to Log In",
     "login": "Login",
     "or_manually": "Or Manually",
     "enter_token": "Enter your Discord Token",
-    "authenticated_as": "Authenticated as"
+    "authenticated_as": "Authenticated as",
+    "local_login_desc": "Extract all signed-in account tokens from Discord's local database.",
+    "cdp_login_detail": "Use the account currently signed in to the Discord client. Discord must be running with CDP enabled.",
+    "cdp_status_starting": "CDP found, Discord is starting",
+    "cdp_status_error": "Status check failed",
+    "back_to_methods": "Back",
+    "rescan": "Scan again",
+    "progress": {
+      "extracting_tokens": "Looking for saved Discord tokens...",
+      "validating_tokens": "Validating token {current} of {total}...",
+      "accounts_found": "Found {count} valid account(s). Choose an account to continue.",
+      "validating_token": "Validating the selected token...",
+      "capturing_cdp_session": "Capturing the current Discord session...",
+      "validating_cdp_session": "Validating the current Discord account...",
+      "preparing_session": "Preparing the login session...",
+      "syncing_client_info": "Syncing Discord client information...",
+      "complete": "Login complete.",
+      "failed": "Login failed",
+      "checking_cdp": "Checking the Discord CDP connection...",
+      "launching_discord": "Starting Discord with CDP enabled...",
+      "restart_required": "Discord is already running and must be restarted with CDP enabled.",
+      "restarting_discord": "Restarting Discord with CDP enabled...",
+      "restart_cancelled": "Discord restart was cancelled. No account was logged in."
+    }
   },
   "nav": {
     "home": "Home",

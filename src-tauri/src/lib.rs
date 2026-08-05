@@ -20,6 +20,7 @@ use models::*;
 use once_cell::sync::Lazy;
 use std::sync::Mutex;
 use super_properties::XSuperPropertiesManager;
+use tauri::ipc::Channel;
 use tauri::{Emitter, Listener, Manager, State};
 
 /// Global X-Super-Properties manager (session-level)
@@ -35,7 +36,10 @@ struct AppState {
 
 /// Auto-detect Discord tokens (returns all valid accounts found)
 #[tauri::command]
-async fn auto_detect_token(_state: State<'_, AppState>) -> Result<Vec<ExtractedAccount>, String> {
+async fn auto_detect_token(
+    _state: State<'_, AppState>,
+    on_progress: Channel<AuthProgress>,
+) -> Result<Vec<ExtractedAccount>, String> {
     use crate::logger::{log, LogCategory, LogLevel};
 
     log(
@@ -44,6 +48,8 @@ async fn auto_detect_token(_state: State<'_, AppState>) -> Result<Vec<ExtractedA
         "Starting auto token detection",
         None,
     );
+
+    let _ = on_progress.send(AuthProgress::phase(AuthProgressPhase::ExtractingTokens));
 
     // Extract tokens. Local profile scans and Linux Secret Service access are
     // blocking operations, so keep them off the async command thread.
@@ -75,9 +81,6 @@ async fn auto_detect_token(_state: State<'_, AppState>) -> Result<Vec<ExtractedA
         None,
     );
 
-    let mut valid_accounts = Vec::new();
-    let mut last_error = String::new();
-
     log(
         LogLevel::Debug,
         LogCategory::TokenExtraction,
@@ -85,42 +88,44 @@ async fn auto_detect_token(_state: State<'_, AppState>) -> Result<Vec<ExtractedA
         None,
     );
 
-    for (index, token) in tokens.iter().enumerate() {
-        log(
-            LogLevel::Debug,
-            LogCategory::TokenExtraction,
-            &format!("Validating token {}/{}", index + 1, tokens.len()),
-            None,
-        );
-        // Create API client
-        if let Ok(client) = DiscordApiClient::new(token.clone()) {
-            // Validate token
+    let progress_channel = on_progress.clone();
+    let (valid_accounts, last_error) = validate_extracted_tokens(
+        tokens,
+        |token, index| async move {
+            log(
+                LogLevel::Debug,
+                LogCategory::TokenExtraction,
+                &format!("Validating token {}", index),
+                None,
+            );
+            let client = DiscordApiClient::new(token.clone())
+                .map_err(|error| format!("Failed to create API client: {error}"))?;
             match client.get_current_user().await {
                 Ok(user) => {
                     log(
                         LogLevel::Info,
                         LogCategory::TokenExtraction,
-                        &format!("Token {} validated successfully", index + 1),
+                        &format!("Token {} validated successfully", index),
                         None,
                     );
-                    valid_accounts.push(ExtractedAccount {
-                        token: token.clone(),
-                        user,
-                    });
+                    Ok(ExtractedAccount { token, user })
                 }
-                Err(e) => {
+                Err(error) => {
                     log(
                         LogLevel::Warn,
                         LogCategory::TokenExtraction,
-                        &format!("Token {} validation failed", index + 1),
-                        Some(&e.to_string()),
+                        &format!("Token {} validation failed", index),
+                        Some(&error.to_string()),
                     );
-                    last_error = format!("Token validation failed: {}", e);
-                    // Continue to next token
+                    Err(format!("Token validation failed: {error}"))
                 }
             }
-        }
-    }
+        },
+        move |progress| {
+            let _ = progress_channel.send(progress);
+        },
+    )
+    .await;
 
     log(
         LogLevel::Info,
@@ -133,7 +138,7 @@ async fn auto_detect_token(_state: State<'_, AppState>) -> Result<Vec<ExtractedA
     );
 
     if valid_accounts.is_empty() {
-        return Err(if !last_error.is_empty() {
+        return Err(if let Some(last_error) = last_error {
             format!("No valid accounts found. Last error: {}", last_error)
         } else {
             "No valid accounts found".to_string()
@@ -145,10 +150,150 @@ async fn auto_detect_token(_state: State<'_, AppState>) -> Result<Vec<ExtractedA
     Ok(valid_accounts)
 }
 
+async fn validate_extracted_tokens<F, Fut, P>(
+    tokens: Vec<String>,
+    mut validate: F,
+    mut report: P,
+) -> (Vec<ExtractedAccount>, Option<String>)
+where
+    F: FnMut(String, usize) -> Fut,
+    Fut: std::future::Future<Output = Result<ExtractedAccount, String>>,
+    P: FnMut(AuthProgress),
+{
+    let total = tokens.len();
+    let mut valid_accounts = Vec::new();
+    let mut last_error = None;
+
+    report(AuthProgress::validating(0, total));
+    for (index, token) in tokens.into_iter().enumerate() {
+        let current = index + 1;
+        report(AuthProgress::validating(current, total));
+        match validate(token, current).await {
+            Ok(account) => valid_accounts.push(account),
+            Err(error) => last_error = Some(error),
+        }
+    }
+    report(AuthProgress::accounts_found(total, valid_accounts.len()));
+
+    (valid_accounts, last_error)
+}
+
+async fn capture_cdp_session_with_progress<T, E, Fut, P>(
+    capture: Fut,
+    mut report: P,
+) -> Result<T, E>
+where
+    Fut: std::future::Future<Output = Result<T, E>>,
+    P: FnMut(AuthProgress),
+{
+    report(AuthProgress::phase(AuthProgressPhase::CapturingCdpSession));
+    capture.await
+}
+
+#[cfg(test)]
+mod auth_progress_tests {
+    use super::{capture_cdp_session_with_progress, validate_extracted_tokens};
+    use crate::models::{AuthProgress, AuthProgressPhase, DiscordUser, ExtractedAccount};
+    use std::sync::{Arc, Mutex};
+
+    fn account(token: String) -> ExtractedAccount {
+        ExtractedAccount {
+            token,
+            user: DiscordUser {
+                id: "test-user".to_string(),
+                username: "tester".to_string(),
+                discriminator: "0".to_string(),
+                avatar: None,
+                global_name: None,
+                premium_type: None,
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn empty_token_scan_reports_zero_counts_without_validation() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let captured = events.clone();
+        let (accounts, last_error) = validate_extracted_tokens(
+            Vec::new(),
+            |token, _| async move { Ok(account(token)) },
+            move |progress| captured.lock().unwrap().push(progress),
+        )
+        .await;
+
+        assert!(accounts.is_empty());
+        assert!(last_error.is_none());
+        assert_eq!(
+            *events.lock().unwrap(),
+            vec![
+                AuthProgress::validating(0, 0),
+                AuthProgress::accounts_found(0, 0),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn partial_validation_reports_each_index_and_keeps_valid_accounts() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let captured = events.clone();
+        let (accounts, last_error) = validate_extracted_tokens(
+            vec!["invalid-secret".to_string(), "valid-secret".to_string()],
+            |token, _| async move {
+                if token.starts_with("valid-") {
+                    Ok(account(token))
+                } else {
+                    Err("rejected".to_string())
+                }
+            },
+            move |progress| captured.lock().unwrap().push(progress),
+        )
+        .await;
+
+        assert_eq!(accounts.len(), 1);
+        assert_eq!(last_error.as_deref(), Some("rejected"));
+        assert_eq!(
+            *events.lock().unwrap(),
+            vec![
+                AuthProgress::validating(0, 2),
+                AuthProgress::validating(1, 2),
+                AuthProgress::validating(2, 2),
+                AuthProgress::accounts_found(2, 1),
+            ]
+        );
+
+        let serialized = serde_json::to_string(&*events.lock().unwrap()).unwrap();
+        assert!(!serialized.contains("invalid-secret"));
+        assert!(!serialized.contains("valid-secret"));
+    }
+
+    #[tokio::test]
+    async fn failed_cdp_capture_stops_after_the_capture_phase() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let captured = events.clone();
+        let result: Result<(), &str> =
+            capture_cdp_session_with_progress(async { Err("capture failed") }, move |progress| {
+                captured.lock().unwrap().push(progress)
+            })
+            .await;
+
+        assert_eq!(result, Err("capture failed"));
+        assert_eq!(
+            *events.lock().unwrap(),
+            vec![AuthProgress::phase(AuthProgressPhase::CapturingCdpSession)]
+        );
+    }
+}
+
 /// Login with provided token
 #[tauri::command]
-async fn set_token(token: String, state: State<'_, AppState>) -> Result<DiscordUser, String> {
+async fn set_token(
+    token: String,
+    state: State<'_, AppState>,
+    on_progress: Channel<AuthProgress>,
+) -> Result<DiscordUser, String> {
     use crate::logger::{log, LogCategory, LogLevel};
+
+    let _ = on_progress.send(AuthProgress::phase(AuthProgressPhase::ValidatingToken));
 
     // Create API client
     let client =
@@ -159,6 +304,8 @@ async fn set_token(token: String, state: State<'_, AppState>) -> Result<DiscordU
         .get_current_user()
         .await
         .map_err(|e| format!("Failed to validate token: {}", e))?;
+
+    let _ = on_progress.send(AuthProgress::phase(AuthProgressPhase::PreparingSession));
 
     // Fetch latest build_number and client info before returning (so frontend await can rely on completion)
 
@@ -232,6 +379,8 @@ async fn set_token(token: String, state: State<'_, AppState>) -> Result<DiscordU
         }
     }
 
+    let _ = on_progress.send(AuthProgress::phase(AuthProgressPhase::SyncingClientInfo));
+
     // Get client info (native_build_number and version)
     match token_extractor::fetch_discord_client_info().await {
         Ok(info) => {
@@ -263,6 +412,8 @@ async fn set_token(token: String, state: State<'_, AppState>) -> Result<DiscordU
     // where other commands might use the client with stale properties
     *state.client.lock().unwrap() = Some(client);
 
+    let _ = on_progress.send(AuthProgress::phase(AuthProgressPhase::Complete));
+
     Ok(user)
 }
 
@@ -279,6 +430,7 @@ async fn set_token(token: String, state: State<'_, AppState>) -> Result<DiscordU
 async fn auto_login_via_cdp(
     port: Option<u16>,
     state: State<'_, AppState>,
+    on_progress: Channel<AuthProgress>,
 ) -> Result<DiscordUser, String> {
     use crate::logger::{log, LogCategory, LogLevel};
     use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
@@ -295,10 +447,17 @@ async fn auto_login_via_cdp(
     // 1. Capture the current session's Authorization over CDP. The token stays
     //    inside `session` (a zero-on-drop wrapper) and is never returned to the
     //    UI, logged, or persisted.
-    let session =
-        cdp_client::capture_discord_auth_via_cdp(cdp_port, std::time::Duration::from_secs(20))
-            .await
-            .map_err(|e| e.to_string())?;
+    let progress_channel = on_progress.clone();
+    let session = capture_cdp_session_with_progress(
+        cdp_client::capture_discord_auth_via_cdp(cdp_port, std::time::Duration::from_secs(20)),
+        move |progress| {
+            let _ = progress_channel.send(progress);
+        },
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let _ = on_progress.send(AuthProgress::phase(AuthProgressPhase::ValidatingCdpSession));
 
     // 2. Build an API client from the captured token and validate it via
     //    /users/@me. An invalid capture is rejected here.
@@ -308,6 +467,8 @@ async fn auto_login_via_cdp(
         .get_current_user()
         .await
         .map_err(|e| format!("Captured Discord session is not valid: {}", e))?;
+
+    let _ = on_progress.send(AuthProgress::phase(AuthProgressPhase::PreparingSession));
 
     // 3. Bootstrap SuperProperties. Prefer the exact `x-super-properties` we
     //    captured (the value the client actually sends); fall back to a fresh
@@ -341,6 +502,8 @@ async fn auto_login_via_cdp(
         "CDP auto-login succeeded",
         None,
     );
+
+    let _ = on_progress.send(AuthProgress::phase(AuthProgressPhase::Complete));
 
     Ok(user)
 }

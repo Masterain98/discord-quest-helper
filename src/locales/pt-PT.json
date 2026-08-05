@@ -13,11 +13,36 @@
   "auth": {
     "cdp_login": "Iniciar sessão com o cliente do Discord",
     "cdp_login_hint": "Use a aplicação do Discord onde já tem sessão iniciada, sem token.",
-    "auto_detect": "Detecção automática Token",
+    "auto_detect": "Extrair Token automaticamente",
+    "extract_token": "Extrair Token",
+    "cdp_login_action": "Iniciar sessão com Discord",
     "login": "Entrar",
     "or_manually": "Ou manualmente",
     "enter_token": "Introduza o seu Discord Token",
-    "authenticated_as": "Autenticado como"
+    "authenticated_as": "Autenticado como",
+    "local_login_desc": "Extrai os Tokens de todas as contas com sessão iniciada da base de dados local do Discord.",
+    "cdp_login_detail": "Utiliza a conta com sessão iniciada no cliente Discord. O Discord tem de estar a executar com o CDP ativado.",
+    "cdp_status_starting": "CDP encontrado, o Discord está a iniciar",
+    "cdp_status_error": "Falha ao verificar o estado",
+    "back_to_methods": "Voltar",
+    "rescan": "Verificar novamente",
+    "progress": {
+      "extracting_tokens": "A procurar tokens do Discord guardados...",
+      "validating_tokens": "A validar o token {current} de {total}...",
+      "accounts_found": "Foram encontradas {count} contas válidas. Escolha uma conta.",
+      "validating_token": "A validar o token selecionado...",
+      "capturing_cdp_session": "A obter a sessão atual do Discord...",
+      "validating_cdp_session": "A validar a conta atual do Discord...",
+      "preparing_session": "A preparar a sessão de início de sessão...",
+      "syncing_client_info": "A sincronizar informações do cliente Discord...",
+      "complete": "Início de sessão concluído.",
+      "failed": "Falha no início de sessão",
+      "checking_cdp": "A verificar a ligação CDP do Discord...",
+      "launching_discord": "A iniciar o Discord com o CDP ativado...",
+      "restart_required": "O Discord já está em execução e tem de ser reiniciado com o CDP ativado.",
+      "restarting_discord": "A reiniciar o Discord com o CDP ativado...",
+      "restart_cancelled": "O reinício do Discord foi cancelado. Nenhuma conta iniciou sessão."
+    }
   },
   "nav": {
     "home": "Página inicial",

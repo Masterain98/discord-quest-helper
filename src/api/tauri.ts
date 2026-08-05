@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core'
+import { Channel, invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 
 export type GameQuestMode = 'simulate' | 'heartbeat' | 'cdp'
@@ -147,12 +147,36 @@ export interface ExtractedAccount {
   user: DiscordUser
 }
 
-export async function autoDetectToken(): Promise<ExtractedAccount[]> {
-  return await invoke('auto_detect_token')
+export type AuthProgressPhase =
+  | 'extracting_tokens'
+  | 'validating_tokens'
+  | 'accounts_found'
+  | 'validating_token'
+  | 'capturing_cdp_session'
+  | 'validating_cdp_session'
+  | 'preparing_session'
+  | 'syncing_client_info'
+  | 'complete'
+
+export interface AuthProgress {
+  phase: AuthProgressPhase
+  current: number | null
+  total: number | null
+  valid_accounts: number | null
 }
 
-export async function setToken(token: string): Promise<DiscordUser> {
-  return await invoke('set_token', { token })
+export type AuthProgressHandler = (progress: AuthProgress) => void
+
+function createAuthProgressChannel(onProgress?: AuthProgressHandler): Channel<AuthProgress> {
+  return new Channel<AuthProgress>((progress) => onProgress?.(progress))
+}
+
+export async function autoDetectToken(onProgress?: AuthProgressHandler): Promise<ExtractedAccount[]> {
+  return await invoke('auto_detect_token', { onProgress: createAuthProgressChannel(onProgress) })
+}
+
+export async function setToken(token: string, onProgress?: AuthProgressHandler): Promise<DiscordUser> {
+  return await invoke('set_token', { token, onProgress: createAuthProgressChannel(onProgress) })
 }
 
 // RPC commands
@@ -547,6 +571,6 @@ export async function getPlatformCapabilities(): Promise<PlatformCapabilities> {
 // establish a DQH login from it. The raw token is captured, validated, and
 // stored entirely on the Rust side — only the resolved DiscordUser is returned
 // to the frontend. Requires Discord to be running with CDP enabled.
-export async function autoLoginViaCdp(port?: number): Promise<DiscordUser> {
-  return await invoke('auto_login_via_cdp', { port })
+export async function autoLoginViaCdp(port?: number, onProgress?: AuthProgressHandler): Promise<DiscordUser> {
+  return await invoke('auto_login_via_cdp', { port, onProgress: createAuthProgressChannel(onProgress) })
 }

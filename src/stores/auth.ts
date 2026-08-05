@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { DiscordUser, ExtractedAccount, BillingSubscription } from '@/api/tauri'
+import type { DiscordUser, ExtractedAccount, BillingSubscription, AuthProgress, AuthProgressHandler } from '@/api/tauri'
 import { autoDetectToken, setToken, autoLoginViaCdp, autoFetchSuperProperties, getBillingSubscriptions } from '@/api/tauri'
 import { useQuestsStore } from './quests'
 import { useI18n } from 'vue-i18n'
@@ -28,41 +28,49 @@ export const useAuthStore = defineStore('auth', () => {
     billingError.value = null
   }
 
-  async function tryAutoDetect() {
+  async function tryAutoDetect(
+    onProgress?: AuthProgressHandler,
+    commitMultipleAccounts?: (accounts: ExtractedAccount[]) => void | Promise<void>,
+  ) {
     loading.value = true
     error.value = null
     detectedAccounts.value = []
 
     try {
-      console.log('Calling autoDetectToken...')
-      const accounts = await autoDetectToken()
-      console.log('Received accounts:', accounts)
+      const accounts = await autoDetectToken(onProgress)
 
       if (accounts.length === 1) {
-        console.log('Single account found, logging in...')
         // Only one account found, login automatically
-        await loginWithToken(accounts[0].token)
+        return await loginWithToken(accounts[0].token, onProgress)
       } else {
-        console.log('Multiple accounts found, updating detectedAccounts state...')
         // Multiple accounts, let UI handle selection
-        detectedAccounts.value = accounts
+        if (commitMultipleAccounts) {
+          await commitMultipleAccounts(accounts)
+        } else {
+          detectedAccounts.value = accounts
+        }
       }
       return true
     } catch (e) {
       console.error('Auto detect failed:', e)
-      error.value = e as string
+      error.value = e instanceof Error ? e.message : String(e)
       return false
     } finally {
       loading.value = false
     }
   }
 
-  async function loginWithToken(tokenValue: string) {
+  async function loginWithToken(tokenValue: string, onProgress?: AuthProgressHandler) {
     loading.value = true
     error.value = null
     resetBillingState()
     try {
-      user.value = await setToken(tokenValue)
+      user.value = await setToken(tokenValue, (progress) => {
+        // The store still performs one final SuperProperties synchronization
+        // after the backend command. Keep the visible operation running until
+        // that existing step has settled.
+        if (progress.phase !== 'complete') onProgress?.(progress)
+      })
       token.value = tokenValue
 
       // After successful login, wait for SuperProperties fetch to complete
@@ -77,9 +85,11 @@ export const useAuthStore = defineStore('auth', () => {
         console.warn('Failed to fetch SuperProperties:', e)
       }
 
+      onProgress?.(completeAuthProgress())
+
       return true
     } catch (e) {
-      error.value = e as string
+      error.value = e instanceof Error ? e.message : String(e)
       return false
     } finally {
       loading.value = false
@@ -92,13 +102,13 @@ export const useAuthStore = defineStore('auth', () => {
    * frontend: the backend captures, validates, and stores it, returning only the
    * DiscordUser. Requires Discord to be running with CDP enabled.
    */
-  async function loginViaCdp() {
+  async function loginViaCdp(onProgress?: AuthProgressHandler) {
     loading.value = true
     error.value = null
     resetBillingState()
     try {
       const questsStore = useQuestsStore()
-      user.value = await autoLoginViaCdp(questsStore.cdpPort)
+      user.value = await autoLoginViaCdp(questsStore.cdpPort, onProgress)
       // Intentionally leave `token` null: CDP auto-login never surfaces the raw
       // token. Authenticated backend commands use the client in AppState.
       token.value = null
@@ -108,10 +118,19 @@ export const useAuthStore = defineStore('auth', () => {
 
       return true
     } catch (e) {
-      error.value = e as string
+      error.value = e instanceof Error ? e.message : String(e)
       return false
     } finally {
       loading.value = false
+    }
+  }
+
+  function completeAuthProgress(): AuthProgress {
+    return {
+      phase: 'complete',
+      current: null,
+      total: null,
+      valid_accounts: null,
     }
   }
 

@@ -13,11 +13,36 @@
   "auth": {
     "cdp_login": "Mit Discord-Client anmelden",
     "cdp_login_hint": "Nutzen Sie die Discord-App, bei der Sie bereits angemeldet sind – kein Token nötig.",
-    "auto_detect": "Automatische Erkennung Token",
+    "auto_detect": "Token automatisch extrahieren",
+    "extract_token": "Token extrahieren",
+    "cdp_login_action": "Mit Discord anmelden",
     "login": "Anmelden",
     "or_manually": "Oder manuell",
     "enter_token": "Geben Sie Ihren Discord Token ein.",
-    "authenticated_as": "Authentifiziert als"
+    "authenticated_as": "Authentifiziert als",
+    "local_login_desc": "Extrahiert die Token aller angemeldeten Konten aus der lokalen Discord-Datenbank.",
+    "cdp_login_detail": "Verwendet das aktuell im Discord-Client angemeldete Konto. Discord muss mit aktiviertem CDP laufen.",
+    "cdp_status_starting": "CDP gefunden, Discord wird gestartet",
+    "cdp_status_error": "Statusprüfung fehlgeschlagen",
+    "back_to_methods": "Zurück",
+    "rescan": "Erneut suchen",
+    "progress": {
+      "extracting_tokens": "Gespeicherte Discord-Token werden gesucht...",
+      "validating_tokens": "Token {current} von {total} wird geprüft...",
+      "accounts_found": "{count} gültige Konten gefunden. Wähle ein Konto aus.",
+      "validating_token": "Das ausgewählte Token wird geprüft...",
+      "capturing_cdp_session": "Die aktuelle Discord-Sitzung wird erfasst...",
+      "validating_cdp_session": "Das aktuelle Discord-Konto wird geprüft...",
+      "preparing_session": "Die Anmeldesitzung wird vorbereitet...",
+      "syncing_client_info": "Discord-Clientinformationen werden synchronisiert...",
+      "complete": "Anmeldung abgeschlossen.",
+      "failed": "Anmeldung fehlgeschlagen",
+      "checking_cdp": "Die Discord-CDP-Verbindung wird geprüft...",
+      "launching_discord": "Discord wird mit aktiviertem CDP gestartet...",
+      "restart_required": "Discord läuft bereits und muss mit aktiviertem CDP neu gestartet werden.",
+      "restarting_discord": "Discord wird mit aktiviertem CDP neu gestartet...",
+      "restart_cancelled": "Der Discord-Neustart wurde abgebrochen. Es wurde kein Konto angemeldet."
+    }
   },
   "nav": {
     "home": "Startseite",

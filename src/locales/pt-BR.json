@@ -13,11 +13,36 @@
   "auth": {
     "cdp_login": "Entrar com o cliente do Discord",
     "cdp_login_hint": "Usa o app do Discord em que você já está conectado, sem token.",
-    "auto_detect": "Detecção automática Token",
+    "auto_detect": "Extrair Token automaticamente",
+    "extract_token": "Extrair Token",
+    "cdp_login_action": "Entrar com o Discord",
     "login": "Entrar",
     "or_manually": "Ou manualmente",
     "enter_token": "Insira seu Discord Token",
-    "authenticated_as": "Autenticado como"
+    "authenticated_as": "Autenticado como",
+    "local_login_desc": "Extrai os Tokens de todas as contas conectadas do banco de dados local do Discord.",
+    "cdp_login_detail": "Usa a conta atualmente conectada no cliente do Discord. O Discord precisa estar em execução com o CDP ativado.",
+    "cdp_status_starting": "CDP encontrado, o Discord está iniciando",
+    "cdp_status_error": "Falha ao verificar o status",
+    "back_to_methods": "Voltar",
+    "rescan": "Verificar novamente",
+    "progress": {
+      "extracting_tokens": "Procurando tokens do Discord salvos...",
+      "validating_tokens": "Validando o token {current} de {total}...",
+      "accounts_found": "Foram encontradas {count} contas válidas. Escolha uma conta.",
+      "validating_token": "Validando o token selecionado...",
+      "capturing_cdp_session": "Obtendo a sessão atual do Discord...",
+      "validating_cdp_session": "Validando a conta atual do Discord...",
+      "preparing_session": "Preparando a sessão de login...",
+      "syncing_client_info": "Sincronizando informações do cliente Discord...",
+      "complete": "Login concluído.",
+      "failed": "Falha no login",
+      "checking_cdp": "Verificando a conexão CDP do Discord...",
+      "launching_discord": "Iniciando o Discord com o CDP ativado...",
+      "restart_required": "O Discord já está em execução e precisa ser reiniciado com o CDP ativado.",
+      "restarting_discord": "Reiniciando o Discord com o CDP ativado...",
+      "restart_cancelled": "A reinicialização do Discord foi cancelada. Nenhuma conta foi conectada."
+    }
   },
   "nav": {
     "home": "Página inicial",

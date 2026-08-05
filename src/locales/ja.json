@@ -13,11 +13,36 @@
   "auth": {
     "cdp_login": "Discord クライアントでログイン",
     "cdp_login_hint": "すでにログイン済みの Discord アプリを使用します。トークンは不要です。",
-    "auto_detect": "トークン自動検出",
+    "auto_detect": "Token を自動抽出",
+    "extract_token": "Token を抽出",
+    "cdp_login_action": "Discord でログイン",
     "login": "ログイン",
     "or_manually": "または手動で入力",
     "enter_token": "Discord トークンを入力",
-    "authenticated_as": "認証済み："
+    "authenticated_as": "認証済み：",
+    "local_login_desc": "Discord のローカルデータベースからログイン済みの全アカウントの Token を抽出します。",
+    "cdp_login_detail": "Discord クライアントで現在ログイン中のアカウントを使用します。CDP を有効にして Discord を起動してください。",
+    "cdp_status_starting": "CDP を検出しました。Discord を起動しています",
+    "cdp_status_error": "状態の確認に失敗しました",
+    "back_to_methods": "戻る",
+    "rescan": "再スキャン",
+    "progress": {
+      "extracting_tokens": "保存済みの Discord Token を検索しています...",
+      "validating_tokens": "Token {current}/{total} を確認しています...",
+      "accounts_found": "有効なアカウントが {count} 件見つかりました。アカウントを選択してください。",
+      "validating_token": "選択した Token を確認しています...",
+      "capturing_cdp_session": "現在の Discord セッションを取得しています...",
+      "validating_cdp_session": "現在の Discord アカウントを確認しています...",
+      "preparing_session": "ログインセッションを準備しています...",
+      "syncing_client_info": "Discord クライアント情報を同期しています...",
+      "complete": "ログインが完了しました。",
+      "failed": "ログインに失敗しました",
+      "checking_cdp": "Discord の CDP 接続を確認しています...",
+      "launching_discord": "CDP を有効にして Discord を起動しています...",
+      "restart_required": "Discord はすでに起動中です。CDP を有効にして再起動する必要があります。",
+      "restarting_discord": "CDP を有効にして Discord を再起動しています...",
+      "restart_cancelled": "Discord の再起動をキャンセルしました。ログインしていません。"
+    }
   },
   "nav": {
     "home": "ホーム",

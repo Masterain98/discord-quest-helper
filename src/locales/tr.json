@@ -13,11 +13,36 @@
   "auth": {
     "cdp_login": "Discord istemcisiyle giriş yap",
     "cdp_login_hint": "Zaten giriş yapmış olduğunuz Discord uygulamasını kullanır — token gerekmez.",
-    "auto_detect": "Otomatik Algıla Token",
+    "auto_detect": "Token'ı Otomatik Çıkar",
+    "extract_token": "Token'ı Çıkar",
+    "cdp_login_action": "Discord ile Giriş Yap",
     "login": "Giriş yap",
     "or_manually": "Veya Manuel olarak",
     "enter_token": "Discord Token'inizi girin",
-    "authenticated_as": "Şu şekilde doğrulandı:"
+    "authenticated_as": "Şu şekilde doğrulandı:",
+    "local_login_desc": "Discord'un yerel veritabanından giriş yapılmış tüm hesapların Token'larını çıkarır.",
+    "cdp_login_detail": "Discord istemcisinde açık olan hesabı kullanır. Discord, CDP etkin olarak çalışmalıdır.",
+    "cdp_status_starting": "CDP bulundu, Discord başlatılıyor",
+    "cdp_status_error": "Durum kontrolü başarısız oldu",
+    "back_to_methods": "Geri",
+    "rescan": "Tekrar tara",
+    "progress": {
+      "extracting_tokens": "Kaydedilmiş Discord Token'ları aranıyor...",
+      "validating_tokens": "{total} Token'dan {current}. doğrulanıyor...",
+      "accounts_found": "{count} geçerli hesap bulundu. Bir hesap seçin.",
+      "validating_token": "Seçilen Token doğrulanıyor...",
+      "capturing_cdp_session": "Geçerli Discord oturumu alınıyor...",
+      "validating_cdp_session": "Geçerli Discord hesabı doğrulanıyor...",
+      "preparing_session": "Oturum açma hazırlanıyor...",
+      "syncing_client_info": "Discord istemci bilgileri eşitleniyor...",
+      "complete": "Oturum açma tamamlandı.",
+      "failed": "Oturum açılamadı",
+      "checking_cdp": "Discord CDP bağlantısı kontrol ediliyor...",
+      "launching_discord": "Discord, CDP etkin olarak başlatılıyor...",
+      "restart_required": "Discord zaten çalışıyor ve CDP etkin olarak yeniden başlatılmalıdır.",
+      "restarting_discord": "Discord, CDP etkin olarak yeniden başlatılıyor...",
+      "restart_cancelled": "Discord'u yeniden başlatma iptal edildi. Hiçbir hesapta oturum açılmadı."
+    }
   },
   "nav": {
     "home": "Ana sayfa",
