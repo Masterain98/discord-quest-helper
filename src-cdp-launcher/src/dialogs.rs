@@ -136,7 +136,7 @@ pub(crate) fn show_info_dialog(title: &str, message: &str) {
 
 #[cfg(target_os = "macos")]
 pub(crate) fn show_error_dialog(title: &str, message: &str) {
-    show_info_dialog(title, message);
+    show_macos_dialog(title, message, true);
 }
 
 #[cfg(target_os = "linux")]
@@ -152,11 +152,18 @@ pub(crate) fn show_error_dialog(title: &str, message: &str) {
 
 #[cfg(target_os = "macos")]
 pub(crate) fn show_info_dialog(title: &str, message: &str) {
+    show_macos_dialog(title, message, false);
+}
+
+#[cfg(target_os = "macos")]
+fn show_macos_dialog(title: &str, message: &str, critical: bool) {
     let escape = |value: &str| value.replace('\\', "\\\\").replace('"', "\\\"");
+    let severity = if critical { " as critical" } else { "" };
     let script = format!(
-        "display alert \"{}\" message \"{}\" as critical buttons {{\"OK\"}} default button \"OK\"",
+        "display alert \"{}\" message \"{}\"{} buttons {{\"OK\"}} default button \"OK\"",
         escape(title),
-        escape(message)
+        escape(message),
+        severity
     );
     if !std::process::Command::new("osascript")
         .args(["-e", &script])

@@ -38,15 +38,15 @@ fn run(strings: &Strings) -> Result<i32, String> {
         if result.failures.is_empty() {
             return Ok(0);
         }
-        let channels = result
+        let details = result
             .failures
             .iter()
-            .map(|failure| failure.channel.display_name())
+            .map(|failure| format!("{}: {}", failure.channel.display_name(), failure.error))
             .collect::<Vec<_>>()
-            .join(", ");
+            .join("\n");
         dialogs::show_error_dialog(
             strings.title,
-            &format!("{}\n\n{channels}", strings.restore_failure),
+            &format!("{}\n\n{details}", strings.restore_failure),
         );
         return Ok(4);
     }

@@ -14,8 +14,7 @@ const STARTUP_TIMEOUT: Duration = Duration::from_secs(15);
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[doc(hidden)]
-pub struct ProcessSnapshot {
+pub(crate) struct ProcessSnapshot {
     pub name: OsString,
     pub executable_path: Option<PathBuf>,
     pub command_line: Vec<OsString>,
@@ -40,8 +39,7 @@ pub fn restore_all_discord_to_normal() -> Result<RestoreResult, LaunchError> {
     ))
 }
 
-#[doc(hidden)]
-pub fn sessions_from_processes<C: CdpProbe>(
+pub(crate) fn sessions_from_processes<C: CdpProbe>(
     processes: &[ProcessSnapshot],
     installs: &[DiscordInstall],
     probe: &C,
@@ -71,8 +69,7 @@ pub fn sessions_from_processes<C: CdpProbe>(
     sessions
 }
 
-#[doc(hidden)]
-pub fn restore_sessions_with_backends<P: PlatformBackend, C: CdpProbe>(
+pub(crate) fn restore_sessions_with_backends<P: PlatformBackend, C: CdpProbe>(
     sessions: &[RunningCdpSession],
     platform: &P,
     probe: &C,
@@ -154,7 +151,12 @@ fn restore_channel<P: PlatformBackend, C: CdpProbe>(
     platform
         .spawn(install, DiscordLaunchMode::Normal)
         .map_err(|error| error.to_string())?;
-    wait_for_running_state(platform, channel, true, STARTUP_TIMEOUT)?;
+    wait_for_running_state(platform, channel, true, STARTUP_TIMEOUT).map_err(|error| {
+        format!(
+            "Discord {} was relaunched in normal mode, but startup verification failed: {error}",
+            channel.display_name()
+        )
+    })?;
 
     for port in sessions
         .iter()
@@ -239,8 +241,12 @@ fn classify_known_discord_process(
 fn channel_from_process_name(name: &OsStr) -> Option<DiscordChannel> {
     match name.to_string_lossy().to_ascii_lowercase().as_str() {
         "discord" | "discord.exe" => Some(DiscordChannel::Stable),
-        "discordptb" | "discordptb.exe" | "discord-ptb" => Some(DiscordChannel::Ptb),
-        "discordcanary" | "discordcanary.exe" | "discord-canary" => Some(DiscordChannel::Canary),
+        "discordptb" | "discordptb.exe" | "discord-ptb" | "discord ptb" => {
+            Some(DiscordChannel::Ptb)
+        }
+        "discordcanary" | "discordcanary.exe" | "discord-canary" | "discord canary" => {
+            Some(DiscordChannel::Canary)
+        }
         _ => None,
     }
 }
@@ -248,8 +254,14 @@ fn channel_from_process_name(name: &OsStr) -> Option<DiscordChannel> {
 fn paths_refer_to_same_executable(left: &Path, right: &Path) -> bool {
     #[cfg(target_os = "windows")]
     {
-        left.to_string_lossy()
-            .eq_ignore_ascii_case(&right.to_string_lossy())
+        let paths_match = |left: &Path, right: &Path| {
+            left.to_string_lossy()
+                .eq_ignore_ascii_case(&right.to_string_lossy())
+        };
+        match (std::fs::canonicalize(left), std::fs::canonicalize(right)) {
+            (Ok(left), Ok(right)) => paths_match(&left, &right),
+            _ => paths_match(left, right),
+        }
     }
     #[cfg(not(target_os = "windows"))]
     {
@@ -329,6 +341,40 @@ mod tests {
                 port: 9223
             }]
         );
+    }
+
+    #[test]
+    fn recognizes_space_separated_macos_channel_names() {
+        assert_eq!(
+            channel_from_process_name(OsStr::new("Discord PTB")),
+            Some(DiscordChannel::Ptb)
+        );
+        assert_eq!(
+            channel_from_process_name(OsStr::new("Discord Canary")),
+            Some(DiscordChannel::Canary)
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn resolves_equivalent_windows_path_representations() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!(
+            "discord-cdp-path-test-{}-{unique}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let executable = directory.join("Discord.exe");
+        std::fs::File::create(&executable).unwrap();
+        let verbatim = PathBuf::from(format!(r"\\?\{}", executable.display()));
+
+        assert!(paths_refer_to_same_executable(&executable, &verbatim));
+
+        std::fs::remove_file(executable).unwrap();
+        std::fs::remove_dir(directory).unwrap();
     }
 
     struct RestorePlatform {
@@ -438,5 +484,130 @@ mod tests {
         assert_eq!(result.restored, vec![DiscordChannel::Stable]);
         assert_eq!(result.failures.len(), 1);
         assert_eq!(result.failures[0].channel, DiscordChannel::Ptb);
+    }
+
+    #[test]
+    fn reports_a_cdp_endpoint_that_remains_active_after_shutdown() {
+        let platform = RestorePlatform {
+            installs: vec![install(DiscordChannel::Stable, "C:\\Discord\\Discord.exe")],
+            running: Mutex::new(HashMap::from([(DiscordChannel::Stable, true)])),
+            spawned: Mutex::new(Vec::new()),
+        };
+        let sessions = vec![RunningCdpSession {
+            channel: DiscordChannel::Stable,
+            port: 9223,
+        }];
+
+        let result =
+            restore_sessions_with_backends(&sessions, &platform, &Probe(HashSet::from([9223])));
+
+        assert!(result.restored.is_empty());
+        assert_eq!(result.failures.len(), 1);
+        assert!(result.failures[0]
+            .error
+            .contains("CDP endpoint on port 9223 remained active after shutdown"));
+        assert!(platform.spawned.lock().unwrap().is_empty());
+    }
+
+    struct VerificationFailurePlatform {
+        install: DiscordInstall,
+        spawned: Mutex<bool>,
+    }
+
+    impl PlatformBackend for VerificationFailurePlatform {
+        fn find_installs(&self) -> Result<Vec<DiscordInstall>, LaunchError> {
+            Ok(vec![self.install.clone()])
+        }
+
+        fn is_running(&self, _channel: Option<DiscordChannel>) -> Result<bool, LaunchError> {
+            if *self.spawned.lock().unwrap() {
+                Err(LaunchError::UnsupportedPlatform)
+            } else {
+                Ok(false)
+            }
+        }
+
+        fn terminate(&self, _channel: Option<DiscordChannel>) -> Result<(), LaunchError> {
+            Ok(())
+        }
+
+        fn spawn(
+            &self,
+            _install: &DiscordInstall,
+            _mode: DiscordLaunchMode,
+        ) -> Result<u32, LaunchError> {
+            *self.spawned.lock().unwrap() = true;
+            Ok(1)
+        }
+    }
+
+    #[test]
+    fn distinguishes_post_relaunch_verification_failure() {
+        let platform = VerificationFailurePlatform {
+            install: install(DiscordChannel::Stable, "C:\\Discord\\Discord.exe"),
+            spawned: Mutex::new(false),
+        };
+        let sessions = vec![RunningCdpSession {
+            channel: DiscordChannel::Stable,
+            port: 9223,
+        }];
+
+        let result = restore_sessions_with_backends(&sessions, &platform, &Probe(HashSet::new()));
+
+        assert_eq!(result.failures.len(), 1);
+        assert!(result.failures[0]
+            .error
+            .contains("was relaunched in normal mode, but startup verification failed"));
+    }
+
+    struct FailingDiscoveryPlatform;
+
+    impl PlatformBackend for FailingDiscoveryPlatform {
+        fn find_installs(&self) -> Result<Vec<DiscordInstall>, LaunchError> {
+            Err(LaunchError::UnsupportedPlatform)
+        }
+
+        fn is_running(&self, _channel: Option<DiscordChannel>) -> Result<bool, LaunchError> {
+            unreachable!()
+        }
+
+        fn terminate(&self, _channel: Option<DiscordChannel>) -> Result<(), LaunchError> {
+            unreachable!()
+        }
+
+        fn spawn(
+            &self,
+            _install: &DiscordInstall,
+            _mode: DiscordLaunchMode,
+        ) -> Result<u32, LaunchError> {
+            unreachable!()
+        }
+    }
+
+    #[test]
+    fn reports_discovery_failure_for_every_affected_channel() {
+        let sessions = vec![
+            RunningCdpSession {
+                channel: DiscordChannel::Stable,
+                port: 9223,
+            },
+            RunningCdpSession {
+                channel: DiscordChannel::Ptb,
+                port: 9333,
+            },
+        ];
+
+        let result = restore_sessions_with_backends(
+            &sessions,
+            &FailingDiscoveryPlatform,
+            &Probe(HashSet::new()),
+        );
+
+        assert!(result.restored.is_empty());
+        assert_eq!(result.failures.len(), 2);
+        assert_eq!(result.failures[0].channel, DiscordChannel::Stable);
+        assert_eq!(result.failures[1].channel, DiscordChannel::Ptb);
+        assert!(result.failures.iter().all(|failure| failure.error
+            == "Discord CDP launcher is only supported on Windows, macOS, and Linux."));
     }
 }

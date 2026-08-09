@@ -20,10 +20,7 @@ pub use model::{
     DEFAULT_CDP_PORT,
 };
 pub use platform::SystemPlatform;
-pub use processes::{
-    list_running_discord_cdp_sessions, restore_all_discord_to_normal,
-    restore_sessions_with_backends, sessions_from_processes, ProcessSnapshot,
-};
+pub use processes::{list_running_discord_cdp_sessions, restore_all_discord_to_normal};
 
 #[cfg(target_os = "windows")]
 #[doc(hidden)]
