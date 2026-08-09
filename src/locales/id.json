@@ -467,5 +467,12 @@
     "activity_cdp_required": "Quest Activity memerlukan mode CDP.",
     "stream_quest_title": "Aliran pencarian",
     "stream_quest_desc": "Quest streaming mengharuskan Anda melakukan streaming game pada Discord secara manual. Mulai streaming di saluran suara, lalu gunakan Game Simulator untuk menyimulasikan game."
+  },
+  "exit_cdp": {
+    "title": "Discord masih berjalan dalam mode CDP",
+    "description": "Menutup aplikasi ini tidak menonaktifkan antarmuka debug lokal Discord. Anda dapat menutup aplikasi ini saja atau memulai ulang Discord dalam mode normal.",
+    "close_only": "Tutup aplikasi ini saja",
+    "restore_and_close": "Tutup dan mulai ulang Discord secara normal",
+    "helper_error": "Pembantu mulai ulang Discord tidak dapat dijalankan. Tutup Discord sepenuhnya lalu buka kembali secara manual."
   }
 }

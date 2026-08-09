@@ -18,11 +18,7 @@ fn main() {
     match run(strings) {
         Ok(code) => std::process::exit(code),
         Err(error) => {
-            #[cfg(any(target_os = "windows", target_os = "linux"))]
-            dialogs::show_info_dialog(strings.title, &error);
-
-            #[cfg(not(any(target_os = "windows", target_os = "linux")))]
-            eprintln!("{error}");
+            dialogs::show_error_dialog(strings.title, &error);
 
             std::process::exit(1);
         }
@@ -36,6 +32,25 @@ fn run(strings: &Strings) -> Result<i32, String> {
         return Ok(0);
     }
 
+    if options.restore_normal_all {
+        let result =
+            cdp_launch::restore_all_discord_to_normal().map_err(|error| error.to_string())?;
+        if result.failures.is_empty() {
+            return Ok(0);
+        }
+        let details = result
+            .failures
+            .iter()
+            .map(|failure| format!("{}: {}", failure.channel.display_name(), failure.error))
+            .collect::<Vec<_>>()
+            .join("\n");
+        dialogs::show_error_dialog(
+            strings.title,
+            &format!("{}\n\n{details}", strings.restore_failure),
+        );
+        return Ok(4);
+    }
+
     if options.status {
         if cdp_launch::is_cdp_available(options.port) {
             println!("CDP is available on port {}", options.port);
@@ -46,11 +61,7 @@ fn run(strings: &Strings) -> Result<i32, String> {
     }
 
     if cdp_launch::is_cdp_available(options.port) {
-        #[cfg(any(target_os = "windows", target_os = "linux"))]
         dialogs::show_info_dialog(strings.title, strings.cdp_already_running);
-
-        #[cfg(not(any(target_os = "windows", target_os = "linux")))]
-        println!("{}", strings.cdp_already_running);
 
         return Ok(0);
     }

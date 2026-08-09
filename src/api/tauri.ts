@@ -574,3 +574,24 @@ export async function getPlatformCapabilities(): Promise<PlatformCapabilities> {
 export async function autoLoginViaCdp(port?: number, onProgress?: AuthProgressHandler): Promise<DiscordUser> {
   return await invoke('auto_login_via_cdp', { port, onProgress: createAuthProgressChannel(onProgress) })
 }
+
+export interface RunningDiscordCdpSession {
+  channel: DiscordChannelResult
+  port: number
+}
+
+export async function listRunningDiscordCdpSessions(): Promise<RunningDiscordCdpSession[]> {
+  return await invoke('list_running_discord_cdp_sessions')
+}
+
+export async function startDiscordNormalRestoreHelper(): Promise<void> {
+  return await invoke('start_discord_normal_restore_helper')
+}
+
+export async function prepareAppExit(): Promise<void> {
+  return await invoke('prepare_app_exit')
+}
+
+export async function exitAppNow(): Promise<void> {
+  return await invoke('exit_app_now')
+}

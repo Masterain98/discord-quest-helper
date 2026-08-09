@@ -1,6 +1,7 @@
 use discord_cdp_launch_core::{
     build_launch_args, launch_with_backends, select_preferred_install, CdpProbe, CdpProbeStatus,
-    DiscordChannel, DiscordInstall, LaunchError, LaunchOptions, LaunchOutcome, PlatformBackend,
+    DiscordChannel, DiscordInstall, DiscordLaunchMode, LaunchError, LaunchOptions, LaunchOutcome,
+    PlatformBackend,
 };
 use std::collections::VecDeque;
 use std::path::PathBuf;
@@ -48,8 +49,7 @@ impl PlatformBackend for FakePlatform {
     fn spawn(
         &self,
         _install: &DiscordInstall,
-        _port: u16,
-        _allow_origins: bool,
+        _mode: DiscordLaunchMode,
     ) -> Result<u32, LaunchError> {
         self.spawn_count.fetch_add(1, Ordering::SeqCst);
         Ok(4242)
@@ -282,12 +282,10 @@ fn auto_selection_is_stable_then_ptb_then_canary() {
 }
 
 #[test]
-fn launch_arguments_include_optional_allow_origins() {
-    let with_origins = build_launch_args(9223, true);
-    assert_eq!(with_origins[0], "--remote-debugging-port=9223");
-    assert_eq!(with_origins[1], "--remote-allow-origins=*");
+fn launch_arguments_never_enable_wildcard_origins() {
     assert_eq!(
-        build_launch_args(9223, false),
+        build_launch_args(DiscordLaunchMode::Cdp { port: 9223 }),
         vec![std::ffi::OsString::from("--remote-debugging-port=9223")]
     );
+    assert!(build_launch_args(DiscordLaunchMode::Normal).is_empty());
 }

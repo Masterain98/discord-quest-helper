@@ -8,7 +8,7 @@ mod unsupported;
 pub mod windows;
 
 use crate::launcher::PlatformBackend;
-use crate::{DiscordChannel, DiscordInstall, LaunchError};
+use crate::{DiscordChannel, DiscordInstall, DiscordLaunchMode, LaunchError};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SystemPlatform;
@@ -27,13 +27,8 @@ impl PlatformBackend for SystemPlatform {
         windows::terminate(channel)
     }
 
-    fn spawn(
-        &self,
-        install: &DiscordInstall,
-        port: u16,
-        allow_origins: bool,
-    ) -> Result<u32, LaunchError> {
-        windows::spawn(install, port, allow_origins)
+    fn spawn(&self, install: &DiscordInstall, mode: DiscordLaunchMode) -> Result<u32, LaunchError> {
+        windows::spawn(install, mode)
     }
 }
 
@@ -51,13 +46,8 @@ impl PlatformBackend for SystemPlatform {
         macos::terminate(channel)
     }
 
-    fn spawn(
-        &self,
-        install: &DiscordInstall,
-        port: u16,
-        allow_origins: bool,
-    ) -> Result<u32, LaunchError> {
-        macos::spawn(install, port, allow_origins)
+    fn spawn(&self, install: &DiscordInstall, mode: DiscordLaunchMode) -> Result<u32, LaunchError> {
+        macos::spawn(install, mode)
     }
 }
 
@@ -75,13 +65,8 @@ impl PlatformBackend for SystemPlatform {
         linux::terminate(channel)
     }
 
-    fn spawn(
-        &self,
-        install: &DiscordInstall,
-        port: u16,
-        allow_origins: bool,
-    ) -> Result<u32, LaunchError> {
-        linux::spawn(install, port, allow_origins)
+    fn spawn(&self, install: &DiscordInstall, mode: DiscordLaunchMode) -> Result<u32, LaunchError> {
+        linux::spawn(install, mode)
     }
 }
 
@@ -102,8 +87,7 @@ impl PlatformBackend for SystemPlatform {
     fn spawn(
         &self,
         _install: &DiscordInstall,
-        _port: u16,
-        _allow_origins: bool,
+        _mode: DiscordLaunchMode,
     ) -> Result<u32, LaunchError> {
         unsupported::unsupported()
     }

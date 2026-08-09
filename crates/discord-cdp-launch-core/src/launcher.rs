@@ -1,7 +1,7 @@
 use crate::platform::SystemPlatform;
 use crate::{
-    CdpProbe, CdpProbeStatus, DiscordChannel, DiscordInstall, LaunchError, LaunchOptions,
-    LaunchOutcome, LaunchResult, StdCdpProbe,
+    CdpProbe, CdpProbeStatus, DiscordChannel, DiscordInstall, DiscordLaunchMode, LaunchError,
+    LaunchOptions, LaunchOutcome, LaunchResult, StdCdpProbe,
 };
 use std::ffi::OsString;
 use std::time::Instant;
@@ -10,12 +10,7 @@ pub trait PlatformBackend {
     fn find_installs(&self) -> Result<Vec<DiscordInstall>, LaunchError>;
     fn is_running(&self, channel: Option<DiscordChannel>) -> Result<bool, LaunchError>;
     fn terminate(&self, channel: Option<DiscordChannel>) -> Result<(), LaunchError>;
-    fn spawn(
-        &self,
-        install: &DiscordInstall,
-        port: u16,
-        allow_origins: bool,
-    ) -> Result<u32, LaunchError>;
+    fn spawn(&self, install: &DiscordInstall, mode: DiscordLaunchMode) -> Result<u32, LaunchError>;
 }
 
 pub fn find_discord_installs() -> Result<Vec<DiscordInstall>, LaunchError> {
@@ -112,7 +107,7 @@ where
     }
 
     let install = select_preferred_install(&platform.find_installs()?, options.channel)?;
-    let pid = platform.spawn(&install, options.port, options.allow_origins)?;
+    let pid = platform.spawn(&install, DiscordLaunchMode::Cdp { port: options.port })?;
     if !options.wait_for_cdp {
         return Ok(result_for(
             &install,
@@ -173,12 +168,13 @@ fn already_available_result(
     })
 }
 
-pub fn build_launch_args(port: u16, allow_origins: bool) -> Vec<OsString> {
-    let mut args = vec![OsString::from(format!("--remote-debugging-port={port}"))];
-    if allow_origins {
-        args.push(OsString::from("--remote-allow-origins=*"));
+pub fn build_launch_args(mode: DiscordLaunchMode) -> Vec<OsString> {
+    match mode {
+        DiscordLaunchMode::Normal => Vec::new(),
+        DiscordLaunchMode::Cdp { port } => {
+            vec![OsString::from(format!("--remote-debugging-port={port}"))]
+        }
     }
-    args
 }
 
 fn wait_until_discord_exits<P: PlatformBackend>(

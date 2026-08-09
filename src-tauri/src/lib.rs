@@ -18,6 +18,7 @@ mod token_extractor;
 use discord_api::DiscordApiClient;
 use models::*;
 use once_cell::sync::Lazy;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use super_properties::XSuperPropertiesManager;
 use tauri::ipc::Channel;
@@ -27,6 +28,9 @@ use tauri::{Emitter, Listener, Manager, State};
 /// Automatically generates key validation fields, fetches latest version info from Discord after login
 static SUPER_PROPERTIES_MANAGER: Lazy<Mutex<XSuperPropertiesManager>> =
     Lazy::new(|| Mutex::new(XSuperPropertiesManager::new()));
+
+static APP_EXIT_PREPARED: AtomicBool = AtomicBool::new(false);
+const APP_EXIT_RPC_DISCONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// Global state: Discord API client
 struct AppState {
@@ -1473,11 +1477,15 @@ pub fn run() {
             check_cdp_status,
             fetch_super_properties_cdp,
             discord_cdp_commands::is_discord_running,
+            discord_cdp_commands::list_running_discord_cdp_sessions,
             discord_cdp_commands::launch_discord_cdp,
             discord_cdp_commands::restart_discord_cdp,
             install_discord_cdp_launcher,
             create_discord_cdp_launcher_shortcut,
             create_discord_debug_shortcut,
+            start_discord_normal_restore_helper,
+            prepare_app_exit,
+            exit_app_now,
             get_super_properties_mode,
             auto_fetch_super_properties,
             retry_super_properties,
@@ -1486,33 +1494,103 @@ pub fn run() {
             platform_capabilities::get_platform_capabilities
         ])
         .on_window_event(|_window, event| {
-            if let tauri::WindowEvent::CloseRequested { .. } = event {
-                // Stop all simulated game processes that were started by this app.
-                // When the main app exits the RPC connection drops, so the child
-                // processes become useless — kill them to avoid orphaned runners.
-                game_simulator::cleanup_all_simulated_games();
-
-                // Disconnect Discord RPC client (if connected)
-                {
-                    let client_option = {
-                        let mut guard = get_discord_rpc_client().lock().unwrap();
-                        guard.take()
-                    };
-                    if let Some(client) = client_option {
-                        // Fire-and-forget async disconnect
-                        tauri::async_runtime::spawn(async move {
-                            client.discord.disconnect().await;
-                            println!("Discord RPC disconnected on app exit");
-                        });
-                    }
-                }
-
-                // Clean up stealth mode artifacts
-                stealth::cleanup_on_exit();
+            if let tauri::WindowEvent::Destroyed = event {
+                prepare_app_exit_fallback();
             }
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[tauri::command]
+async fn prepare_app_exit() -> Result<(), String> {
+    if APP_EXIT_PREPARED.swap(true, Ordering::SeqCst) {
+        return Ok(());
+    }
+    game_simulator::cleanup_all_simulated_games();
+    let client = match get_discord_rpc_client().lock() {
+        Ok(mut guard) => guard.take(),
+        Err(_) => {
+            eprintln!("Discord RPC state lock is poisoned during app exit");
+            None
+        }
+    };
+    if let Some(client) = client {
+        if tokio::time::timeout(APP_EXIT_RPC_DISCONNECT_TIMEOUT, client.discord.disconnect())
+            .await
+            .is_err()
+        {
+            eprintln!("Discord RPC disconnect timed out during app exit");
+        }
+    }
+    stealth::cleanup_on_exit();
+    Ok(())
+}
+
+/// End the main process after the frontend has completed its best-effort
+/// cleanup.  This must not go through Tauri's window-close machinery: that
+/// machinery is intentionally intercepted to show the CDP warning dialog,
+/// and routing the confirmed action back through it can leave the window
+/// alive with the frontend's close guard latched.
+#[tauri::command]
+fn exit_app_now() -> Result<(), String> {
+    // `prepare_app_exit` normally ran before this command.  Keep the fallback
+    // for direct callers and for a future UI path that might omit it.
+    prepare_app_exit_fallback();
+    std::process::exit(0);
+}
+
+fn prepare_app_exit_fallback() {
+    if APP_EXIT_PREPARED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    game_simulator::cleanup_all_simulated_games();
+    if let Ok(mut guard) = get_discord_rpc_client().lock() {
+        if let Some(client) = guard.take() {
+            tauri::async_runtime::spawn(async move {
+                client.discord.disconnect().await;
+            });
+        }
+    }
+    stealth::cleanup_on_exit();
+}
+
+#[tauri::command]
+async fn start_discord_normal_restore_helper(app_handle: tauri::AppHandle) -> Result<(), String> {
+    let launcher = install_discord_cdp_launcher_internal(&app_handle).await?;
+    tauri::async_runtime::spawn_blocking(move || spawn_restore_helper(&launcher))
+        .await
+        .map_err(|error| format!("Discord restore helper task failed: {error}"))?
+}
+
+fn spawn_restore_helper(launcher: &std::path::Path) -> Result<(), String> {
+    use std::process::{Command, Stdio};
+
+    let mut command = Command::new(launcher);
+    command
+        .arg("--restore-normal-all")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const DETACHED_PROCESS: u32 = 0x0000_0008;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+        command.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+
+    command
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("Failed to start Discord restore helper: {error}"))
 }
 
 /// Force update video progress (used for ensuring final progress is saved on stop)

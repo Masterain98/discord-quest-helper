@@ -467,5 +467,12 @@
     "activity_cdp_required": "Activity görevleri CDP modunu gerektirir",
     "stream_quest_title": "Akış görevi",
     "stream_quest_desc": "Yayın görevleri, oyunu Discord üzerinde manuel olarak yayınlamanızı gerektirir. Bir ses kanalında bir yayın başlatın, ardından oyunu simüle etmek için Oyun Simülatörünü kullanın."
+  },
+  "exit_cdp": {
+    "title": "Discord hâlâ CDP modunda çalışıyor",
+    "description": "Bu uygulamayı kapatmak Discord'un yerel hata ayıklama arayüzünü devre dışı bırakmaz. Yalnızca bu uygulamayı kapatabilir veya Discord'u normal modda yeniden başlatabilirsiniz.",
+    "close_only": "Yalnızca bu uygulamayı kapat",
+    "restore_and_close": "Kapat ve Discord'u normal başlat",
+    "helper_error": "Discord yeniden başlatma yardımcısı başlatılamadı. Discord'u tamamen kapatıp elle yeniden açmanız gerekebilir."
   }
 }

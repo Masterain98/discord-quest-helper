@@ -467,5 +467,12 @@
     "activity_cdp_required": "Zadania Activity wymagają trybu CDP.",
     "stream_quest_title": "Zadanie strumieniowe",
     "stream_quest_desc": "Zadania strumieniowe wymagają ręcznego przesyłania strumieniowego gry na Discord. Rozpocznij transmisję na kanale głosowym, a następnie użyj symulatora gry, aby zasymulować grę."
+  },
+  "exit_cdp": {
+    "title": "Discord nadal działa w trybie CDP",
+    "description": "Zamknięcie tej aplikacji nie wyłączy lokalnego interfejsu debugowania Discord. Możesz zamknąć tylko aplikację albo uruchomić Discord ponownie w zwykłym trybie.",
+    "close_only": "Zamknij tylko tę aplikację",
+    "restore_and_close": "Zamknij i uruchom Discord normalnie",
+    "helper_error": "Nie udało się uruchomić pomocnika ponownego uruchamiania Discord. Zamknij Discord całkowicie i otwórz go ręcznie."
   }
 }

@@ -4,6 +4,7 @@ mod error;
 mod launcher;
 mod model;
 mod platform;
+mod processes;
 
 pub use cdp::{is_discord_target, pick_discord_target, probe_cdp, CdpProbe, StdCdpProbe};
 pub use channel::{parse_discord_channel, DiscordChannel};
@@ -14,10 +15,12 @@ pub use launcher::{
     select_preferred_install, terminate_discord_processes, PlatformBackend,
 };
 pub use model::{
-    CdpProbeStatus, CdpTarget, DiscordInstall, LaunchOptions, LaunchOutcome, LaunchResult,
-    LinuxDesktopProxySettings, DEFAULT_CDP_PORT,
+    CdpProbeStatus, CdpTarget, DiscordInstall, DiscordLaunchMode, LaunchOptions, LaunchOutcome,
+    LaunchResult, LinuxDesktopProxySettings, RestoreFailure, RestoreResult, RunningCdpSession,
+    DEFAULT_CDP_PORT,
 };
 pub use platform::SystemPlatform;
+pub use processes::{list_running_discord_cdp_sessions, restore_all_discord_to_normal};
 
 #[cfg(target_os = "windows")]
 #[doc(hidden)]

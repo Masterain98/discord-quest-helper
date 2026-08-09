@@ -467,5 +467,12 @@
     "activity_cdp_required": "Les quêtes Activity nécessitent le mode CDP",
     "stream_quest_title": "Quête de flux",
     "stream_quest_desc": "Les quêtes de streaming nécessitent que vous diffusiez le jeu sur Discord manuellement. Démarrez un flux dans un canal vocal, puis utilisez Game Simulator pour simuler le jeu."
+  },
+  "exit_cdp": {
+    "title": "Discord fonctionne toujours en mode CDP",
+    "description": "Fermer cette application ne désactive pas l'interface de débogage locale de Discord. Vous pouvez fermer uniquement cette application ou redémarrer Discord en mode normal.",
+    "close_only": "Fermer uniquement cette application",
+    "restore_and_close": "Fermer et redémarrer Discord normalement",
+    "helper_error": "L'assistant de redémarrage de Discord n'a pas pu démarrer. Fermez complètement Discord et rouvrez-le manuellement."
   }
 }

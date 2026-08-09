@@ -467,5 +467,12 @@
     "activity_cdp_required": "Nhiệm vụ Activity yêu cầu chế độ CDP",
     "stream_quest_title": "Nhiệm vụ truyền phát",
     "stream_quest_desc": "Nhiệm vụ phát trực tuyến yêu cầu bạn phát trực tuyến trò chơi trên Discord theo cách thủ công. Bắt đầu phát trực tiếp bằng kênh thoại, sau đó sử dụng Trình mô phỏng trò chơi để mô phỏng trò chơi."
+  },
+  "exit_cdp": {
+    "title": "Discord vẫn đang chạy ở chế độ CDP",
+    "description": "Đóng ứng dụng này không tắt giao diện gỡ lỗi cục bộ của Discord. Bạn có thể chỉ đóng ứng dụng này hoặc khởi động lại Discord ở chế độ bình thường.",
+    "close_only": "Chỉ đóng ứng dụng này",
+    "restore_and_close": "Đóng và khởi động Discord bình thường",
+    "helper_error": "Không thể khởi động trình trợ giúp khởi động lại Discord. Hãy thoát hoàn toàn Discord rồi mở lại theo cách thủ công."
   }
 }

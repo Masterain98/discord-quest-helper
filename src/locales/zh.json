@@ -465,5 +465,12 @@
     "activity_cdp_required": "Activity 任务需要 CDP 模式",
     "stream_quest_title": "直播任务",
     "stream_quest_desc": "直播任务需要你在 Discord 中手动直播游戏。请在语音频道中开始直播，然后使用游戏模拟器模拟运行游戏。"
+  },
+  "exit_cdp": {
+    "title": "Discord 仍在 CDP 模式下运行",
+    "description": "关闭本应用不会停用 Discord 的本地调试接口。你可以仅关闭本应用，或重启 Discord 到一般模式。",
+    "close_only": "仅关闭本应用",
+    "restore_and_close": "关闭本应用并重启Discord到一般模式",
+    "helper_error": "无法启动 Discord 重启助手。你可能需要手动完全退出并重新打开 Discord。"
   }
 }

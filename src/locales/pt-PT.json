@@ -467,5 +467,12 @@
     "activity_cdp_required": "As missões Activity requerem o modo CDP",
     "stream_quest_title": "Missão de transmissão",
     "stream_quest_desc": "As missões de transmissão exigem que transmita o jogo em Discord manualmente. Inicie uma transmissão num canal de voz e utilize o Game Simulator para simular o jogo."
+  },
+  "exit_cdp": {
+    "title": "O Discord ainda está no modo CDP",
+    "description": "Fechar esta aplicação não desativa a interface de depuração local do Discord. Pode fechar apenas esta aplicação ou reiniciar o Discord no modo normal.",
+    "close_only": "Fechar apenas esta aplicação",
+    "restore_and_close": "Fechar e reiniciar o Discord normalmente",
+    "helper_error": "Não foi possível iniciar o assistente de reinício do Discord. Feche completamente o Discord e volte a abri-lo manualmente."
   }
 }

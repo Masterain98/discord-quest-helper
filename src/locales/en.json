@@ -465,5 +465,12 @@
     "activity_cdp_required": "Activity quests require CDP mode",
     "stream_quest_title": "Stream quest",
     "stream_quest_desc": "Stream quests require you to stream the game on Discord manually. Start a stream in a voice channel, then use the Game Simulator to simulate the game."
+  },
+  "exit_cdp": {
+    "title": "Discord is still running in CDP mode",
+    "description": "Closing this app does not disable Discord's local debugging interface. You can close only this app, or restart Discord without CDP enabled.",
+    "close_only": "Close this app only",
+    "restore_and_close": "Close app and restart Discord normally",
+    "helper_error": "The Discord restart helper could not be started. You may need to fully quit and reopen Discord manually."
   }
 }

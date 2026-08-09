@@ -467,5 +467,12 @@
     "activity_cdp_required": "Activity クエストには CDP モードが必要です",
     "stream_quest_title": "配信クエスト",
     "stream_quest_desc": "配信クエストは Discord で手動でゲームを配信する必要があります。ボイスチャンネルで配信を開始し、ゲームシミュレーターでゲームをシミュレートしてください。"
+  },
+  "exit_cdp": {
+    "title": "Discord は CDP モードで実行中です",
+    "description": "このアプリを閉じても Discord のローカルデバッグインターフェースは無効になりません。このアプリのみを閉じるか、Discord を通常モードで再起動できます。",
+    "close_only": "このアプリのみ閉じる",
+    "restore_and_close": "アプリを閉じて Discord を通常モードで再起動",
+    "helper_error": "Discord 再起動ヘルパーを開始できませんでした。Discord を完全に終了して手動で再起動してください。"
   }
 }
