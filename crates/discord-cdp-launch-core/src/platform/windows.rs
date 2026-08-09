@@ -1,5 +1,5 @@
 use crate::launcher::build_launch_args;
-use crate::{DiscordChannel, DiscordInstall, LaunchError};
+use crate::{DiscordChannel, DiscordInstall, DiscordLaunchMode, LaunchError};
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -71,15 +71,11 @@ pub(crate) fn terminate(channel: Option<DiscordChannel>) -> Result<(), LaunchErr
     Ok(())
 }
 
-pub(crate) fn spawn(
-    install: &DiscordInstall,
-    port: u16,
-    allow_origins: bool,
-) -> Result<u32, LaunchError> {
+pub(crate) fn spawn(install: &DiscordInstall, mode: DiscordLaunchMode) -> Result<u32, LaunchError> {
     let mut command = Command::new(&install.executable_path);
     command
         .current_dir(&install.working_dir)
-        .args(build_launch_args(port, allow_origins))
+        .args(build_launch_args(mode))
         .stdout(Stdio::null())
         .stderr(Stdio::null());
     command

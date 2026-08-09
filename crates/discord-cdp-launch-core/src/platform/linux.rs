@@ -5,7 +5,9 @@
 //! must not change the shared `DiscordInstall` model here.
 
 use crate::launcher::build_launch_args;
-use crate::{DiscordChannel, DiscordInstall, LaunchError, LinuxDesktopProxySettings};
+use crate::{
+    DiscordChannel, DiscordInstall, DiscordLaunchMode, LaunchError, LinuxDesktopProxySettings,
+};
 use nix::sys::signal::{self, Signal};
 use nix::unistd::Pid;
 use std::ffi::{OsStr, OsString};
@@ -387,16 +389,12 @@ fn process_is_alive(pid: u32) -> bool {
     signal::kill(Pid::from_raw(pid as i32), None).is_ok()
 }
 
-pub(crate) fn spawn(
-    install: &DiscordInstall,
-    port: u16,
-    allow_origins: bool,
-) -> Result<u32, LaunchError> {
+pub(crate) fn spawn(install: &DiscordInstall, mode: DiscordLaunchMode) -> Result<u32, LaunchError> {
     let mut command = Command::new(&install.executable_path);
     apply_desktop_proxy_if_missing(&mut command);
     command
         .current_dir(&install.working_dir)
-        .args(build_launch_args(port, allow_origins))
+        .args(build_launch_args(mode))
         // Discord/Electron is a GUI child process. Inheriting the launcher's
         // terminal floods Tauri dev output with Chromium GPU/shared-surface
         // and preload diagnostics that are unrelated to quest simulation.

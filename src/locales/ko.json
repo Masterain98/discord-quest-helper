@@ -467,5 +467,12 @@
     "activity_cdp_required": "Activity 퀘스트에는 CDP 모드가 필요합니다",
     "stream_quest_title": "스트리밍 퀘스트",
     "stream_quest_desc": "스트리밍 퀘스트는 Discord에서 수동으로 게임을 스트리밍해야 합니다. 음성 채널에서 스트리밍을 시작한 후 게임 시뮬레이터로 게임을 시뮬레이션하세요."
+  },
+  "exit_cdp": {
+    "title": "Discord가 아직 CDP 모드로 실행 중입니다",
+    "description": "이 앱을 닫아도 Discord의 로컬 디버깅 인터페이스는 비활성화되지 않습니다. 이 앱만 닫거나 Discord를 일반 모드로 다시 시작할 수 있습니다.",
+    "close_only": "이 앱만 닫기",
+    "restore_and_close": "앱을 닫고 Discord를 일반 모드로 다시 시작",
+    "helper_error": "Discord 재시작 도우미를 시작하지 못했습니다. Discord를 완전히 종료한 후 수동으로 다시 여세요."
   }
 }

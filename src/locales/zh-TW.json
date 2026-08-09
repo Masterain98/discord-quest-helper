@@ -467,5 +467,12 @@
     "activity_cdp_required": "Activity 任務需要 CDP 模式",
     "stream_quest_title": "直播任務",
     "stream_quest_desc": "直播任務需要你在 Discord 中手動直播遊戲。請在語音頻道中開始直播，然後使用遊戲模擬器模擬運行遊戲。"
+  },
+  "exit_cdp": {
+    "title": "Discord 仍在 CDP 模式下執行",
+    "description": "關閉本應用程式不會停用 Discord 的本機偵錯介面。你可以只關閉本應用程式，或將 Discord 重新啟動至一般模式。",
+    "close_only": "僅關閉本應用程式",
+    "restore_and_close": "關閉本應用程式並將 Discord 重新啟動至一般模式",
+    "helper_error": "無法啟動 Discord 重新啟動助手。你可能需要手動完全結束並重新開啟 Discord。"
   }
 }

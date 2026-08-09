@@ -11,6 +11,7 @@ serde = ["dep:serde"]
 [dependencies]
 serde = { workspace = true, optional = true }
 serde_json.workspace = true
+sysinfo = "=0.35.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 nix = { version = "0.30", features = ["signal", "process"] }

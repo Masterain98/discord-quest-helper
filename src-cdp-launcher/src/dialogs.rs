@@ -4,6 +4,7 @@ mod win32 {
     pub const MB_OK: u32 = 0;
     pub const MB_YESNO: u32 = 0x0000_0004;
     pub const MB_ICONQUESTION: u32 = 0x0000_0020;
+    pub const MB_ICONERROR: u32 = 0x0000_0010;
     pub const MB_ICONINFORMATION: u32 = 0x0000_0040;
     pub const IDYES: i32 = 6;
 
@@ -98,12 +99,82 @@ pub(crate) fn show_info_dialog(title: &str, message: &str) {
     }
 }
 
+#[cfg(target_os = "windows")]
+pub(crate) fn show_error_dialog(title: &str, message: &str) {
+    let title = to_wide(title);
+    let message = to_wide(message);
+    unsafe {
+        win32::MessageBoxW(
+            core::ptr::null_mut(),
+            message.as_ptr(),
+            title.as_ptr(),
+            win32::MB_OK | win32::MB_ICONERROR,
+        );
+    }
+}
+
 #[cfg(target_os = "linux")]
 pub(crate) fn show_info_dialog(title: &str, message: &str) {
     let result = zenity_dialog("--info", title, message).status();
-    if !result.is_ok_and(|status| status.success()) {
+    if result.is_ok_and(|status| status.success()) {
+        return;
+    }
+    for (program, args) in [
+        ("kdialog", vec!["--title", title, "--msgbox", message]),
+        ("xmessage", vec!["-title", title, "-center", message]),
+    ] {
+        if Command::new(program)
+            .args(args)
+            .status()
+            .is_ok_and(|status| status.success())
+        {
+            return;
+        }
+    }
+    eprintln!("{title}: {message}");
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn show_error_dialog(title: &str, message: &str) {
+    show_info_dialog(title, message);
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn show_error_dialog(title: &str, message: &str) {
+    if zenity_dialog("--error", title, message)
+        .status()
+        .is_ok_and(|status| status.success())
+    {
+        return;
+    }
+    show_info_dialog(title, message);
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn show_info_dialog(title: &str, message: &str) {
+    let escape = |value: &str| value.replace('\\', "\\\\").replace('"', "\\\"");
+    let script = format!(
+        "display alert \"{}\" message \"{}\" as critical buttons {{\"OK\"}} default button \"OK\"",
+        escape(title),
+        escape(message)
+    );
+    if !std::process::Command::new("osascript")
+        .args(["-e", &script])
+        .status()
+        .is_ok_and(|status| status.success())
+    {
         eprintln!("{title}: {message}");
     }
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+pub(crate) fn show_info_dialog(title: &str, message: &str) {
+    eprintln!("{title}: {message}");
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+pub(crate) fn show_error_dialog(title: &str, message: &str) {
+    show_info_dialog(title, message);
 }
 
 #[cfg(target_os = "windows")]

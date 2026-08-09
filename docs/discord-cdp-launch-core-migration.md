@@ -86,7 +86,8 @@ The shared crate tests cover:
 - numeric Windows `app-*` ordering and direct executable fallback;
 - Linux install discovery, de-duplication, and process classification;
 - requested and automatic install selection;
-- launch arguments with and without `--remote-allow-origins=*`;
+- CDP launch arguments without wildcard Origin access, plus argument-free normal launches;
+- strict running-CDP discovery, process de-duplication, and normal-mode restore;
 - already-ready, running-without-restart, restart, shutdown timeout, occupied
   port, readiness success, readiness timeout, missing install, and automatic
   channel order state-machine paths;

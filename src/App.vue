@@ -14,6 +14,7 @@ import AccountMenu from './components/AccountMenu.vue'
 import OrbsNitroStatus from './components/OrbsNitroStatus.vue'
 import QuestModeIndicator from './components/QuestModeIndicator.vue'
 import Toaster from './components/Toaster.vue'
+import DiscordCdpExitDialog from './components/DiscordCdpExitDialog.vue'
 import LoginPanel from './components/auth/LoginPanel.vue'
 import { persistSettingsSection } from '@/composables/useSettingsNavigation'
 import { supportedLocales } from '@/locales/meta'
@@ -177,6 +178,7 @@ watch(
 
 <template>
   <div class="h-screen bg-background text-foreground font-sans flex flex-col overflow-hidden">
+    <DiscordCdpExitDialog />
     <TitleBar />
     
     <div class="flex-1 overflow-auto">

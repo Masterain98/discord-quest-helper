@@ -31,10 +31,34 @@ pub struct DiscordInstall {
     pub working_dir: PathBuf,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiscordLaunchMode {
+    Normal,
+    Cdp { port: u16 },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+pub struct RunningCdpSession {
+    pub channel: DiscordChannel,
+    pub port: u16,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RestoreFailure {
+    pub channel: DiscordChannel,
+    pub error: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RestoreResult {
+    pub restored: Vec<DiscordChannel>,
+    pub failures: Vec<RestoreFailure>,
+}
+
 #[derive(Debug, Clone)]
 pub struct LaunchOptions {
     pub port: u16,
-    pub allow_origins: bool,
     pub channel: Option<DiscordChannel>,
     pub restart_existing: bool,
     pub wait_for_cdp: bool,
@@ -47,7 +71,6 @@ impl Default for LaunchOptions {
     fn default() -> Self {
         Self {
             port: DEFAULT_CDP_PORT,
-            allow_origins: true,
             channel: None,
             restart_existing: false,
             wait_for_cdp: true,

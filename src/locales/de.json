@@ -467,5 +467,12 @@
     "activity_cdp_required": "Activity-Quests erfordern den CDP-Modus",
     "stream_quest_title": "Stream-Quest",
     "stream_quest_desc": "Für Stream-Quests müssen Sie das Spiel manuell auf Discord streamen. Starten Sie einen Stream in einem Sprachkanal und simulieren Sie das Spiel dann mit dem Spielesimulator."
+  },
+  "exit_cdp": {
+    "title": "Discord läuft noch im CDP-Modus",
+    "description": "Das Schließen dieser App deaktiviert Discords lokale Debugging-Schnittstelle nicht. Du kannst nur diese App schließen oder Discord im normalen Modus neu starten.",
+    "close_only": "Nur diese App schließen",
+    "restore_and_close": "App schließen und Discord normal neu starten",
+    "helper_error": "Der Discord-Neustarthelfer konnte nicht gestartet werden. Beende Discord vollständig und öffne es manuell erneut."
   }
 }

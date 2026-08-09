@@ -1,0 +1,442 @@
+use crate::launcher::PlatformBackend;
+use crate::{
+    CdpProbe, CdpProbeStatus, DiscordChannel, DiscordInstall, DiscordLaunchMode, LaunchError,
+    RestoreFailure, RestoreResult, RunningCdpSession, StdCdpProbe, SystemPlatform,
+};
+use std::collections::HashSet;
+use std::ffi::{OsStr, OsString};
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
+use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
+
+const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(8);
+const STARTUP_TIMEOUT: Duration = Duration::from_secs(15);
+const POLL_INTERVAL: Duration = Duration::from_millis(250);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[doc(hidden)]
+pub struct ProcessSnapshot {
+    pub name: OsString,
+    pub executable_path: Option<PathBuf>,
+    pub command_line: Vec<OsString>,
+}
+
+pub fn list_running_discord_cdp_sessions() -> Result<Vec<RunningCdpSession>, LaunchError> {
+    let installs = SystemPlatform.find_installs()?;
+    let snapshots = process_snapshots();
+    Ok(sessions_from_processes(
+        &snapshots,
+        &installs,
+        &StdCdpProbe::default(),
+    ))
+}
+
+pub fn restore_all_discord_to_normal() -> Result<RestoreResult, LaunchError> {
+    let sessions = list_running_discord_cdp_sessions()?;
+    Ok(restore_sessions_with_backends(
+        &sessions,
+        &SystemPlatform,
+        &StdCdpProbe::default(),
+    ))
+}
+
+#[doc(hidden)]
+pub fn sessions_from_processes<C: CdpProbe>(
+    processes: &[ProcessSnapshot],
+    installs: &[DiscordInstall],
+    probe: &C,
+) -> Vec<RunningCdpSession> {
+    let mut candidates = HashSet::new();
+    for process in processes {
+        let Some(channel) = classify_known_discord_process(process, installs) else {
+            continue;
+        };
+        for argument in &process.command_line {
+            if let Some(port) = parse_cdp_port(argument) {
+                candidates.insert(RunningCdpSession { channel, port });
+            }
+        }
+    }
+
+    let mut sessions: Vec<_> = candidates
+        .into_iter()
+        .filter(|session| {
+            matches!(
+                probe.probe(session.port),
+                CdpProbeStatus::DiscordReady { .. }
+            )
+        })
+        .collect();
+    sessions.sort_by_key(|session| (channel_order(session.channel), session.port));
+    sessions
+}
+
+#[doc(hidden)]
+pub fn restore_sessions_with_backends<P: PlatformBackend, C: CdpProbe>(
+    sessions: &[RunningCdpSession],
+    platform: &P,
+    probe: &C,
+) -> RestoreResult {
+    let mut result = RestoreResult::default();
+    let mut channels = Vec::new();
+    for channel in DiscordChannel::ALL {
+        if sessions.iter().any(|session| session.channel == channel) {
+            channels.push(channel);
+        }
+    }
+    if channels.is_empty() {
+        return result;
+    }
+
+    let installs = match platform.find_installs() {
+        Ok(installs) => installs,
+        Err(error) => {
+            for channel in channels {
+                result.failures.push(RestoreFailure {
+                    channel,
+                    error: error.to_string(),
+                });
+            }
+            return result;
+        }
+    };
+
+    for channel in channels {
+        let Some(install) = installs
+            .iter()
+            .find(|install| install.channel == channel)
+            .cloned()
+        else {
+            result.failures.push(RestoreFailure {
+                channel,
+                error: LaunchError::InstallNotFound {
+                    channel: Some(channel),
+                }
+                .to_string(),
+            });
+            continue;
+        };
+
+        let restored = restore_channel(channel, &install, sessions, platform, probe);
+        match restored {
+            Ok(()) => result.restored.push(channel),
+            Err(error) => result.failures.push(RestoreFailure { channel, error }),
+        }
+    }
+    result
+}
+
+fn restore_channel<P: PlatformBackend, C: CdpProbe>(
+    channel: DiscordChannel,
+    install: &DiscordInstall,
+    sessions: &[RunningCdpSession],
+    platform: &P,
+    probe: &C,
+) -> Result<(), String> {
+    platform
+        .terminate(Some(channel))
+        .map_err(|error| error.to_string())?;
+    wait_for_running_state(platform, channel, false, SHUTDOWN_TIMEOUT)?;
+
+    for port in sessions
+        .iter()
+        .filter(|session| session.channel == channel)
+        .map(|session| session.port)
+    {
+        if matches!(probe.probe(port), CdpProbeStatus::DiscordReady { .. }) {
+            return Err(format!(
+                "Discord {} CDP endpoint on port {port} remained active after shutdown.",
+                channel.display_name()
+            ));
+        }
+    }
+
+    platform
+        .spawn(install, DiscordLaunchMode::Normal)
+        .map_err(|error| error.to_string())?;
+    wait_for_running_state(platform, channel, true, STARTUP_TIMEOUT)?;
+
+    for port in sessions
+        .iter()
+        .filter(|session| session.channel == channel)
+        .map(|session| session.port)
+    {
+        if matches!(probe.probe(port), CdpProbeStatus::DiscordReady { .. }) {
+            return Err(format!(
+                "Discord {} restarted but CDP is still active on port {port}.",
+                channel.display_name()
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn wait_for_running_state<P: PlatformBackend>(
+    platform: &P,
+    channel: DiscordChannel,
+    expected: bool,
+    timeout: Duration,
+) -> Result<(), String> {
+    let started = Instant::now();
+    while started.elapsed() < timeout {
+        let running = platform
+            .is_running(Some(channel))
+            .map_err(|error| error.to_string())?;
+        if running == expected {
+            return Ok(());
+        }
+        std::thread::sleep(POLL_INTERVAL);
+    }
+    Err(if expected {
+        format!(
+            "Discord {} did not start within {} seconds.",
+            channel.display_name(),
+            timeout.as_secs()
+        )
+    } else {
+        format!(
+            "Discord {} did not exit within {} seconds.",
+            channel.display_name(),
+            timeout.as_secs()
+        )
+    })
+}
+
+fn process_snapshots() -> Vec<ProcessSnapshot> {
+    let mut system = System::new();
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::All,
+        true,
+        ProcessRefreshKind::nothing()
+            .with_cmd(UpdateKind::OnlyIfNotSet)
+            .with_exe(UpdateKind::OnlyIfNotSet)
+            .without_tasks(),
+    );
+    system
+        .processes()
+        .values()
+        .map(|process| ProcessSnapshot {
+            name: process.name().to_os_string(),
+            executable_path: process.exe().map(Path::to_path_buf),
+            command_line: process.cmd().to_vec(),
+        })
+        .collect()
+}
+
+fn classify_known_discord_process(
+    process: &ProcessSnapshot,
+    installs: &[DiscordInstall],
+) -> Option<DiscordChannel> {
+    let name_channel = channel_from_process_name(&process.name)?;
+    let executable_path = process.executable_path.as_deref()?;
+    installs.iter().find_map(|install| {
+        (install.channel == name_channel
+            && paths_refer_to_same_executable(executable_path, &install.executable_path))
+        .then_some(name_channel)
+    })
+}
+
+fn channel_from_process_name(name: &OsStr) -> Option<DiscordChannel> {
+    match name.to_string_lossy().to_ascii_lowercase().as_str() {
+        "discord" | "discord.exe" => Some(DiscordChannel::Stable),
+        "discordptb" | "discordptb.exe" | "discord-ptb" => Some(DiscordChannel::Ptb),
+        "discordcanary" | "discordcanary.exe" | "discord-canary" => Some(DiscordChannel::Canary),
+        _ => None,
+    }
+}
+
+fn paths_refer_to_same_executable(left: &Path, right: &Path) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        left.to_string_lossy()
+            .eq_ignore_ascii_case(&right.to_string_lossy())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        left == right
+    }
+}
+
+fn parse_cdp_port(argument: &OsStr) -> Option<u16> {
+    let value = argument.to_str()?;
+    value
+        .strip_prefix("--remote-debugging-port=")?
+        .parse::<u16>()
+        .ok()
+        .filter(|port| *port != 0)
+}
+
+const fn channel_order(channel: DiscordChannel) -> u8 {
+    match channel {
+        DiscordChannel::Stable => 0,
+        DiscordChannel::Ptb => 1,
+        DiscordChannel::Canary => 2,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+
+    struct Probe(HashSet<u16>);
+
+    impl CdpProbe for Probe {
+        fn probe(&self, port: u16) -> CdpProbeStatus {
+            if self.0.contains(&port) {
+                CdpProbeStatus::DiscordReady { target_title: None }
+            } else {
+                CdpProbeStatus::Unreachable
+            }
+        }
+    }
+
+    fn install(channel: DiscordChannel, path: &str) -> DiscordInstall {
+        DiscordInstall {
+            channel,
+            executable_path: PathBuf::from(path),
+            working_dir: PathBuf::from("C:\\Discord"),
+        }
+    }
+
+    #[test]
+    fn discovers_only_confirmed_known_discord_sessions_and_deduplicates_children() {
+        let installs = vec![install(DiscordChannel::Stable, "C:\\Discord\\Discord.exe")];
+        let discord = ProcessSnapshot {
+            name: "Discord.exe".into(),
+            executable_path: Some("C:\\Discord\\Discord.exe".into()),
+            command_line: vec!["Discord.exe".into(), "--remote-debugging-port=9223".into()],
+        };
+        let unrelated = ProcessSnapshot {
+            name: "chrome.exe".into(),
+            executable_path: Some("C:\\Chrome\\chrome.exe".into()),
+            command_line: vec!["chrome.exe".into(), "--remote-debugging-port=9223".into()],
+        };
+        let invalid = ProcessSnapshot {
+            command_line: vec!["Discord.exe".into(), "--remote-debugging-port=0".into()],
+            ..discord.clone()
+        };
+        let sessions = sessions_from_processes(
+            &[discord.clone(), discord, unrelated, invalid],
+            &installs,
+            &Probe(HashSet::from([9223])),
+        );
+        assert_eq!(
+            sessions,
+            vec![RunningCdpSession {
+                channel: DiscordChannel::Stable,
+                port: 9223
+            }]
+        );
+    }
+
+    struct RestorePlatform {
+        installs: Vec<DiscordInstall>,
+        running: Mutex<HashMap<DiscordChannel, bool>>,
+        spawned: Mutex<Vec<(DiscordChannel, DiscordLaunchMode)>>,
+    }
+
+    impl PlatformBackend for RestorePlatform {
+        fn find_installs(&self) -> Result<Vec<DiscordInstall>, LaunchError> {
+            Ok(self.installs.clone())
+        }
+        fn is_running(&self, channel: Option<DiscordChannel>) -> Result<bool, LaunchError> {
+            Ok(channel
+                .and_then(|channel| self.running.lock().unwrap().get(&channel).copied())
+                .unwrap_or(false))
+        }
+        fn terminate(&self, channel: Option<DiscordChannel>) -> Result<(), LaunchError> {
+            if let Some(channel) = channel {
+                self.running.lock().unwrap().insert(channel, false);
+            }
+            Ok(())
+        }
+        fn spawn(
+            &self,
+            install: &DiscordInstall,
+            mode: DiscordLaunchMode,
+        ) -> Result<u32, LaunchError> {
+            self.spawned.lock().unwrap().push((install.channel, mode));
+            self.running.lock().unwrap().insert(install.channel, true);
+            Ok(1)
+        }
+    }
+
+    #[test]
+    fn restores_each_channel_once_in_normal_mode() {
+        let installs = vec![
+            install(DiscordChannel::Stable, "C:\\Discord\\Discord.exe"),
+            install(DiscordChannel::Ptb, "C:\\DiscordPTB\\DiscordPTB.exe"),
+        ];
+        let platform = RestorePlatform {
+            installs,
+            running: Mutex::new(HashMap::from([
+                (DiscordChannel::Stable, true),
+                (DiscordChannel::Ptb, true),
+            ])),
+            spawned: Mutex::new(Vec::new()),
+        };
+        let sessions = vec![
+            RunningCdpSession {
+                channel: DiscordChannel::Stable,
+                port: 9223,
+            },
+            RunningCdpSession {
+                channel: DiscordChannel::Stable,
+                port: 9224,
+            },
+            RunningCdpSession {
+                channel: DiscordChannel::Ptb,
+                port: 9333,
+            },
+        ];
+        let result = restore_sessions_with_backends(&sessions, &platform, &Probe(HashSet::new()));
+        assert!(result.failures.is_empty());
+        assert_eq!(
+            *platform.spawned.lock().unwrap(),
+            vec![
+                (DiscordChannel::Stable, DiscordLaunchMode::Normal),
+                (DiscordChannel::Ptb, DiscordLaunchMode::Normal),
+            ]
+        );
+    }
+
+    #[test]
+    fn restore_is_a_noop_without_sessions() {
+        let platform = RestorePlatform {
+            installs: Vec::new(),
+            running: Mutex::new(HashMap::new()),
+            spawned: Mutex::new(Vec::new()),
+        };
+        let result = restore_sessions_with_backends(&[], &platform, &Probe(HashSet::new()));
+        assert_eq!(result, RestoreResult::default());
+        assert!(platform.spawned.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn missing_channel_install_does_not_prevent_other_channels_from_restoring() {
+        let platform = RestorePlatform {
+            installs: vec![install(DiscordChannel::Stable, "C:\\Discord\\Discord.exe")],
+            running: Mutex::new(HashMap::from([
+                (DiscordChannel::Stable, true),
+                (DiscordChannel::Ptb, true),
+            ])),
+            spawned: Mutex::new(Vec::new()),
+        };
+        let sessions = vec![
+            RunningCdpSession {
+                channel: DiscordChannel::Stable,
+                port: 9223,
+            },
+            RunningCdpSession {
+                channel: DiscordChannel::Ptb,
+                port: 9333,
+            },
+        ];
+        let result = restore_sessions_with_backends(&sessions, &platform, &Probe(HashSet::new()));
+        assert_eq!(result.restored, vec![DiscordChannel::Stable]);
+        assert_eq!(result.failures.len(), 1);
+        assert_eq!(result.failures[0].channel, DiscordChannel::Ptb);
+    }
+}

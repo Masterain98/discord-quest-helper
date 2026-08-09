@@ -1,6 +1,21 @@
 use discord_cdp_launch_core as cdp_launch;
 
 #[derive(Debug, serde::Serialize)]
+pub(crate) struct RunningCdpSessionDto {
+    channel: cdp_launch::DiscordChannel,
+    port: u16,
+}
+
+impl From<cdp_launch::RunningCdpSession> for RunningCdpSessionDto {
+    fn from(value: cdp_launch::RunningCdpSession) -> Self {
+        Self {
+            channel: value.channel,
+            port: value.port,
+        }
+    }
+}
+
+#[derive(Debug, serde::Serialize)]
 pub(crate) struct DiscordCdpLaunchResultDto {
     launched_path: String,
     channel: cdp_launch::DiscordChannel,
@@ -26,6 +41,16 @@ pub(crate) async fn is_discord_running(channel: Option<String>) -> Result<bool, 
     tauri::async_runtime::spawn_blocking(move || cdp_launch::is_discord_running(channel))
         .await
         .map_err(|error| format!("Discord process scan task failed: {error}"))?
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub(crate) async fn list_running_discord_cdp_sessions() -> Result<Vec<RunningCdpSessionDto>, String>
+{
+    tauri::async_runtime::spawn_blocking(cdp_launch::list_running_discord_cdp_sessions)
+        .await
+        .map_err(|error| format!("Discord CDP process scan task failed: {error}"))?
+        .map(|sessions| sessions.into_iter().map(Into::into).collect())
         .map_err(|error| error.to_string())
 }
 
@@ -91,6 +116,18 @@ mod tests {
                 "port": 9223,
                 "cdp_connected": true
             })
+        );
+    }
+
+    #[test]
+    fn running_session_dto_keeps_the_frontend_json_contract() {
+        let dto = RunningCdpSessionDto::from(cdp_launch::RunningCdpSession {
+            channel: DiscordChannel::Ptb,
+            port: 9333,
+        });
+        assert_eq!(
+            serde_json::to_value(dto).unwrap(),
+            serde_json::json!({ "channel": "ptb", "port": 9333 })
         );
     }
 }
