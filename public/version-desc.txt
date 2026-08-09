@@ -5,8 +5,9 @@
   - Added a desktop shortcut (launcher) option on Linux for quicker access.
 2. Added automatic Discord login through CDP connection on all platforms.
 3. Added support for cloud game activity quest type.
-4. Refreshed the login page design.
-5. Fixed several cases where the app could pick the wrong game or get stuck after an error, especially right after launch.
-6. Refreshed the Nitro badge icon.
-7. Bumped dependencies to the latest patched versions.
+4. Added hint to restart Discord back to normal mode from CDP mode when the program is closing.
+5. Refreshed the login page design.
+6. Fixed several cases where the app could pick the wrong game or get stuck after an error, especially right after launch.
+7. Refreshed the Nitro badge icon.
+8. Bumped dependencies to the latest patched versions.
 
