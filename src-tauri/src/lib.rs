@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod cdp_client;
+mod cdp_game_spoof;
 mod cdp_quest;
 mod discord_api;
 mod discord_cdp_commands;
