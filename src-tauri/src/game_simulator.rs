@@ -566,6 +566,34 @@ fn untrack_running_game(executable_name: &str) {
     }
 }
 
+/// Snapshot of simulated-game processes that CDP spoof can reuse as a real PID/path.
+pub fn simulated_process_hints() -> Vec<crate::cdp_game_spoof::SimulatedProcessHint> {
+    #[cfg(target_os = "linux")]
+    {
+        let games = match RUNNING_LINUX_GAMES.lock() {
+            Ok(games) => games,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        games
+            .iter()
+            .map(|(name, game)| {
+                let path = game.executable_path.to_string_lossy().into_owned();
+                crate::cdp_game_spoof::SimulatedProcessHint {
+                    pid: game.pid,
+                    exe_name: name.clone(),
+                    exe_path: path.clone(),
+                    cmd_line: path,
+                }
+            })
+            .collect()
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        Vec::new()
+    }
+}
+
 /// Stop **all** tracked simulated game processes.
 ///
 /// Called on application exit to ensure no orphaned child processes are left
