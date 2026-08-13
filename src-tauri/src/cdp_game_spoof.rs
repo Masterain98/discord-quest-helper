@@ -176,6 +176,9 @@ pub fn path_templates(os: DetectableOs) -> FakeGamePathTemplates {
     }
 }
 
+/// Test-only mirrors of the injected JavaScript helpers `sanitizeApp`,
+/// `normalizeExe`, `appSlug`, and `render` in `cdp_quest.rs`. Keep both
+/// implementations in lockstep.
 #[cfg(test)]
 fn sanitize_app_name(app_name: &str) -> String {
     app_name
@@ -193,16 +196,17 @@ fn sanitize_app_name(app_name: &str) -> String {
 #[cfg(test)]
 fn normalize_exe_name(os: DetectableOs, raw: &str) -> String {
     let trimmed = raw.trim().trim_start_matches('>');
-    let file = trimmed
-        .rsplit(['/', '\\'])
-        .next()
-        .unwrap_or(trimmed)
-        .trim();
+    let file = trimmed.rsplit(['/', '\\']).next().unwrap_or(trimmed).trim();
     if os.is_unix() {
-        file.strip_suffix(".exe")
-            .or_else(|| file.strip_suffix(".EXE"))
-            .unwrap_or(file)
-            .to_string()
+        let cut = file.len().saturating_sub(4);
+        if file
+            .get(cut..)
+            .is_some_and(|suffix| suffix.eq_ignore_ascii_case(".exe"))
+        {
+            file[..cut].to_string()
+        } else {
+            file.to_string()
+        }
     } else {
         file.to_string()
     }
@@ -210,7 +214,10 @@ fn normalize_exe_name(os: DetectableOs, raw: &str) -> String {
 
 #[cfg(test)]
 fn app_slug(app: &str) -> String {
-    app.to_lowercase().split_whitespace().collect::<Vec<_>>().join("-")
+    app.to_lowercase()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join("-")
 }
 
 #[cfg(test)]
@@ -278,8 +285,8 @@ fn match_process_hint<'a>(
 
 pub fn cdp_video_timing() -> CdpVideoTiming {
     CdpVideoTiming {
-        speed: 1,
-        interval: 1,
+        speed: 10,
+        interval: 10,
         max_future: 10,
     }
 }
@@ -287,8 +294,8 @@ pub fn cdp_video_timing() -> CdpVideoTiming {
 pub fn cdp_video_timeout_secs(seconds_needed: u32, initial_progress: f64) -> u64 {
     let remaining = (seconds_needed as f64 - initial_progress).max(0.0);
     let timing = cdp_video_timing();
-    let realtime = remaining / timing.speed.max(1) as f64;
-    (realtime * 2.0).ceil() as u64 + 300
+    let wall = remaining * timing.interval.max(1) as f64 / timing.speed.max(1) as f64;
+    (wall * 2.0).ceil() as u64 + 300
 }
 
 pub fn align_play_activity_heartbeat_secs(requested: u64) -> u64 {
@@ -366,6 +373,10 @@ mod tests {
                 paths.exe_path
             );
             assert_eq!(paths.exe_name, "Game");
+            assert_eq!(
+                build_fake_game_paths(os, "Cool Game", "Game.Exe").exe_name,
+                "Game"
+            );
         }
     }
 
@@ -426,9 +437,7 @@ mod tests {
             "game"
         );
         assert_eq!(
-            select_executable(&executables, &["win32"])
-                .unwrap()
-                .name,
+            select_executable(&executables, &["win32"]).unwrap().name,
             "game.exe"
         );
     }
@@ -439,8 +448,11 @@ mod tests {
             os: "win32".into(),
             name: ">Title.exe".into(),
         }];
-        let selected = select_executable(&executables, DetectableOs::Darwin.cdp_executable_os_priority())
-            .unwrap();
+        let selected = select_executable(
+            &executables,
+            DetectableOs::Darwin.cdp_executable_os_priority(),
+        )
+        .unwrap();
         let paths = build_fake_game_paths(DetectableOs::Darwin, "Title", &selected.name);
         assert_eq!(paths.exe_name, "Title");
         assert!(paths.cmd_line.starts_with("/Applications/"));
@@ -520,9 +532,9 @@ mod tests {
     #[test]
     fn video_timing_is_realtime_not_seven_x() {
         let timing = cdp_video_timing();
-        assert_eq!(timing.speed, 1);
-        assert_eq!(timing.interval, 1);
+        assert_eq!(timing.speed, timing.interval);
         assert_eq!(timing.max_future, 10);
+        assert_ne!(timing.speed, 7);
         assert_eq!(cdp_video_timeout_secs(700, 0.0), 1700);
     }
 
