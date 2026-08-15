@@ -1497,6 +1497,7 @@ pub fn run() {
             get_runner_info,
             check_cdp_status,
             fetch_super_properties_cdp,
+            fetch_running_games_cdp,
             discord_cdp_commands::is_discord_running,
             discord_cdp_commands::list_running_discord_cdp_sessions,
             discord_cdp_commands::launch_discord_cdp,
@@ -1679,6 +1680,17 @@ async fn fetch_super_properties_cdp(
     }
 
     Ok(result)
+}
+
+/// Read Discord's currently loaded game detector state via CDP.
+#[tauri::command]
+async fn fetch_running_games_cdp(
+    port: Option<u16>,
+) -> Result<cdp_client::CdpRunningGamesSnapshot, String> {
+    let port = port.unwrap_or(cdp_client::DEFAULT_CDP_PORT);
+    cdp_client::fetch_running_games_via_cdp(port)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Capture Discord API request headers via CDP Network interception

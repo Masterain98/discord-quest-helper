@@ -40,6 +40,28 @@ pub struct CdpTargetExecutionResult {
     pub error: Option<String>,
 }
 
+/// Read-only snapshot of Discord's currently loaded game detector state.
+///
+/// The nested game values intentionally use `serde_json::Value` because
+/// Discord's internal RunningGame schema changes independently of this app.
+/// The CDP probe converts JavaScript `undefined` to the explicit string
+/// `<undefined>` so the debug page can distinguish it from a missing key.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CdpRunningGamesSnapshot {
+    pub captured_at: u64,
+    pub page_title: String,
+    pub page_url: String,
+    pub store_found: bool,
+    pub store_path: Option<String>,
+    pub native_module_found: bool,
+    pub native_module_name: String,
+    pub native_module_methods: Vec<String>,
+    pub games: Vec<serde_json::Value>,
+    pub visible_games: Vec<serde_json::Value>,
+    pub native_diagnostics: Vec<serde_json::Value>,
+    pub errors: Vec<String>,
+}
+
 /// Captured Discord API request headers via CDP Network interception
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CdpCapturedHeaders {
@@ -278,6 +300,169 @@ pub async fn execute_js_via_primary_discord_target(
     );
 
     execute_js_via_ws(ws_url, js_code, await_promise, timeout_secs).await
+}
+
+const JS_READ_RUNNING_GAMES: &str = r###"
+(async () => {
+  const result = {
+    captured_at: Date.now(),
+    page_title: document.title || "",
+    page_url: location.href || "",
+    store_found: false,
+    store_path: null,
+    native_module_found: false,
+    native_module_name: "discord_utils",
+    native_module_methods: [],
+    games: [],
+    visible_games: [],
+    native_diagnostics: [],
+    errors: []
+  };
+
+  const serialize = (value, seen = new WeakSet(), depth = 0) => {
+    if (value === undefined) return "<undefined>";
+    if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      return value;
+    }
+    if (typeof value === "bigint") return String(value);
+    if (depth > 6) return "<max-depth>";
+    if (typeof value === "object") {
+      if (seen.has(value)) return "<circular>";
+      seen.add(value);
+      if (Array.isArray(value)) return value.map(item => serialize(item, seen, depth + 1));
+      const output = {};
+      for (const key of Object.keys(value)) {
+        try { output[key] = serialize(value[key], seen, depth + 1); }
+        catch (error) { output[key] = "<read-error: " + String(error) + ">"; }
+      }
+      return output;
+    }
+    return String(value);
+  };
+
+  const findStore = (value, path, seen, depth) => {
+    if (!value || (typeof value !== "object" && typeof value !== "function") || depth > 4 || seen.has(value)) {
+      return null;
+    }
+    seen.add(value);
+    try {
+      if (typeof value.getRunningGames === "function") return { value, path };
+      for (const key of Object.getOwnPropertyNames(value).slice(0, 300)) {
+        if (key === "caller" || key === "callee" || key === "arguments") continue;
+        let child;
+        try { child = value[key]; } catch (_) { continue; }
+        const found = findStore(child, path + "." + key, seen, depth + 1);
+        if (found) return found;
+      }
+    } catch (_) {}
+    return null;
+  };
+
+  try {
+    const native = window.DiscordNative && window.DiscordNative.nativeModules;
+    if (native && typeof native.requireModule === "function") {
+      try {
+        const utils = native.requireModule("discord_utils");
+        if (utils) {
+          result.native_module_found = true;
+          result.native_module_methods = Object.keys(utils).sort();
+          result._native_utils = utils;
+        }
+      } catch (error) {
+        result.errors.push("discord_utils: " + String(error));
+      }
+    } else {
+      result.errors.push("DiscordNative.nativeModules.requireModule is unavailable");
+    }
+  } catch (error) {
+    result.errors.push("native module discovery: " + String(error));
+  }
+
+  try {
+    const chunk = window.webpackChunkdiscord_app;
+    if (!chunk) {
+      result.errors.push("webpackChunkdiscord_app is unavailable");
+    } else {
+      let webpackRequire;
+      chunk.push([[Symbol("dqh-running-games")], {}, runtimeRequire => { webpackRequire = runtimeRequire; }]);
+      chunk.pop();
+      const seen = new WeakSet();
+      for (const [moduleId, moduleValue] of Object.entries(webpackRequire?.c || {})) {
+        const found = findStore(moduleValue?.exports, "module[" + moduleId + "].exports", seen, 0);
+        if (found) {
+          result.store_found = true;
+          result.store_path = found.path;
+          const store = found.value;
+          try {
+            const rawGames = serialize(store.getRunningGames());
+            if (Array.isArray(rawGames)) result.games = rawGames;
+            else result.errors.push("getRunningGames returned a non-array value");
+          }
+          catch (error) { result.errors.push("getRunningGames: " + String(error)); }
+          try {
+            if (typeof store.getVisibleRunningGames === "function") {
+              const rawVisibleGames = serialize(store.getVisibleRunningGames());
+              if (Array.isArray(rawVisibleGames)) result.visible_games = rawVisibleGames;
+              else result.errors.push("getVisibleRunningGames returned a non-array value");
+            }
+          } catch (error) {
+            result.errors.push("getVisibleRunningGames: " + String(error));
+          }
+          break;
+        }
+      }
+      if (!result.store_found) result.errors.push("RunningGameStore is not loaded in the selected Discord target");
+    }
+  } catch (error) {
+    result.errors.push("RunningGameStore discovery: " + String(error));
+  }
+
+  const utils = result._native_utils;
+  delete result._native_utils;
+  const games = Array.isArray(result.games) ? result.games : [];
+  if (utils && typeof utils.getExecutableFingerprintForProcess === "function") {
+    for (const game of games) {
+      const pid = Number(game && game.pid);
+      const diagnostic = { pid: Number.isFinite(pid) ? pid : null, fingerprint: "<unavailable>" };
+      if (!Number.isInteger(pid) || pid <= 0) {
+        diagnostic.error = "game.pid is not a positive integer";
+        result.native_diagnostics.push(diagnostic);
+        continue;
+      }
+      try {
+        diagnostic.fingerprint = await new Promise(resolve => {
+          let settled = false;
+          const finish = value => {
+            if (settled) return;
+            settled = true;
+            resolve(typeof value === "string" ? value : serialize(value));
+          };
+          try {
+            utils.getExecutableFingerprintForProcess(pid, finish);
+            setTimeout(() => finish("<timeout>"), 2500);
+          } catch (error) {
+            finish("<error: " + String(error) + ">");
+          }
+        });
+        diagnostic.length = typeof diagnostic.fingerprint === "string" ? diagnostic.fingerprint.length : null;
+      } catch (error) {
+        diagnostic.error = String(error);
+      }
+      result.native_diagnostics.push(diagnostic);
+    }
+  } else if (games.length > 0) {
+    result.errors.push("discord_utils.getExecutableFingerprintForProcess is unavailable");
+  }
+
+  return JSON.stringify(result);
+})()
+"###;
+
+/// Read the currently loaded Discord game detector state without changing the
+/// client, its stores, callbacks, or network state.
+pub async fn fetch_running_games_via_cdp(port: u16) -> Result<CdpRunningGamesSnapshot> {
+    let raw = execute_js_via_primary_discord_target(port, JS_READ_RUNNING_GAMES, true, 10).await?;
+    serde_json::from_str(&raw).context("Failed to parse Discord running-games snapshot")
 }
 
 /// Get SuperProperties via CDP

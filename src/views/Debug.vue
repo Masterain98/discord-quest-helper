@@ -3,11 +3,13 @@ import { ref, computed, onMounted } from 'vue'
 import {
   getDebugInfo,
   getRunnerInfo,
+  fetchRunningGamesCdp,
   captureDiscordHeadersCdp,
   getQuestDecisionDebug,
   getQuestDecisionsDebug,
   type DebugInfo,
   type RunnerInfo,
+  type CdpRunningGamesSnapshot,
   type CdpCapturedHeaders,
   type CapturedRequest,
 } from '@/api/tauri'
@@ -16,13 +18,16 @@ import { useI18n } from 'vue-i18n'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
-import { RefreshCw, Copy, Check, Key, Package, Radio, ChevronRight, Search, X, Server, Play } from 'lucide-vue-next'
+import { RefreshCw, Copy, Check, Key, Package, Gamepad2, Radio, ChevronRight, Search, X, Server, Play } from 'lucide-vue-next'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
 
 const debugInfo = ref<DebugInfo | null>(null)
 const runnerInfo = ref<RunnerInfo | null>(null)
+const runningGamesSnapshot = ref<CdpRunningGamesSnapshot | null>(null)
+const runningGamesLoading = ref(false)
+const runningGamesError = ref<string | null>(null)
 const loading = ref(false)
 const loadingStep = ref<string | null>(null)
 const lastLoadDurationMs = ref<number | null>(null)
@@ -42,6 +47,7 @@ const decisionsResult = ref<Record<string, unknown> | null>(null)
 
 const fallbackText = 'N/A'
 const DEBUG_COMMAND_TIMEOUT_MS = 5000
+const RUNNING_GAMES_COMMAND_TIMEOUT_MS = 15000
 const CAPTURE_STORAGE_KEY = 'debug_captured_headers'
 
 function debugText(value: unknown): string {
@@ -86,6 +92,20 @@ function payloadPreview(value: unknown): string {
   } catch {
     return Object.prototype.toString.call(value)
   }
+}
+
+function rawValueText(value: unknown): string {
+  if (typeof value === 'string') return value
+  if (value === undefined) return '<undefined>'
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return String(value)
+  }
+}
+
+function rawGameEntries(game: Record<string, unknown>): Array<[string, unknown]> {
+  return Object.entries(game)
 }
 
 function saveCapturedHeaders() {
@@ -405,12 +425,30 @@ async function loadDebugInfo() {
   }
 }
 
-async function withCommandTimeout<T>(promise: Promise<T>, commandName: string): Promise<T> {
+async function fetchRunningGames() {
+  runningGamesLoading.value = true
+  runningGamesError.value = null
+  try {
+    runningGamesSnapshot.value = await withCommandTimeout(
+      fetchRunningGamesCdp(),
+      'fetch_running_games_cdp',
+      RUNNING_GAMES_COMMAND_TIMEOUT_MS,
+    )
+  } catch (e) {
+    runningGamesError.value = String(e)
+  } finally {
+    runningGamesLoading.value = false
+  }
+}
+
+async function withCommandTimeout<T>(
+  promise: Promise<T>,
+  commandName: string,
+  timeoutMs = DEBUG_COMMAND_TIMEOUT_MS,
+): Promise<T> {
   let timeoutId: ReturnType<typeof setTimeout> | undefined
   const timeout = new Promise<never>((_, reject) => {
-    timeoutId = setTimeout(() => {
-      reject(new Error(`${commandName} timed out after ${DEBUG_COMMAND_TIMEOUT_MS}ms`))
-    }, DEBUG_COMMAND_TIMEOUT_MS)
+    timeoutId = setTimeout(() => reject(new Error(`${commandName} timed out after ${timeoutMs}ms`)), timeoutMs)
   })
 
   try {
@@ -550,6 +588,127 @@ onMounted(() => {
               <span class="text-muted-foreground">{{ t('debug.runner_size') }}:</span>
               <span class="font-mono ml-1">{{ (runnerInfo.size_bytes ?? 0) > 0 ? (runnerInfo.size_bytes / 1024).toFixed(1) + ' KB' : fallbackText }}</span>
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <!-- Discord Running Games Snapshot -->
+      <Card>
+        <CardHeader>
+          <div class="flex items-center justify-between gap-4">
+            <div>
+              <CardTitle class="flex items-center gap-2">
+                <Gamepad2 class="w-5 h-5" />
+                {{ t('debug.running_games_title') }}
+              </CardTitle>
+              <CardDescription>{{ t('debug.running_games_desc') }}</CardDescription>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+              <Button variant="outline" size="sm" @click="fetchRunningGames" :disabled="runningGamesLoading">
+                <RefreshCw v-if="runningGamesLoading" class="w-4 h-4 mr-2 animate-spin" />
+                <Gamepad2 v-else class="w-4 h-4 mr-2" />
+                {{ runningGamesLoading ? t('debug.running_games_loading') : t('debug.running_games_fetch') }}
+              </Button>
+              <Button
+                v-if="runningGamesSnapshot"
+                variant="ghost"
+                size="sm"
+                @click="copyToClipboard(JSON.stringify(runningGamesSnapshot, null, 2), 'running_games_json')"
+              >
+                <Check v-if="copied === 'running_games_json'" class="w-4 h-4 mr-1 text-green-500" />
+                <Copy v-else class="w-4 h-4 mr-1" />
+                JSON
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent class="space-y-4">
+          <div v-if="runningGamesError" class="p-3 bg-destructive/10 text-destructive rounded-lg text-sm">
+            {{ runningGamesError }}
+          </div>
+
+          <div v-if="runningGamesSnapshot" class="space-y-4">
+            <div class="grid grid-cols-2 gap-3 text-sm">
+              <div class="p-2 bg-muted rounded">
+                <span class="text-muted-foreground">page_title:</span>
+                <code class="font-mono ml-1 break-all">{{ rawValueText(runningGamesSnapshot.page_title) }}</code>
+              </div>
+              <div class="p-2 bg-muted rounded">
+                <span class="text-muted-foreground">store_found:</span>
+                <code class="font-mono ml-1">{{ rawValueText(runningGamesSnapshot.store_found) }}</code>
+              </div>
+              <div class="p-2 bg-muted rounded col-span-2">
+                <span class="text-muted-foreground">page_url:</span>
+                <code class="font-mono ml-1 break-all">{{ rawValueText(runningGamesSnapshot.page_url) }}</code>
+              </div>
+              <div class="p-2 bg-muted rounded">
+                <span class="text-muted-foreground">store_path:</span>
+                <code class="font-mono ml-1 break-all">{{ rawValueText(runningGamesSnapshot.store_path) }}</code>
+              </div>
+              <div class="p-2 bg-muted rounded">
+                <span class="text-muted-foreground">native_module_found:</span>
+                <code class="font-mono ml-1">{{ rawValueText(runningGamesSnapshot.native_module_found) }}</code>
+              </div>
+              <div class="p-2 bg-muted rounded">
+                <span class="text-muted-foreground">native_module_name:</span>
+                <code class="font-mono ml-1">{{ rawValueText(runningGamesSnapshot.native_module_name) }}</code>
+              </div>
+              <div class="p-2 bg-muted rounded">
+                <span class="text-muted-foreground">captured_at:</span>
+                <code class="font-mono ml-1">{{ rawValueText(runningGamesSnapshot.captured_at) }}</code>
+              </div>
+            </div>
+
+            <div v-if="runningGamesSnapshot.errors.length" class="p-3 bg-yellow-500/10 text-yellow-600 rounded-lg text-sm">
+              <div class="font-medium mb-1">{{ t('debug.running_games_warnings') }}</div>
+              <pre class="whitespace-pre-wrap text-xs">{{ runningGamesSnapshot.errors.join('\n') }}</pre>
+            </div>
+
+            <div class="space-y-3">
+              <div class="flex items-center justify-between">
+                <div class="text-sm font-medium">
+                  {{ t('debug.running_games_raw') }}
+                  <span class="text-muted-foreground font-normal">({{ runningGamesSnapshot.games.length }})</span>
+                </div>
+              </div>
+
+              <div v-if="runningGamesSnapshot.games.length === 0" class="p-3 bg-muted rounded text-sm text-muted-foreground">
+                {{ t('debug.running_games_empty') }}
+              </div>
+
+              <div v-for="(game, gameIndex) in runningGamesSnapshot.games" :key="gameIndex" class="rounded border border-border overflow-hidden">
+                <div class="px-3 py-2 bg-muted font-medium text-sm">
+                  {{ t('debug.running_games_item') }} {{ gameIndex + 1 }}
+                  <span v-if="game.name" class="text-muted-foreground font-normal"> — {{ rawValueText(game.name) }}</span>
+                </div>
+                <div class="grid gap-px bg-border sm:grid-cols-2">
+                  <div v-for="([key, value], valueIndex) in rawGameEntries(game)" :key="valueIndex" class="bg-background p-2 min-w-0">
+                    <div class="text-xs text-muted-foreground mb-1">{{ key }}</div>
+                    <code class="block text-xs font-mono whitespace-pre-wrap break-all">{{ rawValueText(value) }}</code>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="runningGamesSnapshot.native_diagnostics.length" class="space-y-2">
+              <div class="text-sm font-medium">{{ t('debug.running_games_native_diagnostics') }}</div>
+              <pre class="max-h-96 overflow-auto rounded bg-muted p-3 text-xs whitespace-pre-wrap break-all">{{ JSON.stringify(runningGamesSnapshot.native_diagnostics, null, 2) }}</pre>
+            </div>
+
+            <div v-if="runningGamesSnapshot.visible_games.length" class="space-y-2">
+              <div class="text-sm font-medium">visible_games</div>
+              <pre class="max-h-96 overflow-auto rounded bg-muted p-3 text-xs whitespace-pre-wrap break-all">{{ JSON.stringify(runningGamesSnapshot.visible_games, null, 2) }}</pre>
+            </div>
+
+            <details>
+              <summary class="cursor-pointer text-sm font-medium">{{ t('debug.running_games_module_methods') }}</summary>
+              <pre class="mt-2 max-h-64 overflow-auto rounded bg-muted p-3 text-xs whitespace-pre-wrap break-all">{{ JSON.stringify(runningGamesSnapshot.native_module_methods, null, 2) }}</pre>
+            </details>
+
+            <details>
+              <summary class="cursor-pointer text-sm font-medium">{{ t('debug.running_games_full_json') }}</summary>
+              <pre class="mt-2 max-h-[32rem] overflow-auto rounded bg-muted p-3 text-xs whitespace-pre-wrap break-all">{{ JSON.stringify(runningGamesSnapshot, null, 2) }}</pre>
+            </details>
           </div>
         </CardContent>
       </Card>

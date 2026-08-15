@@ -444,6 +444,25 @@ export async function fetchSuperPropertiesCdp(port?: number): Promise<CdpSuperPr
   return await invoke('fetch_super_properties_cdp', { port })
 }
 
+export interface CdpRunningGamesSnapshot {
+  captured_at: number
+  page_title: string
+  page_url: string
+  store_found: boolean
+  store_path: string | null
+  native_module_found: boolean
+  native_module_name: string
+  native_module_methods: string[]
+  games: Array<Record<string, unknown>>
+  visible_games: Array<Record<string, unknown>>
+  native_diagnostics: Array<Record<string, unknown>>
+  errors: string[]
+}
+
+export async function fetchRunningGamesCdp(port?: number): Promise<CdpRunningGamesSnapshot> {
+  return await invoke('fetch_running_games_cdp', { port })
+}
+
 export type DiscordChannelArg = 'auto' | 'stable' | 'ptb' | 'canary'
 export type DiscordChannelResult = 'stable' | 'ptb' | 'canary'
 
