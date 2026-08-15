@@ -110,6 +110,16 @@ fn ensure_runner_bytes(target_path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Make sure the directory for a simulated executable exists before the
+/// platform-specific runner code writes or launches it.
+fn ensure_simulated_executable_parent(target_path: &Path) -> Result<()> {
+    if let Some(parent) = target_path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("Could not create simulated game directory: {:?}", parent))?;
+    }
+    Ok(())
+}
+
 /// Create a simulated game executable
 ///
 /// Writes the embedded runner executable to the specified path with the target game name.
@@ -189,6 +199,7 @@ pub fn run_simulated_game(
     _app_id: &str,
 ) -> Result<()> {
     let exe_to_run = PathBuf::from(path).join(executable_name);
+    ensure_simulated_executable_parent(&exe_to_run)?;
 
     // Always try to update the runner binary from the embedded bytes
     println!("Attempting to update simulated game at {:?}", exe_to_run);
@@ -224,9 +235,10 @@ pub fn run_simulated_game(
     _app_id: &str,
 ) -> Result<()> {
     let exe_to_run = PathBuf::from(path).join(executable_name);
+    ensure_simulated_executable_parent(&exe_to_run)?;
 
     if !exe_to_run.exists() {
-        anyhow::bail!("Executable does not exist: {:?}", exe_to_run);
+        ensure_runner_bytes(&exe_to_run).context("Could not create simulated game executable")?;
     }
 
     // Make the file executable
@@ -257,6 +269,7 @@ pub fn run_simulated_game(
     use std::process::Stdio;
 
     let exe_to_run = PathBuf::from(path).join(executable_name);
+    ensure_simulated_executable_parent(&exe_to_run)?;
 
     // Refresh the runner bytes when possible; a running instance keeps the file
     // busy (ETXTBSY), which is fine — we fall back to the existing binary.

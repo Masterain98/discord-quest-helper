@@ -184,6 +184,10 @@ export function connectToDiscordRpc(activityJson: string, action: string = 'conn
   return invoke('connect_to_discord_rpc', { activity_json: activityJson, action })
 }
 
+export async function disconnectFromDiscordRpc(): Promise<void> {
+  return await invoke('disconnect_from_discord_rpc')
+}
+
 // User status commands
 export async function getQuests(): Promise<Quest[]> {
   return await invoke('get_quests')

@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import GameSelector from '@/components/GameSelector.vue'
 import type { DetectableGame } from '@/api/tauri'
-import { createSimulatedGame, runSimulatedGame, connectToDiscordRpc } from '@/api/tauri'
+import { createSimulatedGame, runSimulatedGame, stopSimulatedGame, connectToDiscordRpc, disconnectFromDiscordRpc } from '@/api/tauri'
 import { documentDir, sep } from '@tauri-apps/api/path'
 import { open as openFolderPicker } from '@tauri-apps/plugin-dialog'
 import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from '@/components/ui/card'
@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
-import { Loader2, Play, Hammer, List, Terminal, FolderOpen, ChevronDown, Check } from 'lucide-vue-next'
+import { Loader2, Play, Square, Hammer, List, Terminal, FolderOpen, ChevronDown, Check } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useQuestsStore } from '@/stores/quests'
 import { getSimulationExecutables } from '@/utils/executables'
@@ -32,6 +32,9 @@ const customExeName = ref('')
 const installPath = ref('')
 const installPathPlaceholder = ref('DiscordQuestGames')
 const running = ref(false)
+const stopping = ref(false)
+const activeExecutable = ref<string | null>(null)
+const activeRpc = ref(false)
 const creating = ref(false)
 const error = ref<string | null>(null)
 const success = ref<string | null>(null)
@@ -173,6 +176,7 @@ async function handleRunGame() {
     const appId = mode.value === 'custom' ? '' : (selectedGame.value?.id ?? '')
     const displayName = mode.value === 'custom' ? customExeName.value : (selectedGame.value?.name ?? '')
     await runSimulatedGame(displayName, installPath.value, exeName, appId)
+    activeExecutable.value = exeName
 
     // ── SELECT / LIST mode ──────────────────────────────────────────────
     // When launched from the detectable games list we always have an app_id,
@@ -182,13 +186,12 @@ async function handleRunGame() {
     if (mode.value === 'select' && selectedGame.value) {
       const activity = {
         app_id: selectedGame.value.id,
-        details: 'Playing for Discord Quest',
-        state: 'In Game',
         large_image_key: 'logo',
         large_image_text: selectedGame.value.name,
         start_timestamp: Date.now()
       }
       await connectToDiscordRpc(JSON.stringify(activity), 'connect')
+      activeRpc.value = true
       success.value = t('game_sim.run_success_rpc')
     } else {
       // ── CUSTOM mode ─────────────────────────────────────────────────
@@ -203,6 +206,30 @@ async function handleRunGame() {
     running.value = false
   }
 }
+
+async function handleStopGame() {
+  const exeName = activeExecutable.value
+  if (!exeName || stopping.value) return
+
+  stopping.value = true
+  error.value = null
+  success.value = null
+
+  try {
+    await stopSimulatedGame(exeName)
+    const hadRpc = activeRpc.value
+    activeExecutable.value = null
+    activeRpc.value = false
+    if (hadRpc) {
+      await disconnectFromDiscordRpc()
+    }
+    success.value = t('game_sim.stopped')
+  } catch (e) {
+    error.value = e as string
+  } finally {
+    stopping.value = false
+  }
+}
 </script>
 
 <template>
@@ -215,6 +242,7 @@ async function handleRunGame() {
           size="sm"
           :variant="mode === 'select' ? 'default' : 'ghost'"
           class="gap-1.5 h-7 px-3 text-xs"
+          :disabled="!!activeExecutable || running || stopping"
           @click="switchMode('select')"
         >
           <List class="w-3.5 h-3.5" />
@@ -224,6 +252,7 @@ async function handleRunGame() {
           size="sm"
           :variant="mode === 'custom' ? 'default' : 'ghost'"
           class="gap-1.5 h-7 px-3 text-xs"
+          :disabled="!!activeExecutable || running || stopping"
           @click="switchMode('custom')"
         >
           <Terminal class="w-3.5 h-3.5" />
@@ -378,12 +407,13 @@ async function handleRunGame() {
           </template>
         </CardContent>
 
-        <CardFooter v-if="canProceed" class="flex flex-col gap-2">
+        <CardFooter v-if="canProceed || activeExecutable" class="flex flex-col gap-2">
           <div class="grid grid-cols-2 gap-2 w-full">
             <Button
+              v-if="!activeExecutable"
               @click="handleRunGame"
               class="w-full bg-green-600 hover:bg-green-700 text-white"
-              :disabled="!effectiveExecutable || !installPath || running"
+              :disabled="!effectiveExecutable || !installPath || running || stopping"
             >
               <Play v-if="!running" class="w-4 h-4 mr-2" />
               <Loader2 v-else class="w-4 h-4 mr-2 animate-spin" />
@@ -391,10 +421,22 @@ async function handleRunGame() {
             </Button>
 
             <Button
+              v-else
+              @click="handleStopGame"
+              variant="destructive"
+              class="w-full"
+              :disabled="stopping"
+            >
+              <Square v-if="!stopping" class="w-4 h-4 mr-2" />
+              <Loader2 v-else class="w-4 h-4 mr-2 animate-spin" />
+              {{ stopping ? t('game_sim.stopping') : t('game_sim.stop_game') }}
+            </Button>
+
+            <Button
               @click="openCreateDialog"
               variant="outline"
               class="w-full"
-              :disabled="!effectiveExecutable"
+              :disabled="!effectiveExecutable || !!activeExecutable || running || stopping"
             >
               <Hammer class="w-4 h-4 mr-2" />
               {{ t('game_sim.create_game') }}

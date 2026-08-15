@@ -1253,6 +1253,25 @@ fn connect_to_discord_rpc(handle: tauri::AppHandle, activity_json: String, actio
 }
 
 #[tauri::command]
+async fn disconnect_from_discord_rpc(app: tauri::AppHandle) -> Result<(), String> {
+    // Cancel a connection task that may still be waiting for Discord. Without
+    // this, a stop click immediately after launch could be followed by the
+    // pending task storing a new RPC client and restoring the presence.
+    let _ = app.emit("event_disconnect", ());
+
+    let client = get_discord_rpc_client()
+        .lock()
+        .map_err(|_| "Discord RPC state lock is poisoned".to_string())?
+        .take();
+
+    if let Some(client) = client {
+        client.discord.disconnect().await;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
 async fn open_in_explorer(path: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
@@ -1470,6 +1489,7 @@ pub fn run() {
             get_quest_decisions_debug,
             claim_quest_reward,
             connect_to_discord_rpc,
+            disconnect_from_discord_rpc,
             open_in_explorer,
             force_video_progress,
             export_logs,
