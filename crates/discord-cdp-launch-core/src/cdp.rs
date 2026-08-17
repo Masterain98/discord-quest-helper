@@ -62,12 +62,17 @@ pub fn is_discord_target(target: &CdpTarget) -> bool {
 /// Overlay and popout windows are Discord pages, but they do not load
 /// `webpackChunkdiscord_app` or `DiscordNative`. Live Discord CDP lists
 /// `Discord Overlay` (`https://discord.com/popout`) before the main renderer.
-fn is_discord_auxiliary_window(target: &CdpTarget) -> bool {
-    if target.title.eq_ignore_ascii_case("discord overlay") {
+pub fn is_discord_auxiliary_window(target: &CdpTarget) -> bool {
+    is_discord_auxiliary_page(&target.title, &target.url)
+}
+
+/// Title/URL form used when CDP execution results no longer carry a full target.
+pub fn is_discord_auxiliary_page(title: &str, url: &str) -> bool {
+    if title.eq_ignore_ascii_case("discord overlay") {
         return true;
     }
 
-    let path = discord_target_path(&target.url);
+    let path = discord_target_path(url);
     path == "popout"
         || path.starts_with("popout/")
         || path == "overlay"
@@ -303,6 +308,15 @@ mod tests {
     fn overlay_is_still_a_discord_page_target() {
         let overlay = target("overlay", "Discord Overlay", "https://discord.com/popout");
         assert!(is_discord_target(&overlay));
+        assert!(is_discord_auxiliary_window(&overlay));
+        assert!(is_discord_auxiliary_page(
+            "Discord Overlay",
+            "https://discord.com/popout"
+        ));
+        assert!(!is_discord_auxiliary_page(
+            "Friends",
+            "https://discord.com/channels/@me"
+        ));
     }
 }
 

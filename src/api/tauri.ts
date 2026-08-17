@@ -455,6 +455,10 @@ export interface CdpRunningGamesSnapshot {
   native_module_methods: string[]
   games: Array<Record<string, unknown>>
   visible_games: Array<Record<string, unknown>>
+  visible_game?: Record<string, unknown> | null
+  analytics_game?: Record<string, unknown> | null
+  debug_game?: Record<string, unknown> | null
+  store_views_diff?: Record<string, unknown> | null
   native_diagnostics: Array<Record<string, unknown>>
   errors: string[]
 }

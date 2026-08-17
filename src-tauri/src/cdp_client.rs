@@ -58,6 +58,14 @@ pub struct CdpRunningGamesSnapshot {
     pub native_module_methods: Vec<String>,
     pub games: Vec<serde_json::Value>,
     pub visible_games: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub visible_game: Option<serde_json::Value>,
+    #[serde(default)]
+    pub analytics_game: Option<serde_json::Value>,
+    #[serde(default)]
+    pub debug_game: Option<serde_json::Value>,
+    #[serde(default)]
+    pub store_views_diff: Option<serde_json::Value>,
     pub native_diagnostics: Vec<serde_json::Value>,
     pub errors: Vec<String>,
 }
@@ -399,6 +407,22 @@ const JS_READ_RUNNING_GAMES: &str = r###"
             } catch (error) {
               result.errors.push("getVisibleRunningGames: " + String(error));
             }
+            try { result.visible_game = serialize(store.getVisibleGame ? store.getVisibleGame() : null); }
+            catch (error) { result.errors.push("getVisibleGame: " + String(error)); }
+            try { result.analytics_game = serialize(store.getCurrentGameForAnalytics ? store.getCurrentGameForAnalytics() : null); }
+            catch (error) { result.errors.push("getCurrentGameForAnalytics: " + String(error)); }
+            try { result.debug_game = serialize(store.getDebugRunningGame ? store.getDebugRunningGame() : null); }
+            catch (error) { result.errors.push("getDebugRunningGame: " + String(error)); }
+            const runningIds = (Array.isArray(result.games) ? result.games : []).map(game => game && game.id);
+            result.store_views_diff = {
+              runningCount: runningIds.length,
+              runningIds,
+              visibleId: result.visible_game && result.visible_game.id ? result.visible_game.id : null,
+              analyticsId: result.analytics_game && result.analytics_game.id ? result.analytics_game.id : null,
+              debugId: result.debug_game && result.debug_game.id ? result.debug_game.id : null,
+              visibleInRunning: !!(result.visible_game && result.visible_game.id && runningIds.some(id => String(id) === String(result.visible_game.id))),
+              analyticsInRunning: !!(result.analytics_game && result.analytics_game.id && runningIds.some(id => String(id) === String(result.analytics_game.id)))
+            };
             found = true;
             break;
           }
@@ -1756,6 +1780,9 @@ mod tests {
             "must capture webpack require from push() return value, not the runtime callback argument"
         );
         assert!(JS_READ_RUNNING_GAMES.contains("Array.isArray(games)"));
+        assert!(JS_READ_RUNNING_GAMES.contains("store_views_diff"));
+        assert!(JS_READ_RUNNING_GAMES.contains("getCurrentGameForAnalytics"));
+        assert!(JS_READ_RUNNING_GAMES.contains("getDebugRunningGame"));
         assert!(!JS_READ_RUNNING_GAMES
             .contains("runtimeRequire => { webpackRequire = runtimeRequire; }"));
         assert!(!JS_READ_RUNNING_GAMES
@@ -1859,6 +1886,19 @@ mod tests {
         ];
         let fallback_none = select_discord_targets(&fallback_missing_ws);
         assert_eq!(fallback_none.len(), 0);
+    }
+
+    #[test]
+    fn test_select_discord_targets_keeps_overlay_for_cleanup() {
+        let targets = vec![
+            mk_target("page", "Discord Overlay", "https://discord.com/popout"),
+            mk_target("page", "Friends", "https://discord.com/channels/@me"),
+        ];
+        let selected = select_discord_targets(&targets);
+        assert_eq!(selected.len(), 2);
+        assert!(selected.iter().any(|t| t.title == "Discord Overlay"));
+        assert!(selected.iter().any(|t| t.title == "Friends"));
+        assert!(pick_discord_target(&targets).is_some_and(|t| t.title == "Friends"));
     }
 
     fn request_will_be_sent(request_id: &str, url: &str, authorization: Option<&str>) -> String {
