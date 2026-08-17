@@ -19,6 +19,11 @@ Complete Discord video, stream, and game quests automatically while you focus on
 [![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org/)
 [![GitHub Release](https://img.shields.io/github/v/release/Masterain98/discord-quest-helper?label=latest%20release&color=41b883)](https://github.com/Masterain98/discord-quest-helper/releases/latest)
 
+<p align="center">
+  <img src="public/certificated-ai-sloop-tiny.png" alt="Certificated AI Slop" width="480">
+</p>
+
+
 </div>
 
 ## 🚀 Quick Start
