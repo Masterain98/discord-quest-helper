@@ -1115,12 +1115,17 @@ const JS_CLEANUP_SPOOF: &str = r#"
             }
             if (!Array.isArray(remaining)) remaining = [];
             if (dqh._fakeGame) {
-                remaining = remaining.filter(game =>
-                    !game || (
-                        String(game.id) !== String(dqh._fakeGame.id)
-                        && (dqh._fakeGame.pid == null || game.pid !== dqh._fakeGame.pid)
-                    )
-                );
+                remaining = remaining.filter(game => {
+                    if (!game) return true;
+                    if (game === dqh._fakeGame) return false;
+                    const sameId = String(game.id) === String(dqh._fakeGame.id);
+                    const samePid = dqh._fakeGame.pid != null && game.pid === dqh._fakeGame.pid;
+                    if (samePid) return false;
+                    // Same application with no pid is the injected row. A genuine
+                    // native detection of that application keeps a real pid.
+                    if (sameId && (game.pid == null || game.pid === undefined)) return false;
+                    return true;
+                });
             }
             if (dqh.FluxDispatcher && dqh._fakeGame) {
                 dqh.FluxDispatcher.dispatch({ type: "RUNNING_GAMES_CHANGE", removed: [dqh._fakeGame], added: [], games: remaining });
@@ -4185,6 +4190,7 @@ mod tests {
         assert!(!JS_CLEANUP_SPOOF.contains("games: []"));
         assert!(JS_CLEANUP_SPOOF.contains("remaining = remaining.filter"));
         assert!(!JS_CLEANUP_SPOOF.contains("remaining.splice"));
+        assert!(JS_CLEANUP_SPOOF.contains("sameId && (game.pid == null || game.pid === undefined)"));
         assert!(JS_CLEANUP_SPOOF.contains("needsObserverSettle"));
         assert!(JS_CLEANUP_SPOOF.contains(r#"__" + "dqh_cdp""#));
         assert!(JS_CLEANUP_SPOOF.contains("^__n[0-9a-f]{10}$"));
