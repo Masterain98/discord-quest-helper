@@ -700,6 +700,21 @@ onMounted(() => {
               <pre class="max-h-96 overflow-auto rounded bg-muted p-3 text-xs whitespace-pre-wrap break-all">{{ JSON.stringify(runningGamesSnapshot.visible_games, null, 2) }}</pre>
             </div>
 
+            <div v-if="runningGamesSnapshot.store_views_diff" class="space-y-2">
+              <div class="text-sm font-medium">store_views_diff</div>
+              <pre class="max-h-96 overflow-auto rounded bg-muted p-3 text-xs whitespace-pre-wrap break-all">{{ JSON.stringify(runningGamesSnapshot.store_views_diff, null, 2) }}</pre>
+            </div>
+
+            <div v-if="runningGamesSnapshot.visible_game" class="space-y-2">
+              <div class="text-sm font-medium">getVisibleGame</div>
+              <pre class="max-h-96 overflow-auto rounded bg-muted p-3 text-xs whitespace-pre-wrap break-all">{{ JSON.stringify(runningGamesSnapshot.visible_game, null, 2) }}</pre>
+            </div>
+
+            <div v-if="runningGamesSnapshot.analytics_game" class="space-y-2">
+              <div class="text-sm font-medium">getCurrentGameForAnalytics</div>
+              <pre class="max-h-96 overflow-auto rounded bg-muted p-3 text-xs whitespace-pre-wrap break-all">{{ JSON.stringify(runningGamesSnapshot.analytics_game, null, 2) }}</pre>
+            </div>
+
             <details>
               <summary class="cursor-pointer text-sm font-medium">{{ t('debug.running_games_module_methods') }}</summary>
               <pre class="mt-2 max-h-64 overflow-auto rounded bg-muted p-3 text-xs whitespace-pre-wrap break-all">{{ JSON.stringify(runningGamesSnapshot.native_module_methods, null, 2) }}</pre>

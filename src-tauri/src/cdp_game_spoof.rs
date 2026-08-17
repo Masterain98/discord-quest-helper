@@ -109,6 +109,9 @@ pub struct CleanupVerify {
     pub fake_game_present: bool,
     pub has_dispatch_hook: bool,
     pub broad_patch_count: u64,
+    pub observer_hook: bool,
+    pub fake_in_running_games: bool,
+    pub debug_game_present: bool,
 }
 
 /// Official Discord desktop game-quest heartbeat cadence, from
@@ -140,6 +143,7 @@ pub const RUNNING_GAME_SCHEMA_KEYS: &[&str] = &[
     "processName",
     "sandboxed",
     "sku",
+    "start",
     "windowHandle",
 ];
 
@@ -259,11 +263,13 @@ fn merge_running_games<'a>(
     real: &[RunningGameIdentity<'a>],
     fake: RunningGameIdentity<'a>,
 ) -> Vec<RunningGameIdentity<'a>> {
-    let mut merged: Vec<RunningGameIdentity<'a>> = real
+    if real
         .iter()
-        .copied()
-        .filter(|game| game.id != fake.id && game.pid != fake.pid)
-        .collect();
+        .any(|game| game.id == fake.id || game.pid == fake.pid)
+    {
+        return real.to_vec();
+    }
+    let mut merged = real.to_vec();
     merged.push(fake);
     merged
 }
@@ -308,6 +314,9 @@ pub fn cleanup_verify_is_clean(verify: &CleanupVerify) -> bool {
         && !verify.fake_game_present
         && !verify.has_dispatch_hook
         && verify.broad_patch_count == 0
+        && !verify.observer_hook
+        && !verify.fake_in_running_games
+        && !verify.debug_game_present
 }
 
 pub fn cleanup_verify_from_json(parsed: &serde_json::Value) -> Option<CleanupVerify> {
@@ -335,6 +344,18 @@ pub fn cleanup_verify_from_json(parsed: &serde_json::Value) -> Option<CleanupVer
             .get("broadPatchCount")
             .and_then(|value| value.as_u64())
             .unwrap_or(0),
+        observer_hook: parsed
+            .get("observerHook")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false),
+        fake_in_running_games: parsed
+            .get("fakeInRunningGames")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false),
+        debug_game_present: parsed
+            .get("debugGamePresent")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false),
     })
 }
 
@@ -460,7 +481,7 @@ mod tests {
     }
 
     #[test]
-    fn merge_keeps_real_games_and_appends_fake() {
+    fn merge_keeps_native_entry_with_the_same_application_id() {
         let real = [
             RunningGameIdentity {
                 id: "other",
@@ -479,6 +500,22 @@ mod tests {
         assert_eq!(merged.len(), 2);
         assert_eq!(merged[0].id, "other");
         assert_eq!(merged[1].id, "stale");
+        assert_eq!(merged[1].pid, 22);
+    }
+
+    #[test]
+    fn merge_appends_fake_only_when_id_is_absent() {
+        let real = [RunningGameIdentity {
+            id: "other",
+            pid: 11,
+        }];
+        let fake = RunningGameIdentity {
+            id: "fresh",
+            pid: 99,
+        };
+        let merged = merge_running_games(&real, fake);
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged[1].id, "fresh");
         assert_eq!(merged[1].pid, 99);
     }
 
@@ -517,6 +554,7 @@ mod tests {
             "sku",
             "gameMetadata",
             "executableFingerprint",
+            "start",
         ] {
             assert!(RUNNING_GAME_SCHEMA_KEYS.contains(&key));
         }
@@ -546,10 +584,21 @@ mod tests {
             fake_game_present: false,
             has_dispatch_hook: false,
             broad_patch_count: 0,
+            observer_hook: false,
+            fake_in_running_games: false,
+            debug_game_present: false,
         };
         assert!(cleanup_verify_is_clean(&clean));
         assert!(!cleanup_verify_is_clean(&CleanupVerify {
             has_dispatch_hook: true,
+            ..clean.clone()
+        }));
+        assert!(!cleanup_verify_is_clean(&CleanupVerify {
+            observer_hook: true,
+            ..clean.clone()
+        }));
+        assert!(!cleanup_verify_is_clean(&CleanupVerify {
+            debug_game_present: true,
             ..clean.clone()
         }));
         assert!(cleanup_verify_from_json(&serde_json::json!({
@@ -558,7 +607,10 @@ mod tests {
             "spoofActive": false,
             "fakeGamePresent": false,
             "hasDispatchHook": false,
-            "broadPatchCount": 0
+            "broadPatchCount": 0,
+            "observerHook": false,
+            "fakeInRunningGames": false,
+            "debugGamePresent": false
         }))
         .is_some_and(|verify| cleanup_verify_is_clean(&verify)));
     }

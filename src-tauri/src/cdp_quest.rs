@@ -20,6 +20,7 @@ use crate::cdp_game_spoof::{
     SimulatedProcessHint,
 };
 use crate::models::PlayActivityHeartbeatStatus;
+use discord_cdp_launch_core::is_discord_auxiliary_page;
 
 const QUEST_HOME_URL: &str = "https://discord.com/quest-home";
 const QUEST_HOME_DETOUR_URL: &str = "https://discord.com/store";
@@ -28,6 +29,7 @@ const QUEST_WARMUP_DWELL_MS: u64 = 1500;
 const QUEST_WARMUP_RESTORE_SETTLE_MS: u64 = 800;
 const CDP_CLEANUP_ATTEMPTS: u32 = 5;
 const CDP_CLEANUP_CANCEL_ATTEMPTS: u32 = 1;
+const CDP_CLEANUP_VERIFY_TIMEOUT_SECS: u64 = 10;
 
 /// JavaScript: Initialize quest-related Discord webpack modules and store them in window.__dqh_cdp.
 ///
@@ -42,7 +44,7 @@ const CDP_CLEANUP_CANCEL_ATTEMPTS: u32 = 1;
 const JS_INIT_QUEST_MODULES: &str = r#"
 (async () => {
     try {
-        const DQH_INIT_VERSION = 6;
+        const DQH_INIT_VERSION = 7;
         if (window.__dqh_cdp && window.__dqh_cdp.initialized && window.__dqh_cdp._initVersion === DQH_INIT_VERSION) {
             return JSON.stringify({ success: true, cached: true });
         }
@@ -56,7 +58,9 @@ const JS_INIT_QUEST_MODULES: &str = r#"
             QuestsStore: null,
             FluxDispatcher: null,
             ApplicationStreamingStore: null,
-            api: null
+            api: null,
+            NativeUtils: null,
+            DetectableGameStore: null
         };
 
         // Phase 1: Scan all webpack modules for stores (prototype-based detection)
@@ -99,6 +103,19 @@ const JS_INIT_QUEST_MODULES: &str = r#"
                         // QuestsStore: __proto__ has getQuest
                         if (!modules.QuestsStore && val?.__proto__?.getQuest) {
                             modules.QuestsStore = val;
+                        }
+
+                        // Native utils wrapper used by RunningGameStore to register
+                        // setObservedGamesCallback. Unique vs i18n decoys because it
+                        // also exposes getDiscordUtils + setGameCandidateOverrides.
+                        if (!modules.NativeUtils && typeof val?.getDiscordUtils === "function" && typeof val?.setObservedGamesCallback === "function" && typeof val?.setGameCandidateOverrides === "function") {
+                            modules.NativeUtils = val;
+                        }
+
+                        // DetectableGameStore: getGameByExecutable distinguishes the
+                        // real module from i18n getDetectableGame decoys.
+                        if (!modules.DetectableGameStore && typeof val?.getDetectableGame === "function" && typeof val?.getGameByExecutable === "function" && typeof val?.findGame === "function") {
+                            modules.DetectableGameStore = val;
                         }
 
                         // Collect API candidates: any module with get + post functions
@@ -145,7 +162,7 @@ const JS_INIT_QUEST_MODULES: &str = r#"
 
         let missing = [];
         for (const [name, mod] of Object.entries(modules)) {
-            if (!mod) missing.push(name);
+            if (!mod && name !== "NativeUtils" && name !== "DetectableGameStore") missing.push(name);
         }
 
         if (missing.length > 0) {
@@ -161,6 +178,9 @@ const JS_INIT_QUEST_MODULES: &str = r#"
             _origGetRunningGames: modules.RunningGameStore.getRunningGames,
             _origGetGameForPID: modules.RunningGameStore.getGameForPID || null,
             _origGetVisibleRunningGames: modules.RunningGameStore.getVisibleRunningGames || null,
+            _origGetVisibleGame: modules.RunningGameStore.getVisibleGame || null,
+            _origGetCurrentGameForAnalytics: modules.RunningGameStore.getCurrentGameForAnalytics || null,
+            _origGetGameForName: modules.RunningGameStore.getGameForName || null,
             _origGetStreamerActiveStreamMetadata: modules.ApplicationStreamingStore.getStreamerActiveStreamMetadata
             },
             writable: true,
@@ -284,8 +304,9 @@ fn js_play_activity_status(quest_id: &str) -> String {
 
 /// Generate JS to spoof a running game in RunningGameStore.
 ///
-/// Merges the spoofed game into the real scanner list, then dispatches
-/// `RUNNING_GAMES_CHANGE` so Discord's heartbeat system picks it up.
+/// Always injects via the native observer callback (append, never prepend),
+/// then dispatches `RUNNING_GAMES_CHANGE` so Discord's own heartbeat system
+/// picks the synthetic game up. Does not wait for or reuse a native detection.
 fn js_spoof_play_game(app_id: &str, app_name: &str) -> String {
     js_spoof_play_game_for(
         app_id,
@@ -348,10 +369,39 @@ fn js_spoof_play_game_for(
                 .split("{{app_slug}}").join(appSlug(app))
                 .split("{{exe}}").join(exe);
         }}
+        function sameGame(game, fake) {{
+            if (!game || !fake) return false;
+            if (String(game.id) === String(fake.id)) return true;
+            return fake.pid != null && game.pid === fake.pid;
+        }}
         function mergeFake(games, fake) {{
-            const list = Array.isArray(games) ? games.filter(g => g && g.id !== fake.id && g.pid !== fake.pid) : [];
+            const list = Array.isArray(games) ? games.slice() : [];
+            if (!fake) return list;
+            if (list.some(g => sameGame(g, fake))) return list;
             list.push(fake);
             return list;
+        }}
+        function detectableGamesPayload() {{
+            const store = dqh.DetectableGameStore;
+            if (!store) return [];
+            let raw = store.games;
+            if (typeof raw === "function") {{
+                try {{ raw = store.games(); }} catch(e) {{ return []; }}
+            }}
+            if (raw && typeof raw.values === "function") return Array.from(raw.values());
+            if (Array.isArray(raw)) return raw;
+            if (raw && typeof raw === "object") return Object.values(raw);
+            return [];
+        }}
+        function reregisterObserver() {{
+            try {{
+                const games = detectableGamesPayload();
+                dqh._detectableGamesPayload = games;
+                if (games.length > 0 && dqh.FluxDispatcher) {{
+                    const pending = dqh.FluxDispatcher.dispatch({{ type: "GAMES_DATABASE_UPDATE", games }});
+                    if (pending && typeof pending.then === "function") pending.catch(() => {{}});
+                }}
+            }} catch(e) {{}}
         }}
 
         const applicationId = {safe_app_id};
@@ -390,30 +440,59 @@ fn js_spoof_play_game_for(
         }});
         const builtCmd = render(pathTemplates.cmdLine, sanitizeApp(applicationName), exeName);
         const builtPath = render(pathTemplates.exePath, sanitizeApp(applicationName), exeName);
-        const pid = hint && hint.pid ? hint.pid : Math.floor(Math.random() * 30000) + 1000;
+
+        let seenMatch = null;
+        try {{
+            const seen = typeof dqh.RunningGameStore.getGamesSeen === "function"
+                ? dqh.RunningGameStore.getGamesSeen(false)
+                : [];
+            if (Array.isArray(seen)) {{
+                seenMatch = seen.find(g => g && String(g.id) === String(applicationId)) || null;
+            }}
+        }} catch(e) {{}}
+
         const fakeGame = {{
             id: applicationId,
-            nativeProcessObserverId: pid,
             name: applicationName,
             origGameName: applicationName,
             processName: applicationName,
             hidden: false,
             elevated: false,
             sandboxed: false,
-            lastFocused: Date.now(),
-            exePath: hint && hint.exePath ? hint.exePath : builtPath,
+            lastFocused: 0,
+            start: Date.now(),
+            exePath: (hint && hint.exePath) || (seenMatch && seenMatch.exePath) || builtPath,
             exeName: exeName,
-            cmdLine: hint && hint.cmdLine ? hint.cmdLine : builtCmd,
-            pid: pid,
-            pidPath: [pid],
+            cmdLine: (hint && hint.cmdLine) || (seenMatch && seenMatch.cmdLine) || builtCmd,
             windowHandle: null,
             fullscreenType: null,
             isLauncher: false,
-            distributor: undefined,
-            sku: undefined,
+            distributor: seenMatch && seenMatch.distributor !== undefined ? seenMatch.distributor : undefined,
+            sku: seenMatch && seenMatch.sku !== undefined ? seenMatch.sku : undefined,
             gameMetadata: undefined,
             executableFingerprint: undefined
         }};
+        if (seenMatch && seenMatch.nativeProcessObserverId != null) {{
+            fakeGame.nativeProcessObserverId = seenMatch.nativeProcessObserverId;
+        }}
+        if (hint && hint.pid) {{
+            fakeGame.pid = hint.pid;
+            fakeGame.pidPath = [hint.pid];
+            try {{
+                const utils = dqh.NativeUtils && dqh.NativeUtils.getDiscordUtils && dqh.NativeUtils.getDiscordUtils();
+                if (utils && typeof utils.getWindowHandleFromPid === "function") {{
+                    const handle = utils.getWindowHandleFromPid(hint.pid);
+                    if (handle != null && handle !== "0") fakeGame.windowHandle = String(handle);
+                }}
+                if (utils && typeof utils.getWindowFullscreenTypeByPid === "function") {{
+                    const fullscreen = utils.getWindowFullscreenTypeByPid(hint.pid);
+                    if (fullscreen != null) fakeGame.fullscreenType = fullscreen;
+                }} else if (dqh.NativeUtils && typeof dqh.NativeUtils.GetWindowFullscreenTypeByPid === "function") {{
+                    const fullscreen = dqh.NativeUtils.GetWindowFullscreenTypeByPid(hint.pid);
+                    if (fullscreen != null) fakeGame.fullscreenType = fullscreen;
+                }}
+            }} catch(e) {{}}
+        }}
 
         let realGames = [];
         try {{ realGames = dqh._origGetRunningGames.call(dqh.RunningGameStore); }} catch(e) {{
@@ -421,8 +500,54 @@ fn js_spoof_play_game_for(
         }}
         if (!Array.isArray(realGames)) realGames = [];
 
-        dqh._fakeGame = fakeGame;
         dqh._spoofActive = true;
+        dqh._fakeGame = fakeGame;
+        dqh._fakeApplicationId = applicationId;
+
+        function subscribeHeartbeats() {{
+            dqh._lastProgress = 0;
+            dqh._completed = false;
+            dqh._heartbeatCount = 0;
+            dqh._lastHeartbeatRaw = null;
+            if (dqh._heartbeatFn && dqh.FluxDispatcher) {{
+                try {{ dqh.FluxDispatcher.unsubscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", dqh._heartbeatFn); }} catch(e) {{}}
+            }}
+            let heartbeatFn = data => {{
+                try {{
+                    dqh._heartbeatCount++;
+                    try {{ dqh._lastHeartbeatRaw = JSON.stringify(data).substring(0, 500); }} catch(e2) {{}}
+                    let progress = 0;
+                    if (data && data.userStatus) {{
+                        if (data.userStatus.progress) {{
+                            const vals = Object.values(data.userStatus.progress);
+                            if (vals.length > 0 && vals[0].value !== undefined) {{
+                                progress = Math.floor(vals[0].value);
+                            }}
+                        }} else if (data.userStatus.streamProgressSeconds !== undefined) {{
+                            progress = data.userStatus.streamProgressSeconds;
+                        }}
+                        dqh._completed = !!data.userStatus.completedAt;
+                    }}
+                    dqh._lastProgress = progress;
+                }} catch(e) {{}}
+            }};
+            dqh._heartbeatFn = heartbeatFn;
+            dqh.FluxDispatcher.subscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", heartbeatFn);
+
+            dqh._lastHeartbeatFailure = null;
+            if (dqh._heartbeatFailFn && dqh.FluxDispatcher) {{
+                try {{ dqh.FluxDispatcher.unsubscribe("QUESTS_SEND_HEARTBEAT_FAILURE", dqh._heartbeatFailFn); }} catch(e) {{}}
+            }}
+            let heartbeatFailFn = data => {{
+                try {{
+                    dqh._lastHeartbeatFailure = JSON.stringify(data).substring(0, 500);
+                }} catch(e) {{
+                    dqh._lastHeartbeatFailure = "failed to serialize";
+                }}
+            }};
+            dqh._heartbeatFailFn = heartbeatFailFn;
+            dqh.FluxDispatcher.subscribe("QUESTS_SEND_HEARTBEAT_FAILURE", heartbeatFailFn);
+        }}
 
         function patchedGetRunningGames() {{
             let games = [];
@@ -433,6 +558,24 @@ fn js_spoof_play_game_for(
         }}
         function patchedGetGameForPID(p) {{
             return patchedGetRunningGames().find(x => x.pid === p);
+        }}
+        function patchedGetGameForName(name) {{
+            const needle = String(name || "").toLowerCase();
+            return patchedGetRunningGames().find(x => x && String(x.name || "").toLowerCase() === needle) || null;
+        }}
+        function patchedGetVisibleGame() {{
+            if (dqh._spoofActive && dqh._fakeGame && !dqh._fakeGame.hidden) return dqh._fakeGame;
+            let visible = null;
+            try {{ visible = dqh._origGetVisibleGame && dqh._origGetVisibleGame.call(dqh.RunningGameStore); }} catch(e) {{}}
+            if (visible) return visible;
+            return patchedGetRunningGames().find(g => g && !g.hidden) || dqh._fakeGame || null;
+        }}
+        function patchedGetCurrentGameForAnalytics() {{
+            if (dqh._spoofActive && dqh._fakeGame) return dqh._fakeGame;
+            let current = null;
+            try {{ current = dqh._origGetCurrentGameForAnalytics && dqh._origGetCurrentGameForAnalytics.call(dqh.RunningGameStore); }} catch(e) {{}}
+            if (current) return current;
+            return patchedGetRunningGames()[0] || dqh._fakeGame || null;
         }}
         function patchVisibleAccessor(store, origVisible) {{
             if (typeof origVisible !== "function") return;
@@ -446,6 +589,9 @@ fn js_spoof_play_game_for(
         }}
         dqh.RunningGameStore.getRunningGames = patchedGetRunningGames;
         dqh.RunningGameStore.getGameForPID = patchedGetGameForPID;
+        if (typeof dqh._origGetGameForName === "function") dqh.RunningGameStore.getGameForName = patchedGetGameForName;
+        if (typeof dqh._origGetVisibleGame === "function") dqh.RunningGameStore.getVisibleGame = patchedGetVisibleGame;
+        if (typeof dqh._origGetCurrentGameForAnalytics === "function") dqh.RunningGameStore.getCurrentGameForAnalytics = patchedGetCurrentGameForAnalytics;
         patchVisibleAccessor(dqh.RunningGameStore, dqh._origGetVisibleRunningGames);
 
         let patchCount = 1;
@@ -480,6 +626,21 @@ fn js_spoof_play_game_for(
         }} catch(e) {{}}
         dqh._broadPatched = broadPatched;
 
+        let wrappedObserver = false;
+        if (dqh.NativeUtils && typeof dqh.NativeUtils.setObservedGamesCallback === "function" && !dqh._origSetObservedGamesCallback) {{
+            const origObserved = dqh.NativeUtils.setObservedGamesCallback.bind(dqh.NativeUtils);
+            dqh._origSetObservedGamesCallback = origObserved;
+            dqh.NativeUtils.setObservedGamesCallback = function(config, flag, cb, userId) {{
+                const wrappedCb = function(games) {{
+                    if (!dqh._spoofActive || !dqh._fakeGame) return cb(games);
+                    return cb(mergeFake(games, dqh._fakeGame));
+                }};
+                return origObserved(config, flag, wrappedCb, userId);
+            }};
+            wrappedObserver = true;
+            reregisterObserver();
+        }}
+
         dqh._dispatchInterceptCount = 0;
         if (!dqh._origDispatch) {{
             const origDispatch = dqh.FluxDispatcher.dispatch.bind(dqh.FluxDispatcher);
@@ -487,13 +648,16 @@ fn js_spoof_play_game_for(
             dqh.FluxDispatcher.dispatch = function(event) {{
                 if (event && event.type === "RUNNING_GAMES_CHANGE" && dqh._fakeGame && dqh._spoofActive) {{
                     const before = Array.isArray(event.games) ? event.games.length : 0;
+                    const already = Array.isArray(event.games) && event.games.some(g => sameGame(g, dqh._fakeGame));
                     event.games = mergeFake(event.games, dqh._fakeGame);
-                    if (!event.added) event.added = [];
-                    if (!event.added.some(g => g && (g.id === dqh._fakeGame.id || g.pid === dqh._fakeGame.pid))) {{
-                        event.added.push(dqh._fakeGame);
+                    if (!already) {{
+                        if (!event.added) event.added = [];
+                        if (!event.added.some(g => sameGame(g, dqh._fakeGame))) {{
+                            event.added.push(dqh._fakeGame);
+                        }}
                     }}
                     if (event.removed) {{
-                        event.removed = event.removed.filter(g => g && g.id !== dqh._fakeGame.id && g.pid !== dqh._fakeGame.pid);
+                        event.removed = event.removed.filter(g => !sameGame(g, dqh._fakeGame));
                     }}
                     if (event.games.length !== before) dqh._dispatchInterceptCount++;
                 }}
@@ -502,46 +666,10 @@ fn js_spoof_play_game_for(
         }}
 
         const mergedGames = mergeFake(realGames, fakeGame);
+        subscribeHeartbeats();
         dqh.FluxDispatcher.dispatch({{ type: "RUNNING_GAMES_CHANGE", removed: [], added: [fakeGame], games: mergedGames }});
 
-        dqh._lastProgress = 0;
-        dqh._completed = false;
-        dqh._heartbeatCount = 0;
-        dqh._lastHeartbeatRaw = null;
-        let heartbeatFn = data => {{
-            try {{
-                dqh._heartbeatCount++;
-                try {{ dqh._lastHeartbeatRaw = JSON.stringify(data).substring(0, 500); }} catch(e2) {{}}
-                let progress = 0;
-                if (data && data.userStatus) {{
-                    if (data.userStatus.progress) {{
-                        const vals = Object.values(data.userStatus.progress);
-                        if (vals.length > 0 && vals[0].value !== undefined) {{
-                            progress = Math.floor(vals[0].value);
-                        }}
-                    }} else if (data.userStatus.streamProgressSeconds !== undefined) {{
-                        progress = data.userStatus.streamProgressSeconds;
-                    }}
-                    dqh._completed = !!data.userStatus.completedAt;
-                }}
-                dqh._lastProgress = progress;
-            }} catch(e) {{}}
-        }};
-        dqh._heartbeatFn = heartbeatFn;
-        dqh.FluxDispatcher.subscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", heartbeatFn);
-
-        dqh._lastHeartbeatFailure = null;
-        let heartbeatFailFn = data => {{
-            try {{
-                dqh._lastHeartbeatFailure = JSON.stringify(data).substring(0, 500);
-            }} catch(e) {{
-                dqh._lastHeartbeatFailure = "failed to serialize";
-            }}
-        }};
-        dqh._heartbeatFailFn = heartbeatFailFn;
-        dqh.FluxDispatcher.subscribe("QUESTS_SEND_HEARTBEAT_FAILURE", heartbeatFailFn);
-
-        return JSON.stringify({{ success: true, pid: pid, patchCount: patchCount, exeName: exeName, allExeNames: allExeNames, appDataName: appDataDebug, realGamesCount: realGames.length, mergedCount: mergedGames.length, hostOs: hostOs, selectedOs: selectedOs, usedHint: !!hint }});
+        return JSON.stringify({{ success: true, wrappedObserver, pid: fakeGame.pid || null, patchCount: patchCount, exeName: exeName, allExeNames: allExeNames, appDataName: appDataDebug, realGamesCount: realGames.length, mergedCount: mergedGames.length, hostOs: hostOs, selectedOs: selectedOs, usedHint: !!hint }});
     }} catch (e) {{
         return JSON.stringify({{ success: false, error: String(e) }});
     }}
@@ -877,7 +1005,7 @@ fn js_query_progress(quest_id: &str) -> String {
 /// the historical `__dqh_cdp` name. The historical name is split so
 /// `with_bridge` cannot rewrite the lookup.
 const JS_CLEANUP_SPOOF: &str = r#"
-(() => {
+(async () => {
     try {
         const historical = "__" + "dqh_cdp";
         const names = Object.getOwnPropertyNames(window).filter(k =>
@@ -889,11 +1017,28 @@ const JS_CLEANUP_SPOOF: &str = r#"
                 || obj._spoofActive === true
                 || obj._fakeGame
                 || obj._origDispatch
+                || obj._origSetObservedGamesCallback
                 || (obj.initialized === true && obj.RunningGameStore)
             ));
         }
-        function cleanupOne(dqh, name) {
+        function detectableGamesPayload(dqh) {
+            if (Array.isArray(dqh._detectableGamesPayload) && dqh._detectableGamesPayload.length) {
+                return dqh._detectableGamesPayload;
+            }
+            const store = dqh.DetectableGameStore;
+            if (!store) return [];
+            let raw = store.games;
+            if (typeof raw === "function") {
+                try { raw = store.games(); } catch(e) { return []; }
+            }
+            if (raw && typeof raw.values === "function") return Array.from(raw.values());
+            if (Array.isArray(raw)) return raw;
+            if (raw && typeof raw === "object") return Object.values(raw);
+            return [];
+        }
+        async function cleanupOne(dqh, name) {
             dqh._spoofActive = false;
+            let awaitedObserverRefresh = false;
 
             if (dqh._origDispatch && dqh.FluxDispatcher) {
                 dqh.FluxDispatcher.dispatch = dqh._origDispatch;
@@ -916,6 +1061,15 @@ const JS_CLEANUP_SPOOF: &str = r#"
                 if (typeof dqh._origGetVisibleRunningGames === "function") {
                     dqh.RunningGameStore.getVisibleRunningGames = dqh._origGetVisibleRunningGames;
                 }
+                if (typeof dqh._origGetVisibleGame === "function") {
+                    dqh.RunningGameStore.getVisibleGame = dqh._origGetVisibleGame;
+                }
+                if (typeof dqh._origGetCurrentGameForAnalytics === "function") {
+                    dqh.RunningGameStore.getCurrentGameForAnalytics = dqh._origGetCurrentGameForAnalytics;
+                }
+                if (typeof dqh._origGetGameForName === "function") {
+                    dqh.RunningGameStore.getGameForName = dqh._origGetGameForName;
+                }
             }
             if (dqh._origGetStreamerActiveStreamMetadata && dqh.ApplicationStreamingStore) {
                 dqh.ApplicationStreamingStore.getStreamerActiveStreamMetadata = dqh._origGetStreamerActiveStreamMetadata;
@@ -929,6 +1083,19 @@ const JS_CLEANUP_SPOOF: &str = r#"
                         if (patch.origVisibleFn) patch.val.getVisibleRunningGames = patch.origVisibleFn;
                     } catch(e) {}
                 }
+            }
+
+            if (dqh._origSetObservedGamesCallback && dqh.NativeUtils) {
+                dqh.NativeUtils.setObservedGamesCallback = dqh._origSetObservedGamesCallback;
+                delete dqh._origSetObservedGamesCallback;
+                try {
+                    const games = detectableGamesPayload(dqh);
+                    if (games.length > 0 && dqh.FluxDispatcher) {
+                        const pending = dqh.FluxDispatcher.dispatch({ type: "GAMES_DATABASE_UPDATE", games });
+                        if (pending && typeof pending.then === "function") await pending.catch(() => {});
+                    }
+                } catch(e) {}
+                awaitedObserverRefresh = true;
             }
 
             if (dqh.FluxDispatcher && dqh._heartbeatFn) {
@@ -948,7 +1115,17 @@ const JS_CLEANUP_SPOOF: &str = r#"
             }
             if (!Array.isArray(remaining)) remaining = [];
             if (dqh._fakeGame) {
-                remaining = remaining.filter(g => g && g.id !== dqh._fakeGame.id && g.pid !== dqh._fakeGame.pid);
+                remaining = remaining.filter(game => {
+                    if (!game) return true;
+                    if (game === dqh._fakeGame) return false;
+                    const sameId = String(game.id) === String(dqh._fakeGame.id);
+                    const samePid = dqh._fakeGame.pid != null && game.pid === dqh._fakeGame.pid;
+                    if (samePid) return false;
+                    // Same application with no pid is the injected row. A genuine
+                    // native detection of that application keeps a real pid.
+                    if (sameId && (game.pid == null || game.pid === undefined)) return false;
+                    return true;
+                });
             }
             if (dqh.FluxDispatcher && dqh._fakeGame) {
                 dqh.FluxDispatcher.dispatch({ type: "RUNNING_GAMES_CHANGE", removed: [dqh._fakeGame], added: [], games: remaining });
@@ -959,14 +1136,19 @@ const JS_CLEANUP_SPOOF: &str = r#"
             } catch (e) {
                 try { window[name] = undefined; } catch (e2) {}
             }
+            return awaitedObserverRefresh;
         }
 
         let cleaned = 0;
+        let needsObserverSettle = false;
         for (const name of names) {
             const dqh = window[name];
             if (!isDqhBridge(dqh)) continue;
-            cleanupOne(dqh, name);
+            needsObserverSettle = (await cleanupOne(dqh, name)) || needsObserverSettle;
             cleaned++;
+        }
+        if (needsObserverSettle) {
+            await new Promise(resolve => setTimeout(resolve, 3000));
         }
         return JSON.stringify({ success: true, cleaned });
     } catch (e) {
@@ -989,6 +1171,7 @@ const JS_VERIFY_CLEANUP_STATE: &str = r#"
                 || obj._spoofActive === true
                 || obj._fakeGame
                 || obj._origDispatch
+                || obj._origSetObservedGamesCallback
                 || (obj.initialized === true && obj.RunningGameStore)
             ));
         }
@@ -997,6 +1180,8 @@ const JS_VERIFY_CLEANUP_STATE: &str = r#"
         let fakeGamePresent = false;
         let hasDispatchHook = false;
         let broadPatchCount = 0;
+        let observerHook = false;
+        let fakeApplicationId = null;
         for (const name of names) {
             const dqh = window[name];
             if (!isDqhBridge(dqh)) continue;
@@ -1004,15 +1189,67 @@ const JS_VERIFY_CLEANUP_STATE: &str = r#"
             spoofActive = spoofActive || !!dqh._spoofActive;
             fakeGamePresent = fakeGamePresent || !!dqh._fakeGame;
             hasDispatchHook = hasDispatchHook || !!dqh._origDispatch;
+            observerHook = observerHook || !!dqh._origSetObservedGamesCallback;
             broadPatchCount += Array.isArray(dqh._broadPatched) ? dqh._broadPatched.length : 0;
+            if (!fakeApplicationId) fakeApplicationId = dqh._fakeApplicationId || (dqh._fakeGame && dqh._fakeGame.id) || null;
         }
+        let fakeInRunningGames = false;
+        let debugGamePresent = false;
+        try {
+            const webpackRequire = webpackChunkdiscord_app.push([[Symbol()], {}, r => r]);
+            webpackChunkdiscord_app.pop();
+            let store = null;
+            let nativeUtils = null;
+            for (const mod of Object.values(webpackRequire.c || {})) {
+                try {
+                    const exp = mod && mod.exports;
+                    if (!exp) continue;
+                    for (const key of Object.keys(exp)) {
+                        try {
+                            const val = exp[key];
+                            if (!val) continue;
+                            if (!store && typeof val.getRunningGames === "function") {
+                                try {
+                                    const games = val.getRunningGames();
+                                    if (Array.isArray(games)) store = val;
+                                } catch(e) {}
+                            }
+                            if (!nativeUtils && typeof val.getDiscordUtils === "function" && typeof val.setObservedGamesCallback === "function" && typeof val.setGameCandidateOverrides === "function") {
+                                nativeUtils = val;
+                            }
+                        } catch(e) {}
+                    }
+                } catch(e) {}
+                if (store && nativeUtils) break;
+            }
+            if (store) {
+                try {
+                    const debugGame = store.getDebugRunningGame?.();
+                    debugGamePresent = !!(
+                        fakeApplicationId
+                        && debugGame
+                        && String(debugGame.id) === String(fakeApplicationId)
+                    );
+                    const games = store.getRunningGames() || [];
+                    if (fakeApplicationId) {
+                        fakeInRunningGames = games.some(g => g && String(g.id) === String(fakeApplicationId));
+                    }
+                } catch(e) {}
+            }
+            if (nativeUtils && nativeUtils.setObservedGamesCallback && nativeUtils.setObservedGamesCallback.toString && nativeUtils.setObservedGamesCallback.toString().includes("wrappedCb")) {
+                observerHook = true;
+            }
+        } catch(e) {}
         return JSON.stringify({
             success: true,
             dqhPresent,
             spoofActive,
             fakeGamePresent,
             hasDispatchHook,
-            broadPatchCount
+            broadPatchCount,
+            observerHook,
+            fakeInRunningGames,
+            debugGamePresent
         });
     } catch (e) {
         return JSON.stringify({ success: false, error: String(e) });
@@ -1673,7 +1910,7 @@ async fn cdp_cleanup_with_attempts(port: u16, max_attempts: u32) -> Result<()> {
     for attempt in 1..=max_attempts {
         let mut cleanup_success_count = 0usize;
 
-        match cdp_client::execute_js_via_all_discord_targets(port, &cleanup_js, false, 5).await {
+        match cdp_client::execute_js_via_all_discord_targets(port, &cleanup_js, true, 15).await {
             Ok(results) => {
                 let mut error_count = 0usize;
 
@@ -1737,13 +1974,33 @@ async fn cdp_cleanup_with_attempts(port: u16, max_attempts: u32) -> Result<()> {
             }
         }
 
-        match cdp_client::execute_js_via_all_discord_targets(port, &verify_js, false, 5).await {
+        match cdp_client::execute_js_via_all_discord_targets(
+            port,
+            &verify_js,
+            false,
+            CDP_CLEANUP_VERIFY_TIMEOUT_SECS,
+        )
+        .await
+        {
             Ok(results) => {
                 let mut verify_checked = 0usize;
                 let mut verify_dirty = 0usize;
                 let mut verify_errors = 0usize;
 
                 for item in results {
+                    if is_discord_auxiliary_page(&item.target_title, &item.target_url) {
+                        log(
+                            LogLevel::Debug,
+                            LogCategory::TokenExtraction,
+                            &format!(
+                                "CDP cleanup skipping overlay/popout verify (attempt {}): target='{}' url='{}'",
+                                attempt, item.target_title, item.target_url
+                            ),
+                            None,
+                        );
+                        continue;
+                    }
+
                     if let Some(err) = item.error {
                         verify_errors += 1;
                         log(LogLevel::Warn, LogCategory::TokenExtraction,
@@ -1775,7 +2032,7 @@ async fn cdp_cleanup_with_attempts(port: u16, max_attempts: u32) -> Result<()> {
                         verify_dirty += 1;
                         log(LogLevel::Warn, LogCategory::TokenExtraction,
                             &format!(
-                                "CDP cleanup verify found residual state (attempt {}): target='{}' url='{}' dqhPresent={} spoofActive={} fakeGamePresent={} hasDispatchHook={} broadPatchCount={}",
+                                "CDP cleanup verify found residual state (attempt {}): target='{}' url='{}' dqhPresent={} spoofActive={} fakeGamePresent={} hasDispatchHook={} broadPatchCount={} observerHook={} fakeInRunningGames={} debugGamePresent={}",
                                 attempt,
                                 item.target_title,
                                 item.target_url,
@@ -1783,7 +2040,10 @@ async fn cdp_cleanup_with_attempts(port: u16, max_attempts: u32) -> Result<()> {
                                 verify.spoof_active,
                                 verify.fake_game_present,
                                 verify.has_dispatch_hook,
-                                verify.broad_patch_count
+                                verify.broad_patch_count,
+                                verify.observer_hook,
+                                verify.fake_in_running_games,
+                                verify.debug_game_present
                             ),
                             None,
                         );
@@ -3769,13 +4029,92 @@ mod tests {
             "sku",
             "gameMetadata",
             "executableFingerprint",
+            "start",
+            "setObservedGamesCallback",
+            "GAMES_DATABASE_UPDATE",
         ] {
             assert!(js.contains(field), "missing live scanner field {field}");
         }
+        assert!(js.contains("lastFocused: 0") || js.contains("lastFocused:0"));
+        assert!(js.contains("start: Date.now()"));
+        assert!(js.contains("seenMatch.nativeProcessObserverId"));
+        assert!(js.contains("wrappedCb"));
+        assert!(!js.contains("nativeProcessObserverId: pid"));
+        assert!(!js.contains("Math.floor(Math.random() * 30000)"));
         assert!(js.contains("if (!Array.isArray(sample)) continue"));
         assert!(js.contains("patchVisibleAccessor"));
+        assert!(js.contains("patchedGetVisibleGame"));
+        assert!(js.contains("patchedGetCurrentGameForAnalytics"));
         assert!(js.contains(r#"split("{app}")"#));
         assert!(!js.contains(r#"split("{{app}}")"#));
+    }
+
+    #[test]
+    fn play_spoof_js_appends_synthetic_game_instead_of_replacing() {
+        let js = js_spoof_play_game_for("123", "Cool Game", DetectableOs::Win32, Vec::new());
+        assert!(js.contains("if (list.some(g => sameGame(g, fake))) return list"));
+        assert!(!js.contains("reuseNativeAndReturn"));
+        assert!(!js.contains("notifyGameLaunched"));
+        assert!(!js.contains("nativeAlreadyPresent"));
+        assert!(!js.contains("RUNNING_GAME_SET_DEBUG_GAME"));
+        assert!(js.contains(
+            "if (dqh._spoofActive && dqh._fakeGame && !dqh._fakeGame.hidden) return dqh._fakeGame"
+        ));
+        assert!(js.contains("if (dqh._spoofActive && dqh._fakeGame) return dqh._fakeGame"));
+        assert!(js.contains("if (visible) return visible"));
+        assert!(js.contains("const already = Array.isArray(event.games)"));
+        assert!(js.contains("wrappedCb"));
+        let subscribe_call = js
+            .rfind("subscribeHeartbeats();")
+            .expect("heartbeat subscription should be invoked");
+        let running_games_dispatch = js
+            .find(r#"type: "RUNNING_GAMES_CHANGE", removed: [], added: [fakeGame]"#)
+            .expect("spoof should dispatch RUNNING_GAMES_CHANGE");
+        assert!(
+            subscribe_call < running_games_dispatch,
+            "heartbeat listeners must be attached before RUNNING_GAMES_CHANGE"
+        );
+    }
+
+    #[test]
+    fn play_spoof_js_embeds_real_process_hints() {
+        let js = js_spoof_play_game_for(
+            "123",
+            "Cool Game",
+            DetectableOs::Win32,
+            vec![SimulatedProcessHint {
+                pid: 4242,
+                exe_name: "Cool Game.exe".into(),
+                exe_path: r"C:\Games\Cool Game.exe".into(),
+                cmd_line: r#""C:\Games\Cool Game.exe""#.into(),
+            }],
+        );
+        assert!(js.contains("4242"));
+        assert!(js.contains(r"C:\\Games\\Cool Game.exe") || js.contains(r"C:\Games\Cool Game.exe"));
+        assert!(js.contains("fakeGame.pid = hint.pid"));
+        assert!(js.contains("getWindowHandleFromPid"));
+        assert!(!js.contains("nativeProcessObserverId: pid"));
+    }
+
+    #[test]
+    fn overlay_and_popout_are_skipped_during_cleanup_verify() {
+        assert!(is_discord_auxiliary_page(
+            "Discord Overlay",
+            "https://discord.com/popout"
+        ));
+        assert!(is_discord_auxiliary_page(
+            "Friends",
+            "https://discord.com/popout"
+        ));
+        assert!(!is_discord_auxiliary_page(
+            "Friends",
+            "https://discord.com/channels/@me"
+        ));
+        assert!(JS_VERIFY_CLEANUP_STATE.contains("debugGamePresent"));
+        assert!(JS_VERIFY_CLEANUP_STATE.contains("getDebugRunningGame"));
+        assert!(
+            JS_VERIFY_CLEANUP_STATE.contains("String(debugGame.id) === String(fakeApplicationId)")
+        );
     }
 
     #[test]
@@ -3849,8 +4188,136 @@ mod tests {
     fn cleanup_js_restores_real_games_instead_of_empty_list() {
         assert!(JS_CLEANUP_SPOOF.contains("games: remaining"));
         assert!(!JS_CLEANUP_SPOOF.contains("games: []"));
+        assert!(JS_CLEANUP_SPOOF.contains("remaining = remaining.filter"));
+        assert!(!JS_CLEANUP_SPOOF.contains("remaining.splice"));
+        assert!(JS_CLEANUP_SPOOF.contains("sameId && (game.pid == null || game.pid === undefined)"));
+        assert!(JS_CLEANUP_SPOOF.contains("needsObserverSettle"));
         assert!(JS_CLEANUP_SPOOF.contains(r#"__" + "dqh_cdp""#));
         assert!(JS_CLEANUP_SPOOF.contains("^__n[0-9a-f]{10}$"));
+        assert!(JS_CLEANUP_SPOOF.contains("_origSetObservedGamesCallback"));
+        assert!(JS_CLEANUP_SPOOF.contains("GAMES_DATABASE_UPDATE"));
         assert!(JS_VERIFY_CLEANUP_STATE.contains("^__n[0-9a-f]{10}$"));
+        assert!(JS_VERIFY_CLEANUP_STATE.contains("observerHook"));
+        assert!(JS_VERIFY_CLEANUP_STATE.contains("fakeInRunningGames"));
+        assert!(JS_VERIFY_CLEANUP_STATE.contains("debugGamePresent"));
+        assert!(JS_VERIFY_CLEANUP_STATE
+            .contains("try {\n                            const val = exp[key];"));
+        assert!(JS_INIT_QUEST_MODULES.contains("NativeUtils"));
+        assert!(JS_INIT_QUEST_MODULES.contains("DetectableGameStore"));
+        assert!(JS_INIT_QUEST_MODULES.contains("const DQH_INIT_VERSION = 7"));
+    }
+
+    fn snapshot_game_by_id<'a>(
+        snapshot: &'a crate::cdp_client::CdpRunningGamesSnapshot,
+        app_id: &str,
+    ) -> Option<&'a serde_json::Value> {
+        snapshot.games.iter().find(|game| game_id_is(game, app_id))
+    }
+
+    fn game_id_is(game: &serde_json::Value, app_id: &str) -> bool {
+        match game.get("id") {
+            Some(serde_json::Value::String(value)) => value == app_id,
+            Some(serde_json::Value::Number(value)) => value.to_string() == app_id,
+            _ => false,
+        }
+    }
+
+    fn json_id(value: Option<&serde_json::Value>) -> Option<String> {
+        value.and_then(|game| match game.get("id") {
+            Some(serde_json::Value::String(id)) => Some(id.clone()),
+            Some(serde_json::Value::Number(id)) => Some(id.to_string()),
+            _ => None,
+        })
+    }
+
+    #[tokio::test]
+    #[ignore = "requires a live Discord CDP session on the default debugging port"]
+    async fn live_cdp_running_game_spoof_ab() {
+        let port = crate::cdp_client::DEFAULT_CDP_PORT;
+        let before = crate::cdp_client::fetch_running_games_via_cdp(port)
+            .await
+            .expect("Discord CDP snapshot should be reachable");
+        assert!(before.store_found, "RunningGameStore should be loaded");
+
+        let app_id = "1158877933042143272".to_string();
+        let app_name = "Counter-Strike 2".to_string();
+
+        let init = cdp_init_modules(port).await;
+        if init.is_err() {
+            let _ = cdp_cleanup_with_attempts(port, CDP_CLEANUP_ATTEMPTS).await;
+        }
+        init.expect("quest module init should succeed on the main renderer");
+
+        let spoof_js = with_bridge(&js_spoof_play_game(&app_id, &app_name));
+        let spoof_raw =
+            crate::cdp_client::execute_js_via_primary_discord_target(port, &spoof_js, true, 30)
+                .await;
+        let during = crate::cdp_client::fetch_running_games_via_cdp(port).await;
+        let cleanup = cdp_cleanup_with_attempts(port, CDP_CLEANUP_ATTEMPTS).await;
+        let after = crate::cdp_client::fetch_running_games_via_cdp(port).await;
+
+        let spoof_raw = spoof_raw.expect("spoof JS should execute");
+        let spoof_parsed: serde_json::Value =
+            serde_json::from_str(&spoof_raw).expect("spoof JS should return JSON");
+        assert_eq!(
+            spoof_parsed.get("success"),
+            Some(&serde_json::json!(true)),
+            "spoof failed: {spoof_raw}"
+        );
+        assert_eq!(
+            spoof_parsed.get("wrappedObserver"),
+            Some(&serde_json::json!(true)),
+            "spoof should wrap setObservedGamesCallback: {spoof_raw}"
+        );
+        cleanup.expect("cleanup should succeed even if Overlay/popout targets exist");
+
+        let during = during.expect("snapshot during spoof");
+        let after = after.expect("snapshot after cleanup");
+        assert_eq!(json_id(during.games.first()), Some(app_id.clone()));
+        assert_eq!(json_id(during.visible_game.as_ref()), Some(app_id.clone()));
+        assert_eq!(
+            json_id(during.analytics_game.as_ref()),
+            Some(app_id.clone())
+        );
+        let spoofed = snapshot_game_by_id(&during, &app_id).expect("spoofed game");
+        assert_eq!(spoofed.get("lastFocused"), Some(&serde_json::json!(0)));
+        assert!(spoofed
+            .get("start")
+            .and_then(|value| value.as_u64())
+            .is_some());
+        let pid = spoofed.get("pid");
+        assert!(
+            pid.is_none()
+                || pid == Some(&serde_json::Value::Null)
+                || pid == Some(&serde_json::json!("<undefined>")),
+            "spoof must not invent a pid"
+        );
+        assert!(
+            snapshot_game_by_id(&after, &app_id).is_none(),
+            "cleanup must remove the synthetic running game"
+        );
+
+        let verify_raw = crate::cdp_client::execute_js_via_primary_discord_target(
+            port,
+            &with_bridge(JS_VERIFY_CLEANUP_STATE),
+            false,
+            CDP_CLEANUP_VERIFY_TIMEOUT_SECS,
+        )
+        .await;
+        let verify_raw = verify_raw.expect("cleanup verify should execute");
+        let verify_parsed: serde_json::Value =
+            serde_json::from_str(&verify_raw).expect("cleanup verify should return JSON");
+        let verify =
+            cleanup_verify_from_json(&verify_parsed).expect("cleanup verify should report success");
+        assert!(
+            cleanup_verify_is_clean(&verify),
+            "main renderer still dirty after cleanup: {verify_raw}"
+        );
+        assert!(
+            after.debug_game.is_none()
+                || after.debug_game == Some(serde_json::Value::Null)
+                || after.debug_game == Some(serde_json::json!("<undefined>")),
+            "getDebugRunningGame must stay unset"
+        );
     }
 }

@@ -6,7 +6,10 @@ mod model;
 mod platform;
 mod processes;
 
-pub use cdp::{is_discord_target, pick_discord_target, probe_cdp, CdpProbe, StdCdpProbe};
+pub use cdp::{
+    is_discord_auxiliary_page, is_discord_auxiliary_window, is_discord_target, pick_discord_target,
+    probe_cdp, CdpProbe, StdCdpProbe,
+};
 pub use channel::{parse_discord_channel, DiscordChannel};
 pub use error::LaunchError;
 pub use launcher::{

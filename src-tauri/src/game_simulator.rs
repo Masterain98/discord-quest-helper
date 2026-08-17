@@ -580,6 +580,8 @@ fn untrack_running_game(executable_name: &str) {
 }
 
 /// Snapshot of simulated-game processes that CDP spoof can reuse as a real PID/path.
+/// Linux tracks exact child PIDs; Windows/macOS launch via `cmd /C start` / `open`
+/// and do not keep a pid, so they return no hints.
 pub fn simulated_process_hints() -> Vec<crate::cdp_game_spoof::SimulatedProcessHint> {
     #[cfg(target_os = "linux")]
     {
