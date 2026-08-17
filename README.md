@@ -20,8 +20,9 @@ Complete Discord video, stream, and game quests automatically while you focus on
 [![GitHub Release](https://img.shields.io/github/v/release/Masterain98/discord-quest-helper?label=latest%20release&color=41b883)](https://github.com/Masterain98/discord-quest-helper/releases/latest)
 
 <p align="center">
-  <img src="public/certificated-ai-sloop.png" alt="Certificated AI Slop" width="480">
+  <img src="public/certificated-ai-sloop-tiny.png" alt="Certificated AI Slop" width="480">
 </p>
+
 
 </div>
 
