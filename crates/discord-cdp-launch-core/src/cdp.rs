@@ -245,6 +245,36 @@ fn parse_http_response(response: &[u8]) -> CdpProbeStatus {
     }
 }
 
+fn target_from_value(value: &Value) -> Option<CdpTarget> {
+    let object = value.as_object()?;
+    Some(CdpTarget {
+        id: object
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        target_type: object
+            .get("type")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        title: object
+            .get("title")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        url: object
+            .get("url")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        web_socket_debugger_url: object
+            .get("webSocketDebuggerUrl")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -318,34 +348,4 @@ mod tests {
             "https://discord.com/channels/@me"
         ));
     }
-}
-
-fn target_from_value(value: &Value) -> Option<CdpTarget> {
-    let object = value.as_object()?;
-    Some(CdpTarget {
-        id: object
-            .get("id")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string(),
-        target_type: object
-            .get("type")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string(),
-        title: object
-            .get("title")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string(),
-        url: object
-            .get("url")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string(),
-        web_socket_debugger_url: object
-            .get("webSocketDebuggerUrl")
-            .and_then(Value::as_str)
-            .map(str::to_string),
-    })
 }
