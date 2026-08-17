@@ -340,24 +340,6 @@ const JS_READ_RUNNING_GAMES: &str = r###"
     return String(value);
   };
 
-  const findStore = (value, path, seen, depth) => {
-    if (!value || (typeof value !== "object" && typeof value !== "function") || depth > 4 || seen.has(value)) {
-      return null;
-    }
-    seen.add(value);
-    try {
-      if (typeof value.getRunningGames === "function") return { value, path };
-      for (const key of Object.getOwnPropertyNames(value).slice(0, 300)) {
-        if (key === "caller" || key === "callee" || key === "arguments") continue;
-        let child;
-        try { child = value[key]; } catch (_) { continue; }
-        const found = findStore(child, path + "." + key, seen, depth + 1);
-        if (found) return found;
-      }
-    } catch (_) {}
-    return null;
-  };
-
   try {
     const native = window.DiscordNative && window.DiscordNative.nativeModules;
     if (native && typeof native.requireModule === "function") {
@@ -383,35 +365,47 @@ const JS_READ_RUNNING_GAMES: &str = r###"
     if (!chunk) {
       result.errors.push("webpackChunkdiscord_app is unavailable");
     } else {
-      let webpackRequire;
-      chunk.push([[Symbol("dqh-running-games")], {}, runtimeRequire => { webpackRequire = runtimeRequire; }]);
+      // Discord's webpack jsonp hook calls the runtime callback with a secondary
+      // require whose module cache is tiny and does not contain Flux stores.
+      // The push() return value of `r => r` is the real __webpack_require__.
+      const webpackRequire = chunk.push([[Symbol()], {}, r => r]);
       chunk.pop();
-      const seen = new WeakSet();
-      for (const [moduleId, moduleValue] of Object.entries(webpackRequire?.c || {})) {
-        const found = findStore(moduleValue?.exports, "module[" + moduleId + "].exports", seen, 0);
-        if (found) {
-          result.store_found = true;
-          result.store_path = found.path;
-          const store = found.value;
-          try {
-            const rawGames = serialize(store.getRunningGames());
-            if (Array.isArray(rawGames)) result.games = rawGames;
-            else result.errors.push("getRunningGames returned a non-array value");
-          }
-          catch (error) { result.errors.push("getRunningGames: " + String(error)); }
-          try {
-            if (typeof store.getVisibleRunningGames === "function") {
-              const rawVisibleGames = serialize(store.getVisibleRunningGames());
-              if (Array.isArray(rawVisibleGames)) result.visible_games = rawVisibleGames;
-              else result.errors.push("getVisibleRunningGames returned a non-array value");
+      const cache = webpackRequire && webpackRequire.c;
+      if (!cache) {
+        result.errors.push("webpack require cache is unavailable");
+      } else {
+        for (const [moduleId, moduleValue] of Object.entries(cache)) {
+          const exp = moduleValue && moduleValue.exports;
+          if (!exp) continue;
+          let found = false;
+          for (const key of Object.keys(exp)) {
+            let store;
+            try { store = exp[key]; } catch (_) { continue; }
+            // i18n modules also export getRunningGames, but they return
+            // {locale, ast} instead of an Array.
+            if (typeof store?.getRunningGames !== "function") continue;
+            let games;
+            try { games = store.getRunningGames(); } catch (_) { continue; }
+            if (!Array.isArray(games)) continue;
+            result.store_found = true;
+            result.store_path = "module[" + moduleId + "].exports." + key;
+            result.games = serialize(games);
+            try {
+              if (typeof store.getVisibleRunningGames === "function") {
+                const rawVisibleGames = serialize(store.getVisibleRunningGames());
+                if (Array.isArray(rawVisibleGames)) result.visible_games = rawVisibleGames;
+                else result.errors.push("getVisibleRunningGames returned a non-array value");
+              }
+            } catch (error) {
+              result.errors.push("getVisibleRunningGames: " + String(error));
             }
-          } catch (error) {
-            result.errors.push("getVisibleRunningGames: " + String(error));
+            found = true;
+            break;
           }
-          break;
+          if (found) break;
         }
+        if (!result.store_found) result.errors.push("RunningGameStore is not loaded in the selected Discord target");
       }
-      if (!result.store_found) result.errors.push("RunningGameStore is not loaded in the selected Discord target");
     }
   } catch (error) {
     result.errors.push("RunningGameStore discovery: " + String(error));
@@ -1753,6 +1747,21 @@ mod tests {
             url: url.to_string(),
             web_socket_debugger_url: ws,
         }
+    }
+
+    #[test]
+    fn running_games_js_uses_webpack_push_return_value_and_array_store() {
+        assert!(
+            JS_READ_RUNNING_GAMES.contains("{}, r => r]"),
+            "must capture webpack require from push() return value, not the runtime callback argument"
+        );
+        assert!(JS_READ_RUNNING_GAMES.contains("Array.isArray(games)"));
+        assert!(!JS_READ_RUNNING_GAMES.contains(
+            "runtimeRequire => { webpackRequire = runtimeRequire; }"
+        ));
+        assert!(!JS_READ_RUNNING_GAMES.contains(
+            "if (typeof value.getRunningGames === \"function\") return { value, path }"
+        ));
     }
 
     #[test]
