@@ -1756,12 +1756,10 @@ mod tests {
             "must capture webpack require from push() return value, not the runtime callback argument"
         );
         assert!(JS_READ_RUNNING_GAMES.contains("Array.isArray(games)"));
-        assert!(!JS_READ_RUNNING_GAMES.contains(
-            "runtimeRequire => { webpackRequire = runtimeRequire; }"
-        ));
-        assert!(!JS_READ_RUNNING_GAMES.contains(
-            "if (typeof value.getRunningGames === \"function\") return { value, path }"
-        ));
+        assert!(!JS_READ_RUNNING_GAMES
+            .contains("runtimeRequire => { webpackRequire = runtimeRequire; }"));
+        assert!(!JS_READ_RUNNING_GAMES
+            .contains("if (typeof value.getRunningGames === \"function\") return { value, path }"));
     }
 
     #[test]
@@ -1786,6 +1784,18 @@ mod tests {
         let picked = pick_discord_target(&targets);
         assert!(picked.is_some());
         assert_eq!(picked.unwrap().id, "2");
+    }
+
+    #[test]
+    fn test_pick_discord_target_skips_overlay_popout() {
+        let targets = vec![
+            mk_target("page", "Discord Overlay", "https://discord.com/popout"),
+            mk_target("page", "Friends", "https://discord.com/channels/@me"),
+        ];
+
+        let picked = pick_discord_target(&targets).unwrap();
+        assert_eq!(picked.title, "Friends");
+        assert!(picked.url.contains("/channels/"));
     }
 
     #[test]
