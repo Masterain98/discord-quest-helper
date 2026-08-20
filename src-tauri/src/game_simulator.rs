@@ -110,6 +110,16 @@ fn ensure_runner_bytes(target_path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Make sure the directory for a simulated executable exists before the
+/// platform-specific runner code writes or launches it.
+fn ensure_simulated_executable_parent(target_path: &Path) -> Result<()> {
+    if let Some(parent) = target_path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("Could not create simulated game directory: {:?}", parent))?;
+    }
+    Ok(())
+}
+
 /// Create a simulated game executable
 ///
 /// Writes the embedded runner executable to the specified path with the target game name.
@@ -189,6 +199,7 @@ pub fn run_simulated_game(
     _app_id: &str,
 ) -> Result<()> {
     let exe_to_run = PathBuf::from(path).join(executable_name);
+    ensure_simulated_executable_parent(&exe_to_run)?;
 
     // Always try to update the runner binary from the embedded bytes
     println!("Attempting to update simulated game at {:?}", exe_to_run);
@@ -204,8 +215,10 @@ pub fn run_simulated_game(
         anyhow::bail!("Executable does not exist: {:?}", exe_to_run);
     }
 
-    let _ = Command::new("cmd")
-        .args(["/C", "start", "", exe_to_run.to_str().unwrap()])
+    use std::os::windows::process::CommandExt;
+
+    let _ = Command::new(&exe_to_run)
+        .creation_flags(simulated_game_spawn_flags())
         .spawn()
         .context("Could not start simulated game")?;
 
@@ -224,9 +237,10 @@ pub fn run_simulated_game(
     _app_id: &str,
 ) -> Result<()> {
     let exe_to_run = PathBuf::from(path).join(executable_name);
+    ensure_simulated_executable_parent(&exe_to_run)?;
 
     if !exe_to_run.exists() {
-        anyhow::bail!("Executable does not exist: {:?}", exe_to_run);
+        ensure_runner_bytes(&exe_to_run).context("Could not create simulated game executable")?;
     }
 
     // Make the file executable
@@ -257,6 +271,7 @@ pub fn run_simulated_game(
     use std::process::Stdio;
 
     let exe_to_run = PathBuf::from(path).join(executable_name);
+    ensure_simulated_executable_parent(&exe_to_run)?;
 
     // Refresh the runner bytes when possible; a running instance keeps the file
     // busy (ETXTBSY), which is fine — we fall back to the existing binary.
@@ -566,6 +581,45 @@ fn untrack_running_game(executable_name: &str) {
     }
 }
 
+/// DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP. No CREATE_NO_WINDOW — the
+/// runner needs a visible window. No `cmd /C start`.
+#[cfg(any(windows, test))]
+pub(crate) fn simulated_game_spawn_flags() -> u32 {
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+    const DETACHED_PROCESS: u32 = 0x0000_0008;
+    CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS
+}
+
+/// Snapshot of simulated-game processes that CDP spoof can reuse as a real PID/path.
+/// Linux tracks exact child PIDs; Windows/macOS launch detached / via `open`
+/// and do not keep a pid, so they return no hints.
+pub fn simulated_process_hints() -> Vec<crate::cdp_game_spoof::SimulatedProcessHint> {
+    #[cfg(target_os = "linux")]
+    {
+        let games = match RUNNING_LINUX_GAMES.lock() {
+            Ok(games) => games,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        games
+            .iter()
+            .map(|(name, game)| {
+                let path = game.executable_path.to_string_lossy().into_owned();
+                crate::cdp_game_spoof::SimulatedProcessHint {
+                    pid: game.pid,
+                    exe_name: name.clone(),
+                    exe_path: path.clone(),
+                    cmd_line: path,
+                }
+            })
+            .collect()
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        Vec::new()
+    }
+}
+
 /// Stop **all** tracked simulated game processes.
 ///
 /// Called on application exit to ensure no orphaned child processes are left
@@ -651,5 +705,15 @@ mod tests {
             }
             Err(e) => println!("Test skipped (expected): {}", e),
         }
+    }
+
+    #[test]
+    fn windows_game_spawn_flags_are_detached_without_hidden_window() {
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        const DETACHED_PROCESS: u32 = 0x0000_0008;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+        let flags = simulated_game_spawn_flags();
+        assert_eq!(flags, DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+        assert_eq!(flags & CREATE_NO_WINDOW, 0);
     }
 }

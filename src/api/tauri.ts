@@ -184,6 +184,10 @@ export function connectToDiscordRpc(activityJson: string, action: string = 'conn
   return invoke('connect_to_discord_rpc', { activity_json: activityJson, action })
 }
 
+export async function disconnectFromDiscordRpc(): Promise<void> {
+  return await invoke('disconnect_from_discord_rpc')
+}
+
 // User status commands
 export async function getQuests(): Promise<Quest[]> {
   return await invoke('get_quests')
@@ -318,6 +322,28 @@ export async function stopSimulatedGame(execName: string): Promise<void> {
   return await invoke('stop_simulated_game', { execName })
 }
 
+export interface ManualCdpGameSimulation {
+  appId: string
+  appName: string
+  cdpPort: number
+}
+
+export async function startManualCdpGameSimulation(
+  appId: string,
+  appName: string,
+  cdpPort: number
+): Promise<ManualCdpGameSimulation> {
+  return await invoke('start_manual_cdp_game_simulation', { appId, appName, cdpPort })
+}
+
+export async function stopManualCdpGameSimulation(): Promise<void> {
+  return await invoke('stop_manual_cdp_game_simulation')
+}
+
+export async function getManualCdpGameSimulation(): Promise<ManualCdpGameSimulation | null> {
+  return await invoke('get_manual_cdp_game_simulation')
+}
+
 export async function fetchDetectableGames(): Promise<DetectableGame[]> {
   return await invoke('fetch_detectable_games')
 }
@@ -438,6 +464,29 @@ export async function checkCdpStatus(port?: number): Promise<CdpStatus> {
 
 export async function fetchSuperPropertiesCdp(port?: number): Promise<CdpSuperProperties> {
   return await invoke('fetch_super_properties_cdp', { port })
+}
+
+export interface CdpRunningGamesSnapshot {
+  captured_at: number
+  page_title: string
+  page_url: string
+  store_found: boolean
+  store_path: string | null
+  native_module_found: boolean
+  native_module_name: string
+  native_module_methods: string[]
+  games: Array<Record<string, unknown>>
+  visible_games: Array<Record<string, unknown>>
+  visible_game?: Record<string, unknown> | null
+  analytics_game?: Record<string, unknown> | null
+  debug_game?: Record<string, unknown> | null
+  store_views_diff?: Record<string, unknown> | null
+  native_diagnostics: Array<Record<string, unknown>>
+  errors: string[]
+}
+
+export async function fetchRunningGamesCdp(port?: number): Promise<CdpRunningGamesSnapshot> {
+  return await invoke('fetch_running_games_cdp', { port })
 }
 
 export type DiscordChannelArg = 'auto' | 'stable' | 'ptb' | 'canary'

@@ -59,10 +59,62 @@ pub fn is_discord_target(target: &CdpTarget) -> bool {
     title.contains("discord") || url.contains("discord.com") || url.contains("discordapp.com")
 }
 
+/// Overlay and popout windows are Discord pages, but they do not load
+/// `webpackChunkdiscord_app` or `DiscordNative`. Live Discord CDP lists
+/// `Discord Overlay` (`https://discord.com/popout`) before the main renderer.
+pub fn is_discord_auxiliary_window(target: &CdpTarget) -> bool {
+    is_discord_auxiliary_page(&target.title, &target.url)
+}
+
+/// Title/URL form used when CDP execution results no longer carry a full target.
+pub fn is_discord_auxiliary_page(title: &str, url: &str) -> bool {
+    if title.eq_ignore_ascii_case("discord overlay") {
+        return true;
+    }
+
+    let path = discord_target_path(url);
+    path == "popout"
+        || path.starts_with("popout/")
+        || path == "overlay"
+        || path.starts_with("overlay/")
+}
+
+fn discord_target_path(url: &str) -> String {
+    let lowered = url.to_ascii_lowercase();
+    let without_scheme = lowered
+        .split_once("://")
+        .map(|(_, rest)| rest)
+        .unwrap_or(&lowered);
+    let path = without_scheme
+        .split_once('/')
+        .map(|(_, path)| path)
+        .unwrap_or("");
+    path.split(['?', '#']).next().unwrap_or(path).to_string()
+}
+
+fn is_discord_main_renderer(target: &CdpTarget) -> bool {
+    let path = discord_target_path(&target.url);
+    path == "app"
+        || path.starts_with("app/")
+        || path == "login"
+        || path.starts_with("login/")
+        || path.starts_with("channels/")
+        || path == "quest-home"
+        || path.starts_with("quest-home/")
+}
+
 pub fn pick_discord_target(targets: &[CdpTarget]) -> Option<&CdpTarget> {
+    let is_candidate = |target: &&CdpTarget| {
+        is_discord_target(target)
+            && target.web_socket_debugger_url.is_some()
+            && !is_discord_auxiliary_window(target)
+    };
+
     targets
         .iter()
-        .find(|target| is_discord_target(target) && target.web_socket_debugger_url.is_some())
+        .filter(is_candidate)
+        .find(|target| is_discord_main_renderer(target))
+        .or_else(|| targets.iter().find(is_candidate))
 }
 
 fn probe_with_timeouts(
@@ -221,4 +273,79 @@ fn target_from_value(value: &Value) -> Option<CdpTarget> {
             .and_then(Value::as_str)
             .map(str::to_string),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::CdpTarget;
+
+    fn target(id: &str, title: &str, url: &str) -> CdpTarget {
+        CdpTarget {
+            id: id.to_string(),
+            target_type: "page".to_string(),
+            title: title.to_string(),
+            url: url.to_string(),
+            web_socket_debugger_url: Some("ws://example".to_string()),
+        }
+    }
+
+    #[test]
+    fn pick_skips_overlay_in_favor_of_main_renderer() {
+        let targets = vec![
+            target("overlay", "Discord Overlay", "https://discord.com/popout"),
+            target("friends", "Friends", "https://discord.com/channels/@me"),
+        ];
+        let picked = pick_discord_target(&targets).unwrap();
+        assert_eq!(picked.id, "friends");
+    }
+
+    #[test]
+    fn overlay_only_is_not_a_primary_target() {
+        let targets = vec![target(
+            "overlay",
+            "Discord Overlay",
+            "https://discord.com/popout",
+        )];
+        assert!(pick_discord_target(&targets).is_none());
+    }
+
+    #[test]
+    fn pick_prefers_channels_over_other_discord_pages() {
+        let targets = vec![
+            target("store", "Discord Store", "https://discord.com/store"),
+            target("me", "Friends", "https://canary.discord.com/channels/@me"),
+        ];
+        let picked = pick_discord_target(&targets).unwrap();
+        assert_eq!(picked.id, "me");
+    }
+
+    #[test]
+    fn application_directory_is_not_treated_as_app_renderer() {
+        let targets = vec![
+            target(
+                "directory",
+                "App Directory",
+                "https://discord.com/application-directory",
+            ),
+            target("app", "Discord", "https://discord.com/app"),
+        ];
+        let picked = pick_discord_target(&targets).unwrap();
+        assert_eq!(picked.id, "app");
+    }
+
+    #[test]
+    fn overlay_is_still_a_discord_page_target() {
+        let overlay = target("overlay", "Discord Overlay", "https://discord.com/popout");
+        assert!(is_discord_target(&overlay));
+        assert!(is_discord_auxiliary_window(&overlay));
+        assert!(is_discord_auxiliary_page(
+            "Discord Overlay",
+            "https://discord.com/popout"
+        ));
+        assert!(!is_discord_auxiliary_page(
+            "Friends",
+            "https://discord.com/channels/@me"
+        ));
+    }
 }

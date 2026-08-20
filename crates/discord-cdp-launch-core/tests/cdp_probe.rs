@@ -52,6 +52,34 @@ fn recognizes_a_discord_page_target() {
 }
 
 #[test]
+fn overlay_before_main_renderer_still_reports_main_window() {
+    let body = r#"[{"id":"1","type":"page","title":"Discord Overlay","url":"https://discord.com/popout","webSocketDebuggerUrl":"ws://127.0.0.1/devtools/page/1"},{"id":"2","type":"page","title":"Friends","url":"https://discord.com/channels/@me","webSocketDebuggerUrl":"ws://127.0.0.1/devtools/page/2"}]"#;
+    let port = serve_once(
+        Some(leaked_response(response("200 OK", body))),
+        Duration::ZERO,
+    );
+    assert_eq!(
+        fast_probe().probe(port),
+        CdpProbeStatus::DiscordReady {
+            target_title: Some("Friends".to_string())
+        }
+    );
+}
+
+#[test]
+fn overlay_only_is_not_discord_ready() {
+    let body = r#"[{"id":"1","type":"page","title":"Discord Overlay","url":"https://discord.com/popout","webSocketDebuggerUrl":"ws://127.0.0.1/devtools/page/1"}]"#;
+    let port = serve_once(
+        Some(leaked_response(response("200 OK", body))),
+        Duration::ZERO,
+    );
+    assert_eq!(
+        fast_probe().probe(port),
+        CdpProbeStatus::CdpWithoutDiscordTarget
+    );
+}
+
+#[test]
 fn distinguishes_valid_chromium_without_discord() {
     let body = r#"[{"type":"page","title":"Chromium","url":"https://example.com","webSocketDebuggerUrl":"ws://example"}]"#;
     let port = serve_once(

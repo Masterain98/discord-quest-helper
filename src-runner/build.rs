@@ -7,9 +7,10 @@ fn main() {
         .output();
 
     let commit_hash = match output {
-        Ok(o) if o.status.success() => {
-            String::from_utf8(o.stdout).unwrap_or_default().trim().to_string()
-        }
+        Ok(o) if o.status.success() => String::from_utf8(o.stdout)
+            .unwrap_or_default()
+            .trim()
+            .to_string(),
         _ => "unknown".to_string(),
     };
 

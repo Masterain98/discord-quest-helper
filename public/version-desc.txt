@@ -1,19 +1,13 @@
 ## ✨ What's Changed
 
-1. Added support for Linux (x86_64) desktop.
-    - Currently support only target: Ubuntu 26.04.
-    - Added a desktop shortcut (launcher) option on Linux for quicker access.
-2. Added automatic Discord login through CDP connection on all platforms.
-3. Added support for cloud game activity quest type.
-4. Added hint to restart Discord back to normal mode from CDP mode when the program is closing.
-5. Refreshed the login page design.
-6. Fixed several cases where the app could pick the wrong game or get stuck after an error, especially right after launch.
-7. Refreshed the Nitro badge icon.
-8. Bumped dependencies to the latest patched versions.
-9. Bumped default client config:
-    - client version to `1.0.9251`
-    - default client build numbre to `589596`
-    - native build number to `87870`
-    - default Electron version to `42.7.1`
-    - default Chrome version to `148.0.7778.280`
-
+1. Added support for manually simulating a game you are playing through Discord's native running-game detection.
+    - You can now tell Discord that a specific game is running, even when it is not, so related quests can progress.
+    - Added a "Running Games" view that shows what the app is currently reporting to Discord.
+    - Added the ability to stop a simulated game and disconnect from Discord at any time.
+2. Improved the way the app detects and reports games, and fixed several cases where game detection could fail or get stuck after launch.
+3. On Windows, the app now runs in a more discreet way so Discord is less likely to notice it is a helper tool, making quest progress more reliable.
+4. Refreshed and added translations for the new text.
+5. Bumped default client config:
+    - client version to `1.0.9254`
+    - default client build number to `595897`
+    - native build number to `88466`
