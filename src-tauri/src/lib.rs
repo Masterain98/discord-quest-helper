@@ -30,14 +30,48 @@ use tauri::{Emitter, Listener, Manager, State};
 static SUPER_PROPERTIES_MANAGER: Lazy<Mutex<XSuperPropertiesManager>> =
     Lazy::new(|| Mutex::new(XSuperPropertiesManager::new()));
 
-static APP_EXIT_PREPARED: AtomicBool = AtomicBool::new(false);
 const APP_EXIT_RPC_DISCONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Tracks whether process-local exit cleanup and verified active-work cleanup
+/// have completed. Local cleanup is one-shot; active-work cleanup stays
+/// retryable until it succeeds so a failed CDP rollback cannot permanently
+/// skip later `prepare_app_exit` calls.
+struct AppExitCleanupState {
+    prepared: AtomicBool,
+    local_done: AtomicBool,
+}
+
+impl AppExitCleanupState {
+    const fn new() -> Self {
+        Self {
+            prepared: AtomicBool::new(false),
+            local_done: AtomicBool::new(false),
+        }
+    }
+
+    fn is_prepared(&self) -> bool {
+        self.prepared.load(Ordering::SeqCst)
+    }
+
+    fn mark_prepared(&self) {
+        self.prepared.store(true, Ordering::SeqCst);
+    }
+
+    fn claim_local_cleanup(&self) -> bool {
+        !self.local_done.swap(true, Ordering::SeqCst)
+    }
+}
+
+static APP_EXIT_CLEANUP: AppExitCleanupState = AppExitCleanupState::new();
 
 /// Global state: Discord API client
 struct AppState {
     client: Mutex<Option<DiscordApiClient>>,
     quest_state: Mutex<Option<QuestState>>,
     manual_cdp_game: tokio::sync::Mutex<ManualCdpGameSessionState>,
+    /// Serializes quest startup, manual CDP startup, and active-work teardown
+    /// so the two Discord-activity owners cannot both pass their idle checks.
+    activity_gate: tokio::sync::Mutex<()>,
 }
 
 #[derive(Debug, Default)]
@@ -127,6 +161,27 @@ mod manual_cdp_game_session_tests {
         assert_eq!(value["appName"], "Contract");
         assert_eq!(value["cdpPort"], 9223);
         assert!(value.get("app_id").is_none());
+    }
+}
+
+#[cfg(test)]
+mod app_exit_cleanup_state_tests {
+    use super::AppExitCleanupState;
+
+    #[test]
+    fn failed_active_work_cleanup_leaves_exit_retryable() {
+        let state = AppExitCleanupState::new();
+        assert!(state.claim_local_cleanup());
+        assert!(!state.claim_local_cleanup());
+        assert!(!state.is_prepared());
+    }
+
+    #[test]
+    fn successful_exit_preparation_skips_later_attempts() {
+        let state = AppExitCleanupState::new();
+        assert!(state.claim_local_cleanup());
+        state.mark_prepared();
+        assert!(state.is_prepared());
     }
 }
 
@@ -655,7 +710,7 @@ async fn start_video_quest(
     state: State<'_, AppState>,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
-    // Stop current quest (if any)
+    let _gate = state.activity_gate.lock().await;
     stop_active_work_internal(&state).await?;
 
     let client = state.client.lock().unwrap();
@@ -664,14 +719,7 @@ async fn start_video_quest(
         .ok_or_else(|| "Not logged in".to_string())?
         .clone();
 
-    // Create cancel channel
-    let (cancel_tx, cancel_rx) = tokio::sync::mpsc::channel::<()>(1);
-
-    // Save quest state
-    *state.quest_state.lock().unwrap() = Some(QuestState {
-        quest_id: quest_id.clone(),
-        cancel_flag: cancel_tx,
-    });
+    let cancel_rx = install_quest_state(&state, quest_id.clone());
 
     // Run in background task
     tokio::spawn(async move {
@@ -705,7 +753,7 @@ async fn start_stream_quest(
     state: State<'_, AppState>,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
-    // Stop current quest (if any)
+    let _gate = state.activity_gate.lock().await;
     stop_active_work_internal(&state).await?;
 
     let client = {
@@ -716,14 +764,7 @@ async fn start_stream_quest(
             .clone()
     };
 
-    // Create cancel channel
-    let (cancel_tx, cancel_rx) = tokio::sync::mpsc::channel::<()>(1);
-
-    // Save quest state
-    *state.quest_state.lock().unwrap() = Some(QuestState {
-        quest_id: quest_id.clone(),
-        cancel_flag: cancel_tx,
-    });
+    let cancel_rx = install_quest_state(&state, quest_id.clone());
 
     // Run in background task
     tokio::spawn(async move {
@@ -756,7 +797,7 @@ async fn start_game_heartbeat_quest(
     state: State<'_, AppState>,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
-    // Stop current quest (if any)
+    let _gate = state.activity_gate.lock().await;
     stop_active_work_internal(&state).await?;
 
     let client = {
@@ -767,14 +808,7 @@ async fn start_game_heartbeat_quest(
             .clone()
     };
 
-    // Create cancel channel
-    let (cancel_tx, cancel_rx) = tokio::sync::mpsc::channel::<()>(1);
-
-    // Save quest state
-    *state.quest_state.lock().unwrap() = Some(QuestState {
-        quest_id: quest_id.clone(),
-        cancel_flag: cancel_tx,
-    });
+    let cancel_rx = install_quest_state(&state, quest_id.clone());
 
     // Run in background task
     tokio::spawn(async move {
@@ -867,13 +901,9 @@ async fn start_play_activity_quest(
         return Err("Not logged in".to_string());
     }
 
+    let _gate = state.activity_gate.lock().await;
     stop_active_work_internal(&state).await?;
-
-    let (cancel_tx, cancel_rx) = tokio::sync::mpsc::channel::<()>(1);
-    *state.quest_state.lock().unwrap() = Some(QuestState {
-        quest_id: quest_id.clone(),
-        cancel_flag: cancel_tx,
-    });
+    let cancel_rx = install_quest_state(&state, quest_id.clone());
 
     tokio::spawn(async move {
         let result = if transport == PlayActivityTransport::Cdp {
@@ -934,17 +964,9 @@ async fn start_cdp_quest(
     state: State<'_, AppState>,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
-    // Stop current quest (if any)
+    let _gate = state.activity_gate.lock().await;
     stop_active_work_internal(&state).await?;
-
-    // Create cancel channel
-    let (cancel_tx, cancel_rx) = tokio::sync::mpsc::channel::<()>(1);
-
-    // Save quest state
-    *state.quest_state.lock().unwrap() = Some(QuestState {
-        quest_id: quest_id.clone(),
-        cancel_flag: cancel_tx,
-    });
+    let cancel_rx = install_quest_state(&state, quest_id.clone());
 
     let quest_type_clone = quest_type.clone();
 
@@ -1025,7 +1047,20 @@ async fn start_cdp_quest(
 /// Stop current quest
 #[tauri::command]
 async fn stop_quest(state: State<'_, AppState>) -> Result<(), String> {
+    let _gate = state.activity_gate.lock().await;
     stop_active_work_internal(&state).await
+}
+
+fn install_quest_state(
+    state: &State<'_, AppState>,
+    quest_id: String,
+) -> tokio::sync::mpsc::Receiver<()> {
+    let (cancel_tx, cancel_rx) = tokio::sync::mpsc::channel::<()>(1);
+    *state.quest_state.lock().unwrap() = Some(QuestState {
+        quest_id,
+        cancel_flag: cancel_tx,
+    });
+    cancel_rx
 }
 
 async fn stop_quest_internal(state: &State<'_, AppState>) {
@@ -1142,6 +1177,11 @@ async fn start_manual_cdp_game_simulation(
     if cdp_port == 0 {
         return Err("CDP port must be between 1 and 65535".to_string());
     }
+
+    // Keep the gate through activation so a concurrent quest start cannot
+    // pass its idle check, install QuestState, and then allow this command
+    // to inject a second Discord activity.
+    let _gate = state.activity_gate.lock().await;
     ensure_no_active_quest(&state)?;
 
     let mut sessions = state.manual_cdp_game.lock().await;
@@ -1170,6 +1210,7 @@ async fn start_manual_cdp_game_simulation(
 /// Stop and fully verify cleanup of the current manual CDP game simulation.
 #[tauri::command]
 async fn stop_manual_cdp_game_simulation(state: State<'_, AppState>) -> Result<(), String> {
+    let _gate = state.activity_gate.lock().await;
     stop_manual_cdp_game_simulation_internal(&state).await
 }
 
@@ -1618,6 +1659,7 @@ pub fn run() {
             client: Mutex::new(None),
             quest_state: Mutex::new(None),
             manual_cdp_game: tokio::sync::Mutex::new(ManualCdpGameSessionState::default()),
+            activity_gate: tokio::sync::Mutex::new(()),
         })
         .setup(|app| {
             // `pnpm tauri:dev` rebuilds the bundled launcher before Tauri
@@ -1719,33 +1761,28 @@ pub fn run() {
 
 #[tauri::command]
 async fn prepare_app_exit(state: State<'_, AppState>) -> Result<(), String> {
-    if APP_EXIT_PREPARED.swap(true, Ordering::SeqCst) {
+    if APP_EXIT_CLEANUP.is_prepared() {
         return Ok(());
     }
+
+    let _gate = state.activity_gate.lock().await;
+    if APP_EXIT_CLEANUP.is_prepared() {
+        return Ok(());
+    }
+
     // Manual CDP injections must be removed while the Discord targets are
     // still reachable. Preserve any error until the remaining local cleanup
     // has run so an RPC/game cleanup failure cannot strand another resource.
+    // Do not mark exit prepared until this cleanup succeeds; otherwise a
+    // later prepare_app_exit (or a retried close) would skip rollback.
     let active_work_error = stop_active_work_internal(&state).await.err();
-    game_simulator::cleanup_all_simulated_games();
-    let client = match get_discord_rpc_client().lock() {
-        Ok(mut guard) => guard.take(),
-        Err(_) => {
-            eprintln!("Discord RPC state lock is poisoned during app exit");
-            None
-        }
-    };
-    if let Some(client) = client {
-        if tokio::time::timeout(APP_EXIT_RPC_DISCONNECT_TIMEOUT, client.discord.disconnect())
-            .await
-            .is_err()
-        {
-            eprintln!("Discord RPC disconnect timed out during app exit");
-        }
-    }
-    stealth::cleanup_on_exit();
+    cleanup_local_resources_on_exit().await;
     match active_work_error {
         Some(error) => Err(error),
-        None => Ok(()),
+        None => {
+            APP_EXIT_CLEANUP.mark_prepared();
+            Ok(())
+        }
     }
 }
 
@@ -1763,16 +1800,49 @@ fn exit_app_now() -> Result<(), String> {
 }
 
 fn prepare_app_exit_fallback() {
-    if APP_EXIT_PREPARED.swap(true, Ordering::SeqCst) {
+    if APP_EXIT_CLEANUP.is_prepared() {
+        return;
+    }
+    // Fallback cannot reach Discord via CDP (no AppState). Still run the
+    // one-shot local cleanup if prepare_app_exit has not claimed it yet.
+    cleanup_local_resources_on_exit_sync();
+}
+
+fn take_discord_rpc_client_for_exit() -> Option<rpc::Client> {
+    match get_discord_rpc_client().lock() {
+        Ok(mut guard) => guard.take(),
+        Err(_) => {
+            eprintln!("Discord RPC state lock is poisoned during app exit");
+            None
+        }
+    }
+}
+
+async fn cleanup_local_resources_on_exit() {
+    if !APP_EXIT_CLEANUP.claim_local_cleanup() {
         return;
     }
     game_simulator::cleanup_all_simulated_games();
-    if let Ok(mut guard) = get_discord_rpc_client().lock() {
-        if let Some(client) = guard.take() {
-            tauri::async_runtime::spawn(async move {
-                client.discord.disconnect().await;
-            });
+    if let Some(client) = take_discord_rpc_client_for_exit() {
+        if tokio::time::timeout(APP_EXIT_RPC_DISCONNECT_TIMEOUT, client.discord.disconnect())
+            .await
+            .is_err()
+        {
+            eprintln!("Discord RPC disconnect timed out during app exit");
         }
+    }
+    stealth::cleanup_on_exit();
+}
+
+fn cleanup_local_resources_on_exit_sync() {
+    if !APP_EXIT_CLEANUP.claim_local_cleanup() {
+        return;
+    }
+    game_simulator::cleanup_all_simulated_games();
+    if let Some(client) = take_discord_rpc_client_for_exit() {
+        tauri::async_runtime::spawn(async move {
+            client.discord.disconnect().await;
+        });
     }
     stealth::cleanup_on_exit();
 }

@@ -2107,8 +2107,29 @@ pub async fn start_manual_game_spoof(port: u16, app_id: &str, app_name: &str) ->
         .context("Failed to initialize CDP modules for manual game simulation")?;
 
     let js = js_spoof_play_game(app_id, app_name);
-    let summary =
-        cdp_execute_json_on_all_targets(port, &js, true, 15, "manual game simulation").await?;
+    let summary = match cdp_execute_json_on_all_targets(
+        port,
+        &js,
+        true,
+        15,
+        "manual game simulation",
+    )
+    .await
+    {
+        Ok(summary) => summary,
+        Err(err) => {
+            // Evaluation can fail after a target has already mutated RunningGameStore.
+            // Roll back immediately so the caller can refuse to record a session
+            // without leaving Discord displaying an untracked simulated game.
+            if let Err(cleanup_err) = cdp_cleanup_with_attempts(port, CDP_CLEANUP_ATTEMPTS).await {
+                log_cdp_cleanup_failure("manual game simulation start failed", &cleanup_err);
+                return Err(err.context(format!(
+                    "start failed and the injected game could not be rolled back ({cleanup_err}). Restart Discord if the simulated game remains visible"
+                )));
+            }
+            return Err(err);
+        }
+    };
     log_partial_target_failures("manual game simulation", &summary.target_failures);
 
     log(

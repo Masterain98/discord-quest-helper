@@ -77,7 +77,9 @@ onMounted(async () => {
 })
 
 const hasActiveSimulation = computed(() => activeSimulationMode.value !== null)
-const simulatorBusy = computed(() => running.value || cdpStarting.value || stopping.value)
+const simulatorBusy = computed(
+  () => running.value || creating.value || cdpStarting.value || stopping.value
+)
 
 // Executables the simulator can actually launch here: Linux only runs a native
 // `linux` binary (a win32 exe is refused by the quest-start path too), while
@@ -197,7 +199,7 @@ async function handleCreateGame() {
 async function handleRunGame() {
   // Resolve which exe name to use
   const exeName = effectiveExecutable.value
-  if (!exeName || !installPath.value) return
+  if (!exeName || !installPath.value || creating.value || hasActiveSimulation.value) return
 
   running.value = true
   error.value = null
@@ -241,7 +243,7 @@ async function handleRunGame() {
 
 async function handleRunCdpGame() {
   const game = selectedGame.value
-  if (!game || cdpStarting.value || hasActiveSimulation.value || store.activeQuestId) return
+  if (!game || creating.value || cdpStarting.value || hasActiveSimulation.value || store.activeQuestId) return
 
   cdpStarting.value = true
   error.value = null
