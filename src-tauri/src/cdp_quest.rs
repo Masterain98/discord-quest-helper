@@ -2090,6 +2090,49 @@ async fn cdp_cleanup_with_attempts(port: u16, max_attempts: u32) -> Result<()> {
     anyhow::bail!("CDP cleanup failed after all retries — spoof may still be active in Discord")
 }
 
+/// Start a persistent, user-controlled running-game spoof without binding it
+/// to a quest. The caller owns the lifecycle and must invoke
+/// `stop_manual_game_spoof` when the user stops the simulation.
+pub async fn start_manual_game_spoof(port: u16, app_id: &str, app_name: &str) -> Result<()> {
+    use crate::logger::{log, LogCategory, LogLevel};
+
+    // Always begin from a verified clean state. This also recovers a spoof
+    // left behind by an earlier app process that exited unexpectedly.
+    cdp_cleanup_with_attempts(port, CDP_CLEANUP_ATTEMPTS)
+        .await
+        .context("Failed to clear an existing CDP game simulation")?;
+    cdp_warmup_quest_route(port).await;
+    cdp_init_modules(port)
+        .await
+        .context("Failed to initialize CDP modules for manual game simulation")?;
+
+    let js = js_spoof_play_game(app_id, app_name);
+    let summary =
+        cdp_execute_json_on_all_targets(port, &js, true, 15, "manual game simulation").await?;
+    log_partial_target_failures("manual game simulation", &summary.target_failures);
+
+    log(
+        LogLevel::Info,
+        LogCategory::TokenExtraction,
+        &format!(
+            "CDP manual game simulation started for app_id={} on {}/{} target(s)",
+            app_id,
+            summary.successful_results.len(),
+            summary.total_targets
+        ),
+        None,
+    );
+    Ok(())
+}
+
+/// Stop a persistent manual game spoof and verify that every main Discord page
+/// target is clean before reporting success.
+pub async fn stop_manual_game_spoof(port: u16) -> Result<()> {
+    cdp_cleanup_with_attempts(port, CDP_CLEANUP_ATTEMPTS)
+        .await
+        .context("Failed to clean up the manual CDP game simulation")
+}
+
 /// Poll quest progress via CDP. Uses direct API call for fresh data.
 ///
 /// Returns `(progress_seconds, completed)`.

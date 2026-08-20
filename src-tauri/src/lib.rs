@@ -37,6 +37,97 @@ const APP_EXIT_RPC_DISCONNECT_TIMEOUT: std::time::Duration = std::time::Duration
 struct AppState {
     client: Mutex<Option<DiscordApiClient>>,
     quest_state: Mutex<Option<QuestState>>,
+    manual_cdp_game: tokio::sync::Mutex<ManualCdpGameSessionState>,
+}
+
+#[derive(Debug, Default)]
+struct ManualCdpGameSessionState {
+    active: Option<ManualCdpGameSimulation>,
+}
+
+impl ManualCdpGameSessionState {
+    fn ensure_idle(&self) -> Result<(), String> {
+        match &self.active {
+            Some(session) => Err(format!(
+                "A manual CDP game simulation is already active for {}",
+                session.app_name
+            )),
+            None => Ok(()),
+        }
+    }
+
+    fn activate(&mut self, session: ManualCdpGameSimulation) {
+        self.active = Some(session);
+    }
+
+    fn active(&self) -> Option<ManualCdpGameSimulation> {
+        self.active.clone()
+    }
+
+    fn clear(&mut self) {
+        self.active = None;
+    }
+
+    fn finish_cleanup(&mut self, result: Result<(), String>) -> Result<(), String> {
+        result?;
+        self.clear();
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod manual_cdp_game_session_tests {
+    use super::*;
+
+    fn session(name: &str) -> ManualCdpGameSimulation {
+        ManualCdpGameSimulation {
+            app_id: "123456".to_string(),
+            app_name: name.to_string(),
+            cdp_port: 9223,
+        }
+    }
+
+    #[test]
+    fn only_one_manual_cdp_game_can_be_active() {
+        let mut state = ManualCdpGameSessionState::default();
+        state.ensure_idle().unwrap();
+        state.activate(session("First"));
+
+        assert!(state.ensure_idle().is_err());
+        assert_eq!(state.active().unwrap().app_name, "First");
+    }
+
+    #[test]
+    fn failed_start_does_not_record_a_session() {
+        let state = ManualCdpGameSessionState::default();
+        state.ensure_idle().unwrap();
+
+        // CDP startup failed before activate() was called.
+        assert!(state.active().is_none());
+    }
+
+    #[test]
+    fn cleanup_failure_keeps_the_session_for_retry() {
+        let mut state = ManualCdpGameSessionState::default();
+        state.activate(session("Retry Me"));
+
+        assert!(state
+            .finish_cleanup(Err("Discord target disconnected".to_string()))
+            .is_err());
+        assert_eq!(state.active().unwrap().app_name, "Retry Me");
+
+        state.finish_cleanup(Ok(())).unwrap();
+        assert!(state.active().is_none());
+    }
+
+    #[test]
+    fn session_uses_the_frontend_camel_case_contract() {
+        let value = serde_json::to_value(session("Contract")).unwrap();
+        assert_eq!(value["appId"], "123456");
+        assert_eq!(value["appName"], "Contract");
+        assert_eq!(value["cdpPort"], 9223);
+        assert!(value.get("app_id").is_none());
+    }
 }
 
 /// Auto-detect Discord tokens (returns all valid accounts found)
@@ -565,7 +656,7 @@ async fn start_video_quest(
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
     // Stop current quest (if any)
-    stop_quest_internal(&state).await;
+    stop_active_work_internal(&state).await?;
 
     let client = state.client.lock().unwrap();
     let client = client
@@ -615,7 +706,7 @@ async fn start_stream_quest(
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
     // Stop current quest (if any)
-    stop_quest_internal(&state).await;
+    stop_active_work_internal(&state).await?;
 
     let client = {
         let guard = state.client.lock().unwrap();
@@ -666,7 +757,7 @@ async fn start_game_heartbeat_quest(
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
     // Stop current quest (if any)
-    stop_quest_internal(&state).await;
+    stop_active_work_internal(&state).await?;
 
     let client = {
         let guard = state.client.lock().unwrap();
@@ -776,7 +867,7 @@ async fn start_play_activity_quest(
         return Err("Not logged in".to_string());
     }
 
-    stop_quest_internal(&state).await;
+    stop_active_work_internal(&state).await?;
 
     let (cancel_tx, cancel_rx) = tokio::sync::mpsc::channel::<()>(1);
     *state.quest_state.lock().unwrap() = Some(QuestState {
@@ -844,7 +935,7 @@ async fn start_cdp_quest(
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
     // Stop current quest (if any)
-    stop_quest_internal(&state).await;
+    stop_active_work_internal(&state).await?;
 
     // Create cancel channel
     let (cancel_tx, cancel_rx) = tokio::sync::mpsc::channel::<()>(1);
@@ -934,8 +1025,7 @@ async fn start_cdp_quest(
 /// Stop current quest
 #[tauri::command]
 async fn stop_quest(state: State<'_, AppState>) -> Result<(), String> {
-    stop_quest_internal(&state).await;
-    Ok(())
+    stop_active_work_internal(&state).await
 }
 
 async fn stop_quest_internal(state: &State<'_, AppState>) {
@@ -948,6 +1038,47 @@ async fn stop_quest_internal(state: &State<'_, AppState>) {
         let _ = quest.cancel_flag.send(()).await;
         println!("Quest stopped");
     }
+}
+
+fn ensure_no_active_quest(state: &State<'_, AppState>) -> Result<(), String> {
+    let mut quest_state = state.quest_state.lock().unwrap();
+    match quest_state.as_ref() {
+        Some(quest) if !quest.cancel_flag.is_closed() => {
+            Err("Stop the active quest before starting a manual CDP game simulation".to_string())
+        }
+        Some(_) => {
+            // Completed background tasks close their receiver. Discard that
+            // stale bookkeeping entry without treating it as an active quest.
+            quest_state.take();
+            Ok(())
+        }
+        None => Ok(()),
+    }
+}
+
+async fn stop_manual_cdp_game_simulation_internal(
+    state: &State<'_, AppState>,
+) -> Result<(), String> {
+    // Keep the lock for the full verified cleanup so a concurrent start cannot
+    // install a new spoof between cleanup and clearing the saved session.
+    let mut sessions = state.manual_cdp_game.lock().await;
+    let Some(session) = sessions.active() else {
+        return Ok(());
+    };
+
+    let cleanup_result = cdp_quest::stop_manual_game_spoof(session.cdp_port)
+        .await
+        .map_err(|error| {
+            format!(
+                "Failed to stop manual CDP game simulation: {error}. Restart Discord if the simulated game remains visible."
+            )
+        });
+    sessions.finish_cleanup(cleanup_result)
+}
+
+async fn stop_active_work_internal(state: &State<'_, AppState>) -> Result<(), String> {
+    stop_quest_internal(state).await;
+    stop_manual_cdp_game_simulation_internal(state).await
 }
 
 /// Navigate Discord client SPA to a specific path (no reload)
@@ -990,6 +1121,64 @@ async fn run_simulated_game(
 async fn stop_simulated_game(exec_name: String) -> Result<(), String> {
     game_simulator::stop_simulated_game(&exec_name)
         .map_err(|e| format!("Failed to stop simulated game: {}", e))
+}
+
+/// Start a persistent manual game simulation inside Discord via CDP.
+#[tauri::command]
+async fn start_manual_cdp_game_simulation(
+    app_id: String,
+    app_name: String,
+    cdp_port: u16,
+    state: State<'_, AppState>,
+) -> Result<ManualCdpGameSimulation, String> {
+    let app_id = app_id.trim().to_string();
+    let app_name = app_name.trim().to_string();
+    if app_id.is_empty() {
+        return Err("Application ID is required for CDP game simulation".to_string());
+    }
+    if app_name.is_empty() {
+        return Err("Application name is required for CDP game simulation".to_string());
+    }
+    if cdp_port == 0 {
+        return Err("CDP port must be between 1 and 65535".to_string());
+    }
+    ensure_no_active_quest(&state)?;
+
+    let mut sessions = state.manual_cdp_game.lock().await;
+    sessions.ensure_idle()?;
+
+    let status = cdp_client::check_cdp_available(cdp_port).await;
+    if !status.connected {
+        return Err(status
+            .error
+            .unwrap_or_else(|| format!("Discord CDP is not connected on port {cdp_port}")));
+    }
+
+    cdp_quest::start_manual_game_spoof(cdp_port, &app_id, &app_name)
+        .await
+        .map_err(|error| format!("Failed to start manual CDP game simulation: {error}"))?;
+
+    let session = ManualCdpGameSimulation {
+        app_id,
+        app_name,
+        cdp_port,
+    };
+    sessions.activate(session.clone());
+    Ok(session)
+}
+
+/// Stop and fully verify cleanup of the current manual CDP game simulation.
+#[tauri::command]
+async fn stop_manual_cdp_game_simulation(state: State<'_, AppState>) -> Result<(), String> {
+    stop_manual_cdp_game_simulation_internal(&state).await
+}
+
+/// Return the backend-owned manual CDP game simulation, if one is active.
+#[tauri::command]
+async fn get_manual_cdp_game_simulation(
+    state: State<'_, AppState>,
+) -> Result<Option<ManualCdpGameSimulation>, String> {
+    Ok(state.manual_cdp_game.lock().await.active())
 }
 
 /// Get detectable games list (works with or without login)
@@ -1428,6 +1617,7 @@ pub fn run() {
         .manage(AppState {
             client: Mutex::new(None),
             quest_state: Mutex::new(None),
+            manual_cdp_game: tokio::sync::Mutex::new(ManualCdpGameSessionState::default()),
         })
         .setup(|app| {
             // `pnpm tauri:dev` rebuilds the bundled launcher before Tauri
@@ -1481,6 +1671,9 @@ pub fn run() {
             create_simulated_game,
             run_simulated_game,
             stop_simulated_game,
+            start_manual_cdp_game_simulation,
+            stop_manual_cdp_game_simulation,
+            get_manual_cdp_game_simulation,
             fetch_detectable_games,
             accept_quest,
             get_virtual_currency_balance,
@@ -1525,10 +1718,14 @@ pub fn run() {
 }
 
 #[tauri::command]
-async fn prepare_app_exit() -> Result<(), String> {
+async fn prepare_app_exit(state: State<'_, AppState>) -> Result<(), String> {
     if APP_EXIT_PREPARED.swap(true, Ordering::SeqCst) {
         return Ok(());
     }
+    // Manual CDP injections must be removed while the Discord targets are
+    // still reachable. Preserve any error until the remaining local cleanup
+    // has run so an RPC/game cleanup failure cannot strand another resource.
+    let active_work_error = stop_active_work_internal(&state).await.err();
     game_simulator::cleanup_all_simulated_games();
     let client = match get_discord_rpc_client().lock() {
         Ok(mut guard) => guard.take(),
@@ -1546,7 +1743,10 @@ async fn prepare_app_exit() -> Result<(), String> {
         }
     }
     stealth::cleanup_on_exit();
-    Ok(())
+    match active_work_error {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
 }
 
 /// End the main process after the frontend has completed its best-effort

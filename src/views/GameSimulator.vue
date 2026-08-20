@@ -1,8 +1,17 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import GameSelector from '@/components/GameSelector.vue'
-import type { DetectableGame } from '@/api/tauri'
-import { createSimulatedGame, runSimulatedGame, stopSimulatedGame, connectToDiscordRpc, disconnectFromDiscordRpc } from '@/api/tauri'
+import type { DetectableGame, ManualCdpGameSimulation } from '@/api/tauri'
+import {
+  createSimulatedGame,
+  runSimulatedGame,
+  stopSimulatedGame,
+  connectToDiscordRpc,
+  disconnectFromDiscordRpc,
+  startManualCdpGameSimulation,
+  stopManualCdpGameSimulation,
+  getManualCdpGameSimulation,
+} from '@/api/tauri'
 import { documentDir, sep } from '@tauri-apps/api/path'
 import { open as openFolderPicker } from '@tauri-apps/plugin-dialog'
 import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from '@/components/ui/card'
@@ -10,7 +19,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
-import { Loader2, Play, Square, Hammer, List, Terminal, FolderOpen, ChevronDown, Check } from 'lucide-vue-next'
+import { Loader2, Play, Square, Hammer, List, Terminal, FolderOpen, ChevronDown, Check, MonitorPlay, WifiOff } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useQuestsStore } from '@/stores/quests'
 import { getSimulationExecutables } from '@/utils/executables'
@@ -35,6 +44,9 @@ const running = ref(false)
 const stopping = ref(false)
 const activeExecutable = ref<string | null>(null)
 const activeRpc = ref(false)
+const activeSimulationMode = ref<'process' | 'cdp' | null>(null)
+const activeCdpSession = ref<ManualCdpGameSimulation | null>(null)
+const cdpStarting = ref(false)
 const creating = ref(false)
 const error = ref<string | null>(null)
 const success = ref<string | null>(null)
@@ -45,11 +57,27 @@ const dialogSavePath = ref('')
 
 onMounted(async () => {
   const capabilities = store.initPlatformCapabilities()
-  const [docDir, separator] = await Promise.all([documentDir(), sep()])
+  const cdpStatus = store.initCdpMode().catch(err => {
+    console.warn('Failed to refresh CDP status for game simulator:', err)
+  })
+  const manualSession = getManualCdpGameSimulation().catch(err => {
+    console.warn('Failed to restore manual CDP game simulation:', err)
+    return null
+  })
+  const [docDir, separator, session] = await Promise.all([documentDir(), sep(), manualSession])
   installPathPlaceholder.value = `${docDir}${separator}DiscordQuestGames`
   installPath.value = installPathPlaceholder.value
-  await capabilities
+  await Promise.all([capabilities, cdpStatus])
+
+  if (session) {
+    activeSimulationMode.value = 'cdp'
+    activeCdpSession.value = session
+    success.value = t('game_sim.cdp_session_restored', { name: session.appName })
+  }
 })
+
+const hasActiveSimulation = computed(() => activeSimulationMode.value !== null)
+const simulatorBusy = computed(() => running.value || cdpStarting.value || stopping.value)
 
 // Executables the simulator can actually launch here: Linux only runs a native
 // `linux` binary (a win32 exe is refused by the quest-start path too), while
@@ -104,20 +132,23 @@ onUnmounted(() => document.removeEventListener('mousedown', handleClickOutsideEx
 
 // Whether the footer action buttons should be shown
 const canProceed = computed(() => {
+  if (hasActiveSimulation.value) return true
   if (mode.value === 'custom') return !!customExeName.value
-  if (!selectedGame.value || !store.platformCapabilities) return false
-  // Game has no known executables — allow proceeding with a custom name
-  if (!hasCompatibleExecutables.value) return !!selectModeCustomExe.value
-  return !!selectedExecutable.value
+  // CDP simulation only needs the selected Discord application ID, so keep
+  // the footer available even when no local executable can be simulated.
+  if (!selectedGame.value) return false
+  return true
 })
 
 function switchMode(m: 'select' | 'custom') {
+  if (hasActiveSimulation.value || simulatorBusy.value) return
   mode.value = m
   error.value = null
   success.value = null
 }
 
 function selectGame(game: DetectableGame) {
+  if (hasActiveSimulation.value || simulatorBusy.value) return
   selectedGame.value = game
   const compatible = store.platformCapabilities
     ? getSimulationExecutables(game.executables, hostOs.value, executablePriority.value)
@@ -177,6 +208,7 @@ async function handleRunGame() {
     const displayName = mode.value === 'custom' ? customExeName.value : (selectedGame.value?.name ?? '')
     await runSimulatedGame(displayName, installPath.value, exeName, appId)
     activeExecutable.value = exeName
+    activeSimulationMode.value = 'process'
 
     // ── SELECT / LIST mode ──────────────────────────────────────────────
     // When launched from the detectable games list we always have an app_id,
@@ -207,25 +239,66 @@ async function handleRunGame() {
   }
 }
 
+async function handleRunCdpGame() {
+  const game = selectedGame.value
+  if (!game || cdpStarting.value || hasActiveSimulation.value || store.activeQuestId) return
+
+  cdpStarting.value = true
+  error.value = null
+  success.value = null
+
+  try {
+    // Refresh immediately before mutation so a stale connected flag cannot
+    // enable an injection after Discord has been closed or restarted.
+    await store.initCdpMode()
+    if (!store.cdpAvailable) {
+      throw new Error(t('game_sim.cdp_unavailable'))
+    }
+
+    const session = await startManualCdpGameSimulation(game.id, game.name, store.cdpPort)
+    activeCdpSession.value = session
+    activeSimulationMode.value = 'cdp'
+    success.value = t('game_sim.cdp_started', { name: game.name })
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    cdpStarting.value = false
+  }
+}
+
 async function handleStopGame() {
-  const exeName = activeExecutable.value
-  if (!exeName || stopping.value) return
+  const simulationMode = activeSimulationMode.value
+  if (!simulationMode || stopping.value) return
 
   stopping.value = true
   error.value = null
   success.value = null
 
   try {
+    if (simulationMode === 'cdp') {
+      await stopManualCdpGameSimulation()
+      activeCdpSession.value = null
+      activeSimulationMode.value = null
+      success.value = t('game_sim.cdp_stopped')
+      return
+    }
+
+    const exeName = activeExecutable.value
+    if (!exeName) throw new Error(t('game_sim.no_active_process'))
     await stopSimulatedGame(exeName)
     const hadRpc = activeRpc.value
     activeExecutable.value = null
+    activeSimulationMode.value = null
     activeRpc.value = false
     if (hadRpc) {
       await disconnectFromDiscordRpc()
     }
     success.value = t('game_sim.stopped')
   } catch (e) {
-    error.value = e as string
+    const detail = e instanceof Error ? e.message : String(e)
+    error.value = simulationMode === 'cdp'
+      ? t('game_sim.cdp_cleanup_failed', { error: detail })
+      : detail
   } finally {
     stopping.value = false
   }
@@ -242,7 +315,7 @@ async function handleStopGame() {
           size="sm"
           :variant="mode === 'select' ? 'default' : 'ghost'"
           class="gap-1.5 h-7 px-3 text-xs"
-          :disabled="!!activeExecutable || running || stopping"
+          :disabled="hasActiveSimulation || simulatorBusy"
           @click="switchMode('select')"
         >
           <List class="w-3.5 h-3.5" />
@@ -252,7 +325,7 @@ async function handleStopGame() {
           size="sm"
           :variant="mode === 'custom' ? 'default' : 'ghost'"
           class="gap-1.5 h-7 px-3 text-xs"
-          :disabled="!!activeExecutable || running || stopping"
+          :disabled="hasActiveSimulation || simulatorBusy"
           @click="switchMode('custom')"
         >
           <Terminal class="w-3.5 h-3.5" />
@@ -262,7 +335,7 @@ async function handleStopGame() {
     </div>
 
     <div class="grid grid-cols-1 gap-6" :class="mode === 'select' ? 'lg:grid-cols-2' : ''">
-      <GameSelector v-if="mode === 'select'" @select="selectGame" />
+      <GameSelector v-if="mode === 'select'" :disabled="hasActiveSimulation || simulatorBusy" @select="selectGame" />
 
       <Card>
         <CardHeader>
@@ -271,6 +344,13 @@ async function handleStopGame() {
         </CardHeader>
 
         <CardContent>
+          <div
+            v-if="activeSimulationMode === 'cdp' && activeCdpSession"
+            class="mb-6 p-3 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 rounded-md text-sm border border-emerald-500/20"
+          >
+            {{ t('game_sim.cdp_active', { name: activeCdpSession.appName }) }}
+          </div>
+
           <!-- ── SELECT MODE ─────────────────────────── -->
           <template v-if="mode === 'select'">
             <div v-if="!selectedGame" class="text-center py-8 text-muted-foreground border-2 border-dashed rounded-lg">
@@ -407,13 +487,13 @@ async function handleStopGame() {
           </template>
         </CardContent>
 
-        <CardFooter v-if="canProceed || activeExecutable" class="flex flex-col gap-2">
+        <CardFooter v-if="canProceed" class="flex flex-col gap-2">
           <div class="grid grid-cols-2 gap-2 w-full">
             <Button
-              v-if="!activeExecutable"
+              v-if="!hasActiveSimulation"
               @click="handleRunGame"
               class="w-full bg-green-600 hover:bg-green-700 text-white"
-              :disabled="!effectiveExecutable || !installPath || running || stopping"
+              :disabled="!effectiveExecutable || !installPath || simulatorBusy || !!store.activeQuestId"
             >
               <Play v-if="!running" class="w-4 h-4 mr-2" />
               <Loader2 v-else class="w-4 h-4 mr-2 animate-spin" />
@@ -421,7 +501,21 @@ async function handleStopGame() {
             </Button>
 
             <Button
-              v-else
+              v-if="mode === 'select' && !hasActiveSimulation"
+              @click="handleRunCdpGame"
+              variant="outline"
+              class="w-full border-emerald-500/50 text-emerald-700 hover:bg-emerald-500/10 dark:text-emerald-300"
+              :disabled="!selectedGame || !store.cdpAvailable || simulatorBusy || !!store.activeQuestId"
+              :title="store.cdpAvailable ? t('game_sim.cdp_button_hint') : t('game_sim.cdp_unavailable')"
+            >
+              <MonitorPlay v-if="store.cdpAvailable && !cdpStarting" class="w-4 h-4 mr-2" />
+              <WifiOff v-else-if="!store.cdpAvailable && !cdpStarting" class="w-4 h-4 mr-2" />
+              <Loader2 v-else class="w-4 h-4 mr-2 animate-spin" />
+              {{ cdpStarting ? t('game_sim.cdp_starting') : t('game_sim.run_cdp_game') }}
+            </Button>
+
+            <Button
+              v-if="hasActiveSimulation"
               @click="handleStopGame"
               variant="destructive"
               class="w-full"
@@ -436,7 +530,7 @@ async function handleStopGame() {
               @click="openCreateDialog"
               variant="outline"
               class="w-full"
-              :disabled="!effectiveExecutable || !!activeExecutable || running || stopping"
+              :disabled="!effectiveExecutable || hasActiveSimulation || simulatorBusy"
             >
               <Hammer class="w-4 h-4 mr-2" />
               {{ t('game_sim.create_game') }}

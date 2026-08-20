@@ -13,6 +13,12 @@ import { getSimulationExecutables } from '@/utils/executables'
 const { t } = useI18n()
 const store = useQuestsStore()
 
+withDefaults(defineProps<{
+  disabled?: boolean
+}>(), {
+  disabled: false,
+})
+
 // Count executables the simulator can actually launch on this platform (Linux:
 // native `linux` only; Windows/macOS: win32) so the badge's "0 executables"
 // warning matches what the Game Simulator will accept.
@@ -82,7 +88,7 @@ onMounted(async () => {
           size="icon" 
           class="h-8 w-8" 
           @click="loadGames(true)"
-          :disabled="loading"
+          :disabled="loading || disabled"
         >
           <RefreshCw class="h-4 w-4" :class="{ 'animate-spin': refreshing }" />
         </Button>
@@ -93,6 +99,7 @@ onMounted(async () => {
           v-model="searchQuery" 
           :placeholder="t('game_sim.search')" 
           class="pl-8"
+          :disabled="disabled"
         />
       </div>
     </CardHeader>
@@ -120,6 +127,7 @@ onMounted(async () => {
           :key="game.id"
           variant="secondary"
           class="w-full justify-start h-auto py-3 px-4 items-center gap-3 shrink-0"
+          :disabled="disabled"
           @click="$emit('select', game)"
         >
           <!-- Icon -->

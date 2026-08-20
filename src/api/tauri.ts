@@ -322,6 +322,28 @@ export async function stopSimulatedGame(execName: string): Promise<void> {
   return await invoke('stop_simulated_game', { execName })
 }
 
+export interface ManualCdpGameSimulation {
+  appId: string
+  appName: string
+  cdpPort: number
+}
+
+export async function startManualCdpGameSimulation(
+  appId: string,
+  appName: string,
+  cdpPort: number
+): Promise<ManualCdpGameSimulation> {
+  return await invoke('start_manual_cdp_game_simulation', { appId, appName, cdpPort })
+}
+
+export async function stopManualCdpGameSimulation(): Promise<void> {
+  return await invoke('stop_manual_cdp_game_simulation')
+}
+
+export async function getManualCdpGameSimulation(): Promise<ManualCdpGameSimulation | null> {
+  return await invoke('get_manual_cdp_game_simulation')
+}
+
 export async function fetchDetectableGames(): Promise<DetectableGame[]> {
   return await invoke('fetch_detectable_games')
 }
