@@ -287,14 +287,17 @@ async function handleStopGame() {
 
     const exeName = activeExecutable.value
     if (!exeName) throw new Error(t('game_sim.no_active_process'))
-    await stopSimulatedGame(exeName)
+    // Disconnect the RPC client before clearing any state: if the disconnect
+    // fails, the Stop button must stay available so the user can retry, and a
+    // later retry skips the disconnect once activeRpc has been cleared.
     const hadRpc = activeRpc.value
-    activeExecutable.value = null
-    activeSimulationMode.value = null
-    activeRpc.value = false
     if (hadRpc) {
       await disconnectFromDiscordRpc()
+      activeRpc.value = false
     }
+    await stopSimulatedGame(exeName)
+    activeExecutable.value = null
+    activeSimulationMode.value = null
     success.value = t('game_sim.stopped')
   } catch (e) {
     const detail = e instanceof Error ? e.message : String(e)

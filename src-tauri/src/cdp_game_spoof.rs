@@ -323,39 +323,20 @@ pub fn cleanup_verify_from_json(parsed: &serde_json::Value) -> Option<CleanupVer
     if parsed.get("success") != Some(&serde_json::json!(true)) {
         return None;
     }
+    // Require every verification key: a missing or mistyped key must fail
+    // parsing (and therefore count as dirty) instead of silently defaulting
+    // to a clean value, otherwise schema drift could report a verified clean
+    // state while the spoof is still active in Discord.
+    let flag = |key: &str| parsed.get(key).and_then(|value| value.as_bool());
     Some(CleanupVerify {
-        dqh_present: parsed
-            .get("dqhPresent")
-            .and_then(|value| value.as_bool())
-            .unwrap_or(false),
-        spoof_active: parsed
-            .get("spoofActive")
-            .and_then(|value| value.as_bool())
-            .unwrap_or(false),
-        fake_game_present: parsed
-            .get("fakeGamePresent")
-            .and_then(|value| value.as_bool())
-            .unwrap_or(false),
-        has_dispatch_hook: parsed
-            .get("hasDispatchHook")
-            .and_then(|value| value.as_bool())
-            .unwrap_or(false),
-        broad_patch_count: parsed
-            .get("broadPatchCount")
-            .and_then(|value| value.as_u64())
-            .unwrap_or(0),
-        observer_hook: parsed
-            .get("observerHook")
-            .and_then(|value| value.as_bool())
-            .unwrap_or(false),
-        fake_in_running_games: parsed
-            .get("fakeInRunningGames")
-            .and_then(|value| value.as_bool())
-            .unwrap_or(false),
-        debug_game_present: parsed
-            .get("debugGamePresent")
-            .and_then(|value| value.as_bool())
-            .unwrap_or(false),
+        dqh_present: flag("dqhPresent")?,
+        spoof_active: flag("spoofActive")?,
+        fake_game_present: flag("fakeGamePresent")?,
+        has_dispatch_hook: flag("hasDispatchHook")?,
+        broad_patch_count: parsed.get("broadPatchCount").and_then(|v| v.as_u64())?,
+        observer_hook: flag("observerHook")?,
+        fake_in_running_games: flag("fakeInRunningGames")?,
+        debug_game_present: flag("debugGamePresent")?,
     })
 }
 
@@ -613,6 +594,41 @@ mod tests {
             "debugGamePresent": false
         }))
         .is_some_and(|verify| cleanup_verify_is_clean(&verify)));
+    }
+
+    #[test]
+    fn cleanup_verify_from_json_rejects_missing_keys() {
+        let complete = serde_json::json!({
+            "success": true,
+            "dqhPresent": false,
+            "spoofActive": false,
+            "fakeGamePresent": false,
+            "hasDispatchHook": false,
+            "broadPatchCount": 0,
+            "observerHook": false,
+            "fakeInRunningGames": false,
+            "debugGamePresent": false
+        });
+        assert!(cleanup_verify_from_json(&complete).is_some());
+        for key in [
+            "dqhPresent",
+            "spoofActive",
+            "fakeGamePresent",
+            "hasDispatchHook",
+            "broadPatchCount",
+            "observerHook",
+            "fakeInRunningGames",
+            "debugGamePresent",
+        ] {
+            let mut missing = complete.clone();
+            assert!(missing.as_object_mut().unwrap().remove(key).is_some());
+            assert!(
+                cleanup_verify_from_json(&missing).is_none(),
+                "missing '{}' must fail parsing so schema drift cannot read as clean",
+                key
+            );
+        }
+        assert!(cleanup_verify_from_json(&serde_json::json!({ "success": false })).is_none());
     }
 
     #[test]

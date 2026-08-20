@@ -439,32 +439,42 @@ const JS_READ_RUNNING_GAMES: &str = r###"
   delete result._native_utils;
   const games = Array.isArray(result.games) ? result.games : [];
   if (utils && typeof utils.getExecutableFingerprintForProcess === "function") {
-    for (const game of games) {
+    // Start every fingerprint probe concurrently so a missing native callback
+    // costs a single 2.5s fallback total instead of 2.5s per game; otherwise
+    // several dead probes can exceed the CDP evaluation timeout and the whole
+    // running-games snapshot is lost.
+    const probes = games.map(game => {
       const pid = Number(game && game.pid);
       const diagnostic = { pid: Number.isFinite(pid) ? pid : null, fingerprint: "<unavailable>" };
       if (!Number.isInteger(pid) || pid <= 0) {
         diagnostic.error = "game.pid is not a positive integer";
-        result.native_diagnostics.push(diagnostic);
-        continue;
+        return { diagnostic, promise: null };
       }
-      try {
-        diagnostic.fingerprint = await new Promise(resolve => {
-          let settled = false;
-          const finish = value => {
-            if (settled) return;
-            settled = true;
-            resolve(typeof value === "string" ? value : serialize(value));
-          };
-          try {
-            utils.getExecutableFingerprintForProcess(pid, finish);
-            setTimeout(() => finish("<timeout>"), 2500);
-          } catch (error) {
-            finish("<error: " + String(error) + ">");
-          }
-        });
-        diagnostic.length = typeof diagnostic.fingerprint === "string" ? diagnostic.fingerprint.length : null;
-      } catch (error) {
-        diagnostic.error = String(error);
+      const promise = new Promise(resolve => {
+        let settled = false;
+        const finish = value => {
+          if (settled) return;
+          settled = true;
+          resolve(typeof value === "string" ? value : serialize(value));
+        };
+        try {
+          utils.getExecutableFingerprintForProcess(pid, finish);
+          setTimeout(() => finish("<timeout>"), 2500);
+        } catch (error) {
+          finish("<error: " + String(error) + ">");
+        }
+      });
+      return { diagnostic, promise };
+    });
+    for (const probe of probes) {
+      const diagnostic = probe.diagnostic;
+      if (probe.promise) {
+        try {
+          diagnostic.fingerprint = await probe.promise;
+          diagnostic.length = typeof diagnostic.fingerprint === "string" ? diagnostic.fingerprint.length : null;
+        } catch (error) {
+          diagnostic.error = String(error);
+        }
       }
       result.native_diagnostics.push(diagnostic);
     }

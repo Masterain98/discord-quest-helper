@@ -9,5 +9,5 @@
 4. Refreshed and added translations for the new text.
 5. Bumped default client config:
     - client version to `1.0.9254`
-    - default client build numbre to `595897`
+    - default client build number to `595897`
     - native build number to `88466`

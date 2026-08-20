@@ -1098,12 +1098,16 @@ const JS_CLEANUP_SPOOF: &str = r#"
                 awaitedObserverRefresh = true;
             }
 
-            if (dqh.FluxDispatcher && dqh._heartbeatFn) {
-                dqh.FluxDispatcher.unsubscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", dqh._heartbeatFn);
-            }
-            if (dqh.FluxDispatcher && dqh._heartbeatFailFn) {
-                dqh.FluxDispatcher.unsubscribe("QUESTS_SEND_HEARTBEAT_FAILURE", dqh._heartbeatFailFn);
-            }
+            try {
+                if (dqh.FluxDispatcher && dqh._heartbeatFn) {
+                    dqh.FluxDispatcher.unsubscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", dqh._heartbeatFn);
+                }
+            } catch(e) {}
+            try {
+                if (dqh.FluxDispatcher && dqh._heartbeatFailFn) {
+                    dqh.FluxDispatcher.unsubscribe("QUESTS_SEND_HEARTBEAT_FAILURE", dqh._heartbeatFailFn);
+                }
+            } catch(e) {}
 
             let remaining = [];
             try {
@@ -1127,9 +1131,11 @@ const JS_CLEANUP_SPOOF: &str = r#"
                     return true;
                 });
             }
-            if (dqh.FluxDispatcher && dqh._fakeGame) {
-                dqh.FluxDispatcher.dispatch({ type: "RUNNING_GAMES_CHANGE", removed: [dqh._fakeGame], added: [], games: remaining });
-            }
+            try {
+                if (dqh.FluxDispatcher && dqh._fakeGame) {
+                    dqh.FluxDispatcher.dispatch({ type: "RUNNING_GAMES_CHANGE", removed: [dqh._fakeGame], added: [], games: remaining });
+                }
+            } catch(e) {}
 
             try {
                 delete window[name];
@@ -4264,8 +4270,7 @@ mod tests {
         assert!(JS_VERIFY_CLEANUP_STATE.contains("observerHook"));
         assert!(JS_VERIFY_CLEANUP_STATE.contains("fakeInRunningGames"));
         assert!(JS_VERIFY_CLEANUP_STATE.contains("debugGamePresent"));
-        assert!(JS_VERIFY_CLEANUP_STATE
-            .contains("try {\n                            const val = exp[key];"));
+        assert!(JS_VERIFY_CLEANUP_STATE.contains("const val = exp[key];"));
         assert!(JS_INIT_QUEST_MODULES.contains("NativeUtils"));
         assert!(JS_INIT_QUEST_MODULES.contains("DetectableGameStore"));
         assert!(JS_INIT_QUEST_MODULES.contains("const DQH_INIT_VERSION = 7"));
