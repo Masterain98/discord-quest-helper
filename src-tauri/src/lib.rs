@@ -34,6 +34,10 @@ const APP_EXIT_RPC_DISCONNECT_TIMEOUT: std::time::Duration = std::time::Duration
 /// Bound for waiting on a cancelled quest task. CDP cancel cleanup uses one
 /// 15s evaluation; keep headroom for a poll-loop select to notice cancel.
 const QUEST_STOP_WAIT: std::time::Duration = std::time::Duration::from_secs(45);
+/// Last-chance wait inside `exit_app_now` after the frontend's short prepare
+/// deadline. Covers verified manual CDP cleanup (five 15s evaluations) plus
+/// a cancelled quest task so `process::exit` does not abort in-flight rollback.
+const APP_EXIT_FINAL_CLEANUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 
 /// Tracks whether process-local exit cleanup and verified active-work cleanup
 /// have completed. Local cleanup is one-shot; active-work cleanup stays
@@ -1816,6 +1820,41 @@ pub fn run() {
 
 #[tauri::command]
 async fn prepare_app_exit(state: State<'_, AppState>) -> Result<(), String> {
+    prepare_active_work_and_local_cleanup(&state).await
+}
+
+/// End the main process after the frontend has completed its best-effort
+/// cleanup.  This must not go through Tauri's window-close machinery: that
+/// machinery is intentionally intercepted to show the CDP warning dialog,
+/// and routing the confirmed action back through it can leave the window
+/// alive with the frontend's close guard latched.
+#[tauri::command]
+async fn exit_app_now(state: State<'_, AppState>) -> Result<(), String> {
+    // The close UI fail-opens after a short prepare deadline so a hung Discord
+    // evaluation cannot trap the window. This command is the last chance to
+    // finish or retry CDP rollback before the process disappears.
+    match tokio::time::timeout(
+        APP_EXIT_FINAL_CLEANUP_TIMEOUT,
+        prepare_active_work_and_local_cleanup(&state),
+    )
+    .await
+    {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => {
+            eprintln!("Active-work cleanup failed during process exit: {error}");
+            prepare_app_exit_fallback();
+        }
+        Err(_) => {
+            eprintln!(
+                "Final exit cleanup timed out after {APP_EXIT_FINAL_CLEANUP_TIMEOUT:?}; terminating anyway"
+            );
+            prepare_app_exit_fallback();
+        }
+    }
+    std::process::exit(0);
+}
+
+async fn prepare_active_work_and_local_cleanup(state: &State<'_, AppState>) -> Result<(), String> {
     if APP_EXIT_CLEANUP.is_prepared() {
         return Ok(());
     }
@@ -1830,7 +1869,7 @@ async fn prepare_app_exit(state: State<'_, AppState>) -> Result<(), String> {
     // has run so an RPC/game cleanup failure cannot strand another resource.
     // Do not mark exit prepared until this cleanup succeeds; otherwise a
     // later prepare_app_exit (or a retried close) would skip rollback.
-    let active_work_error = stop_active_work_internal(&state).await.err();
+    let active_work_error = stop_active_work_internal(state).await.err();
     cleanup_local_resources_on_exit().await;
     match active_work_error {
         Some(error) => Err(error),
@@ -1839,19 +1878,6 @@ async fn prepare_app_exit(state: State<'_, AppState>) -> Result<(), String> {
             Ok(())
         }
     }
-}
-
-/// End the main process after the frontend has completed its best-effort
-/// cleanup.  This must not go through Tauri's window-close machinery: that
-/// machinery is intentionally intercepted to show the CDP warning dialog,
-/// and routing the confirmed action back through it can leave the window
-/// alive with the frontend's close guard latched.
-#[tauri::command]
-fn exit_app_now() -> Result<(), String> {
-    // `prepare_app_exit` normally ran before this command.  Keep the fallback
-    // for direct callers and for a future UI path that might omit it.
-    prepare_app_exit_fallback();
-    std::process::exit(0);
 }
 
 fn prepare_app_exit_fallback() {

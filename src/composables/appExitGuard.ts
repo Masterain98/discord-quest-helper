@@ -21,7 +21,7 @@ export interface ExitGuardDependencies {
   showError(message: string): Promise<void>
   logError(error: unknown): void
   onStateChange(state: ExitGuardState): void
-  /** Prevent a best-effort backend cleanup from trapping the window in closing state. */
+  /** Prevent a hung prepare IPC from stalling the close UI. Backend exit still retries CDP cleanup. */
   exitPreparationTimeoutMs?: number
 }
 
