@@ -30,13 +30,187 @@ use tauri::{Emitter, Listener, Manager, State};
 static SUPER_PROPERTIES_MANAGER: Lazy<Mutex<XSuperPropertiesManager>> =
     Lazy::new(|| Mutex::new(XSuperPropertiesManager::new()));
 
-static APP_EXIT_PREPARED: AtomicBool = AtomicBool::new(false);
 const APP_EXIT_RPC_DISCONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+/// Bound for waiting on a cancelled quest task. CDP cancel cleanup uses one
+/// 15s evaluation; keep headroom for a poll-loop select to notice cancel.
+const QUEST_STOP_WAIT: std::time::Duration = std::time::Duration::from_secs(45);
+/// Last-chance wait inside `exit_app_now` after the frontend's short prepare
+/// deadline. Covers verified manual CDP cleanup (five 15s evaluations) plus
+/// a cancelled quest task so `process::exit` does not abort in-flight rollback.
+const APP_EXIT_FINAL_CLEANUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// Tracks whether process-local exit cleanup and verified active-work cleanup
+/// have completed. Local cleanup is one-shot; active-work cleanup stays
+/// retryable until it succeeds so a failed CDP rollback cannot permanently
+/// skip later `prepare_app_exit` calls.
+struct AppExitCleanupState {
+    prepared: AtomicBool,
+    local_done: AtomicBool,
+}
+
+impl AppExitCleanupState {
+    const fn new() -> Self {
+        Self {
+            prepared: AtomicBool::new(false),
+            local_done: AtomicBool::new(false),
+        }
+    }
+
+    fn is_prepared(&self) -> bool {
+        self.prepared.load(Ordering::SeqCst)
+    }
+
+    fn mark_prepared(&self) {
+        self.prepared.store(true, Ordering::SeqCst);
+    }
+
+    fn claim_local_cleanup(&self) -> bool {
+        !self.local_done.swap(true, Ordering::SeqCst)
+    }
+}
+
+static APP_EXIT_CLEANUP: AppExitCleanupState = AppExitCleanupState::new();
 
 /// Global state: Discord API client
 struct AppState {
     client: Mutex<Option<DiscordApiClient>>,
     quest_state: Mutex<Option<QuestState>>,
+    manual_cdp_game: tokio::sync::Mutex<ManualCdpGameSessionState>,
+    /// Serializes quest startup, manual CDP startup, and active-work teardown
+    /// so the two Discord-activity owners cannot both pass their idle checks.
+    activity_gate: tokio::sync::Mutex<()>,
+}
+
+#[derive(Debug, Default)]
+struct ManualCdpGameSessionState {
+    active: Option<ManualCdpGameSimulation>,
+}
+
+impl ManualCdpGameSessionState {
+    fn ensure_idle(&self) -> Result<(), String> {
+        match &self.active {
+            Some(session) => Err(format!(
+                "A manual CDP game simulation is already active for {}",
+                session.app_name
+            )),
+            None => Ok(()),
+        }
+    }
+
+    fn activate(&mut self, session: ManualCdpGameSimulation) {
+        self.active = Some(session);
+    }
+
+    fn active(&self) -> Option<ManualCdpGameSimulation> {
+        self.active.clone()
+    }
+
+    fn clear(&mut self) {
+        self.active = None;
+    }
+
+    fn finish_cleanup(&mut self, result: Result<(), String>) -> Result<(), String> {
+        result?;
+        self.clear();
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod manual_cdp_game_session_tests {
+    use super::*;
+
+    fn session(name: &str) -> ManualCdpGameSimulation {
+        ManualCdpGameSimulation {
+            app_id: "123456".to_string(),
+            app_name: name.to_string(),
+            cdp_port: 9223,
+        }
+    }
+
+    #[test]
+    fn only_one_manual_cdp_game_can_be_active() {
+        let mut state = ManualCdpGameSessionState::default();
+        state.ensure_idle().unwrap();
+        state.activate(session("First"));
+
+        assert!(state.ensure_idle().is_err());
+        assert_eq!(state.active().unwrap().app_name, "First");
+    }
+
+    #[test]
+    fn failed_start_does_not_record_a_session() {
+        let state = ManualCdpGameSessionState::default();
+        state.ensure_idle().unwrap();
+
+        // CDP startup failed before activate() was called.
+        assert!(state.active().is_none());
+    }
+
+    #[test]
+    fn cleanup_failure_keeps_the_session_for_retry() {
+        let mut state = ManualCdpGameSessionState::default();
+        state.activate(session("Retry Me"));
+
+        assert!(state
+            .finish_cleanup(Err("Discord target disconnected".to_string()))
+            .is_err());
+        assert_eq!(state.active().unwrap().app_name, "Retry Me");
+
+        state.finish_cleanup(Ok(())).unwrap();
+        assert!(state.active().is_none());
+    }
+
+    #[test]
+    fn session_uses_the_frontend_camel_case_contract() {
+        let value = serde_json::to_value(session("Contract")).unwrap();
+        assert_eq!(value["appId"], "123456");
+        assert_eq!(value["appName"], "Contract");
+        assert_eq!(value["cdpPort"], 9223);
+        assert!(value.get("app_id").is_none());
+    }
+}
+
+#[cfg(test)]
+mod app_exit_cleanup_state_tests {
+    use super::AppExitCleanupState;
+
+    #[test]
+    fn failed_active_work_cleanup_leaves_exit_retryable() {
+        let state = AppExitCleanupState::new();
+        assert!(state.claim_local_cleanup());
+        assert!(!state.claim_local_cleanup());
+        assert!(!state.is_prepared());
+    }
+
+    #[test]
+    fn successful_exit_preparation_skips_later_attempts() {
+        let state = AppExitCleanupState::new();
+        assert!(state.claim_local_cleanup());
+        state.mark_prepared();
+        assert!(state.is_prepared());
+    }
+}
+
+#[cfg(test)]
+mod quest_stop_wait_tests {
+    use super::await_quest_task;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn waiting_for_a_quest_task_observes_cleanup_before_returning() {
+        let cleaned = Arc::new(AtomicBool::new(false));
+        let cleaned_for_task = cleaned.clone();
+        let join = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            cleaned_for_task.store(true, Ordering::SeqCst);
+        });
+
+        await_quest_task(join).await;
+        assert!(cleaned.load(Ordering::SeqCst));
+    }
 }
 
 /// Auto-detect Discord tokens (returns all valid accounts found)
@@ -564,8 +738,8 @@ async fn start_video_quest(
     state: State<'_, AppState>,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
-    // Stop current quest (if any)
-    stop_quest_internal(&state).await;
+    let _gate = state.activity_gate.lock().await;
+    stop_active_work_internal(&state).await?;
 
     let client = state.client.lock().unwrap();
     let client = client
@@ -573,17 +747,9 @@ async fn start_video_quest(
         .ok_or_else(|| "Not logged in".to_string())?
         .clone();
 
-    // Create cancel channel
+    let quest_id_for_state = quest_id.clone();
     let (cancel_tx, cancel_rx) = tokio::sync::mpsc::channel::<()>(1);
-
-    // Save quest state
-    *state.quest_state.lock().unwrap() = Some(QuestState {
-        quest_id: quest_id.clone(),
-        cancel_flag: cancel_tx,
-    });
-
-    // Run in background task
-    tokio::spawn(async move {
+    let join = tokio::spawn(async move {
         let result = quest_completer::complete_video_quest(
             &client,
             quest_id,
@@ -600,6 +766,7 @@ async fn start_video_quest(
             let _ = app_handle.emit("quest-error", format!("Video quest failed: {}", e));
         }
     });
+    store_running_quest(&state, quest_id_for_state, cancel_tx, join);
 
     Ok(())
 }
@@ -614,8 +781,8 @@ async fn start_stream_quest(
     state: State<'_, AppState>,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
-    // Stop current quest (if any)
-    stop_quest_internal(&state).await;
+    let _gate = state.activity_gate.lock().await;
+    stop_active_work_internal(&state).await?;
 
     let client = {
         let guard = state.client.lock().unwrap();
@@ -625,17 +792,9 @@ async fn start_stream_quest(
             .clone()
     };
 
-    // Create cancel channel
+    let quest_id_for_state = quest_id.clone();
     let (cancel_tx, cancel_rx) = tokio::sync::mpsc::channel::<()>(1);
-
-    // Save quest state
-    *state.quest_state.lock().unwrap() = Some(QuestState {
-        quest_id: quest_id.clone(),
-        cancel_flag: cancel_tx,
-    });
-
-    // Run in background task
-    tokio::spawn(async move {
+    let join = tokio::spawn(async move {
         let result = quest_completer::complete_stream_quest(
             &client,
             quest_id,
@@ -651,6 +810,7 @@ async fn start_stream_quest(
             let _ = app_handle.emit("quest-error", format!("Stream quest failed: {}", e));
         }
     });
+    store_running_quest(&state, quest_id_for_state, cancel_tx, join);
 
     Ok(())
 }
@@ -665,8 +825,8 @@ async fn start_game_heartbeat_quest(
     state: State<'_, AppState>,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
-    // Stop current quest (if any)
-    stop_quest_internal(&state).await;
+    let _gate = state.activity_gate.lock().await;
+    stop_active_work_internal(&state).await?;
 
     let client = {
         let guard = state.client.lock().unwrap();
@@ -676,17 +836,9 @@ async fn start_game_heartbeat_quest(
             .clone()
     };
 
-    // Create cancel channel
+    let quest_id_for_state = quest_id.clone();
     let (cancel_tx, cancel_rx) = tokio::sync::mpsc::channel::<()>(1);
-
-    // Save quest state
-    *state.quest_state.lock().unwrap() = Some(QuestState {
-        quest_id: quest_id.clone(),
-        cancel_flag: cancel_tx,
-    });
-
-    // Run in background task
-    tokio::spawn(async move {
+    let join = tokio::spawn(async move {
         let result = quest_completer::complete_game_quest_via_heartbeat(
             &client,
             quest_id,
@@ -702,6 +854,7 @@ async fn start_game_heartbeat_quest(
             let _ = app_handle.emit("quest-error", format!("Game heartbeat quest failed: {}", e));
         }
     });
+    store_running_quest(&state, quest_id_for_state, cancel_tx, join);
 
     Ok(())
 }
@@ -776,15 +929,11 @@ async fn start_play_activity_quest(
         return Err("Not logged in".to_string());
     }
 
-    stop_quest_internal(&state).await;
-
+    let _gate = state.activity_gate.lock().await;
+    stop_active_work_internal(&state).await?;
+    let quest_id_for_state = quest_id.clone();
     let (cancel_tx, cancel_rx) = tokio::sync::mpsc::channel::<()>(1);
-    *state.quest_state.lock().unwrap() = Some(QuestState {
-        quest_id: quest_id.clone(),
-        cancel_flag: cancel_tx,
-    });
-
-    tokio::spawn(async move {
+    let join = tokio::spawn(async move {
         let result = if transport == PlayActivityTransport::Cdp {
             cdp_quest::complete_play_activity_via_cdp(
                 cdp_port,
@@ -822,6 +971,7 @@ async fn start_play_activity_quest(
             );
         }
     });
+    store_running_quest(&state, quest_id_for_state, cancel_tx, join);
 
     Ok(())
 }
@@ -843,25 +993,17 @@ async fn start_cdp_quest(
     state: State<'_, AppState>,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
-    // Stop current quest (if any)
-    stop_quest_internal(&state).await;
-
-    // Create cancel channel
+    let _gate = state.activity_gate.lock().await;
+    stop_active_work_internal(&state).await?;
+    let quest_id_for_state = quest_id.clone();
     let (cancel_tx, cancel_rx) = tokio::sync::mpsc::channel::<()>(1);
-
-    // Save quest state
-    *state.quest_state.lock().unwrap() = Some(QuestState {
-        quest_id: quest_id.clone(),
-        cancel_flag: cancel_tx,
-    });
 
     let quest_type_clone = quest_type.clone();
 
     // Clone the API client for progress polling (play/stream quests)
     let client = state.client.lock().unwrap().clone();
 
-    // Run in background task
-    tokio::spawn(async move {
+    let join = tokio::spawn(async move {
         let result = match quest_type_clone.as_str() {
             "play" => {
                 cdp_quest::complete_play_quest_via_cdp(
@@ -927,6 +1069,7 @@ async fn start_cdp_quest(
             let _ = app_handle.emit("quest-error", format!("CDP quest failed: {:#}", e));
         }
     });
+    store_running_quest(&state, quest_id_for_state, cancel_tx, join);
 
     Ok(())
 }
@@ -934,8 +1077,21 @@ async fn start_cdp_quest(
 /// Stop current quest
 #[tauri::command]
 async fn stop_quest(state: State<'_, AppState>) -> Result<(), String> {
-    stop_quest_internal(&state).await;
-    Ok(())
+    let _gate = state.activity_gate.lock().await;
+    stop_active_work_internal(&state).await
+}
+
+fn store_running_quest(
+    state: &State<'_, AppState>,
+    quest_id: String,
+    cancel_flag: tokio::sync::mpsc::Sender<()>,
+    join: tokio::task::JoinHandle<()>,
+) {
+    *state.quest_state.lock().unwrap() = Some(QuestState {
+        quest_id,
+        cancel_flag,
+        join: Some(join),
+    });
 }
 
 async fn stop_quest_internal(state: &State<'_, AppState>) {
@@ -946,8 +1102,77 @@ async fn stop_quest_internal(state: &State<'_, AppState>) {
 
     if let Some(quest) = quest {
         let _ = quest.cancel_flag.send(()).await;
+        if let Some(join) = quest.join {
+            await_quest_task(join).await;
+        }
         println!("Quest stopped");
     }
+}
+
+async fn await_quest_task(join: tokio::task::JoinHandle<()>) {
+    match tokio::time::timeout(QUEST_STOP_WAIT, join).await {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => {
+            eprintln!("Quest task ended with a join error after cancel: {error}");
+        }
+        Err(_) => {
+            eprintln!(
+                "Quest task did not finish within {QUEST_STOP_WAIT:?} after cancel; leftover Discord activity may still be cleaned up in the background"
+            );
+        }
+    }
+}
+
+async fn ensure_no_active_quest(state: &State<'_, AppState>) -> Result<(), String> {
+    let stale = {
+        let mut quest_state = state.quest_state.lock().unwrap();
+        match quest_state.as_ref() {
+            Some(quest) if !quest.cancel_flag.is_closed() => {
+                return Err(
+                    "Stop the active quest before starting a manual CDP game simulation"
+                        .to_string(),
+                );
+            }
+            Some(_) => {
+                // Completed background tasks close their receiver. Discard that
+                // stale bookkeeping entry without treating it as an active quest,
+                // but still wait so any in-flight CDP cleanup can finish.
+                quest_state.take()
+            }
+            None => None,
+        }
+    };
+    if let Some(quest) = stale {
+        if let Some(join) = quest.join {
+            await_quest_task(join).await;
+        }
+    }
+    Ok(())
+}
+
+async fn stop_manual_cdp_game_simulation_internal(
+    state: &State<'_, AppState>,
+) -> Result<(), String> {
+    // Keep the lock for the full verified cleanup so a concurrent start cannot
+    // install a new spoof between cleanup and clearing the saved session.
+    let mut sessions = state.manual_cdp_game.lock().await;
+    let Some(session) = sessions.active() else {
+        return Ok(());
+    };
+
+    let cleanup_result = cdp_quest::stop_manual_game_spoof(session.cdp_port)
+        .await
+        .map_err(|error| {
+            format!(
+                "Failed to stop manual CDP game simulation: {error}. Restart Discord if the simulated game remains visible."
+            )
+        });
+    sessions.finish_cleanup(cleanup_result)
+}
+
+async fn stop_active_work_internal(state: &State<'_, AppState>) -> Result<(), String> {
+    stop_quest_internal(state).await;
+    stop_manual_cdp_game_simulation_internal(state).await
 }
 
 /// Navigate Discord client SPA to a specific path (no reload)
@@ -990,6 +1215,70 @@ async fn run_simulated_game(
 async fn stop_simulated_game(exec_name: String) -> Result<(), String> {
     game_simulator::stop_simulated_game(&exec_name)
         .map_err(|e| format!("Failed to stop simulated game: {}", e))
+}
+
+/// Start a persistent manual game simulation inside Discord via CDP.
+#[tauri::command]
+async fn start_manual_cdp_game_simulation(
+    app_id: String,
+    app_name: String,
+    cdp_port: u16,
+    state: State<'_, AppState>,
+) -> Result<ManualCdpGameSimulation, String> {
+    let app_id = app_id.trim().to_string();
+    let app_name = app_name.trim().to_string();
+    if app_id.is_empty() {
+        return Err("Application ID is required for CDP game simulation".to_string());
+    }
+    if app_name.is_empty() {
+        return Err("Application name is required for CDP game simulation".to_string());
+    }
+    if cdp_port == 0 {
+        return Err("CDP port must be between 1 and 65535".to_string());
+    }
+
+    // Keep the gate through activation so a concurrent quest start cannot
+    // pass its idle check, install QuestState, and then allow this command
+    // to inject a second Discord activity.
+    let _gate = state.activity_gate.lock().await;
+    ensure_no_active_quest(&state).await?;
+
+    let mut sessions = state.manual_cdp_game.lock().await;
+    sessions.ensure_idle()?;
+
+    let status = cdp_client::check_cdp_available(cdp_port).await;
+    if !status.connected {
+        return Err(status
+            .error
+            .unwrap_or_else(|| format!("Discord CDP is not connected on port {cdp_port}")));
+    }
+
+    cdp_quest::start_manual_game_spoof(cdp_port, &app_id, &app_name)
+        .await
+        .map_err(|error| format!("Failed to start manual CDP game simulation: {error}"))?;
+
+    let session = ManualCdpGameSimulation {
+        app_id,
+        app_name,
+        cdp_port,
+    };
+    sessions.activate(session.clone());
+    Ok(session)
+}
+
+/// Stop and fully verify cleanup of the current manual CDP game simulation.
+#[tauri::command]
+async fn stop_manual_cdp_game_simulation(state: State<'_, AppState>) -> Result<(), String> {
+    let _gate = state.activity_gate.lock().await;
+    stop_manual_cdp_game_simulation_internal(&state).await
+}
+
+/// Return the backend-owned manual CDP game simulation, if one is active.
+#[tauri::command]
+async fn get_manual_cdp_game_simulation(
+    state: State<'_, AppState>,
+) -> Result<Option<ManualCdpGameSimulation>, String> {
+    Ok(state.manual_cdp_game.lock().await.active())
 }
 
 /// Get detectable games list (works with or without login)
@@ -1428,6 +1717,8 @@ pub fn run() {
         .manage(AppState {
             client: Mutex::new(None),
             quest_state: Mutex::new(None),
+            manual_cdp_game: tokio::sync::Mutex::new(ManualCdpGameSessionState::default()),
+            activity_gate: tokio::sync::Mutex::new(()),
         })
         .setup(|app| {
             // `pnpm tauri:dev` rebuilds the bundled launcher before Tauri
@@ -1481,6 +1772,9 @@ pub fn run() {
             create_simulated_game,
             run_simulated_game,
             stop_simulated_game,
+            start_manual_cdp_game_simulation,
+            stop_manual_cdp_game_simulation,
+            get_manual_cdp_game_simulation,
             fetch_detectable_games,
             accept_quest,
             get_virtual_currency_balance,
@@ -1525,28 +1819,8 @@ pub fn run() {
 }
 
 #[tauri::command]
-async fn prepare_app_exit() -> Result<(), String> {
-    if APP_EXIT_PREPARED.swap(true, Ordering::SeqCst) {
-        return Ok(());
-    }
-    game_simulator::cleanup_all_simulated_games();
-    let client = match get_discord_rpc_client().lock() {
-        Ok(mut guard) => guard.take(),
-        Err(_) => {
-            eprintln!("Discord RPC state lock is poisoned during app exit");
-            None
-        }
-    };
-    if let Some(client) = client {
-        if tokio::time::timeout(APP_EXIT_RPC_DISCONNECT_TIMEOUT, client.discord.disconnect())
-            .await
-            .is_err()
-        {
-            eprintln!("Discord RPC disconnect timed out during app exit");
-        }
-    }
-    stealth::cleanup_on_exit();
-    Ok(())
+async fn prepare_app_exit(state: State<'_, AppState>) -> Result<(), String> {
+    prepare_active_work_and_local_cleanup(&state).await
 }
 
 /// End the main process after the frontend has completed its best-effort
@@ -1555,24 +1829,101 @@ async fn prepare_app_exit() -> Result<(), String> {
 /// and routing the confirmed action back through it can leave the window
 /// alive with the frontend's close guard latched.
 #[tauri::command]
-fn exit_app_now() -> Result<(), String> {
-    // `prepare_app_exit` normally ran before this command.  Keep the fallback
-    // for direct callers and for a future UI path that might omit it.
-    prepare_app_exit_fallback();
+async fn exit_app_now(state: State<'_, AppState>) -> Result<(), String> {
+    // The close UI fail-opens after a short prepare deadline so a hung Discord
+    // evaluation cannot trap the window. This command is the last chance to
+    // finish or retry CDP rollback before the process disappears.
+    match tokio::time::timeout(
+        APP_EXIT_FINAL_CLEANUP_TIMEOUT,
+        prepare_active_work_and_local_cleanup(&state),
+    )
+    .await
+    {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => {
+            eprintln!("Active-work cleanup failed during process exit: {error}");
+            prepare_app_exit_fallback();
+        }
+        Err(_) => {
+            eprintln!(
+                "Final exit cleanup timed out after {APP_EXIT_FINAL_CLEANUP_TIMEOUT:?}; terminating anyway"
+            );
+            prepare_app_exit_fallback();
+        }
+    }
     std::process::exit(0);
 }
 
+async fn prepare_active_work_and_local_cleanup(state: &State<'_, AppState>) -> Result<(), String> {
+    if APP_EXIT_CLEANUP.is_prepared() {
+        return Ok(());
+    }
+
+    let _gate = state.activity_gate.lock().await;
+    if APP_EXIT_CLEANUP.is_prepared() {
+        return Ok(());
+    }
+
+    // Manual CDP injections must be removed while the Discord targets are
+    // still reachable. Preserve any error until the remaining local cleanup
+    // has run so an RPC/game cleanup failure cannot strand another resource.
+    // Do not mark exit prepared until this cleanup succeeds; otherwise a
+    // later prepare_app_exit (or a retried close) would skip rollback.
+    let active_work_error = stop_active_work_internal(state).await.err();
+    cleanup_local_resources_on_exit().await;
+    match active_work_error {
+        Some(error) => Err(error),
+        None => {
+            APP_EXIT_CLEANUP.mark_prepared();
+            Ok(())
+        }
+    }
+}
+
 fn prepare_app_exit_fallback() {
-    if APP_EXIT_PREPARED.swap(true, Ordering::SeqCst) {
+    if APP_EXIT_CLEANUP.is_prepared() {
+        return;
+    }
+    // Fallback cannot reach Discord via CDP (no AppState). Still run the
+    // one-shot local cleanup if prepare_app_exit has not claimed it yet.
+    cleanup_local_resources_on_exit_sync();
+}
+
+fn take_discord_rpc_client_for_exit() -> Option<rpc::Client> {
+    match get_discord_rpc_client().lock() {
+        Ok(mut guard) => guard.take(),
+        Err(_) => {
+            eprintln!("Discord RPC state lock is poisoned during app exit");
+            None
+        }
+    }
+}
+
+async fn cleanup_local_resources_on_exit() {
+    if !APP_EXIT_CLEANUP.claim_local_cleanup() {
         return;
     }
     game_simulator::cleanup_all_simulated_games();
-    if let Ok(mut guard) = get_discord_rpc_client().lock() {
-        if let Some(client) = guard.take() {
-            tauri::async_runtime::spawn(async move {
-                client.discord.disconnect().await;
-            });
+    if let Some(client) = take_discord_rpc_client_for_exit() {
+        if tokio::time::timeout(APP_EXIT_RPC_DISCONNECT_TIMEOUT, client.discord.disconnect())
+            .await
+            .is_err()
+        {
+            eprintln!("Discord RPC disconnect timed out during app exit");
         }
+    }
+    stealth::cleanup_on_exit();
+}
+
+fn cleanup_local_resources_on_exit_sync() {
+    if !APP_EXIT_CLEANUP.claim_local_cleanup() {
+        return;
+    }
+    game_simulator::cleanup_all_simulated_games();
+    if let Some(client) = take_discord_rpc_client_for_exit() {
+        tauri::async_runtime::spawn(async move {
+            client.discord.disconnect().await;
+        });
     }
     stealth::cleanup_on_exit();
 }

@@ -103,6 +103,20 @@ pub struct QuestState {
     #[allow(dead_code)]
     pub quest_id: String,
     pub cancel_flag: tokio::sync::mpsc::Sender<()>,
+    /// Background completion task. Stop waits on this so CDP quest cleanup
+    /// cannot race a newly admitted manual spoof or replacement quest.
+    pub join: Option<tokio::task::JoinHandle<()>>,
+}
+
+/// Backend-owned manual CDP game simulation session. The frontend can query
+/// this after remounting the simulator view so an injected game never becomes
+/// impossible to stop merely because the user changed tabs.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ManualCdpGameSimulation {
+    pub app_id: String,
+    pub app_name: String,
+    pub cdp_port: u16,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
