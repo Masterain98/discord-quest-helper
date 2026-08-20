@@ -31,6 +31,9 @@ static SUPER_PROPERTIES_MANAGER: Lazy<Mutex<XSuperPropertiesManager>> =
     Lazy::new(|| Mutex::new(XSuperPropertiesManager::new()));
 
 const APP_EXIT_RPC_DISCONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+/// Bound for waiting on a cancelled quest task. CDP cancel cleanup uses one
+/// 15s evaluation; keep headroom for a poll-loop select to notice cancel.
+const QUEST_STOP_WAIT: std::time::Duration = std::time::Duration::from_secs(45);
 
 /// Tracks whether process-local exit cleanup and verified active-work cleanup
 /// have completed. Local cleanup is one-shot; active-work cleanup stays
@@ -182,6 +185,27 @@ mod app_exit_cleanup_state_tests {
         assert!(state.claim_local_cleanup());
         state.mark_prepared();
         assert!(state.is_prepared());
+    }
+}
+
+#[cfg(test)]
+mod quest_stop_wait_tests {
+    use super::await_quest_task;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn waiting_for_a_quest_task_observes_cleanup_before_returning() {
+        let cleaned = Arc::new(AtomicBool::new(false));
+        let cleaned_for_task = cleaned.clone();
+        let join = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            cleaned_for_task.store(true, Ordering::SeqCst);
+        });
+
+        await_quest_task(join).await;
+        assert!(cleaned.load(Ordering::SeqCst));
     }
 }
 
@@ -719,10 +743,9 @@ async fn start_video_quest(
         .ok_or_else(|| "Not logged in".to_string())?
         .clone();
 
-    let cancel_rx = install_quest_state(&state, quest_id.clone());
-
-    // Run in background task
-    tokio::spawn(async move {
+    let quest_id_for_state = quest_id.clone();
+    let (cancel_tx, cancel_rx) = tokio::sync::mpsc::channel::<()>(1);
+    let join = tokio::spawn(async move {
         let result = quest_completer::complete_video_quest(
             &client,
             quest_id,
@@ -739,6 +762,7 @@ async fn start_video_quest(
             let _ = app_handle.emit("quest-error", format!("Video quest failed: {}", e));
         }
     });
+    store_running_quest(&state, quest_id_for_state, cancel_tx, join);
 
     Ok(())
 }
@@ -764,10 +788,9 @@ async fn start_stream_quest(
             .clone()
     };
 
-    let cancel_rx = install_quest_state(&state, quest_id.clone());
-
-    // Run in background task
-    tokio::spawn(async move {
+    let quest_id_for_state = quest_id.clone();
+    let (cancel_tx, cancel_rx) = tokio::sync::mpsc::channel::<()>(1);
+    let join = tokio::spawn(async move {
         let result = quest_completer::complete_stream_quest(
             &client,
             quest_id,
@@ -783,6 +806,7 @@ async fn start_stream_quest(
             let _ = app_handle.emit("quest-error", format!("Stream quest failed: {}", e));
         }
     });
+    store_running_quest(&state, quest_id_for_state, cancel_tx, join);
 
     Ok(())
 }
@@ -808,10 +832,9 @@ async fn start_game_heartbeat_quest(
             .clone()
     };
 
-    let cancel_rx = install_quest_state(&state, quest_id.clone());
-
-    // Run in background task
-    tokio::spawn(async move {
+    let quest_id_for_state = quest_id.clone();
+    let (cancel_tx, cancel_rx) = tokio::sync::mpsc::channel::<()>(1);
+    let join = tokio::spawn(async move {
         let result = quest_completer::complete_game_quest_via_heartbeat(
             &client,
             quest_id,
@@ -827,6 +850,7 @@ async fn start_game_heartbeat_quest(
             let _ = app_handle.emit("quest-error", format!("Game heartbeat quest failed: {}", e));
         }
     });
+    store_running_quest(&state, quest_id_for_state, cancel_tx, join);
 
     Ok(())
 }
@@ -903,9 +927,9 @@ async fn start_play_activity_quest(
 
     let _gate = state.activity_gate.lock().await;
     stop_active_work_internal(&state).await?;
-    let cancel_rx = install_quest_state(&state, quest_id.clone());
-
-    tokio::spawn(async move {
+    let quest_id_for_state = quest_id.clone();
+    let (cancel_tx, cancel_rx) = tokio::sync::mpsc::channel::<()>(1);
+    let join = tokio::spawn(async move {
         let result = if transport == PlayActivityTransport::Cdp {
             cdp_quest::complete_play_activity_via_cdp(
                 cdp_port,
@@ -943,6 +967,7 @@ async fn start_play_activity_quest(
             );
         }
     });
+    store_running_quest(&state, quest_id_for_state, cancel_tx, join);
 
     Ok(())
 }
@@ -966,15 +991,15 @@ async fn start_cdp_quest(
 ) -> Result<(), String> {
     let _gate = state.activity_gate.lock().await;
     stop_active_work_internal(&state).await?;
-    let cancel_rx = install_quest_state(&state, quest_id.clone());
+    let quest_id_for_state = quest_id.clone();
+    let (cancel_tx, cancel_rx) = tokio::sync::mpsc::channel::<()>(1);
 
     let quest_type_clone = quest_type.clone();
 
     // Clone the API client for progress polling (play/stream quests)
     let client = state.client.lock().unwrap().clone();
 
-    // Run in background task
-    tokio::spawn(async move {
+    let join = tokio::spawn(async move {
         let result = match quest_type_clone.as_str() {
             "play" => {
                 cdp_quest::complete_play_quest_via_cdp(
@@ -1040,6 +1065,7 @@ async fn start_cdp_quest(
             let _ = app_handle.emit("quest-error", format!("CDP quest failed: {:#}", e));
         }
     });
+    store_running_quest(&state, quest_id_for_state, cancel_tx, join);
 
     Ok(())
 }
@@ -1051,16 +1077,17 @@ async fn stop_quest(state: State<'_, AppState>) -> Result<(), String> {
     stop_active_work_internal(&state).await
 }
 
-fn install_quest_state(
+fn store_running_quest(
     state: &State<'_, AppState>,
     quest_id: String,
-) -> tokio::sync::mpsc::Receiver<()> {
-    let (cancel_tx, cancel_rx) = tokio::sync::mpsc::channel::<()>(1);
+    cancel_flag: tokio::sync::mpsc::Sender<()>,
+    join: tokio::task::JoinHandle<()>,
+) {
     *state.quest_state.lock().unwrap() = Some(QuestState {
         quest_id,
-        cancel_flag: cancel_tx,
+        cancel_flag,
+        join: Some(join),
     });
-    cancel_rx
 }
 
 async fn stop_quest_internal(state: &State<'_, AppState>) {
@@ -1071,24 +1098,52 @@ async fn stop_quest_internal(state: &State<'_, AppState>) {
 
     if let Some(quest) = quest {
         let _ = quest.cancel_flag.send(()).await;
+        if let Some(join) = quest.join {
+            await_quest_task(join).await;
+        }
         println!("Quest stopped");
     }
 }
 
-fn ensure_no_active_quest(state: &State<'_, AppState>) -> Result<(), String> {
-    let mut quest_state = state.quest_state.lock().unwrap();
-    match quest_state.as_ref() {
-        Some(quest) if !quest.cancel_flag.is_closed() => {
-            Err("Stop the active quest before starting a manual CDP game simulation".to_string())
+async fn await_quest_task(join: tokio::task::JoinHandle<()>) {
+    match tokio::time::timeout(QUEST_STOP_WAIT, join).await {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => {
+            eprintln!("Quest task ended with a join error after cancel: {error}");
         }
-        Some(_) => {
-            // Completed background tasks close their receiver. Discard that
-            // stale bookkeeping entry without treating it as an active quest.
-            quest_state.take();
-            Ok(())
+        Err(_) => {
+            eprintln!(
+                "Quest task did not finish within {QUEST_STOP_WAIT:?} after cancel; leftover Discord activity may still be cleaned up in the background"
+            );
         }
-        None => Ok(()),
     }
+}
+
+async fn ensure_no_active_quest(state: &State<'_, AppState>) -> Result<(), String> {
+    let stale = {
+        let mut quest_state = state.quest_state.lock().unwrap();
+        match quest_state.as_ref() {
+            Some(quest) if !quest.cancel_flag.is_closed() => {
+                return Err(
+                    "Stop the active quest before starting a manual CDP game simulation"
+                        .to_string(),
+                );
+            }
+            Some(_) => {
+                // Completed background tasks close their receiver. Discard that
+                // stale bookkeeping entry without treating it as an active quest,
+                // but still wait so any in-flight CDP cleanup can finish.
+                quest_state.take()
+            }
+            None => None,
+        }
+    };
+    if let Some(quest) = stale {
+        if let Some(join) = quest.join {
+            await_quest_task(join).await;
+        }
+    }
+    Ok(())
 }
 
 async fn stop_manual_cdp_game_simulation_internal(
@@ -1182,7 +1237,7 @@ async fn start_manual_cdp_game_simulation(
     // pass its idle check, install QuestState, and then allow this command
     // to inject a second Discord activity.
     let _gate = state.activity_gate.lock().await;
-    ensure_no_active_quest(&state)?;
+    ensure_no_active_quest(&state).await?;
 
     let mut sessions = state.manual_cdp_game.lock().await;
     sessions.ensure_idle()?;

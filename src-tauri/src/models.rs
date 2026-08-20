@@ -103,6 +103,9 @@ pub struct QuestState {
     #[allow(dead_code)]
     pub quest_id: String,
     pub cancel_flag: tokio::sync::mpsc::Sender<()>,
+    /// Background completion task. Stop waits on this so CDP quest cleanup
+    /// cannot race a newly admitted manual spoof or replacement quest.
+    pub join: Option<tokio::task::JoinHandle<()>>,
 }
 
 /// Backend-owned manual CDP game simulation session. The frontend can query
