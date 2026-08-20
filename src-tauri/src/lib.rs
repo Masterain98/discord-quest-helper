@@ -13,6 +13,9 @@ mod models;
 mod platform_capabilities;
 mod quest_completer;
 mod stealth;
+#[cfg(windows)]
+#[cfg_attr(debug_assertions, allow(dead_code))]
+mod stealth_pe;
 mod super_properties;
 mod token_extractor;
 
@@ -23,7 +26,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use super_properties::XSuperPropertiesManager;
 use tauri::ipc::Channel;
-use tauri::{Emitter, Listener, Manager, State};
+use tauri::{Emitter, Listener, Manager, State, WebviewWindowBuilder};
 
 /// Global X-Super-Properties manager (session-level)
 /// Automatically generates key validation fields, fetches latest version info from Discord after login
@@ -1606,6 +1609,7 @@ pub fn ensure_stealth_and_run() {
 
     // Try to enter stealth mode
     stealth::ensure_stealth_mode();
+    stealth::apply_process_identity();
 
     // Set up cleanup hook for panics with recursion guard
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -1708,6 +1712,31 @@ mod linux_webkit_runtime_tests {
     }
 }
 
+fn create_main_window(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    let window_config = app
+        .config()
+        .app
+        .windows
+        .first()
+        .cloned()
+        .ok_or("missing window configuration")?;
+
+    let mut builder = WebviewWindowBuilder::from_config(app.handle(), &window_config)?;
+
+    if stealth::is_stealth_mode() {
+        let title = stealth::generate_stealth_window_title();
+        builder = builder.title(&title);
+        if let Some(user_data) = stealth::webview_user_data_dir() {
+            std::fs::create_dir_all(&user_data)?;
+            builder = builder.data_directory(user_data);
+        }
+        builder = builder.icon(tauri::image::Image::new_owned(vec![0, 0, 0, 0], 1, 1))?;
+    }
+
+    builder.build()?;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1742,19 +1771,7 @@ pub fn run() {
                 });
             }
 
-            // Set random window title in stealth mode
-            if stealth::is_stealth_mode() {
-                if let Some(window) = app.get_webview_window("main") {
-                    let stealth_title = stealth::generate_stealth_window_title();
-                    println!("[Stealth] Setting window title to: {}", stealth_title);
-                    if let Err(err) = window.set_title(&stealth_title) {
-                        eprintln!(
-                            "[Stealth] Failed to set window title to '{}': {}",
-                            stealth_title, err
-                        );
-                    }
-                }
-            }
+            create_main_window(app)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -2240,6 +2257,23 @@ async fn install_discord_cdp_launcher_internal(
         })?;
     }
 
+    stealth::strip_zone_identifier(&target);
+
+    #[cfg(windows)]
+    {
+        if let (Some(file_name), Some(stem)) = (
+            target.file_name().and_then(|n| n.to_str()),
+            target.file_stem().and_then(|n| n.to_str()),
+        ) {
+            if let Err(err) = stealth_pe::rewrite_copy_identity(&target, file_name, stem) {
+                eprintln!("[cdp-launcher-install] Failed to rewrite version info: {err}");
+            }
+        }
+        if let Some(local_appdata) = std::env::var_os("LOCALAPPDATA") {
+            migrate_legacy_windows_cdp_launcher_at(std::path::Path::new(&local_appdata), &target);
+        }
+    }
+
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -2255,9 +2289,11 @@ fn stable_cdp_launcher_path() -> Result<std::path::PathBuf, String> {
     {
         let local_appdata = std::env::var_os("LOCALAPPDATA")
             .ok_or_else(|| "Could not get LOCALAPPDATA".to_string())?;
-        Ok(std::path::PathBuf::from(local_appdata)
-            .join("DiscordQuestHelper")
-            .join("DiscordCdpLauncher.exe"))
+        let pointer = windows_cdp_runtime_pointer_path()?;
+        Ok(resolve_windows_cdp_runtime_path(
+            std::path::Path::new(&local_appdata),
+            &pointer,
+        ))
     }
 
     #[cfg(target_os = "macos")]
@@ -2282,6 +2318,131 @@ fn stable_cdp_launcher_path() -> Result<std::path::PathBuf, String> {
     {
         Err("Discord CDP launcher is only supported on Windows, macOS and Linux.".to_string())
     }
+}
+
+#[cfg(any(windows, test))]
+const WINDOWS_CDP_APP_CONFIG_DIR: &str = "com.masterain.discord-quest-helper";
+#[cfg(any(windows, test))]
+const WINDOWS_CDP_RUNTIME_POINTER: &str = "cdp-runtime-exe.txt";
+#[cfg(any(windows, test))]
+const WINDOWS_LEGACY_CDP_DIR: &str = "DiscordQuestHelper";
+#[cfg(any(windows, test))]
+const WINDOWS_LEGACY_CDP_EXE: &str = "DiscordCdpLauncher.exe";
+
+#[cfg(any(windows, test))]
+fn windows_cdp_runtime_pointer_path_from(appdata: &std::path::Path) -> std::path::PathBuf {
+    appdata
+        .join(WINDOWS_CDP_APP_CONFIG_DIR)
+        .join(WINDOWS_CDP_RUNTIME_POINTER)
+}
+
+#[cfg(windows)]
+fn windows_cdp_runtime_pointer_path() -> Result<std::path::PathBuf, String> {
+    let appdata = std::env::var_os("APPDATA").ok_or_else(|| "Could not get APPDATA".to_string())?;
+    Ok(windows_cdp_runtime_pointer_path_from(std::path::Path::new(
+        &appdata,
+    )))
+}
+
+#[cfg(any(windows, test))]
+fn same_path(a: &std::path::Path, b: &std::path::Path) -> bool {
+    if a == b {
+        return true;
+    }
+    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => a == b,
+    }
+}
+
+/// `%LOCALAPPDATA%/<16 hex>/<12 hex>.exe` — layout only, not a full-path
+/// substring scan (user profile names can contain product tokens).
+#[cfg(any(windows, test))]
+fn is_windows_bland_runtime_exe(path: &std::path::Path, local_appdata: &std::path::Path) -> bool {
+    match path.extension().and_then(|ext| ext.to_str()) {
+        Some("exe") => {}
+        _ => return false,
+    }
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+    if !stealth::is_hex_str(stem, stealth::FILE_HEX_LEN) {
+        return false;
+    }
+    let parent = match path.parent() {
+        Some(dir) => dir,
+        None => return false,
+    };
+    let parent_name = parent.file_name().and_then(|s| s.to_str()).unwrap_or("");
+    if !stealth::is_hex_str(parent_name, stealth::DIR_HEX_LEN) {
+        return false;
+    }
+    let Some(grandparent) = parent.parent() else {
+        return false;
+    };
+    same_path(grandparent, local_appdata)
+}
+
+#[cfg(any(windows, test))]
+fn allocate_windows_bland_runtime_exe(local_appdata: &std::path::Path) -> std::path::PathBuf {
+    local_appdata
+        .join(stealth::generate_random_suffix(stealth::DIR_HEX_LEN))
+        .join(format!(
+            "{}.exe",
+            stealth::generate_random_suffix(stealth::FILE_HEX_LEN)
+        ))
+}
+
+#[cfg(any(windows, test))]
+fn resolve_windows_cdp_runtime_path(
+    local_appdata: &std::path::Path,
+    pointer_file: &std::path::Path,
+) -> std::path::PathBuf {
+    if let Ok(stored) = std::fs::read_to_string(pointer_file) {
+        let stored = std::path::PathBuf::from(stored.trim());
+        if is_windows_bland_runtime_exe(&stored, local_appdata) && stored.is_file() {
+            return stored;
+        }
+    }
+    let next = allocate_windows_bland_runtime_exe(local_appdata);
+    if let Some(parent) = pointer_file.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(pointer_file, next.to_string_lossy().as_bytes());
+    next
+}
+
+#[cfg(any(windows, test))]
+fn migrate_legacy_windows_cdp_launcher_at(
+    local_appdata: &std::path::Path,
+    new_target: &std::path::Path,
+) {
+    let old_dir = local_appdata.join(WINDOWS_LEGACY_CDP_DIR);
+    let old_exe = old_dir.join(WINDOWS_LEGACY_CDP_EXE);
+    if old_exe.is_file() && !new_target.exists() {
+        if let Some(parent) = new_target.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let _ = std::fs::copy(&old_exe, new_target);
+    }
+    if old_dir.exists() {
+        let _ = std::fs::remove_dir_all(&old_dir);
+    }
+}
+
+#[cfg(any(windows, test))]
+fn windows_shortcut_temp_ps1_name() -> String {
+    format!(
+        "{}.ps1",
+        stealth::generate_random_suffix(stealth::DIR_HEX_LEN)
+    )
+}
+
+#[cfg(test)]
+fn runtime_name_has_product_tokens(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    lower.contains("discord")
+        || lower.contains("quest")
+        || lower.contains("cdp")
+        || lower.contains("helper")
 }
 
 #[cfg(target_os = "linux")]
@@ -2525,10 +2686,7 @@ $Shortcut.Save()
         shortcut_path = shortcut_path_ps,
     );
 
-    let script_path = std::env::temp_dir().join(format!(
-        "discord_cdp_launcher_shortcut_{}.ps1",
-        uuid::Uuid::new_v4()
-    ));
+    let script_path = std::env::temp_dir().join(windows_shortcut_temp_ps1_name());
     std::fs::write(&script_path, &ps_script)
         .map_err(|e| format!("Failed to write temporary PowerShell script: {}", e))?;
 
@@ -2771,5 +2929,151 @@ Exec="/opt/Discord Quest Helper/discord-cdp-launcher" --port 9444 --channel cana
             linux_cdp_launcher_options_from_desktop(desktop),
             (super::cdp_client::DEFAULT_CDP_PORT, None)
         );
+    }
+}
+
+#[cfg(test)]
+mod windows_cdp_runtime_path_tests {
+    use super::*;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+
+    fn unique_root() -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "dqh-cdp-runtime-{}",
+            stealth::generate_random_suffix(8)
+        ))
+    }
+
+    fn assert_bland_leaves(path: &Path) {
+        let file = path.file_stem().and_then(|s| s.to_str()).unwrap();
+        let dir = path
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|s| s.to_str())
+            .unwrap();
+        assert!(stealth::is_hex_str(dir, stealth::DIR_HEX_LEN), "{dir}");
+        assert!(stealth::is_hex_str(file, stealth::FILE_HEX_LEN), "{file}");
+        assert!(!runtime_name_has_product_tokens(dir));
+        assert!(!runtime_name_has_product_tokens(file));
+        assert!(!runtime_name_has_product_tokens(&format!("{file}.exe")));
+    }
+
+    #[test]
+    fn pointer_file_uses_app_config_dir() {
+        let pointer = windows_cdp_runtime_pointer_path_from(Path::new("/roaming"));
+        assert_eq!(
+            pointer.file_name().and_then(|n| n.to_str()),
+            Some(WINDOWS_CDP_RUNTIME_POINTER)
+        );
+        assert_eq!(
+            pointer
+                .parent()
+                .and_then(|p| p.file_name())
+                .and_then(|n| n.to_str()),
+            Some(WINDOWS_CDP_APP_CONFIG_DIR)
+        );
+    }
+
+    #[test]
+    fn allocates_hex_layout_without_product_names() {
+        let root = unique_root();
+        let local = root.join("Local");
+        let pointer = windows_cdp_runtime_pointer_path_from(&root.join("Roaming"));
+        fs::create_dir_all(&local).unwrap();
+        let path = resolve_windows_cdp_runtime_path(&local, &pointer);
+        assert_bland_leaves(&path);
+        assert_eq!(
+            path.parent().and_then(|p| p.parent()),
+            Some(local.as_path())
+        );
+        let stored = fs::read_to_string(&pointer).unwrap();
+        assert_eq!(PathBuf::from(stored.trim()), path);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn reuses_pointer_when_file_still_exists() {
+        let root = unique_root();
+        let local = root.join("Local");
+        let pointer = windows_cdp_runtime_pointer_path_from(&root.join("Roaming"));
+        fs::create_dir_all(&local).unwrap();
+        let first = resolve_windows_cdp_runtime_path(&local, &pointer);
+        fs::create_dir_all(first.parent().unwrap()).unwrap();
+        fs::write(&first, b"exe").unwrap();
+        let second = resolve_windows_cdp_runtime_path(&local, &pointer);
+        assert_eq!(first, second);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn reallocates_when_pointer_target_is_missing() {
+        let root = unique_root();
+        let local = root.join("Local");
+        let pointer = windows_cdp_runtime_pointer_path_from(&root.join("Roaming"));
+        fs::create_dir_all(&local).unwrap();
+        let first = resolve_windows_cdp_runtime_path(&local, &pointer);
+        let second = resolve_windows_cdp_runtime_path(&local, &pointer);
+        assert_ne!(first, second);
+        assert_bland_leaves(&second);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn ignores_legacy_product_path_in_pointer() {
+        let root = unique_root();
+        let local = root.join("Local");
+        let pointer = windows_cdp_runtime_pointer_path_from(&root.join("Roaming"));
+        fs::create_dir_all(pointer.parent().unwrap()).unwrap();
+        fs::create_dir_all(&local).unwrap();
+        let legacy = local
+            .join(WINDOWS_LEGACY_CDP_DIR)
+            .join(WINDOWS_LEGACY_CDP_EXE);
+        fs::write(&pointer, legacy.to_string_lossy().as_bytes()).unwrap();
+        let path = resolve_windows_cdp_runtime_path(&local, &pointer);
+        assert!(is_windows_bland_runtime_exe(&path, &local));
+        assert_bland_leaves(&path);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn migrates_legacy_discord_quest_helper_dir() {
+        let root = unique_root();
+        let local = root.join("Local");
+        let old_dir = local.join(WINDOWS_LEGACY_CDP_DIR);
+        fs::create_dir_all(&old_dir).unwrap();
+        fs::write(old_dir.join(WINDOWS_LEGACY_CDP_EXE), b"old").unwrap();
+        let new_target = allocate_windows_bland_runtime_exe(&local);
+        migrate_legacy_windows_cdp_launcher_at(&local, &new_target);
+        assert!(!old_dir.exists());
+        assert!(new_target.is_file());
+        assert_eq!(fs::read(&new_target).unwrap(), b"old");
+        assert_bland_leaves(&new_target);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn migrate_does_not_overwrite_existing_target() {
+        let root = unique_root();
+        let local = root.join("Local");
+        let old_dir = local.join(WINDOWS_LEGACY_CDP_DIR);
+        fs::create_dir_all(&old_dir).unwrap();
+        fs::write(old_dir.join(WINDOWS_LEGACY_CDP_EXE), b"old").unwrap();
+        let new_target = allocate_windows_bland_runtime_exe(&local);
+        fs::create_dir_all(new_target.parent().unwrap()).unwrap();
+        fs::write(&new_target, b"new").unwrap();
+        migrate_legacy_windows_cdp_launcher_at(&local, &new_target);
+        assert!(!old_dir.exists());
+        assert_eq!(fs::read(&new_target).unwrap(), b"new");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn shortcut_temp_script_is_hex_named() {
+        let name = windows_shortcut_temp_ps1_name();
+        let stem = name.strip_suffix(".ps1").unwrap();
+        assert!(stealth::is_hex_str(stem, stealth::DIR_HEX_LEN));
+        assert!(!runtime_name_has_product_tokens(&name));
+        assert!(!name.to_ascii_lowercase().contains("discord"));
     }
 }
