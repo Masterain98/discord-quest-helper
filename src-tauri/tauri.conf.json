@@ -13,6 +13,8 @@
   "app": {
     "windows": [
       {
+        "label": "main",
+        "create": false,
         "title": "Discord Quest Helper",
         "width": 1200,
         "height": 800,

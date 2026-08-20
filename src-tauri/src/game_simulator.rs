@@ -215,8 +215,10 @@ pub fn run_simulated_game(
         anyhow::bail!("Executable does not exist: {:?}", exe_to_run);
     }
 
-    let _ = Command::new("cmd")
-        .args(["/C", "start", "", exe_to_run.to_str().unwrap()])
+    use std::os::windows::process::CommandExt;
+
+    let _ = Command::new(&exe_to_run)
+        .creation_flags(simulated_game_spawn_flags())
         .spawn()
         .context("Could not start simulated game")?;
 
@@ -579,8 +581,17 @@ fn untrack_running_game(executable_name: &str) {
     }
 }
 
+/// DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP. No CREATE_NO_WINDOW — the
+/// runner needs a visible window. No `cmd /C start`.
+#[cfg(any(windows, test))]
+pub(crate) fn simulated_game_spawn_flags() -> u32 {
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+    const DETACHED_PROCESS: u32 = 0x0000_0008;
+    CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS
+}
+
 /// Snapshot of simulated-game processes that CDP spoof can reuse as a real PID/path.
-/// Linux tracks exact child PIDs; Windows/macOS launch via `cmd /C start` / `open`
+/// Linux tracks exact child PIDs; Windows/macOS launch detached / via `open`
 /// and do not keep a pid, so they return no hints.
 pub fn simulated_process_hints() -> Vec<crate::cdp_game_spoof::SimulatedProcessHint> {
     #[cfg(target_os = "linux")]
@@ -694,5 +705,15 @@ mod tests {
             }
             Err(e) => println!("Test skipped (expected): {}", e),
         }
+    }
+
+    #[test]
+    fn windows_game_spawn_flags_are_detached_without_hidden_window() {
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        const DETACHED_PROCESS: u32 = 0x0000_0008;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+        let flags = simulated_game_spawn_flags();
+        assert_eq!(flags, DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+        assert_eq!(flags & CREATE_NO_WINDOW, 0);
     }
 }
