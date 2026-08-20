@@ -534,10 +534,8 @@ mod tests {
 
     #[test]
     fn window_title_matches_stem() {
-        assert_eq!(
-            window_title_for_exe(Path::new(r"C:\Temp\abc\c0ffee12beef.exe")),
-            "c0ffee12beef"
-        );
+        let exe = PathBuf::from("abc").join("c0ffee12beef.exe");
+        assert_eq!(window_title_for_exe(&exe), "c0ffee12beef");
         assert_eq!(generate_random_suffix(12).len(), FILE_HEX_LEN);
         let suffix = generate_random_suffix(16);
         assert!(is_hex_str(&suffix, DIR_HEX_LEN));
