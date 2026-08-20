@@ -2344,17 +2344,6 @@ fn windows_cdp_runtime_pointer_path() -> Result<std::path::PathBuf, String> {
     )))
 }
 
-#[cfg(any(windows, test))]
-fn same_path(a: &std::path::Path, b: &std::path::Path) -> bool {
-    if a == b {
-        return true;
-    }
-    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
-        (Ok(left), Ok(right)) => left == right,
-        _ => a == b,
-    }
-}
-
 /// `%LOCALAPPDATA%/<16 hex>/<12 hex>.exe` — layout only, not a full-path
 /// substring scan (user profile names can contain product tokens).
 #[cfg(any(windows, test))]
@@ -2378,7 +2367,7 @@ fn is_windows_bland_runtime_exe(path: &std::path::Path, local_appdata: &std::pat
     let Some(grandparent) = parent.parent() else {
         return false;
     };
-    same_path(grandparent, local_appdata)
+    stealth::paths_eq(grandparent, local_appdata)
 }
 
 #[cfg(any(windows, test))]

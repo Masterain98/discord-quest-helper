@@ -53,11 +53,14 @@ pub(crate) fn is_hex_str(s: &str, len: usize) -> bool {
 pub(crate) fn strip_zone_identifier(path: &Path) {
     #[cfg(target_os = "windows")]
     {
-        use windows::core::HSTRING;
+        use std::os::windows::ffi::OsStrExt;
+        use windows::core::PCWSTR;
         use windows::Win32::Storage::FileSystem::DeleteFileW;
 
-        let ads = format!("{}:Zone.Identifier", path.display());
-        let _ = unsafe { DeleteFileW(&HSTRING::from(ads.as_str())) };
+        let mut wide: Vec<u16> = path.as_os_str().encode_wide().collect();
+        wide.extend(":Zone.Identifier".encode_utf16());
+        wide.push(0);
+        let _ = unsafe { DeleteFileW(PCWSTR(wide.as_ptr())) };
     }
     #[cfg(not(target_os = "windows"))]
     {
@@ -65,7 +68,10 @@ pub(crate) fn strip_zone_identifier(path: &Path) {
     }
 }
 
-fn paths_eq(a: &Path, b: &Path) -> bool {
+pub(crate) fn paths_eq(a: &Path, b: &Path) -> bool {
+    if a == b {
+        return true;
+    }
     match (fs::canonicalize(a), fs::canonicalize(b)) {
         (Ok(left), Ok(right)) => left == right,
         _ => a == b,
@@ -157,17 +163,21 @@ fn remove_legacy_temp_file_if_needed(path: &Path) {
     }
 }
 
-fn dir_looks_like_stealth_copy(dir: &Path) -> bool {
+fn dir_contains_hex_stealth_exe(dir: &Path) -> bool {
     let Ok(entries) = fs::read_dir(dir) else {
         return false;
     };
     entries.flatten().any(|entry| {
         let path = entry.path();
-        if !path.is_file() {
-            return false;
-        }
-        is_stealth_copy_path(&path)
+        path.is_file() && is_stealth_copy_path(&path)
     })
+}
+
+/// Owned stealth trees also have the WebView2 `ud/` directory. Requiring that
+/// marker avoids deleting unrelated `%TEMP%/<16 hex>/` folders that happen to
+/// contain a 12-hex executable.
+fn dir_looks_like_stealth_copy(dir: &Path) -> bool {
+    dir.join(WEBVIEW_DATA_DIR_NAME).is_dir() && dir_contains_hex_stealth_exe(dir)
 }
 
 /// Check if currently running in stealth mode
@@ -195,11 +205,8 @@ pub fn webview_user_data_dir() -> Option<PathBuf> {
 
 /// Set process identity that windowing APIs read before the first window.
 pub fn apply_process_identity() {
-    if !is_stealth_mode() {
-        return;
-    }
     #[cfg(target_os = "windows")]
-    {
+    if is_stealth_mode() {
         let app_id = generate_stealth_window_title();
         let app_id = windows::core::HSTRING::from(app_id.as_str());
         if let Err(err) =
@@ -457,11 +464,19 @@ fn remove_tree_best_effort(path: &Path) {
 
 #[cfg(target_os = "windows")]
 fn mark_delete_on_reboot(path: &Path) {
-    use windows::core::{HSTRING, PCWSTR};
+    use std::os::windows::ffi::OsStrExt;
+    use windows::core::PCWSTR;
     use windows::Win32::Storage::FileSystem::{MoveFileExW, MOVEFILE_DELAY_UNTIL_REBOOT};
 
-    let existing = HSTRING::from(path.to_string_lossy().as_ref());
-    let _ = unsafe { MoveFileExW(&existing, PCWSTR::null(), MOVEFILE_DELAY_UNTIL_REBOOT) };
+    let mut wide: Vec<u16> = path.as_os_str().encode_wide().collect();
+    wide.push(0);
+    let _ = unsafe {
+        MoveFileExW(
+            PCWSTR(wide.as_ptr()),
+            PCWSTR::null(),
+            MOVEFILE_DELAY_UNTIL_REBOOT,
+        )
+    };
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -540,6 +555,8 @@ mod tests {
         let exe = dir.join(&exe_name);
         fs::write(&exe, b"test").unwrap();
         assert!(is_stealth_copy_path(&exe));
+        assert!(!dir_looks_like_stealth_copy(&dir));
+        fs::create_dir_all(dir.join(WEBVIEW_DATA_DIR_NAME)).unwrap();
         assert!(dir_looks_like_stealth_copy(&dir));
         let _ = fs::remove_dir_all(&dir);
     }
