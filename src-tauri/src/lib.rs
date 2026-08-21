@@ -1730,7 +1730,6 @@ fn create_main_window(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>
             std::fs::create_dir_all(&user_data)?;
             builder = builder.data_directory(user_data);
         }
-        builder = builder.icon(tauri::image::Image::new_owned(vec![0, 0, 0, 0], 1, 1))?;
     }
 
     builder.build()?;
