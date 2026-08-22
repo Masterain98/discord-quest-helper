@@ -1,4 +1,8 @@
-## ✨ What's Changed
+## Hotfix v0.10.2
+
+- Fixed the issue that main windows icon at taskbar was overwritten by 1x1 pixel
+
+## ✨ What's Changed in v0.10.1
 
 1. Added support for manually simulating a game you are playing through Discord's native running-game detection.
     - You can now tell Discord that a specific game is running, even when it is not, so related quests can progress.
