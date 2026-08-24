@@ -76,6 +76,7 @@ jobs:
             librsvg2-dev \
             patchelf \
             desktop-file-utils \
+            xdg-utils \
             xvfb \
             xdotool \
             x11-utils \

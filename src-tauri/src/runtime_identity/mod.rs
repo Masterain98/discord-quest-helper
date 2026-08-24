@@ -9,8 +9,10 @@ mod windows;
 
 #[cfg(target_os = "macos")]
 pub(crate) use macos::verify_helper_identity_for_current_app;
+pub(crate) use model::contains_product_token;
 use model::{configured_internal_names_are_valid, RuntimeIdentityStatus};
-pub(crate) use model::{contains_product_token, RUNTIME_BRIDGE_NAME, RUNTIME_NAMESPACE};
+#[cfg(unix)]
+pub(crate) use model::{RUNTIME_BRIDGE_NAME, RUNTIME_NAMESPACE};
 
 use once_cell::sync::Lazy;
 #[cfg(any(target_os = "windows", test))]

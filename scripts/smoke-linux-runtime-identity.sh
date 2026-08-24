@@ -39,21 +39,28 @@ app_pid=""
 runtime_pid=""
 weston_pid=""
 cleanup() {
-  if [[ -n "$runtime_pid" && "$runtime_pid" != "$app_pid" ]] && kill -0 "$runtime_pid" 2>/dev/null; then
-    kill -TERM "$runtime_pid" 2>/dev/null || true
+  terminate_and_reap() {
+    local pid="$1"
+    [[ -n "$pid" ]] || return 0
+    if kill -0 "$pid" 2>/dev/null; then
+      kill -TERM "$pid" 2>/dev/null || true
+      for _ in {1..20}; do
+        kill -0 "$pid" 2>/dev/null || break
+        sleep 0.1
+      done
+      kill -KILL "$pid" 2>/dev/null || true
+    fi
+    wait "$pid" 2>/dev/null || true
+  }
+
+  if [[ -n "$runtime_pid" && "$runtime_pid" != "$app_pid" ]]; then
+    terminate_and_reap "$runtime_pid"
   fi
-  if [[ -n "$app_pid" ]] && kill -0 "$app_pid" 2>/dev/null; then
-    kill -TERM "$app_pid" 2>/dev/null || true
-    for _ in {1..20}; do
-      kill -0 "$app_pid" 2>/dev/null || break
-      sleep 0.1
-    done
-    kill -KILL "$app_pid" 2>/dev/null || true
-    wait "$app_pid" 2>/dev/null || true
+  if [[ -n "$app_pid" ]]; then
+    terminate_and_reap "$app_pid"
   fi
-  if [[ -n "$weston_pid" ]] && kill -0 "$weston_pid" 2>/dev/null; then
-    kill -TERM "$weston_pid" 2>/dev/null || true
-    wait "$weston_pid" 2>/dev/null || true
+  if [[ -n "$weston_pid" ]]; then
+    terminate_and_reap "$weston_pid"
   fi
   if [[ -d "$smoke_root" && "$(basename "$smoke_root")" == runtime-identity-smoke.* ]]; then
     rm -rf -- "$smoke_root"
@@ -83,7 +90,8 @@ find_runtime_pid() {
   for proc in /proc/[0-9]*; do
     candidate="${proc##*/}"
     is_descendant_of "$candidate" "$app_pid" || continue
-    comm="$(tr -d '\n' < "$proc/comm" 2>/dev/null || true)"
+    [[ -r "$proc/comm" ]] || continue
+    comm="$(tr -d '\n' 2>/dev/null < "$proc/comm" || true)"
     exe="$(readlink -f "$proc/exe" 2>/dev/null || true)"
     if [[ "$comm" == "$expected" || "$(basename "$exe")" == "$expected" ]]; then
       printf '%s\n' "$candidate"
@@ -129,6 +137,7 @@ if [[ "$mode" == "wayland" ]]; then
     exit 1
   }
   unset DISPLAY
+  export XDG_SESSION_TYPE=wayland
   GDK_BACKEND=wayland WAYLAND_DEBUG=client WEBKIT_DISABLE_DMABUF_RENDERER=1 \
     NO_AT_BRIDGE=1 RUNTIME_IDENTITY_AUDIT=1 "$target" \
     >"$smoke_root/app.log" 2>"$smoke_root/protocol.log" &

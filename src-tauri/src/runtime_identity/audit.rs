@@ -123,6 +123,7 @@ fn unexpected_macos_path_product_token(path: &Path) -> bool {
     super::contains_product_token(&normalized.to_string_lossy())
 }
 
+#[cfg(unix)]
 fn sha256_file(path: &Path) -> Option<String> {
     Some(format!("{:x}", Sha256::digest(fs::read(path).ok()?)))
 }
@@ -496,6 +497,8 @@ fn baseline_comparison(
     fingerprint: &FingerprintAudit,
     details: &Value,
 ) -> BaselineComparison {
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    let _ = details;
     let baseline: Value = serde_json::from_str(RELEASE_BASELINE).unwrap_or_else(|_| json!({}));
     let mut differences = Vec::new();
     if main.basename != RUNTIME_MAIN_NAME {

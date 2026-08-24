@@ -1668,6 +1668,16 @@ pub fn initialize_runtime_identity_and_run() {
 /// Configure the upstream-supported fallback before Tauri initializes GTK.
 #[cfg(target_os = "linux")]
 fn configure_linux_webkit_runtime() {
+    // Tauri's AppImage GTK hook currently forces GDK_BACKEND=x11. If no X11
+    // display exists but a Wayland socket was explicitly supplied, restore the
+    // only usable backend before Tauri initializes GTK.
+    if std::env::var_os("WAYLAND_DISPLAY").is_some()
+        && std::env::var_os("DISPLAY").is_none()
+        && std::env::var_os("GDK_BACKEND").as_deref() == Some(std::ffi::OsStr::new("x11"))
+    {
+        std::env::set_var("GDK_BACKEND", "wayland");
+    }
+
     if std::env::var_os("WEBKIT_DISABLE_COMPOSITING_MODE").is_some()
         || std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_some()
     {
