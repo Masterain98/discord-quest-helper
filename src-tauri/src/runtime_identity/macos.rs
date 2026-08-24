@@ -567,25 +567,12 @@ mod tests {
     }
 
     #[test]
-    fn legacy_running_check_uses_the_full_process_path() {
-        let root = std::env::temp_dir().join(format!(
-            "runtime-identity-running-test-{}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&root).unwrap();
-        let executable = root.join(format!("{:012x}", std::process::id()));
-        fs::copy("/bin/sleep", &executable).unwrap();
-        let mut permissions = fs::metadata(&executable).unwrap().permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(&executable, permissions).unwrap();
-
-        let mut child = Command::new(&executable).arg("5").spawn().unwrap();
-        std::thread::sleep(std::time::Duration::from_millis(50));
-        assert!(legacy_executable_is_running(&executable));
-        child.kill().unwrap();
-        child.wait().unwrap();
-        assert!(!legacy_executable_is_running(&executable));
-
-        fs::remove_dir_all(root).unwrap();
+    fn process_path_reports_the_full_current_executable() {
+        let reported = process_path(std::process::id()).unwrap();
+        let expected = std::env::current_exe().unwrap();
+        assert_eq!(
+            fs::canonicalize(reported).unwrap(),
+            fs::canonicalize(expected).unwrap()
+        );
     }
 }
