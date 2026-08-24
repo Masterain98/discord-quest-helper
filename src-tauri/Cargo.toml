@@ -67,6 +67,7 @@ aes = "0.8"
 # (never process names) and verifies /proc/<pid>/exe before signalling, so a
 # recycled PID or a real game with the same name is never killed.
 nix = { version = "0.30", features = ["signal", "process"] }
+libc = "0.2"
 aes = "0.8"
 cbc = { version = "0.1", features = ["alloc"] }
 pbkdf2 = "0.12"

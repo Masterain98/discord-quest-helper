@@ -108,6 +108,28 @@ function executableFiles(root) {
   return files;
 }
 
+function filesWithSuffix(root, suffix) {
+  const files = [];
+  const visit = (directory) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) visit(path);
+      else if (entry.isFile() && entry.name.endsWith(suffix)) files.push(path);
+    }
+  };
+  visit(root);
+  return files;
+}
+
+function parseDesktopEntry(path) {
+  const fields = {};
+  for (const line of readFileSync(path, 'utf8').split(/\r?\n/)) {
+    const match = /^([A-Za-z][A-Za-z0-9]*)=(.*)$/.exec(line);
+    if (match && fields[match[1]] === undefined) fields[match[1]] = match[2];
+  }
+  return fields;
+}
+
 function auditMacApp(app, allowUnsigned) {
   if (!app.endsWith('.app')) throw new Error('macOS artifact must be an .app bundle');
   const executableName = plistValue(app, 'CFBundleExecutable');
@@ -171,9 +193,22 @@ function auditLinux(path, kind) {
     const internalTokenFiles = executables
       .map((file) => relative(root, file))
       .filter((file) => containsProductToken(basename(file)));
+    const desktopEntries = filesWithSuffix(root, '.desktop').map((file) => ({
+      path: relative(root, file),
+      fields: parseDesktopEntry(file),
+    }));
+    const integratedDesktop = desktopEntries.find(({ fields }) =>
+      fields.Name === IDENTITY.publicName
+      && fields.Exec?.includes(IDENTITY.mainBinary)
+      && fields.Icon
+      && fields.StartupWMClass === IDENTITY.mainBinary
+      && fields.Terminal === 'false');
     const violations = [];
     if (!main) violations.push(`Linux payload must contain ${IDENTITY.mainBinary}`);
     if (internalTokenFiles.length) violations.push('executable filenames contain product tokens');
+    if (!integratedDesktop) {
+      violations.push('desktop entry must preserve the public name/icon and map to the neutral runtime');
+    }
 
     return {
       platform: 'linux',
@@ -183,6 +218,7 @@ function auditLinux(path, kind) {
       bridgeBinary: bridge ? basename(bridge) : null,
       hashes: main ? { [IDENTITY.mainBinary]: sha256(main) } : {},
       executableNames: [...new Set(names)].sort(),
+      desktopEntries,
       knownResiduals: kind === 'appimage'
         ? ['outer AppImage filename and standard APPIMAGE/APPDIR/ARGV0 variables may retain public identity']
         : [],

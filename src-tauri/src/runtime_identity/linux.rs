@@ -1,4 +1,7 @@
-use super::model::{RuntimeIdentityLevel, RuntimeIdentityStatus, RUNTIME_MAIN_NAME};
+use super::model::{
+    valid_internal_name, RuntimeIdentityLevel, RuntimeIdentityStatus, RUNTIME_MAIN_NAME,
+};
+use std::ffi::CString;
 use std::path::Path;
 
 pub(super) fn initial_status() -> RuntimeIdentityStatus {
@@ -11,7 +14,32 @@ pub(super) fn initial_status() -> RuntimeIdentityStatus {
         );
     }
 
-    status_for_executable(std::env::current_exe().ok().as_deref())
+    let mut status = status_for_executable(std::env::current_exe().ok().as_deref());
+    if let Err(reason) = set_main_thread_name(RUNTIME_MAIN_NAME) {
+        status.reasons.push(reason);
+        status.level = RuntimeIdentityLevel::Degraded;
+    }
+    status
+}
+
+fn set_main_thread_name(name: &str) -> Result<(), String> {
+    if !valid_internal_name(name) || name.len() > 15 {
+        return Err("configured Linux process name violates the runtime identity policy".into());
+    }
+    let name = CString::new(name)
+        .map_err(|_| "configured Linux process name contains an interior NUL".to_string())?;
+    // SAFETY: PR_SET_NAME reads a NUL-terminated string from the second
+    // argument and ignores the remaining variadic arguments. `name` remains
+    // alive for the duration of the call.
+    let result = unsafe { libc::prctl(libc::PR_SET_NAME, name.as_ptr(), 0, 0, 0) };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(format!(
+            "failed to set Linux process name: {}",
+            std::io::Error::last_os_error()
+        ))
+    }
 }
 
 fn status_for_executable(executable: Option<&Path>) -> RuntimeIdentityStatus {

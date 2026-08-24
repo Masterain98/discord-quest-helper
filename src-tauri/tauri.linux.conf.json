@@ -1,4 +1,14 @@
 {
   "$schema": "https://schema.tauri.app/config/2.0.0",
-  "mainBinaryName": "meridian"
+  "mainBinaryName": "meridian",
+  "app": {
+    "enableGTKAppId": false
+  },
+  "bundle": {
+    "linux": {
+      "deb": {
+        "desktopTemplate": "linux/discord-quest-helper.desktop.hbs"
+      }
+    }
+  }
 }

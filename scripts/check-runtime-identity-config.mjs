@@ -37,6 +37,10 @@ export function validateConfiguration() {
     'common/Windows mainBinaryName must retain the public executable name', failures);
   requireMatch(linux.mainBinaryName === EXPECTED.main,
     `Linux mainBinaryName must be ${EXPECTED.main}`, failures);
+  requireMatch(linux.app?.enableGTKAppId === false,
+    'Linux must not expose the product identifier as the GTK app ID', failures);
+  requireMatch(linux.bundle?.linux?.deb?.desktopTemplate === 'linux/discord-quest-helper.desktop.hbs',
+    'Linux DEB must use the audited desktop entry template', failures);
   requireMatch(macos.mainBinaryName === EXPECTED.main,
     `macOS mainBinaryName must be ${EXPECTED.main}`, failures);
   requireMatch(macos.bundle?.macOS?.hardenedRuntime === true,

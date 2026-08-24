@@ -11,3 +11,6 @@ path = "src/main.rs"
 
 [dependencies]
 discord-cdp-launch-core = { path = "../crates/discord-cdp-launch-core" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"

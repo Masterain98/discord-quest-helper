@@ -17,6 +17,8 @@ Options:
   --pid <pid>                 Process to inspect (defaults to this audit process)
   --app <path>                macOS .app bundle to inspect
   --desktop-file <path>       Linux .desktop entry to inspect
+  --x11-window <id>           X11 window ID to inspect with xprop
+  --wayland-log <path>        WAYLAND_DEBUG=client output containing set_app_id
   --fingerprint-file <path>   Local running-games snapshot; only a fingerprint summary is retained
   --output <path>             Write JSON to a file instead of stdout
   --build <debug|release>     Build classification (defaults to unknown)
@@ -32,6 +34,8 @@ function parseArgs(argv) {
     pid: process.pid,
     app: null,
     desktopFile: null,
+    x11Window: null,
+    waylandLog: null,
     fingerprintFile: null,
     output: null,
     build: 'unknown',
@@ -51,6 +55,8 @@ function parseArgs(argv) {
         break;
       case '--app': options.app = resolve(value); break;
       case '--desktop-file': options.desktopFile = resolve(value); break;
+      case '--x11-window': options.x11Window = value; break;
+      case '--wayland-log': options.waylandLog = resolve(value); break;
       case '--fingerprint-file': options.fingerprintFile = resolve(value); break;
       case '--output': options.output = resolve(value); break;
       case '--build': options.build = value; break;
@@ -167,6 +173,29 @@ function parseDesktopFile(path) {
   };
 }
 
+function linuxDesktopAudit(options) {
+  const x11 = options.x11Window
+    ? run('xprop', ['-id', options.x11Window, 'WM_CLASS'])
+    : { status: 'not-requested' };
+  const waylandContent = options.waylandLog ? readText(options.waylandLog) : null;
+  const appIds = waylandContent
+    ? [...waylandContent.matchAll(/set_app_id[^"\n]*"([^"]+)"/g)].map((match) => inspected(match[1]))
+    : [];
+  return {
+    entry: parseDesktopFile(options.desktopFile),
+    x11: x11.status === 'available'
+      ? { status: 'available', wmClass: inspected(x11.value) }
+      : x11,
+    wayland: options.waylandLog
+      ? {
+          status: waylandContent === null ? 'unavailable' : 'available',
+          appIds,
+          containsProductToken: containsProductToken(waylandContent),
+        }
+      : { status: 'not-requested' },
+  };
+}
+
 function plistValue(app, key) {
   const plist = join(app, 'Contents', 'Info.plist');
   const result = run('/usr/libexec/PlistBuddy', ['-c', `Print :${key}`, plist]);
@@ -267,7 +296,7 @@ function collectAudit(options) {
     build: options.build,
     artifact: options.artifact,
     process: processAudit(options.pid, platform),
-    desktop: platform === 'linux' ? parseDesktopFile(options.desktopFile) : { status: 'not-applicable' },
+    desktop: platform === 'linux' ? linuxDesktopAudit(options) : { status: 'not-applicable' },
     appImageEnvironment: platform === 'linux' ? linuxEnvironmentAudit() : null,
     macosBundle: platform === 'macos' ? macBundleAudit(options.app) : { status: 'not-applicable' },
     nativeExecutableFingerprint: fingerprintSummary(options.fingerprintFile),
