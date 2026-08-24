@@ -361,7 +361,7 @@ fn get_master_key_from_keychain(client: &DiscordClient) -> Result<Vec<u8>> {
             );
 
             // Fallback: Use the `security` command line tool
-            let output = Command::new("security")
+            let output = Command::new("/usr/bin/security")
                 .args([
                     "find-generic-password",
                     "-s",

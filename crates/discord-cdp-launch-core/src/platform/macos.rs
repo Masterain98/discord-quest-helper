@@ -1,7 +1,7 @@
 use crate::launcher::build_launch_args;
 use crate::{DiscordChannel, DiscordInstall, DiscordLaunchMode, LaunchError};
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::time::Duration;
 
 pub(crate) fn find_installs() -> Result<Vec<DiscordInstall>, LaunchError> {
@@ -52,7 +52,7 @@ pub fn discover_macos_installs_in(roots: &[PathBuf]) -> Vec<DiscordInstall> {
 
 pub(crate) fn is_running(channel: Option<DiscordChannel>) -> Result<bool, LaunchError> {
     for name in process_names_for(channel) {
-        let status = Command::new("pgrep")
+        let status = Command::new("/usr/bin/pgrep")
             .args(["-x", name])
             .status()
             .map_err(|source| LaunchError::ProcessInspection {
@@ -69,12 +69,14 @@ pub(crate) fn is_running(channel: Option<DiscordChannel>) -> Result<bool, Launch
 pub(crate) fn terminate(channel: Option<DiscordChannel>) -> Result<(), LaunchError> {
     for name in process_names_for(channel) {
         let script = format!("tell application \"{}\" to quit", name.replace('"', "\\\""));
-        let _ = Command::new("osascript").args(["-e", &script]).output();
+        let _ = Command::new("/usr/bin/osascript")
+            .args(["-e", &script])
+            .output();
     }
     std::thread::sleep(Duration::from_secs(3));
     let mut first_error = None;
     for name in process_names_for(channel) {
-        let output = Command::new("pkill")
+        let output = Command::new("/usr/bin/pkill")
             .args(["-x", name])
             .output()
             .map_err(|source| LaunchError::ProcessInspection {
@@ -95,7 +97,9 @@ pub(crate) fn spawn(install: &DiscordInstall, mode: DiscordLaunchMode) -> Result
     let mut command = Command::new(&install.executable_path);
     command
         .current_dir(&install.working_dir)
-        .args(build_launch_args(mode));
+        .args(build_launch_args(mode))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
     command
         .spawn()
         .map(|mut child| {

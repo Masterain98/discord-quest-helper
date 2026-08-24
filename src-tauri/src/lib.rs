@@ -1583,7 +1583,7 @@ async fn open_in_explorer(path: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
         println!("Opening Finder at: {}", path);
-        std::process::Command::new("open")
+        std::process::Command::new("/usr/bin/open")
             .arg(&path)
             .spawn()
             .map_err(|e| format!("Failed to open Finder: {}", e))?;
@@ -2527,47 +2527,18 @@ fn linux_cdp_launcher_options_from_desktop(
 
 fn find_bundled_cdp_launcher(app_handle: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
     let names = cdp_launcher_binary_names();
-    let mut candidate_dirs = Vec::new();
-
-    // Dev mode: cwd-based paths (cwd is typically the repo root during `tauri dev`)
-    // Also covers packaged installers (MSI/NSIS) where cwd == install dir and
-    // the sidecar binary lives at the install root.
-    if let Ok(cwd) = std::env::current_dir() {
-        candidate_dirs.push(cwd.clone());
-        candidate_dirs.push(cwd.join("src-tauri").join("binaries"));
-        candidate_dirs.push(cwd.join("binaries"));
-    }
-
-    // Release / packaged mode: resource_dir and exe-relative paths
-    if let Ok(resource_dir) = app_handle.path().resource_dir() {
-        candidate_dirs.push(resource_dir.clone());
-        candidate_dirs.push(resource_dir.join("binaries"));
-    }
-
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(parent) = exe.parent() {
-            candidate_dirs.push(parent.to_path_buf());
-            candidate_dirs.push(parent.join("binaries"));
-            #[cfg(target_os = "macos")]
-            candidate_dirs.push(parent.join("../Resources"));
-        }
-    }
+    #[cfg_attr(not(target_os = "windows"), allow(unused_mut))]
+    let mut candidate_dirs = bundled_cdp_launcher_candidate_dirs(
+        std::env::current_dir().ok().as_deref(),
+        app_handle.path().resource_dir().ok().as_deref(),
+        std::env::current_exe().ok().as_deref(),
+    );
 
     #[cfg(target_os = "windows")]
     add_windows_cdp_launcher_install_dirs(&mut candidate_dirs);
 
-    for dir in &candidate_dirs {
-        for name in &names {
-            let candidate = dir.join(name);
-            if candidate.exists() {
-                // Reject empty placeholder files (created by build.rs for fresh checkouts)
-                match std::fs::metadata(&candidate) {
-                    Ok(m) if m.len() == 0 => continue,
-                    Err(_) => continue,
-                    _ => return Ok(candidate),
-                }
-            }
-        }
+    if let Some(candidate) = find_cdp_launcher_in_dirs(&names, &candidate_dirs) {
+        return Ok(candidate);
     }
 
     if cfg!(debug_assertions) {
@@ -2584,6 +2555,117 @@ fn find_bundled_cdp_launcher(app_handle: &tauri::AppHandle) -> Result<std::path:
             "The packaged runtime bridge is unavailable or invalid. Reinstall the application."
                 .to_string(),
         )
+    }
+}
+
+fn bundled_cdp_launcher_candidate_dirs(
+    current_dir: Option<&std::path::Path>,
+    resource_dir: Option<&std::path::Path>,
+    current_exe: Option<&std::path::Path>,
+) -> Vec<std::path::PathBuf> {
+    let mut candidate_dirs = Vec::new();
+
+    // Dev mode: cwd-based paths (cwd is typically the repo root during `tauri dev`).
+    // This also covers Windows portable/install layouts where the sidecar is
+    // placed at the install root.
+    if let Some(cwd) = current_dir {
+        candidate_dirs.push(cwd.to_path_buf());
+        candidate_dirs.push(cwd.join("src-tauri").join("binaries"));
+        candidate_dirs.push(cwd.join("binaries"));
+    }
+
+    if let Some(resource_dir) = resource_dir {
+        candidate_dirs.push(resource_dir.to_path_buf());
+        candidate_dirs.push(resource_dir.join("binaries"));
+    }
+
+    // Tauri puts external binaries next to the main executable in macOS app
+    // bundles, Linux packages/AppImages, and installed Windows applications.
+    if let Some(parent) = current_exe.and_then(std::path::Path::parent) {
+        candidate_dirs.push(parent.to_path_buf());
+        candidate_dirs.push(parent.join("binaries"));
+        #[cfg(target_os = "macos")]
+        candidate_dirs.push(parent.join("../Resources"));
+    }
+
+    candidate_dirs
+}
+
+fn find_cdp_launcher_in_dirs(
+    names: &[&str],
+    candidate_dirs: &[std::path::PathBuf],
+) -> Option<std::path::PathBuf> {
+    candidate_dirs.iter().find_map(|directory| {
+        names.iter().find_map(|name| {
+            let candidate = directory.join(name);
+            // build-cdp-launcher.js creates an empty placeholder so Tauri can
+            // validate its config before the real build. Never execute it, and
+            // reject directories that happen to share the sidecar name.
+            std::fs::metadata(&candidate)
+                .ok()
+                .filter(|metadata| metadata.is_file() && metadata.len() > 0)
+                .map(|_| candidate)
+        })
+    })
+}
+
+#[cfg(test)]
+mod bundled_cdp_launcher_tests {
+    use super::{bundled_cdp_launcher_candidate_dirs, find_cdp_launcher_in_dirs};
+    use std::fs;
+    use std::path::PathBuf;
+
+    fn unique_root(label: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "{label}-{}-{}",
+            std::process::id(),
+            super::runtime_identity::generate_random_suffix(8)
+        ))
+    }
+
+    #[test]
+    fn locates_external_binary_next_to_packaged_main_executable() {
+        for relative_main in [
+            "Discord Quest Helper.app/Contents/MacOS/meridian",
+            "appimage-mount/usr/bin/meridian",
+            "deb-root/usr/bin/meridian",
+        ] {
+            let root = unique_root("dqh-bundled-launcher");
+            let main = root.join(relative_main);
+            let helper = main.parent().unwrap().join("waybridge");
+            fs::create_dir_all(main.parent().unwrap()).unwrap();
+            fs::write(&main, b"main").unwrap();
+            fs::write(&helper, b"helper").unwrap();
+
+            let directories = bundled_cdp_launcher_candidate_dirs(None, None, Some(&main));
+            assert_eq!(
+                find_cdp_launcher_in_dirs(&["waybridge"], &directories),
+                Some(helper)
+            );
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn skips_empty_placeholders_and_non_files() {
+        let root = unique_root("dqh-bundled-launcher-invalid");
+        let empty_dir = root.join("empty");
+        let directory_dir = root.join("directory");
+        let valid_dir = root.join("valid");
+        fs::create_dir_all(&empty_dir).unwrap();
+        fs::create_dir_all(directory_dir.join("waybridge")).unwrap();
+        fs::create_dir_all(&valid_dir).unwrap();
+        fs::write(empty_dir.join("waybridge"), []).unwrap();
+        fs::write(valid_dir.join("waybridge"), b"helper").unwrap();
+
+        assert_eq!(
+            find_cdp_launcher_in_dirs(
+                &["waybridge"],
+                &[empty_dir, directory_dir, valid_dir.clone()]
+            ),
+            Some(valid_dir.join("waybridge"))
+        );
+        fs::remove_dir_all(root).unwrap();
     }
 }
 
@@ -2660,42 +2742,19 @@ fn create_platform_cdp_launcher_shortcut(
     port: u16,
     channel: Option<discord_cdp_launch_core::DiscordChannel>,
 ) -> Result<String, String> {
-    use std::path::PathBuf;
     use std::process::Command;
 
-    let desktop = std::env::var("USERPROFILE")
-        .map(|p| PathBuf::from(p).join("Desktop"))
-        .map_err(|_| "Could not get desktop path".to_string())?;
-
-    let shortcut_path = desktop.join("Discord CDP Launcher.lnk");
     let launcher_dir = launcher_path
         .parent()
         .ok_or_else(|| "Could not get launcher directory".to_string())?;
     let channel_arg = channel.map(|c| c.as_str()).unwrap_or("auto");
     let args = format!("--port {} --channel {}", port, channel_arg);
 
-    let shortcut_path_ps = ps_single_quote(&shortcut_path.to_string_lossy());
     let launcher_path_ps = ps_single_quote(&launcher_path.to_string_lossy());
     let launcher_dir_ps = ps_single_quote(&launcher_dir.to_string_lossy());
     let args_ps = ps_single_quote(&args);
 
-    let ps_script = format!(
-        r#"
-$ErrorActionPreference = 'Stop'
-$WshShell = New-Object -ComObject WScript.Shell
-$Shortcut = $WshShell.CreateShortcut('{shortcut_path}')
-$Shortcut.TargetPath = '{launcher_path}'
-$Shortcut.Arguments = '{args}'
-$Shortcut.WorkingDirectory = '{launcher_dir}'
-$Shortcut.Description = 'Launch Discord with CDP enabled for Discord Quest Helper'
-$Shortcut.IconLocation = '{launcher_path},0'
-$Shortcut.Save()
-"#,
-        launcher_path = launcher_path_ps,
-        args = args_ps,
-        launcher_dir = launcher_dir_ps,
-        shortcut_path = shortcut_path_ps,
-    );
+    let ps_script = windows_cdp_shortcut_script(&launcher_path_ps, &launcher_dir_ps, &args_ps);
 
     let script_path = std::env::temp_dir().join(windows_shortcut_temp_ps1_name());
     std::fs::write(&script_path, &ps_script)
@@ -2715,18 +2774,51 @@ $Shortcut.Save()
     let _ = std::fs::remove_file(&script_path);
     let output = output.map_err(|e| format!("Failed to execute PowerShell: {}", e))?;
 
-    if output.status.success() {
-        Ok(shortcut_path.to_string_lossy().to_string())
-    } else {
+    if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(format!(
+        return Err(format!(
             "Failed to create desktop shortcut: {}",
             stderr.trim()
-        ))
+        ));
     }
+
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .rev()
+        .find(|line| !line.trim().is_empty())
+        .map(|line| line.trim().to_string())
+        .ok_or_else(|| "Desktop shortcut was created but its path was not returned.".to_string())
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", test))]
+fn windows_cdp_shortcut_script(
+    launcher_path_ps: &str,
+    launcher_dir_ps: &str,
+    args_ps: &str,
+) -> String {
+    format!(
+        r#"
+$ErrorActionPreference = 'Stop'
+$Desktop = [Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory)
+if ([string]::IsNullOrWhiteSpace($Desktop)) {{ throw 'Windows did not provide a Desktop directory.' }}
+$ShortcutPath = Join-Path -Path $Desktop -ChildPath 'Discord CDP Launcher.lnk'
+$WshShell = New-Object -ComObject WScript.Shell
+$Shortcut = $WshShell.CreateShortcut($ShortcutPath)
+$Shortcut.TargetPath = '{launcher_path}'
+$Shortcut.Arguments = '{args}'
+$Shortcut.WorkingDirectory = '{launcher_dir}'
+$Shortcut.Description = 'Launch Discord with CDP enabled for Discord Quest Helper'
+$Shortcut.IconLocation = '{launcher_path},0'
+$Shortcut.Save()
+[Console]::Out.WriteLine($ShortcutPath)
+"#,
+        launcher_path = launcher_path_ps,
+        args = args_ps,
+        launcher_dir = launcher_dir_ps,
+    )
+}
+
+#[cfg(any(target_os = "windows", test))]
 fn ps_single_quote(value: &str) -> String {
     value.replace('\'', "''")
 }
@@ -2737,10 +2829,23 @@ fn create_platform_cdp_launcher_shortcut(
     port: u16,
     channel: Option<discord_cdp_launch_core::DiscordChannel>,
 ) -> Result<String, String> {
-    use std::os::unix::fs::PermissionsExt;
-
     let home = std::env::var_os("HOME").ok_or_else(|| "Could not get HOME".to_string())?;
     let desktop = std::path::PathBuf::from(home).join("Desktop");
+    create_macos_cdp_launcher_shortcut_at(&desktop, launcher_path, port, channel)
+}
+
+#[cfg(target_os = "macos")]
+fn create_macos_cdp_launcher_shortcut_at(
+    desktop: &std::path::Path,
+    launcher_path: &std::path::Path,
+    port: u16,
+    channel: Option<discord_cdp_launch_core::DiscordChannel>,
+) -> Result<String, String> {
+    use std::os::unix::fs::PermissionsExt;
+
+    if !desktop.is_dir() {
+        return Err("Could not get desktop path".to_string());
+    }
     let script_path = desktop.join("Discord CDP Launcher.command");
     let channel_arg = channel.map(|c| c.as_str()).unwrap_or("auto");
 
@@ -2762,6 +2867,42 @@ fn create_platform_cdp_launcher_shortcut(
         .map_err(|e| format!("Failed to mark launcher command executable: {}", e))?;
 
     Ok(script_path.to_string_lossy().to_string())
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod macos_cdp_shortcut_tests {
+    use super::create_macos_cdp_launcher_shortcut_at;
+    use discord_cdp_launch_core::DiscordChannel;
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn creates_executable_script_with_shell_quoted_launcher_path() {
+        let root = std::env::temp_dir().join(format!(
+            "dqh-macos-shortcut-{}-{}",
+            std::process::id(),
+            super::runtime_identity::generate_random_suffix(8)
+        ));
+        let desktop = root.join("Desktop");
+        fs::create_dir_all(&desktop).unwrap();
+        let launcher = root.join("it'works/waybridge");
+
+        let created = create_macos_cdp_launcher_shortcut_at(
+            &desktop,
+            &launcher,
+            9444,
+            Some(DiscordChannel::Canary),
+        )
+        .unwrap();
+        let created = std::path::PathBuf::from(created);
+        let contents = fs::read_to_string(&created).unwrap();
+        assert!(contents.contains("it'\\''works/waybridge' --port 9444 --channel canary"));
+        assert_ne!(
+            fs::metadata(&created).unwrap().permissions().mode() & 0o111,
+            0
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -3095,5 +3236,17 @@ mod windows_cdp_runtime_path_tests {
         ));
         assert!(!runtime_name_has_product_tokens(&name));
         assert!(!name.to_ascii_lowercase().contains("discord"));
+    }
+
+    #[test]
+    fn windows_shortcut_uses_the_redirectable_desktop_known_folder() {
+        let script = windows_cdp_shortcut_script(
+            &ps_single_quote(r"C:\Program Files\waybridge.exe"),
+            &ps_single_quote(r"C:\Program Files"),
+            &ps_single_quote("--port 9223 --channel auto"),
+        );
+        assert!(script.contains("[Environment+SpecialFolder]::DesktopDirectory"));
+        assert!(!script.contains("USERPROFILE"));
+        assert!(script.contains("$Shortcut = $WshShell.CreateShortcut($ShortcutPath)"));
     }
 }

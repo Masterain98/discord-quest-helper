@@ -83,12 +83,12 @@ fn run(strings: &Strings) -> Result<i32, String> {
         .map_err(|error| runtime_error("Status check", &error))?;
     if running && !options.restart {
         let want_restart = {
-            #[cfg(any(target_os = "windows", target_os = "linux"))]
+            #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
             {
                 dialogs::show_confirm_dialog(strings.title, strings.restart_confirm)?
             }
 
-            #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+            #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
             {
                 eprintln!(
                     "Discord is already running without CDP. Re-run with --restart to close it and relaunch with CDP."
