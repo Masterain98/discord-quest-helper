@@ -40,58 +40,60 @@ const debugModeEnabled = ref(false)
 
 
 function toggleTheme(event: MouseEvent) {
-  // Get click coordinates for ripple origin
-  const x = event.clientX
-  const y = event.clientY
-  
-  // Calculate the end radius to cover the entire screen
+  const root = document.documentElement
+  const triggerRect = (event.currentTarget as HTMLElement | null)?.getBoundingClientRect()
+  const x = event.clientX || (triggerRect ? triggerRect.left + triggerRect.width / 2 : window.innerWidth / 2)
+  const y = event.clientY || (triggerRect ? triggerRect.top + triggerRect.height / 2 : window.innerHeight / 2)
   const endRadius = Math.hypot(
     Math.max(x, window.innerWidth - x),
     Math.max(y, window.innerHeight - y)
   )
-  
-  // Determine if switching to dark mode
-  const switchingToDark = !isDark.value
-  
-  // Check if View Transitions API is supported
-  if (document.startViewTransition) {
-    // Use View Transitions API for smooth animation
-    const transition = document.startViewTransition(() => {
-      isDark.value = !isDark.value
-      updateTheme()
-    })
-    
-    transition.ready.then(() => {
-      // For light-to-dark: shrink from full to center (reverse ripple)
-      // For dark-to-light: expand from center to full
-      const clipPathStart = switchingToDark 
-        ? `circle(${endRadius}px at ${x}px ${y}px)`
-        : `circle(0px at ${x}px ${y}px)`
-      const clipPathEnd = switchingToDark 
-        ? `circle(0px at ${x}px ${y}px)`
-        : `circle(${endRadius}px at ${x}px ${y}px)`
-      
-      // Animate the old view (shrinking) when going to dark
-      // Animate the new view (expanding) when going to light  
-      document.documentElement.animate(
-        {
-          clipPath: [clipPathStart, clipPathEnd]
-        },
-        {
-          duration: 500,
-          easing: 'ease-out',
-          fill: 'both',
-          pseudoElement: switchingToDark 
-            ? '::view-transition-old(root)' 
-            : '::view-transition-new(root)'
-        }
-      )
-    })
-  } else {
-    // Fallback for browsers without View Transitions API
+
+  const applyNextTheme = () => {
     isDark.value = !isDark.value
     updateTheme()
   }
+
+  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  if (!document.startViewTransition || prefersReducedMotion) {
+    applyNextTheme()
+    return
+  }
+
+  // Ignore overlapping toggles so an earlier transition cannot clean up the
+  // coordinates or stacking context used by a newer one.
+  if (root.classList.contains('theme-view-transition')) return
+
+  root.style.setProperty('--theme-transition-x', `${x}px`)
+  root.style.setProperty('--theme-transition-y', `${y}px`)
+  root.classList.add('theme-view-transition')
+
+  const transition = document.startViewTransition(applyNextTheme)
+
+  void transition.ready.then(() => {
+    root.animate(
+      {
+        clipPath: [
+          `circle(0px at ${x}px ${y}px)`,
+          `circle(${endRadius}px at ${x}px ${y}px)`,
+        ],
+      },
+      {
+        duration: 500,
+        easing: 'ease-out',
+        fill: 'both',
+        pseudoElement: '::view-transition-new(root)',
+      }
+    )
+  }).catch(() => undefined)
+
+  const cleanUpTransition = () => {
+    root.classList.remove('theme-view-transition')
+    root.style.removeProperty('--theme-transition-x')
+    root.style.removeProperty('--theme-transition-y')
+  }
+
+  void transition.finished.then(cleanUpTransition, cleanUpTransition)
 }
 
 function updateTheme() {
