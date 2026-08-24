@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Masterain98/discord-quest-helper/schemas/runtime-identity-audit.schema.json",
+  "title": "RuntimeIdentityAudit",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "platform",
+    "build",
+    "artifact",
+    "process",
+    "nativeExecutableFingerprint",
+    "privacy"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "platform": { "enum": ["linux", "macos"] },
+    "build": { "enum": ["debug", "release", "unknown"] },
+    "artifact": { "type": "string" },
+    "process": {
+      "type": "object",
+      "required": ["pid", "executablePath", "executableBasename", "comm", "argv0", "command", "tree"],
+      "properties": {
+        "pid": { "type": "integer", "minimum": 1 },
+        "executablePath": { "$ref": "#/$defs/inspectedValue" },
+        "executableBasename": { "$ref": "#/$defs/inspectedValue" },
+        "comm": { "$ref": "#/$defs/inspectedValue" },
+        "argv0": { "$ref": "#/$defs/inspectedValue" },
+        "command": { "$ref": "#/$defs/inspectedValue" },
+        "tree": { "$ref": "#/$defs/availability" }
+      }
+    },
+    "desktop": { "type": "object" },
+    "appImageEnvironment": { "type": ["object", "null"] },
+    "macosBundle": { "type": "object" },
+    "nativeExecutableFingerprint": {
+      "allOf": [
+        { "$ref": "#/$defs/availability" },
+        {
+          "if": { "properties": { "status": { "const": "available" } } },
+          "then": { "required": ["length", "sha256", "containsProductToken"] }
+        }
+      ]
+    },
+    "privacy": {
+      "type": "object",
+      "required": ["homePathsRedacted", "rawFingerprintStored", "sensitiveHeadersStored"],
+      "properties": {
+        "homePathsRedacted": { "const": true },
+        "rawFingerprintStored": { "const": false },
+        "sensitiveHeadersStored": { "const": false }
+      }
+    }
+  },
+  "$defs": {
+    "inspectedValue": {
+      "type": "object",
+      "required": ["value", "containsProductToken"],
+      "properties": {
+        "value": { "type": ["string", "null"] },
+        "containsProductToken": { "type": "boolean" }
+      }
+    },
+    "availability": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": { "enum": ["available", "unavailable", "error", "not-requested", "not-applicable"] },
+        "reason": { "type": ["string", "null"] },
+        "containsProductToken": { "type": "boolean" }
+      }
+    }
+  }
+}
