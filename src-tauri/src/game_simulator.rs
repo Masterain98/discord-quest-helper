@@ -451,7 +451,8 @@ fn unix_pid_is_runner(pid: u32, executable_path: &Path) -> bool {
 }
 
 /// SIGTERM the tracked child, wait briefly, then SIGKILL if it is still alive.
-/// The child is always reaped before returning.
+/// Cleanup has a fixed deadline; a child that cannot be reaped in time is
+/// handed to a background reaper so application shutdown is never blocked.
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 fn terminate_unix_game(game: &mut UnixManagedGame) {
     if send_unix_signal(game.pid, libc::SIGTERM).is_err() {
@@ -459,8 +460,10 @@ fn terminate_unix_game(game: &mut UnixManagedGame) {
         return;
     }
 
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
-    while std::time::Instant::now() < deadline {
+    let started_at = std::time::Instant::now();
+    let graceful_deadline = started_at + std::time::Duration::from_millis(1_500);
+    let cleanup_deadline = started_at + std::time::Duration::from_secs(2);
+    while std::time::Instant::now() < graceful_deadline {
         if unix_game_has_exited(game) {
             reap_unix_game(game);
             return;
@@ -472,7 +475,9 @@ fn terminate_unix_game(game: &mut UnixManagedGame) {
     // signalled after the graceful termination window.
     if unix_pid_is_runner(game.pid, &game.executable_path) {
         if send_unix_signal(game.pid, libc::SIGKILL).is_ok() {
-            reap_unix_game(game);
+            if !reap_unix_game_until(game, cleanup_deadline) {
+                defer_unix_game_reap(game);
+            }
         } else {
             try_reap_unix_game(game);
         }
@@ -498,7 +503,7 @@ fn send_unix_signal(pid: u32, signal: libc::c_int) -> std::io::Result<()> {
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 fn unix_game_has_exited(game: &mut UnixManagedGame) -> bool {
     match game.child.as_mut() {
-        Some(child) => !matches!(child.try_wait(), Ok(None)),
+        Some(child) => matches!(child.try_wait(), Ok(Some(_))),
         None => {
             // Signal 0 performs an existence/permission probe without sending
             // a signal.
@@ -507,9 +512,39 @@ fn unix_game_has_exited(game: &mut UnixManagedGame) -> bool {
     }
 }
 
+/// Poll for a child exit without exceeding the caller's cleanup deadline.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn reap_unix_game_until(game: &mut UnixManagedGame, deadline: std::time::Instant) -> bool {
+    loop {
+        match game.child.as_mut() {
+            Some(child) => match child.try_wait() {
+                Ok(Some(_)) => {
+                    game.child.take();
+                    return true;
+                }
+                Ok(None) if std::time::Instant::now() < deadline => {
+                    std::thread::sleep(std::time::Duration::from_millis(25));
+                }
+                Ok(None) | Err(_) => return false,
+            },
+            None => return true,
+        }
+    }
+}
+
+/// Preserve eventual zombie collection without holding up synchronous cleanup.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn defer_unix_game_reap(game: &mut UnixManagedGame) {
+    if let Some(mut child) = game.child.take() {
+        std::thread::spawn(move || {
+            let _ = child.wait();
+        });
+    }
+}
+
 /// Reap the child so an exited process doesn't linger as a zombie. Only called
-/// once the process is known to be gone (or has been SIGKILLed), so the
-/// underlying `wait()` returns immediately.
+/// once `try_wait()` has confirmed the process is gone, so the underlying
+/// `wait()` returns immediately.
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 fn reap_unix_game(game: &mut UnixManagedGame) {
     if let Some(mut child) = game.child.take() {
