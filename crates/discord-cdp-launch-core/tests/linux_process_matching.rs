@@ -77,18 +77,27 @@ fn matches_by_comm_when_cmdline_missing() {
 
 #[test]
 fn controlled_runtime_identities_are_never_classified_as_discord() {
-    let installs = [install(DiscordChannel::Stable, "/opt/app/meridian")];
+    let installs = [
+        install(DiscordChannel::Stable, "/opt/app/meridian"),
+        install(DiscordChannel::Ptb, "/tmp/games/stagecraft"),
+        install(DiscordChannel::Canary, "/opt/app/waybridge"),
+    ];
     let main = process(
         15,
         Some("/opt/app/meridian"),
         &["/opt/app/meridian"],
         Some("meridian"),
     );
-    let runner = process(16, None, &["/tmp/games/stagecraft"], Some("stagecraft"));
+    let runner = process(
+        16,
+        Some("/tmp/games/stagecraft"),
+        &["/tmp/games/stagecraft"],
+        Some("stagecraft"),
+    );
     let bridge = process(
         17,
-        None,
-        &["waybridge", "--port", "9223"],
+        Some("/opt/app/waybridge"),
+        &["/opt/app/waybridge", "--port", "9223"],
         Some("waybridge"),
     );
     assert_eq!(classify_linux_process(&main, &installs), None);

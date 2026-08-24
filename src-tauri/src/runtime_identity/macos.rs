@@ -1,6 +1,7 @@
 use super::model::{RuntimeIdentityLevel, RuntimeIdentityStatus, RUNTIME_MAIN_NAME};
+use once_cell::sync::OnceCell;
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::{ffi::OsStringExt, fs::PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -8,6 +9,8 @@ const PUBLIC_APP_DISPLAY_NAME: &str = "Discord Quest Helper";
 const LEGACY_DIR_HEX_LEN: usize = 16;
 const LEGACY_EXE_HEX_LEN: usize = 12;
 const BUNDLE_IDENTIFIER: &str = "com.masterain.discord-quest-helper";
+
+static VERIFIED_CURRENT_APP_IDENTITY: OnceCell<Result<MacCodeIdentity, String>> = OnceCell::new();
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct MacCodeIdentity {
@@ -110,18 +113,27 @@ pub(crate) fn validate_related_code_identity(
 }
 
 pub(crate) fn verify_helper_identity_for_current_app(helper: &Path) -> Result<(), String> {
-    let executable = std::env::current_exe()
-        .map_err(|_| "main application executable path is unavailable".to_string())?;
-    let bundle = app_bundle_for_executable(&executable)
-        .ok_or_else(|| "main application bundle identity is unavailable".to_string())?;
-    verify_bundle_signature(&bundle)?;
-    let main_identity = read_code_identity(&bundle)?;
+    let main_identity = verified_current_app_identity()?;
     let helper_identity = read_code_identity(helper)?;
     validate_related_code_identity(
-        &main_identity,
+        main_identity,
         &helper_identity,
         SignaturePolicy::ReleaseStrict,
     )
+}
+
+fn verified_current_app_identity() -> Result<&'static MacCodeIdentity, String> {
+    VERIFIED_CURRENT_APP_IDENTITY
+        .get_or_init(|| {
+            let executable = std::env::current_exe()
+                .map_err(|_| "main application executable path is unavailable".to_string())?;
+            let bundle = app_bundle_for_executable(&executable)
+                .ok_or_else(|| "main application bundle identity is unavailable".to_string())?;
+            verify_bundle_signature(&bundle)?;
+            read_code_identity(&bundle)
+        })
+        .as_ref()
+        .map_err(Clone::clone)
 }
 
 pub(super) fn initial_status() -> RuntimeIdentityStatus {
@@ -143,8 +155,8 @@ pub(super) fn initial_status() -> RuntimeIdentityStatus {
                 status.main_executable_ok = false;
                 status.reasons.push(reason);
             }
-            match verify_bundle_signature(&bundle) {
-                Ok(()) => status.package_signature_ok = Some(true),
+            match verified_current_app_identity() {
+                Ok(_) => status.package_signature_ok = Some(true),
                 Err(reason) => {
                     status.package_signature_ok = Some(false);
                     status.reasons.push(reason);
@@ -286,14 +298,55 @@ fn has_legacy_code_identifier(executable: &Path) -> bool {
 }
 
 fn legacy_executable_is_running(executable: &Path) -> bool {
-    let output = Command::new("/bin/ps").args(["-axo", "comm="]).output();
+    let Some(name) = executable.file_name().and_then(|name| name.to_str()) else {
+        return true;
+    };
+    let output = Command::new("/usr/bin/pgrep").args(["-x", name]).output();
     let Ok(output) = output else {
         return true;
     };
-    String::from_utf8_lossy(&output.stdout)
+    if output.status.code() == Some(1) {
+        return false;
+    }
+    if !output.status.success() {
+        return true;
+    }
+
+    for pid in String::from_utf8_lossy(&output.stdout)
         .lines()
-        .map(str::trim)
-        .any(|command| Path::new(command) == executable)
+        .filter_map(|line| line.trim().parse::<u32>().ok())
+    {
+        let Some(actual) = process_path(pid) else {
+            // A candidate that cannot be inspected is treated as active. It is
+            // safer to retain a verified legacy directory than delete live code.
+            return true;
+        };
+        match (fs::canonicalize(&actual), fs::canonicalize(executable)) {
+            (Ok(actual), Ok(expected)) if actual == expected => return true,
+            _ if actual == executable => return true,
+            _ => {}
+        }
+    }
+    false
+}
+
+fn process_path(pid: u32) -> Option<PathBuf> {
+    let mut buffer = Vec::<u8>::with_capacity(libc::PROC_PIDPATHINFO_MAXSIZE as usize);
+    // SAFETY: the buffer exposes the requested writable capacity for the
+    // duration of proc_pidpath, which returns the initialized byte count.
+    let length = unsafe {
+        libc::proc_pidpath(
+            pid as libc::c_int,
+            buffer.as_mut_ptr().cast(),
+            libc::PROC_PIDPATHINFO_MAXSIZE as u32,
+        )
+    };
+    if length <= 0 {
+        return None;
+    }
+    // SAFETY: proc_pidpath initialized `length` bytes on success.
+    unsafe { buffer.set_len(length as usize) };
+    Some(PathBuf::from(std::ffi::OsString::from_vec(buffer)))
 }
 
 fn cleanup_legacy_temp_runtimes() -> Vec<String> {
@@ -344,7 +397,9 @@ fn status_for_executable(executable: Option<&Path>) -> RuntimeIdentityStatus {
         .map(|name| name == RUNTIME_MAIN_NAME)
         .unwrap_or(false);
     if !main_executable_ok {
-        reasons.push("CFBundleExecutable does not match the configured runtime identity".into());
+        reasons.push(
+            "current executable filename does not match the configured runtime identity".into(),
+        );
     }
     RuntimeIdentityStatus {
         platform: "macos".into(),
@@ -443,6 +498,22 @@ mod tests {
             .level,
             RuntimeIdentityLevel::Full
         );
+        let status = status_for_executable(Some(Path::new(
+            "/Applications/Discord Quest Helper.app/Contents/MacOS/wrong-name",
+        )));
+        assert_eq!(
+            status.reasons,
+            ["current executable filename does not match the configured runtime identity"]
+        );
+        assert_eq!(
+            validate_bundle_metadata(
+                Some("wrong-name"),
+                Some(BUNDLE_IDENTIFIER),
+                Some(PUBLIC_APP_DISPLAY_NAME),
+            )
+            .unwrap_err(),
+            "CFBundleExecutable does not match the configured runtime identity"
+        );
     }
 
     #[test]
@@ -492,6 +563,29 @@ mod tests {
         permissions.set_mode(0o755);
         fs::set_permissions(&executable, permissions).unwrap();
         assert_eq!(legacy_executable_candidate(&directory), Some(executable));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn legacy_running_check_uses_the_full_process_path() {
+        let root = std::env::temp_dir().join(format!(
+            "runtime-identity-running-test-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let executable = root.join(format!("{:012x}", std::process::id()));
+        fs::copy("/bin/sleep", &executable).unwrap();
+        let mut permissions = fs::metadata(&executable).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&executable, permissions).unwrap();
+
+        let mut child = Command::new(&executable).arg("5").spawn().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        assert!(legacy_executable_is_running(&executable));
+        child.kill().unwrap();
+        child.wait().unwrap();
+        assert!(!legacy_executable_is_running(&executable));
+
         fs::remove_dir_all(root).unwrap();
     }
 }

@@ -2233,7 +2233,12 @@ async fn create_discord_debug_shortcut(
 async fn install_discord_cdp_launcher_internal(
     app_handle: &tauri::AppHandle,
 ) -> Result<std::path::PathBuf, String> {
-    let result = install_discord_cdp_launcher_impl(app_handle);
+    let app_handle = app_handle.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        install_discord_cdp_launcher_impl(&app_handle)
+    })
+    .await
+    .map_err(|error| format!("Runtime bridge installation task failed: {error}"))?;
     match &result {
         Ok((_, Some(warning))) => runtime_identity::record_helper_degraded(warning.clone()),
         Ok((_, None)) => runtime_identity::record_helper_identity(Ok(())),

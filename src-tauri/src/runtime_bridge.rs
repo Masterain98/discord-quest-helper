@@ -99,17 +99,37 @@ fn verify_platform_signature(_path: &Path) -> Result<(), String> {
 }
 
 fn verify_helper_launch(path: &Path) -> Result<(), String> {
-    let status = Command::new(path)
+    let mut child = Command::new(path)
         .arg("--help")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .status()
+        .spawn()
         .map_err(|_| "runtime bridge launch verification failed".to_string())?;
-    status
-        .success()
-        .then_some(())
-        .ok_or_else(|| "runtime bridge launch verification failed".to_string())
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                return status
+                    .success()
+                    .then_some(())
+                    .ok_or_else(|| "runtime bridge launch verification failed".to_string());
+            }
+            Ok(None) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(std::time::Duration::from_millis(25));
+            }
+            Ok(None) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err("runtime bridge launch verification timed out".into());
+            }
+            Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err("runtime bridge launch verification failed".into());
+            }
+        }
+    }
 }
 
 fn write_active_manifest(data_root: &Path, sha256: &str) -> Result<(), String> {
