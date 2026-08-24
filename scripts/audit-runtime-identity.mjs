@@ -92,7 +92,7 @@ function run(command, args = []) {
   } catch (error) {
     return {
       status: 'unavailable',
-      reason: error?.stderr?.toString().trim() || error.message,
+      reason: redactPath(error?.stderr?.toString().trim() || error.message),
     };
   }
 }
@@ -102,6 +102,14 @@ export function inspected(value, source = 'observed') {
     value: redactPath(value),
     containsProductToken: containsProductToken(value),
     source,
+  };
+}
+
+export function commandSummary(value) {
+  return {
+    value: null,
+    containsProductToken: containsProductToken(value),
+    source: 'observed',
   };
 }
 
@@ -154,10 +162,12 @@ function processAudit(pid, platform) {
     executableBasename: inspected(executable ? basename(executable) : null),
     comm: inspected(comm),
     argv0: inspected(argv0),
-    command: inspected(command),
+    // Command lines can contain credentials passed by another process. Keep
+    // only the identity-policy result, never the raw arguments.
+    command: commandSummary(command),
     tree: tree.status === 'available'
       ? { status: 'available', containsProductToken: containsProductToken(tree.value) }
-      : { status: 'unavailable', reason: tree.reason },
+      : { status: 'unavailable', reason: redactPath(tree.reason) },
   };
 }
 

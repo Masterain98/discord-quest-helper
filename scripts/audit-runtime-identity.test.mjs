@@ -4,7 +4,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { containsProductToken, fingerprintSummary, inspected, redactPath } from './audit-runtime-identity.mjs';
+import {
+  commandSummary,
+  containsProductToken,
+  fingerprintSummary,
+  inspected,
+  redactPath,
+} from './audit-runtime-identity.mjs';
 
 test('product token matching is case insensitive and avoids neutral names', () => {
   assert.equal(containsProductToken('/opt/DiscordQuestHelper/bin'), true);
@@ -20,6 +26,16 @@ test('home paths are redacted without changing unrelated paths', () => {
 test('audited values state whether they were observed or read from a package', () => {
   assert.equal(inspected('meridian').source, 'observed');
   assert.equal(inspected('meridian', 'package').source, 'package');
+});
+
+test('command summaries never retain credentials or raw arguments', () => {
+  const command = '/opt/meridian --authorization super-secret --cookie session-secret';
+  const summary = commandSummary(command);
+
+  assert.equal(summary.value, null);
+  assert.equal(summary.containsProductToken, false);
+  assert.equal(JSON.stringify(summary).includes('super-secret'), false);
+  assert.equal(JSON.stringify(summary).includes('session-secret'), false);
 });
 
 test('fingerprint summary never includes the raw fingerprint', () => {

@@ -72,7 +72,9 @@ pub struct RuntimeIdentityAudit {
 }
 
 fn home_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(PathBuf::from)
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
 }
 
 fn redacted_path(path: &Path) -> String {
@@ -376,16 +378,6 @@ fn platform_details() -> Value {
     let hardened_runtime = main_code_identity
         .as_ref()
         .is_some_and(|identity| identity.hardened_runtime);
-    let notarized = bundle.as_ref().map(|path| {
-        Command::new("/usr/bin/xcrun")
-            .args(["stapler", "validate"])
-            .arg(path)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .is_ok_and(|status| status.success())
-    });
     let nested_helper = bundle
         .as_ref()
         .map(|path| path.join("Contents/MacOS").join(RUNTIME_BRIDGE_NAME));
@@ -421,7 +413,11 @@ fn platform_details() -> Value {
         "codeSigningAuthority": authority,
         "codeSigningTeamIdentifier": main_code_identity.as_ref().and_then(|identity| identity.team_identifier.clone()),
         "hardenedRuntime": hardened_runtime,
-        "notarizationStaplerOk": notarized,
+        // Notarization validation can perform network or trust-service work.
+        // Keep this interactive command bounded by omitting that probe; release
+        // workflows perform stapler validation separately.
+        "notarizationStaplerOk": Value::Null,
+        "notarizationObservationStatus": "external",
         "nestedHelperSignatureOk": nested_helper_signature_ok,
         "nestedHelperTeamIdentifier": nested_helper_identity.as_ref().and_then(|identity| identity.team_identifier.clone()),
         "nestedHelperHardenedRuntime": nested_helper_identity.as_ref().map(|identity| identity.hardened_runtime),

@@ -32,17 +32,17 @@ function usage() {
 Options:
   --kind <app|deb|appimage|appdir>  Override artifact detection
   --output <identity-manifest.json> Write the manifest to this path
-  --allow-unsigned                  Permit unsigned macOS smoke artifacts
+  --allow-adhoc                     Permit hardened ad-hoc macOS smoke signatures
   --help                            Show this help`;
 }
 
 function parseArgs(argv) {
-  const result = { platform: null, artifact: null, kind: null, output: null, allowUnsigned: false };
+  const result = { platform: null, artifact: null, kind: null, output: null, allowAdHoc: false };
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
     if (flag === '--help' || flag === '-h') return { help: true };
-    if (flag === '--allow-unsigned') {
-      result.allowUnsigned = true;
+    if (flag === '--allow-adhoc') {
+      result.allowAdHoc = true;
       continue;
     }
     const value = argv[++index];
@@ -189,7 +189,7 @@ function parseDesktopEntry(path) {
   return fields;
 }
 
-function auditMacApp(app, allowUnsigned) {
+function auditMacApp(app, allowAdHoc) {
   if (!app.endsWith('.app')) throw new Error('macOS artifact must be an .app bundle');
   const executableName = plistValue(app, 'CFBundleExecutable');
   const executable = executableName ? join(app, 'Contents', 'MacOS', executableName) : null;
@@ -234,10 +234,10 @@ function auditMacApp(app, allowUnsigned) {
     name: basename(file),
     signed: commandSucceeds('codesign', ['--verify', '--strict', '--verbose=4', file]).ok,
   }));
-  if (!allowUnsigned && !strictSigning.ok) violations.push('strict code-signing verification failed');
+  if (!allowAdHoc && !strictSigning.ok) violations.push('strict code-signing verification failed');
   if (nestedSigning.some(({ signed }) => !signed)) violations.push('nested executable signature verification failed');
   if (bridgeCodeIdentity) {
-    violations.push(...relatedCodeIdentityViolations(mainCodeIdentity, bridgeCodeIdentity, allowUnsigned));
+    violations.push(...relatedCodeIdentityViolations(mainCodeIdentity, bridgeCodeIdentity, allowAdHoc));
   }
 
   return {
@@ -254,7 +254,7 @@ function auditMacApp(app, allowUnsigned) {
     signing: {
       strict: strictSigning.ok,
       hardenedRuntime: mainCodeIdentity.hardenedRuntime,
-      smokeArtifact: allowUnsigned,
+      smokeArtifact: allowAdHoc,
       authorities: mainCodeIdentity.authorities,
       teamIdentifier: mainCodeIdentity.teamIdentifier,
       bridgeIdentity: bridgeCodeIdentity,
@@ -350,7 +350,7 @@ function auditLinux(path, kind) {
 export function auditArtifact(options) {
   const kind = options.platform === 'macos' ? 'app' : detectLinuxKind(options.artifact, options.kind);
   const result = options.platform === 'macos'
-    ? auditMacApp(options.artifact, options.allowUnsigned)
+    ? auditMacApp(options.artifact, options.allowAdHoc)
     : auditLinux(options.artifact, kind);
   return {
     schemaVersion: 1,

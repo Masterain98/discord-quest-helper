@@ -88,7 +88,7 @@ Type=Application
     platform: 'linux',
     artifact: appDir,
     kind: 'appdir',
-    allowUnsigned: false,
+    allowAdHoc: false,
   });
   assert.equal(manifest.passed, true);
   assert.equal(manifest.mainBinary, IDENTITY.mainBinary);

@@ -18,4 +18,14 @@ describe('runtime identity audit export', () => {
       nested: { safe: '$HOME/.local/share/blueorbit' },
     })
   })
+
+  it('redacts Windows profiles case-insensitively with either separator', () => {
+    expect(sanitizeRuntimeIdentityAuditExport({
+      backslash: String.raw`c:\users\Alice\AppData\Local\blueorbit`,
+      slash: 'D:/USERS/Bob/AppData/Local/blueorbit',
+    })).toEqual({
+      backslash: String.raw`$HOME\AppData\Local\blueorbit`,
+      slash: '$HOME/AppData/Local/blueorbit',
+    })
+  })
 })

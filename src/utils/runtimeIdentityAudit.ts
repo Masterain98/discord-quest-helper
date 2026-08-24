@@ -4,7 +4,7 @@ function redactHomePath(value: string): string {
   return value
     .replace(/\/Users\/[^/\\]+(?=[/\\]|$)/g, '$HOME')
     .replace(/\/home\/[^/\\]+(?=[/\\]|$)/g, '$HOME')
-    .replace(/[A-Za-z]:\\Users\\[^/\\]+(?=[/\\]|$)/g, '$HOME')
+    .replace(/[A-Za-z]:[/\\]Users[/\\][^/\\]+(?=[/\\]|$)/gi, '$HOME')
 }
 
 export function sanitizeRuntimeIdentityAuditExport(value: unknown): unknown {

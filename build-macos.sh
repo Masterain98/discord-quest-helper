@@ -112,7 +112,7 @@ if [ "$SKIP_TAURI_BUILD" = false ]; then
     "$PROJECT_ROOT/scripts/verify-macos-bundle.sh" "$APP_FILE"
     audit_args=(--platform macos --artifact "$APP_FILE" --output "$RELEASE_DIR/identity-manifest.json")
     if [ -z "${APPLE_SIGNING_IDENTITY:-}" ]; then
-        audit_args+=(--allow-unsigned)
+        audit_args+=(--allow-adhoc)
     fi
     node "$PROJECT_ROOT/scripts/audit-packaged-identity.mjs" "${audit_args[@]}"
 

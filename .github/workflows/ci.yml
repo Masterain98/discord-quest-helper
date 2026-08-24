@@ -180,7 +180,7 @@ jobs:
           scripts/sign-macos-bundle-smoke.sh "$app"
           scripts/verify-macos-bundle.sh "$app"
           node scripts/audit-packaged-identity.mjs \
-            --platform macos --artifact "$app" --allow-unsigned \
+            --platform macos --artifact "$app" --allow-adhoc \
             --output target/${{ matrix.cdp_target }}/release/bundle/identity-manifest-macos-smoke.json
           scripts/smoke-macos-runtime-identity.sh "$app" \
             target/${{ matrix.cdp_target }}/release/bundle/identity-smoke-macos.json

@@ -451,7 +451,7 @@ function exportIdentityAudit() {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
-  link.download = `runtime-identity-audit-${identityAudit.value.platform}-${identityAudit.value.capturedAtUnix}.json`
+  link.download = `runtime-identity-debug-audit-${identityAudit.value.platform}-${identityAudit.value.capturedAtUnix}.json`
   link.click()
   URL.revokeObjectURL(url)
 }

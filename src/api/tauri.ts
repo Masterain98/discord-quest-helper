@@ -449,6 +449,7 @@ export async function getRuntimeIdentityStatus(): Promise<RuntimeIdentityStatus>
   return await invoke('get_runtime_identity_status')
 }
 
+/** Interactive debug export; see docs/runtime-identity-debug-audit.schema.json. */
 export interface RuntimeIdentityAudit {
   schemaVersion: number
   capturedAtUnix: number
