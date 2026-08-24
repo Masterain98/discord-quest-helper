@@ -8,6 +8,7 @@ import {
   auditArtifact,
   containsProductToken,
   IDENTITY,
+  pngDimensions,
   validateInternalName,
 } from './audit-packaged-identity.mjs';
 
@@ -27,16 +28,28 @@ test('public identity remains allowed outside internal executable metadata', () 
   assert.equal(containsProductToken(IDENTITY.publicName), true);
 });
 
-test('Linux AppDir audit requires desktop integration with the neutral runtime', (context) => {
+test('Linux AppDir audit requires desktop integration with the neutral runtime', {
+  skip: process.platform === 'win32' ? 'POSIX executable mode fixture' : false,
+}, (context) => {
   const appDir = mkdtempSync(join(tmpdir(), 'identity-appdir-'));
   context.after(() => rmSync(appDir, { recursive: true, force: true }));
   const binDir = join(appDir, 'usr', 'bin');
   const desktopDir = join(appDir, 'usr', 'share', 'applications');
+  const iconDir = join(appDir, 'usr', 'share', 'icons', 'hicolor', '64x64', 'apps');
   mkdirSync(binDir, { recursive: true });
   mkdirSync(desktopDir, { recursive: true });
+  mkdirSync(iconDir, { recursive: true });
   const main = join(binDir, IDENTITY.mainBinary);
+  const bridge = join(binDir, IDENTITY.bridgeBinary);
   writeFileSync(main, 'fixture');
+  writeFileSync(bridge, 'fixture');
   chmodSync(main, 0o755);
+  chmodSync(bridge, 0o755);
+  const pngHeader = Buffer.alloc(24);
+  Buffer.from('89504e470d0a1a0a', 'hex').copy(pngHeader);
+  pngHeader.writeUInt32BE(64, 16);
+  pngHeader.writeUInt32BE(64, 20);
+  writeFileSync(join(iconDir, 'com.masterain.discord-quest-helper.png'), pngHeader);
   writeFileSync(join(desktopDir, 'public.desktop'), `[Desktop Entry]
 Name=Discord Quest Helper
 Exec=meridian
@@ -54,4 +67,18 @@ Type=Application
   });
   assert.equal(manifest.passed, true);
   assert.equal(manifest.mainBinary, IDENTITY.mainBinary);
+  assert.equal(manifest.bridgeBinary, IDENTITY.bridgeBinary);
+  assert.equal(manifest.hashes[IDENTITY.bridgeBinary].length, 64);
+});
+
+test('PNG dimension audit distinguishes a 1x1 placeholder', (context) => {
+  const directory = mkdtempSync(join(tmpdir(), 'identity-icon-'));
+  context.after(() => rmSync(directory, { recursive: true, force: true }));
+  const icon = join(directory, 'icon.png');
+  const header = Buffer.alloc(24);
+  Buffer.from('89504e470d0a1a0a', 'hex').copy(header);
+  header.writeUInt32BE(1, 16);
+  header.writeUInt32BE(1, 20);
+  writeFileSync(icon, header);
+  assert.deepEqual(pngDimensions(icon), { width: 1, height: 1 });
 });

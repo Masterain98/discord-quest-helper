@@ -75,6 +75,16 @@ function sha256(path) {
   return createHash('sha256').update(readFileSync(path)).digest('hex');
 }
 
+export function pngDimensions(path) {
+  try {
+    const bytes = readFileSync(path);
+    if (bytes.length < 24 || bytes.toString('hex', 0, 8) !== '89504e470d0a1a0a') return null;
+    return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
+  } catch {
+    return null;
+  }
+}
+
 function commandSucceeds(command, args) {
   try {
     execFileSync(command, args, { stdio: ['ignore', 'ignore', 'pipe'] });
@@ -162,6 +172,16 @@ function auditMacApp(app, allowUnsigned) {
   if (!executable || !existsSync(executable)) violations.push('main bundle executable is missing');
   if (!bridge) violations.push(`nested runtime bridge ${IDENTITY.bridgeBinary} is missing`);
 
+  const icons = filesWithSuffix(join(app, 'Contents'), '.icns').map((file) => {
+    const dimensions = commandOutput('/usr/bin/sips', ['-g', 'pixelWidth', '-g', 'pixelHeight', file]);
+    const width = Number(/pixelWidth:\s*(\d+)/.exec(dimensions.output)?.[1] ?? 0);
+    const height = Number(/pixelHeight:\s*(\d+)/.exec(dimensions.output)?.[1] ?? 0);
+    return { name: basename(file), width, height, size: statSync(file).size };
+  });
+  if (!icons.some(({ width, height, size }) => width > 1 && height > 1 && size > 1024)) {
+    violations.push('macOS public icon is missing, empty, or 1x1');
+  }
+
   const strictSigning = commandSucceeds('codesign', ['--verify', '--deep', '--strict', '--verbose=4', app]);
   const signingDetails = commandOutput('codesign', ['-dvvv', app]);
   const hardenedRuntime = /flags=.*\bruntime\b/.test(signingDetails.output);
@@ -186,7 +206,11 @@ function auditMacApp(app, allowUnsigned) {
     publicName: IDENTITY.publicName,
     mainBinary: executableName,
     bridgeBinary: bridge ? basename(bridge) : null,
-    hashes: executable && existsSync(executable) ? { [IDENTITY.mainBinary]: sha256(executable) } : {},
+    hashes: {
+      ...(executable && existsSync(executable) ? { [IDENTITY.mainBinary]: sha256(executable) } : {}),
+      ...(bridge ? { [IDENTITY.bridgeBinary]: sha256(bridge) } : {}),
+    },
+    icons,
     signing: {
       strict: strictSigning.ok,
       hardenedRuntime,
@@ -243,9 +267,18 @@ function auditLinux(path, kind) {
       && fields.Terminal === 'false');
     const violations = [];
     if (!main) violations.push(`Linux payload must contain ${IDENTITY.mainBinary}`);
+    if (!bridge) violations.push(`Linux payload must contain ${IDENTITY.bridgeBinary}`);
     if (internalTokenFiles.length) violations.push('executable filenames contain product tokens');
     if (!integratedDesktop) {
       violations.push('desktop entry must preserve the public name/icon and map to the neutral runtime');
+    }
+    const icons = filesWithSuffix(root, '.png').map((file) => ({
+      path: relative(root, file),
+      dimensions: pngDimensions(file),
+      size: statSync(file).size,
+    }));
+    if (!icons.some(({ dimensions }) => dimensions && dimensions.width > 1 && dimensions.height > 1)) {
+      violations.push('Linux public icon is missing or 1x1');
     }
 
     return {
@@ -254,7 +287,12 @@ function auditLinux(path, kind) {
       publicName: IDENTITY.publicName,
       mainBinary: main ? basename(main) : null,
       bridgeBinary: bridge ? basename(bridge) : null,
-      hashes: main ? { [IDENTITY.mainBinary]: sha256(main) } : {},
+      hashes: {
+        ...(main ? { [IDENTITY.mainBinary]: sha256(main) } : {}),
+        ...(bridge ? { [IDENTITY.bridgeBinary]: sha256(bridge) } : {}),
+      },
+      signing: { status: 'not-applicable' },
+      icons,
       executableNames: [...new Set(names)].sort(),
       desktopEntries,
       knownResiduals: kind === 'appimage'

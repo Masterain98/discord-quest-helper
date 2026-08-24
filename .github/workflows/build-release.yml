@@ -116,6 +116,12 @@ jobs:
       - name: Run frontend tests
         run: pnpm test
 
+      - name: Validate runtime identity policy and audit tools
+        run: |
+          pnpm run check:runtime-identity
+          pnpm run test:identity-audit
+          pnpm run test:packaged-identity
+
       # `tauri::generate_context!` resolves `frontendDist` (../dist) at
       # compile time, so the bundle must exist before Cargo touches src-tauri.
       - name: Build frontend
@@ -218,6 +224,21 @@ jobs:
             --artifact "$app" \
             --output target/aarch64-apple-darwin/release/bundle/identity-manifest.json
 
+      - name: Audit Linux release packages
+        if: matrix.platform == 'ubuntu-22.04'
+        shell: bash
+        run: |
+          deb="$(find target/release/bundle/deb -maxdepth 1 -name '*.deb' -type f | head -n 1)"
+          appimage="$(find target/release/bundle/appimage -maxdepth 1 -name '*.AppImage' -type f | head -n 1)"
+          test -n "$deb"
+          test -n "$appimage"
+          node scripts/audit-packaged-identity.mjs \
+            --platform linux --artifact "$deb" \
+            --output target/release/bundle/identity-manifest-linux-deb.json
+          node scripts/audit-packaged-identity.mjs \
+            --platform linux --artifact "$appimage" \
+            --output target/release/bundle/identity-manifest-linux-appimage.json
+
       - name: Stage Windows portable artifact
         if: matrix.platform == 'windows-latest'
         shell: pwsh
@@ -266,6 +287,7 @@ jobs:
           path: |
             target/release/bundle/deb/*.deb
             target/release/bundle/appimage/*.AppImage
+            target/release/bundle/identity-manifest-linux-*.json
 
       - name: Remove temporary macOS signing keychain
         if: always() && matrix.platform == 'macos-14'
