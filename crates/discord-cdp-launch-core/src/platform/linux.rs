@@ -267,11 +267,13 @@ pub fn classify_linux_process(
     None
 }
 
+const CONTROLLED_RUNTIME_IDENTITIES: &[&str] = &["meridian", "waybridge", "stagecraft"];
+
 fn is_self_binary(name: &str) -> bool {
-    let lower = name.to_ascii_lowercase();
-    lower.contains("discord-quest-helper")
-        || lower.contains("discord-quest-runner")
-        || lower.contains("discord-cdp-launcher")
+    let stem = name.strip_suffix(".exe").unwrap_or(name);
+    CONTROLLED_RUNTIME_IDENTITIES
+        .iter()
+        .any(|identity| stem.eq_ignore_ascii_case(identity))
 }
 
 /// Exact (case-insensitive) match of a process name against a channel's known

@@ -8,6 +8,34 @@ use winit::event::{Event, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
 
+fn identity_from_path(path: &std::path::Path) -> Option<String> {
+    path.file_stem()
+        .map(|stem| stem.to_string_lossy().into_owned())
+        .filter(|stem| !stem.is_empty())
+}
+
+fn runner_identity() -> String {
+    env::current_exe()
+        .ok()
+        .as_deref()
+        .and_then(identity_from_path)
+        .unwrap_or_else(|| "stagecraft".to_string())
+}
+
+fn window_builder(identity: &str) -> WindowBuilder {
+    let builder = WindowBuilder::new()
+        .with_title(identity)
+        .with_inner_size(winit::dpi::LogicalSize::new(400.0, 120.0));
+
+    #[cfg(target_os = "linux")]
+    let builder = winit::platform::x11::WindowBuilderExtX11::with_name(builder, identity, identity);
+    #[cfg(target_os = "linux")]
+    let builder =
+        winit::platform::wayland::WindowBuilderExtWayland::with_name(builder, identity, identity);
+
+    builder
+}
+
 // Simple 5x7 pixel font for the message
 const CHAR_WIDTH: usize = 6;
 const CHAR_HEIGHT: usize = 8;
@@ -303,22 +331,13 @@ fn draw_text_block(buffer: &mut [u32], width: usize, height: usize, lines: &[(&s
 }
 
 fn main() {
-    let exe_name = env::current_exe()
-        .ok()
-        .and_then(|path| path.file_stem().map(|s| s.to_string_lossy().to_string()))
-        .unwrap_or_else(|| "Runner".to_string());
+    let exe_name = runner_identity();
 
     // Build the version line: "Version: abc1234"
     let version_line = format!("Version: {}", COMMIT_HASH);
 
     let event_loop = EventLoop::new().unwrap();
-    let window = Rc::new(
-        WindowBuilder::new()
-            .with_title(&exe_name)
-            .with_inner_size(winit::dpi::LogicalSize::new(400.0, 120.0))
-            .build(&event_loop)
-            .unwrap(),
-    );
+    let window = Rc::new(window_builder(&exe_name).build(&event_loop).unwrap());
 
     let context = softbuffer::Context::new(window.clone()).unwrap();
     let mut surface = Surface::new(&context, window.clone()).unwrap();
@@ -386,4 +405,22 @@ fn main() {
             }
         })
         .unwrap();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::identity_from_path;
+    use std::path::Path;
+
+    #[test]
+    fn visible_and_desktop_window_identity_uses_target_executable_stem() {
+        assert_eq!(
+            identity_from_path(Path::new("/games/Example Game/bin/game-client")),
+            Some("game-client".to_string())
+        );
+        assert_eq!(
+            identity_from_path(Path::new("sample.exe")),
+            Some("sample".to_string())
+        );
+    }
 }

@@ -59,6 +59,10 @@ try {
 
     console.log(`📦 Copying ${exeName} to src-tauri/data/...`);
     copyFileSync(sourceExe, destExe);
+    if (targetTriple.includes('apple-darwin')) {
+        execFileSync('/usr/bin/codesign', ['--force', '--sign', '-', destExe], { stdio: 'inherit' });
+        execFileSync('/usr/bin/codesign', ['--verify', '--strict', '--verbose=2', destExe], { stdio: 'inherit' });
+    }
     console.log('✨ Runner copied successfully.');
 
     // Write runner version info (git hash + build timestamp)
