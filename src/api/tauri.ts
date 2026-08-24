@@ -433,6 +433,22 @@ export async function getDebugInfo(): Promise<DebugInfo> {
   return await invoke('get_debug_info')
 }
 
+export type RuntimeIdentityLevel = 'full' | 'degraded' | 'disabled' | 'notApplicable'
+
+export interface RuntimeIdentityStatus {
+  platform: string
+  level: RuntimeIdentityLevel
+  mainExecutableOk: boolean
+  helperIdentityOk: boolean | null
+  packageSignatureOk: boolean | null
+  desktopIntegrationOk: boolean | null
+  reasons: string[]
+}
+
+export async function getRuntimeIdentityStatus(): Promise<RuntimeIdentityStatus> {
+  return await invoke('get_runtime_identity_status')
+}
+
 // Runner information
 export interface RunnerInfo {
   embedded: boolean
