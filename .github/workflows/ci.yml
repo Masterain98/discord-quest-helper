@@ -154,9 +154,17 @@ jobs:
           dpkg-deb -x "$deb" "$RUNNER_TEMP/deb-root"
           binary="$RUNNER_TEMP/deb-root/usr/bin/meridian"
           dbus-run-session -- xvfb-run -a scripts/smoke-linux-runtime-identity.sh \
-            x11 "$binary" target/release/bundle/identity-smoke-linux-x11.json
+            x11 --kind binary "$binary" \
+            target/release/bundle/identity-smoke-linux-deb-x11.json
           dbus-run-session -- scripts/smoke-linux-runtime-identity.sh \
-            wayland "$binary" target/release/bundle/identity-smoke-linux-wayland.json
+            wayland --kind binary "$binary" \
+            target/release/bundle/identity-smoke-linux-deb-wayland.json
+          dbus-run-session -- xvfb-run -a scripts/smoke-linux-runtime-identity.sh \
+            x11 --kind appimage "$appimage" \
+            target/release/bundle/identity-smoke-linux-appimage-x11.json
+          dbus-run-session -- scripts/smoke-linux-runtime-identity.sh \
+            wayland --kind appimage "$appimage" \
+            target/release/bundle/identity-smoke-linux-appimage-wayland.json
 
       - name: Build ad-hoc macOS app and DMG identity smoke artifacts
         if: matrix.platform == 'macos-14'

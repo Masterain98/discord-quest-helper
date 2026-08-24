@@ -78,7 +78,14 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev \
             patchelf \
-            xdg-utils
+            xdg-utils \
+            desktop-file-utils \
+            xvfb \
+            xdotool \
+            x11-utils \
+            weston \
+            dbus-x11 \
+            libfuse2
 
       - name: Cache Cargo registry
         uses: actions/cache@v5
@@ -238,6 +245,21 @@ jobs:
           node scripts/audit-packaged-identity.mjs \
             --platform linux --artifact "$appimage" \
             --output target/release/bundle/identity-manifest-linux-appimage.json
+          mkdir -p "$RUNNER_TEMP/deb-root"
+          dpkg-deb -x "$deb" "$RUNNER_TEMP/deb-root"
+          binary="$RUNNER_TEMP/deb-root/usr/bin/meridian"
+          dbus-run-session -- xvfb-run -a scripts/smoke-linux-runtime-identity.sh \
+            x11 --kind binary "$binary" \
+            target/release/bundle/identity-smoke-linux-deb-x11.json
+          dbus-run-session -- scripts/smoke-linux-runtime-identity.sh \
+            wayland --kind binary "$binary" \
+            target/release/bundle/identity-smoke-linux-deb-wayland.json
+          dbus-run-session -- xvfb-run -a scripts/smoke-linux-runtime-identity.sh \
+            x11 --kind appimage "$appimage" \
+            target/release/bundle/identity-smoke-linux-appimage-x11.json
+          dbus-run-session -- scripts/smoke-linux-runtime-identity.sh \
+            wayland --kind appimage "$appimage" \
+            target/release/bundle/identity-smoke-linux-appimage-wayland.json
 
       - name: Stage Windows portable artifact
         if: matrix.platform == 'windows-latest'
