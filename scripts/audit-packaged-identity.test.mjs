@@ -8,9 +8,34 @@ import {
   auditArtifact,
   containsProductToken,
   IDENTITY,
+  parseCodeIdentity,
   pngDimensions,
+  relatedCodeIdentityViolations,
   validateInternalName,
 } from './audit-packaged-identity.mjs';
+
+test('macOS code identity parsing and relationship policy bind the helper team', () => {
+  const main = parseCodeIdentity(`Identifier=com.example.app
+Authority=Developer ID Application: Example (ABC123)
+TeamIdentifier=ABC123
+flags=0x10000(runtime)`);
+  const helper = parseCodeIdentity(`Identifier=waybridge
+Authority=Developer ID Application: Example (ABC123)
+TeamIdentifier=ABC123
+flags=0x10000(runtime)`);
+  assert.deepEqual(relatedCodeIdentityViolations(main, helper, false), []);
+
+  const wrongTeam = { ...helper, teamIdentifier: 'XYZ999' };
+  assert.ok(relatedCodeIdentityViolations(main, wrongTeam, false)
+    .includes('runtime bridge TeamIdentifier does not match the main app'));
+});
+
+test('macOS smoke policy accepts only hardened ad-hoc app and helper identities', () => {
+  const adHoc = parseCodeIdentity('Identifier=fixture\nTeamIdentifier=not set\nSignature=adhoc\nflags=0x10000(runtime)');
+  assert.deepEqual(relatedCodeIdentityViolations(adHoc, adHoc, true), []);
+  const unsigned = parseCodeIdentity('Identifier=fixture');
+  assert.notDeepEqual(relatedCodeIdentityViolations(adHoc, unsigned, true), []);
+});
 
 test('configured artifact identities satisfy the stable naming policy', () => {
   assert.equal(validateInternalName(IDENTITY.mainBinary, 'meridian'), true);

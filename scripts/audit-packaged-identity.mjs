@@ -102,6 +102,47 @@ function commandOutput(command, args) {
   };
 }
 
+export function parseCodeIdentity(output) {
+  const lines = String(output ?? '').split(/\r?\n/);
+  const value = (prefix) => {
+    const found = lines.find((line) => line.startsWith(prefix))?.slice(prefix.length).trim();
+    return found && found !== 'not set' ? found : null;
+  };
+  return {
+    identifier: value('Identifier='),
+    teamIdentifier: value('TeamIdentifier='),
+    authorities: lines
+      .filter((line) => line.startsWith('Authority='))
+      .map((line) => line.slice('Authority='.length)),
+    hardenedRuntime: lines.some((line) => line.includes('flags=') && line.includes('runtime')),
+    adHoc: lines.some((line) => line.trim() === 'Signature=adhoc'),
+  };
+}
+
+export function relatedCodeIdentityViolations(main, helper, allowAdHoc) {
+  const violations = [];
+  if (!main.hardenedRuntime || !helper.hardenedRuntime) {
+    violations.push('main app or runtime bridge signature is missing hardened runtime');
+  }
+  if (allowAdHoc) {
+    if (!main.adHoc || !helper.adHoc) {
+      violations.push('smoke app and runtime bridge must both use ad-hoc signatures');
+    }
+    return violations;
+  }
+  if (main.adHoc || helper.adHoc) {
+    violations.push('release app or runtime bridge uses an ad-hoc signature');
+  }
+  if (!main.teamIdentifier || !helper.teamIdentifier || main.teamIdentifier !== helper.teamIdentifier) {
+    violations.push('runtime bridge TeamIdentifier does not match the main app');
+  }
+  if (!main.authorities.some((authority) => authority.startsWith('Developer ID Application:'))
+      || !helper.authorities.some((authority) => authority.startsWith('Developer ID Application:'))) {
+    violations.push('main app and runtime bridge must use Developer ID Application identities');
+  }
+  return violations;
+}
+
 function plistValue(app, key) {
   try {
     return execFileSync('/usr/libexec/PlistBuddy', [
@@ -184,21 +225,20 @@ function auditMacApp(app, allowUnsigned) {
 
   const strictSigning = commandSucceeds('codesign', ['--verify', '--deep', '--strict', '--verbose=4', app]);
   const signingDetails = commandOutput('codesign', ['-dvvv', app]);
-  const hardenedRuntime = /flags=.*\bruntime\b/.test(signingDetails.output);
-  const authorities = signingDetails.output
-    .split(/\r?\n/)
-    .filter((line) => line.startsWith('Authority='))
-    .map((line) => line.slice('Authority='.length));
+  const mainCodeIdentity = parseCodeIdentity(signingDetails.output);
+  const bridgeSigningDetails = bridge ? commandOutput('codesign', ['-dvvv', bridge]) : null;
+  const bridgeCodeIdentity = bridgeSigningDetails?.ok
+    ? parseCodeIdentity(bridgeSigningDetails.output)
+    : null;
   const nestedSigning = nested.map((file) => ({
     name: basename(file),
     signed: commandSucceeds('codesign', ['--verify', '--strict', '--verbose=4', file]).ok,
   }));
   if (!allowUnsigned && !strictSigning.ok) violations.push('strict code-signing verification failed');
-  if (!allowUnsigned && !hardenedRuntime) violations.push('hardened runtime flag is missing');
-  if (!allowUnsigned && !authorities.some((authority) => authority.startsWith('Developer ID Application:'))) {
-    violations.push('Developer ID Application signing authority is missing');
-  }
   if (nestedSigning.some(({ signed }) => !signed)) violations.push('nested executable signature verification failed');
+  if (bridgeCodeIdentity) {
+    violations.push(...relatedCodeIdentityViolations(mainCodeIdentity, bridgeCodeIdentity, allowUnsigned));
+  }
 
   return {
     platform: 'macos',
@@ -213,9 +253,11 @@ function auditMacApp(app, allowUnsigned) {
     icons,
     signing: {
       strict: strictSigning.ok,
-      hardenedRuntime,
+      hardenedRuntime: mainCodeIdentity.hardenedRuntime,
       smokeArtifact: allowUnsigned,
-      authorities,
+      authorities: mainCodeIdentity.authorities,
+      teamIdentifier: mainCodeIdentity.teamIdentifier,
+      bridgeIdentity: bridgeCodeIdentity,
       nested: nestedSigning,
     },
     knownResiduals: ['bundle identifier retains the public project identity'],

@@ -86,7 +86,11 @@ fn verify_platform_signature(path: &Path) -> Result<(), String> {
     status
         .success()
         .then_some(())
-        .ok_or_else(|| "runtime bridge signature verification failed".to_string())
+        .ok_or_else(|| "runtime bridge signature verification failed".to_string())?;
+    if !cfg!(debug_assertions) {
+        crate::runtime_identity::verify_helper_identity_for_current_app(path)?;
+    }
+    Ok(())
 }
 
 #[cfg(not(target_os = "macos"))]

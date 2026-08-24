@@ -9,6 +9,121 @@ const LEGACY_DIR_HEX_LEN: usize = 16;
 const LEGACY_EXE_HEX_LEN: usize = 12;
 const BUNDLE_IDENTIFIER: &str = "com.masterain.discord-quest-helper";
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct MacCodeIdentity {
+    pub identifier: Option<String>,
+    pub team_identifier: Option<String>,
+    pub authorities: Vec<String>,
+    pub hardened_runtime: bool,
+    pub ad_hoc: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SignaturePolicy {
+    ReleaseStrict,
+    SmokeAdHoc,
+}
+
+fn parse_code_identity(details: &str) -> MacCodeIdentity {
+    let field = |name: &str| {
+        details
+            .lines()
+            .find_map(|line| line.strip_prefix(name).map(str::trim))
+            .filter(|value| !value.is_empty() && *value != "not set")
+            .map(str::to_string)
+    };
+    MacCodeIdentity {
+        identifier: field("Identifier="),
+        team_identifier: field("TeamIdentifier="),
+        authorities: details
+            .lines()
+            .filter_map(|line| line.strip_prefix("Authority=").map(str::to_string))
+            .collect(),
+        hardened_runtime: details
+            .lines()
+            .any(|line| line.contains("flags=") && line.contains("runtime")),
+        ad_hoc: details.lines().any(|line| line.trim() == "Signature=adhoc"),
+    }
+}
+
+pub(crate) fn read_code_identity(path: &Path) -> Result<MacCodeIdentity, String> {
+    let output = Command::new("/usr/bin/codesign")
+        .args(["-dvv"])
+        .arg(path)
+        .output()
+        .map_err(|_| "macOS code-signing identity tool is unavailable".to_string())?;
+    if !output.status.success() {
+        return Err("code-signing identity could not be read".into());
+    }
+    Ok(parse_code_identity(&String::from_utf8_lossy(
+        &output.stderr,
+    )))
+}
+
+pub(crate) fn validate_related_code_identity(
+    main: &MacCodeIdentity,
+    helper: &MacCodeIdentity,
+    policy: SignaturePolicy,
+) -> Result<(), String> {
+    if !main.hardened_runtime || !helper.hardened_runtime {
+        return Err("main app or runtime bridge signature is missing hardened runtime".into());
+    }
+
+    match policy {
+        SignaturePolicy::ReleaseStrict => {
+            if main.ad_hoc || helper.ad_hoc {
+                return Err("release runtime bridge must not use an ad-hoc signature".into());
+            }
+            let main_team = main
+                .team_identifier
+                .as_deref()
+                .ok_or_else(|| "main app TeamIdentifier is unavailable".to_string())?;
+            let helper_team = helper
+                .team_identifier
+                .as_deref()
+                .ok_or_else(|| "runtime bridge TeamIdentifier is unavailable".to_string())?;
+            if main_team != helper_team {
+                return Err("runtime bridge TeamIdentifier does not match the main app".into());
+            }
+            if !main
+                .authorities
+                .iter()
+                .any(|authority| authority.starts_with("Developer ID Application:"))
+                || !helper
+                    .authorities
+                    .iter()
+                    .any(|authority| authority.starts_with("Developer ID Application:"))
+            {
+                return Err(
+                    "main app and runtime bridge must use Developer ID Application identities"
+                        .into(),
+                );
+            }
+        }
+        SignaturePolicy::SmokeAdHoc => {
+            if !main.ad_hoc || !helper.ad_hoc {
+                return Err("smoke identity policy requires ad-hoc signatures".into());
+            }
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn verify_helper_identity_for_current_app(helper: &Path) -> Result<(), String> {
+    let executable = std::env::current_exe()
+        .map_err(|_| "main application executable path is unavailable".to_string())?;
+    let bundle = app_bundle_for_executable(&executable)
+        .ok_or_else(|| "main application bundle identity is unavailable".to_string())?;
+    verify_bundle_signature(&bundle)?;
+    let main_identity = read_code_identity(&bundle)?;
+    let helper_identity = read_code_identity(helper)?;
+    validate_related_code_identity(
+        &main_identity,
+        &helper_identity,
+        SignaturePolicy::ReleaseStrict,
+    )
+}
+
 pub(super) fn initial_status() -> RuntimeIdentityStatus {
     let cleanup_reasons = cleanup_legacy_temp_runtimes();
     if cfg!(debug_assertions)
@@ -44,7 +159,7 @@ pub(super) fn initial_status() -> RuntimeIdentityStatus {
     status
 }
 
-fn app_bundle_for_executable(executable: &Path) -> Option<PathBuf> {
+pub(crate) fn app_bundle_for_executable(executable: &Path) -> Option<PathBuf> {
     let macos = executable.parent()?;
     if macos.file_name()?.to_str()? != "MacOS" {
         return None;
@@ -71,21 +186,17 @@ fn verify_bundle_signature(bundle: &Path) -> Result<(), String> {
         );
     }
 
-    let display = Command::new("/usr/bin/codesign")
-        .args(["-dvv"])
-        .arg(bundle)
-        .output()
-        .map_err(|_| "macOS code-signing verification tool is unavailable".to_string())?;
-    let details = String::from_utf8_lossy(&display.stderr);
-    if !details.contains("Authority=Developer ID Application:") {
+    let identity = read_code_identity(bundle)?;
+    if !identity
+        .authorities
+        .iter()
+        .any(|authority| authority.starts_with("Developer ID Application:"))
+    {
         return Err(
             "application bundle is not signed with a Developer ID Application identity".into(),
         );
     }
-    if !details
-        .lines()
-        .any(|line| line.starts_with("flags=") && line.contains("runtime"))
-    {
+    if !identity.hardened_runtime {
         return Err("application bundle signature is missing the hardened runtime flag".into());
     }
     Ok(())
@@ -211,6 +322,75 @@ fn status_for_executable(executable: Option<&Path>) -> RuntimeIdentityStatus {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn identity(
+        team: Option<&str>,
+        developer_id: bool,
+        hardened: bool,
+        ad_hoc: bool,
+    ) -> MacCodeIdentity {
+        MacCodeIdentity {
+            identifier: Some("fixture".into()),
+            team_identifier: team.map(str::to_string),
+            authorities: if developer_id {
+                vec!["Developer ID Application: Example (ABC123)".into()]
+            } else {
+                Vec::new()
+            },
+            hardened_runtime: hardened,
+            ad_hoc,
+        }
+    }
+
+    #[test]
+    fn parses_codesign_identity_fields() {
+        let parsed = parse_code_identity(
+            "Identifier=com.example.app\nAuthority=Developer ID Application: Example (ABC123)\nTeamIdentifier=ABC123\nflags=0x10000(runtime)\n",
+        );
+        assert_eq!(parsed.identifier.as_deref(), Some("com.example.app"));
+        assert_eq!(parsed.team_identifier.as_deref(), Some("ABC123"));
+        assert!(parsed.hardened_runtime);
+        assert!(!parsed.ad_hoc);
+    }
+
+    #[test]
+    fn release_helper_requires_matching_team_identifier() {
+        let main = identity(Some("ABC123"), true, true, false);
+        let helper = identity(Some("ABC123"), true, true, false);
+        assert!(
+            validate_related_code_identity(&main, &helper, SignaturePolicy::ReleaseStrict).is_ok()
+        );
+
+        let wrong_team = identity(Some("XYZ999"), true, true, false);
+        assert_eq!(
+            validate_related_code_identity(&main, &wrong_team, SignaturePolicy::ReleaseStrict)
+                .unwrap_err(),
+            "runtime bridge TeamIdentifier does not match the main app"
+        );
+    }
+
+    #[test]
+    fn release_helper_rejects_unsigned_or_ad_hoc_identity() {
+        let main = identity(Some("ABC123"), true, true, false);
+        let unsigned = identity(None, false, false, false);
+        assert!(
+            validate_related_code_identity(&main, &unsigned, SignaturePolicy::ReleaseStrict)
+                .is_err()
+        );
+        let ad_hoc = identity(None, false, true, true);
+        assert!(
+            validate_related_code_identity(&main, &ad_hoc, SignaturePolicy::ReleaseStrict).is_err()
+        );
+    }
+
+    #[test]
+    fn smoke_policy_accepts_hardened_ad_hoc_app_and_helper() {
+        let main = identity(None, false, true, true);
+        let helper = identity(None, false, true, true);
+        assert!(
+            validate_related_code_identity(&main, &helper, SignaturePolicy::SmokeAdHoc).is_ok()
+        );
+    }
 
     #[test]
     fn bundle_executable_is_checked_independently_from_public_app_name() {

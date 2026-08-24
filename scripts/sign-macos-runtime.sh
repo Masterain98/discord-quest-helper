@@ -19,7 +19,7 @@ for executable in "$@"; do
   fi
 
   if [[ "$identity" == "-" ]]; then
-    codesign --force --sign - "$executable"
+    codesign --force --options runtime --sign - "$executable"
   else
     codesign --force --options runtime --timestamp --sign "$identity" "$executable"
   fi

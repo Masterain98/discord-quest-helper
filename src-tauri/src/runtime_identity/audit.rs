@@ -349,25 +349,19 @@ fn plist_value(info_plist: &Path, key: &str) -> Option<String> {
 fn platform_details() -> Value {
     let bundle = macos_bundle();
     let info = bundle.as_ref().map(|path| path.join("Contents/Info.plist"));
-    let codesign = bundle.as_ref().and_then(|path| {
-        Command::new("/usr/bin/codesign")
-            .args(["-dvv"])
-            .arg(path)
-            .output()
-            .ok()
-            .map(|output| String::from_utf8_lossy(&output.stderr).into_owned())
+    let main_code_identity = bundle
+        .as_deref()
+        .and_then(|path| super::macos::read_code_identity(path).ok());
+    let authority = main_code_identity.as_ref().and_then(|identity| {
+        identity
+            .authorities
+            .first()
+            .cloned()
+            .or_else(|| identity.ad_hoc.then(|| "ad-hoc".into()))
     });
-    let authority = codesign.as_deref().and_then(|details| {
-        details
-            .lines()
-            .find_map(|line| line.strip_prefix("Authority=").map(str::to_string))
-            .or_else(|| details.contains("Signature=adhoc").then(|| "ad-hoc".into()))
-    });
-    let hardened_runtime = codesign.as_deref().is_some_and(|details| {
-        details
-            .lines()
-            .any(|line| line.starts_with("flags=") && line.contains("runtime"))
-    });
+    let hardened_runtime = main_code_identity
+        .as_ref()
+        .is_some_and(|identity| identity.hardened_runtime);
     let notarized = bundle.as_ref().map(|path| {
         Command::new("/usr/bin/xcrun")
             .args(["stapler", "validate"])
@@ -378,25 +372,46 @@ fn platform_details() -> Value {
             .status()
             .is_ok_and(|status| status.success())
     });
-    let nested_helper_signature_ok = bundle.as_ref().map(|path| {
+    let nested_helper = bundle
+        .as_ref()
+        .map(|path| path.join("Contents/MacOS").join(RUNTIME_BRIDGE_NAME));
+    let nested_helper_signature_ok = nested_helper.as_ref().map(|path| {
         Command::new("/usr/bin/codesign")
             .args(["--verify", "--strict", "--verbose=2"])
-            .arg(path.join("Contents/MacOS").join(RUNTIME_BRIDGE_NAME))
+            .arg(path)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status()
             .is_ok_and(|status| status.success())
     });
+    let nested_helper_identity = nested_helper
+        .as_deref()
+        .and_then(|path| super::macos::read_code_identity(path).ok());
+    let nested_helper_identity_matches_main = main_code_identity
+        .as_ref()
+        .zip(nested_helper_identity.as_ref())
+        .map(|(main, helper)| {
+            let policy = if main.ad_hoc {
+                super::macos::SignaturePolicy::SmokeAdHoc
+            } else {
+                super::macos::SignaturePolicy::ReleaseStrict
+            };
+            super::macos::validate_related_code_identity(main, helper, policy).is_ok()
+        });
     json!({
         "bundlePath": bundle.as_deref().map(redacted_path),
         "cfBundleExecutable": info.as_deref().and_then(|path| plist_value(path, "CFBundleExecutable")),
         "cfBundleDisplayName": info.as_deref().and_then(|path| plist_value(path, "CFBundleDisplayName")),
         "cfBundleIdentifier": info.as_deref().and_then(|path| plist_value(path, "CFBundleIdentifier")),
         "codeSigningAuthority": authority,
+        "codeSigningTeamIdentifier": main_code_identity.as_ref().and_then(|identity| identity.team_identifier.clone()),
         "hardenedRuntime": hardened_runtime,
         "notarizationStaplerOk": notarized,
         "nestedHelperSignatureOk": nested_helper_signature_ok,
+        "nestedHelperTeamIdentifier": nested_helper_identity.as_ref().and_then(|identity| identity.team_identifier.clone()),
+        "nestedHelperHardenedRuntime": nested_helper_identity.as_ref().map(|identity| identity.hardened_runtime),
+        "nestedHelperIdentityMatchesMain": nested_helper_identity_matches_main,
     })
 }
 
@@ -557,6 +572,13 @@ fn baseline_comparison(
                 != Some(true)
             {
                 differences.push("nested helper signature is invalid".into());
+            }
+            if details
+                .get("nestedHelperIdentityMatchesMain")
+                .and_then(Value::as_bool)
+                != Some(true)
+            {
+                differences.push("nested helper signing identity differs from the main app".into());
             }
         }
     }

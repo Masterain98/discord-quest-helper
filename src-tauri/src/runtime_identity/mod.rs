@@ -7,6 +7,8 @@ mod model;
 #[cfg(target_os = "windows")]
 mod windows;
 
+#[cfg(target_os = "macos")]
+pub(crate) use macos::verify_helper_identity_for_current_app;
 use model::{configured_internal_names_are_valid, RuntimeIdentityStatus};
 pub(crate) use model::{contains_product_token, RUNTIME_BRIDGE_NAME, RUNTIME_NAMESPACE};
 
