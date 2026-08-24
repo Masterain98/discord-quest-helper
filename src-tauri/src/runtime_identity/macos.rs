@@ -173,6 +173,16 @@ fn cleanup_legacy_temp_runtimes() -> Vec<String> {
     reasons
 }
 
+pub(super) fn legacy_temp_artifact_count() -> usize {
+    fs::read_dir(std::env::temp_dir())
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|entry| entry.path().is_dir())
+        .filter(|entry| legacy_executable_candidate(&entry.path()).is_some())
+        .count()
+}
+
 fn status_for_executable(executable: Option<&Path>) -> RuntimeIdentityStatus {
     let mut reasons = Vec::new();
     let main_executable_ok = executable

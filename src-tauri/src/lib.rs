@@ -1821,7 +1821,8 @@ pub fn run() {
             capture_discord_headers_cdp,
             navigate_discord_spa,
             platform_capabilities::get_platform_capabilities,
-            runtime_identity::get_runtime_identity_status
+            runtime_identity::get_runtime_identity_status,
+            runtime_identity::get_runtime_identity_audit
         ])
         .on_window_event(|_window, event| {
             if let tauri::WindowEvent::Destroyed = event {

@@ -2,28 +2,33 @@
 import { ref, computed, onMounted } from 'vue'
 import {
   getDebugInfo,
+  getRuntimeIdentityAudit,
   getRunnerInfo,
   fetchRunningGamesCdp,
   captureDiscordHeadersCdp,
   getQuestDecisionDebug,
   getQuestDecisionsDebug,
   type DebugInfo,
+  type RuntimeIdentityAudit,
   type RunnerInfo,
   type CdpRunningGamesSnapshot,
   type CdpCapturedHeaders,
   type CapturedRequest,
 } from '@/api/tauri'
+import { sanitizeRuntimeIdentityAuditExport } from '@/utils/runtimeIdentityAudit'
 import { useAuthStore } from '@/stores/auth'
 import { useI18n } from 'vue-i18n'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
-import { RefreshCw, Copy, Check, Key, Package, Gamepad2, Radio, ChevronRight, Search, X, Server, Play } from 'lucide-vue-next'
+import { RefreshCw, Copy, Check, Key, Package, Gamepad2, Radio, ChevronRight, Search, X, Server, Play, ShieldCheck, Download, GitCompare } from 'lucide-vue-next'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
 
 const debugInfo = ref<DebugInfo | null>(null)
+const identityAudit = ref<RuntimeIdentityAudit | null>(null)
+const showIdentityBaseline = ref(false)
 const runnerInfo = ref<RunnerInfo | null>(null)
 const runningGamesSnapshot = ref<CdpRunningGamesSnapshot | null>(null)
 const runningGamesLoading = ref(false)
@@ -412,6 +417,17 @@ async function loadDebugInfo() {
     errors.push(String(e))
   }
 
+  loadingStep.value = 'get_runtime_identity_audit'
+  try {
+    identityAudit.value = await withCommandTimeout(
+      getRuntimeIdentityAudit(debugInfo.value?.x_super_properties_base64),
+      'get_runtime_identity_audit',
+    )
+  } catch (e) {
+    identityAudit.value = null
+    errors.push(String(e))
+  }
+
   loadingStep.value = 'get_runner_info'
   try {
     runnerInfo.value = await withCommandTimeout(getRunnerInfo(), 'get_runner_info')
@@ -423,6 +439,21 @@ async function loadDebugInfo() {
     loadingStep.value = null
     loading.value = false
   }
+}
+
+function identityAuditJson(): string {
+  return JSON.stringify(sanitizeRuntimeIdentityAuditExport(identityAudit.value), null, 2)
+}
+
+function exportIdentityAudit() {
+  if (!identityAudit.value) return
+  const blob = new Blob([identityAuditJson()], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `runtime-identity-audit-${identityAudit.value.platform}-${identityAudit.value.capturedAtUnix}.json`
+  link.click()
+  URL.revokeObjectURL(url)
 }
 
 async function fetchRunningGames() {
@@ -551,6 +582,138 @@ onMounted(() => {
     </div>
 
     <div v-if="debugInfo" class="grid gap-4">
+      <!-- Runtime Identity Audit -->
+      <Card v-if="identityAudit">
+        <CardHeader>
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <CardTitle class="flex items-center gap-2">
+                <ShieldCheck class="w-5 h-5" />
+                Runtime Identity Audit
+              </CardTitle>
+              <CardDescription>Local-only process, package, helper, and native fingerprint evidence.</CardDescription>
+            </div>
+            <span
+              :class="[
+                'px-3 py-1 text-xs font-medium rounded-full capitalize',
+                identityAudit.status.level === 'full'
+                  ? 'bg-green-500/10 text-green-500'
+                  : identityAudit.status.level === 'disabled'
+                    ? 'bg-muted text-muted-foreground'
+                    : 'bg-yellow-500/10 text-yellow-600'
+              ]"
+            >
+              {{ identityAudit.status.level }}
+            </span>
+          </div>
+        </CardHeader>
+        <CardContent class="space-y-4">
+          <div class="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+            <div class="p-2 bg-muted rounded">
+              <div class="text-xs text-muted-foreground">Platform / build</div>
+              <code>{{ identityAudit.platform }} / {{ identityAudit.buildProfile }}</code>
+            </div>
+            <div class="p-2 bg-muted rounded">
+              <div class="text-xs text-muted-foreground">Main executable</div>
+              <code>{{ identityAudit.main.basename }}</code>
+            </div>
+            <div class="p-2 bg-muted rounded">
+              <div class="text-xs text-muted-foreground">Runtime bridge</div>
+              <code>{{ identityAudit.helper.installed ? identityAudit.helper.basename : 'not installed' }}</code>
+            </div>
+            <div class="p-2 bg-muted rounded">
+              <div class="text-xs text-muted-foreground">Legacy / migration</div>
+              <code>{{ identityAudit.legacyArtifactCount }} / {{ identityAudit.migrationResult }}</code>
+            </div>
+          </div>
+
+          <div class="grid gap-3 text-sm sm:grid-cols-2">
+            <div class="rounded border border-border p-3 space-y-2">
+              <div class="font-medium">Identity checks</div>
+              <div class="grid grid-cols-2 gap-2 text-xs">
+                <span class="text-muted-foreground">main path token</span>
+                <code>{{ identityAudit.main.pathHasProductToken }}</code>
+                <span class="text-muted-foreground">unexpected path token</span>
+                <code>{{ identityAudit.main.unexpectedPathProductToken }}</code>
+                <span class="text-muted-foreground">helper path token</span>
+                <code>{{ debugText(identityAudit.helper.pathHasProductToken) }}</code>
+                <span class="text-muted-foreground">helper manifest hash</span>
+                <code>{{ debugText(identityAudit.helper.manifestHashOk) }}</code>
+                <span class="text-muted-foreground">helper signature</span>
+                <code>{{ debugText(identityAudit.helper.signatureOk) }}</code>
+              </div>
+              <details>
+                <summary class="cursor-pointer text-xs font-medium">Show redacted paths</summary>
+                <div class="mt-2 space-y-1 text-xs break-all">
+                  <div><span class="text-muted-foreground">main:</span> <code>{{ identityAudit.main.path }}</code></div>
+                  <div><span class="text-muted-foreground">helper:</span> <code>{{ identityAudit.helper.path || fallbackText }}</code></div>
+                </div>
+              </details>
+            </div>
+
+            <div class="rounded border border-border p-3 space-y-2">
+              <div class="font-medium">Discord native fingerprint</div>
+              <div class="grid grid-cols-2 gap-2 text-xs">
+                <span class="text-muted-foreground">status</span><code>{{ identityAudit.fingerprint.status }}</code>
+                <span class="text-muted-foreground">length</span><code>{{ identityAudit.fingerprint.length }}</code>
+                <span class="text-muted-foreground">fields</span><code>{{ identityAudit.fingerprint.fieldCount }}</code>
+              </div>
+              <div class="text-xs">
+                <div class="text-muted-foreground">SHA-256</div>
+                <code class="block break-all">{{ identityAudit.fingerprint.sha256 || fallbackText }}</code>
+              </div>
+              <details v-if="identityAudit.fingerprint.rawAvailableLocally && debugInfo.x_super_properties_base64">
+                <summary class="cursor-pointer text-xs font-medium">Show local raw fingerprint</summary>
+                <code class="mt-2 block max-h-32 overflow-auto break-all rounded bg-muted p-2 text-xs">{{ debugInfo.x_super_properties_base64 }}</code>
+              </details>
+            </div>
+          </div>
+
+          <details>
+            <summary class="cursor-pointer text-sm font-medium">Platform details</summary>
+            <div class="mt-2 grid gap-px bg-border sm:grid-cols-2">
+              <div v-for="(value, key) in identityAudit.platformDetails" :key="key" class="bg-background p-2 min-w-0">
+                <div class="text-xs text-muted-foreground">{{ key }}</div>
+                <code class="block text-xs whitespace-pre-wrap break-all">{{ rawValueText(value) }}</code>
+              </div>
+            </div>
+          </details>
+
+          <div class="flex flex-wrap items-center gap-2">
+            <Button variant="outline" size="sm" @click="showIdentityBaseline = !showIdentityBaseline">
+              <GitCompare class="w-4 h-4 mr-1" />
+              Compare release baseline
+            </Button>
+            <Button variant="outline" size="sm" @click="copyToClipboard(identityAuditJson(), 'identity_audit')">
+              <Check v-if="copied === 'identity_audit'" class="w-4 h-4 mr-1 text-green-500" />
+              <Copy v-else class="w-4 h-4 mr-1" />
+              Copy JSON
+            </Button>
+            <Button variant="outline" size="sm" @click="exportIdentityAudit">
+              <Download class="w-4 h-4 mr-1" />
+              Export JSON
+            </Button>
+          </div>
+
+          <div v-if="showIdentityBaseline" :class="['rounded p-3 text-sm', identityAudit.baseline.matches ? 'bg-green-500/10 text-green-600' : 'bg-yellow-500/10 text-yellow-700']">
+            <div class="font-medium">{{ identityAudit.baseline.matches ? 'Matches release baseline' : 'Release baseline differences' }}</div>
+            <ul v-if="identityAudit.baseline.differences.length" class="mt-2 list-disc pl-5 text-xs space-y-1">
+              <li v-for="difference in identityAudit.baseline.differences" :key="difference">{{ difference }}</li>
+            </ul>
+            <div v-if="identityAudit.baseline.fingerprintFieldsAdded.length" class="mt-2 text-xs">
+              Added fingerprint fields: <code>{{ identityAudit.baseline.fingerprintFieldsAdded.join(', ') }}</code>
+            </div>
+            <div v-if="identityAudit.baseline.fingerprintFieldsRemoved.length" class="mt-1 text-xs">
+              Removed fingerprint fields: <code>{{ identityAudit.baseline.fingerprintFieldsRemoved.join(', ') }}</code>
+            </div>
+          </div>
+
+          <div v-if="identityAudit.status.reasons.length" class="rounded bg-yellow-500/10 p-3 text-xs text-yellow-700">
+            {{ identityAudit.status.reasons.join('\n') }}
+          </div>
+        </CardContent>
+      </Card>
+
       <!-- Runner Info -->
       <Card>
         <CardHeader>

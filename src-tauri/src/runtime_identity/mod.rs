@@ -1,3 +1,4 @@
+mod audit;
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "macos")]
@@ -200,6 +201,11 @@ pub(crate) fn strip_zone_identifier(path: &Path) {
 #[tauri::command]
 pub fn get_runtime_identity_status() -> RuntimeIdentityStatus {
     status()
+}
+
+#[tauri::command]
+pub fn get_runtime_identity_audit(fingerprint_raw: Option<String>) -> audit::RuntimeIdentityAudit {
+    audit::collect(fingerprint_raw, status())
 }
 
 #[cfg(test)]

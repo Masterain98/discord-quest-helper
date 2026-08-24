@@ -449,6 +449,49 @@ export async function getRuntimeIdentityStatus(): Promise<RuntimeIdentityStatus>
   return await invoke('get_runtime_identity_status')
 }
 
+export interface RuntimeIdentityAudit {
+  schemaVersion: number
+  capturedAtUnix: number
+  platform: string
+  buildProfile: string
+  status: RuntimeIdentityStatus
+  main: {
+    basename: string
+    path: string
+    pathHasProductToken: boolean
+    unexpectedPathProductToken: boolean
+  }
+  helper: {
+    installed: boolean
+    basename: string | null
+    path: string | null
+    pathHasProductToken: boolean | null
+    manifestHashOk: boolean | null
+    signatureOk: boolean | null
+  }
+  legacyArtifactCount: number
+  migrationResult: string
+  fingerprint: {
+    status: string
+    sha256: string | null
+    length: number
+    fieldCount: number
+    fieldNames: string[]
+    rawAvailableLocally: boolean
+  }
+  platformDetails: Record<string, unknown>
+  baseline: {
+    matches: boolean
+    differences: string[]
+    fingerprintFieldsAdded: string[]
+    fingerprintFieldsRemoved: string[]
+  }
+}
+
+export async function getRuntimeIdentityAudit(fingerprintRaw?: string): Promise<RuntimeIdentityAudit> {
+  return await invoke('get_runtime_identity_audit', { fingerprintRaw })
+}
+
 // Runner information
 export interface RunnerInfo {
   embedded: boolean
