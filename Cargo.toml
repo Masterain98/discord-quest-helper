@@ -21,6 +21,8 @@ serde_json = "1"
 opt-level = 3
 lto = "thin"
 codegen-units = 1
+debug = 1
+split-debuginfo = "packed"
 strip = "symbols"
 
 [profile.sidecar-release]

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import {
   existsSync,
   lstatSync,
@@ -84,6 +84,14 @@ function commandSucceeds(command, args) {
   }
 }
 
+function commandOutput(command, args) {
+  const result = spawnSync(command, args, { encoding: 'utf8' });
+  return {
+    ok: result.status === 0,
+    output: `${result.stdout || ''}\n${result.stderr || ''}`.trim(),
+  };
+}
+
 function plistValue(app, key) {
   try {
     return execFileSync('/usr/libexec/PlistBuddy', [
@@ -135,6 +143,7 @@ function auditMacApp(app, allowUnsigned) {
   const executableName = plistValue(app, 'CFBundleExecutable');
   const executable = executableName ? join(app, 'Contents', 'MacOS', executableName) : null;
   const nested = executableFiles(join(app, 'Contents'));
+  const bridge = nested.find((file) => basename(file) === IDENTITY.bridgeBinary) ?? null;
   const violations = [];
 
   if (!validateInternalName(executableName ?? '', IDENTITY.mainBinary)) {
@@ -143,19 +152,48 @@ function auditMacApp(app, allowUnsigned) {
   if (plistValue(app, 'CFBundleDisplayName') !== IDENTITY.publicName) {
     violations.push(`CFBundleDisplayName must remain ${IDENTITY.publicName}`);
   }
+  if (plistValue(app, 'CFBundleName') !== IDENTITY.publicName) {
+    violations.push(`CFBundleName must remain ${IDENTITY.publicName}`);
+  }
+  if (plistValue(app, 'CFBundleIdentifier') !== 'com.masterain.discord-quest-helper') {
+    violations.push('CFBundleIdentifier changed without an approved data/keychain migration');
+  }
+  if (basename(app) !== `${IDENTITY.publicName}.app`) violations.push('public app bundle name changed');
   if (!executable || !existsSync(executable)) violations.push('main bundle executable is missing');
+  if (!bridge) violations.push(`nested runtime bridge ${IDENTITY.bridgeBinary} is missing`);
 
   const strictSigning = commandSucceeds('codesign', ['--verify', '--deep', '--strict', '--verbose=4', app]);
+  const signingDetails = commandOutput('codesign', ['-dvvv', app]);
+  const hardenedRuntime = /flags=.*\bruntime\b/.test(signingDetails.output);
+  const authorities = signingDetails.output
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith('Authority='))
+    .map((line) => line.slice('Authority='.length));
+  const nestedSigning = nested.map((file) => ({
+    name: basename(file),
+    signed: commandSucceeds('codesign', ['--verify', '--strict', '--verbose=4', file]).ok,
+  }));
   if (!allowUnsigned && !strictSigning.ok) violations.push('strict code-signing verification failed');
+  if (!allowUnsigned && !hardenedRuntime) violations.push('hardened runtime flag is missing');
+  if (!allowUnsigned && !authorities.some((authority) => authority.startsWith('Developer ID Application:'))) {
+    violations.push('Developer ID Application signing authority is missing');
+  }
+  if (nestedSigning.some(({ signed }) => !signed)) violations.push('nested executable signature verification failed');
 
   return {
     platform: 'macos',
     artifact: 'app',
     publicName: IDENTITY.publicName,
     mainBinary: executableName,
-    bridgeBinary: nested.map((file) => basename(file)).find((name) => name === IDENTITY.bridgeBinary) ?? null,
+    bridgeBinary: bridge ? basename(bridge) : null,
     hashes: executable && existsSync(executable) ? { [IDENTITY.mainBinary]: sha256(executable) } : {},
-    signing: { strict: strictSigning.ok, smokeArtifact: allowUnsigned },
+    signing: {
+      strict: strictSigning.ok,
+      hardenedRuntime,
+      smokeArtifact: allowUnsigned,
+      authorities,
+      nested: nestedSigning,
+    },
     knownResiduals: ['bundle identifier retains the public project identity'],
     violations,
   };

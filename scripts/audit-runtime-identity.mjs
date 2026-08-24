@@ -140,7 +140,10 @@ function processAudit(pid, platform) {
     comm = commResult.value || null;
     command = commandResult.value || null;
     executable = comm;
-    argv0 = command?.split(/\s+/)[0] || null;
+    // `ps command` does not quote spaces in a macOS bundle path. `comm` is the
+    // kernel-reported executable path and therefore the reliable argv[0]
+    // identity surface for this audit.
+    argv0 = executable;
     tree = run('ps', ['-axo', 'pid=,ppid=,comm=,args=']);
   }
 
@@ -227,8 +230,8 @@ function macBundleAudit(app) {
       display: display.status === 'available'
         ? { status: 'available', containsProductToken: containsProductToken(display.value) }
         : { status: 'unavailable', reason: display.reason },
-      strictVerification: { status: verify.status, reason: verify.reason || null },
-      gatekeeperAssessment: { status: assess.status, reason: assess.reason || null },
+      strictVerification: { status: verify.status, reason: redactPath(verify.reason) || null },
+      gatekeeperAssessment: { status: assess.status, reason: redactPath(assess.reason) || null },
     },
     nestedExecutables: nested.status === 'available'
       ? nested.value.split(/\r?\n/).filter(Boolean).map((path) => inspected(path))

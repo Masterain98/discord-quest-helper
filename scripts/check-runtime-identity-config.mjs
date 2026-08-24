@@ -53,6 +53,8 @@ export function validateConfiguration() {
     `runner build binary must be named ${EXPECTED.runner}`, failures);
   requireMatch(/\[profile\.release\][\s\S]*?strip\s*=\s*"symbols"/.test(workspaceCargo),
     'release profile must strip public symbols', failures);
+  requireMatch(/\[profile\.release\][\s\S]*?split-debuginfo\s*=\s*"packed"/.test(workspaceCargo),
+    'release profile must emit separate packed debug symbols', failures);
 
   return failures;
 }
