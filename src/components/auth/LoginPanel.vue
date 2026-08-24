@@ -471,22 +471,22 @@ onUnmounted(() => {
           </article>
         </div>
 
-        <article :class="['border-t px-5 py-4 transition-colors duration-300 sm:px-6', manualExpanded && 'bg-muted/20']">
+        <article :class="['border-t px-5 py-5 transition-colors duration-300 sm:px-6', manualExpanded && 'bg-muted/20']">
           <button
             type="button"
-            class="flex w-full items-center justify-between gap-4 rounded-md py-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            class="flex w-full items-center justify-between gap-4 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             :aria-expanded="manualExpanded"
             aria-controls="manual-token-form"
             :disabled="busy"
             @click="manualExpanded = !manualExpanded"
           >
-            <span class="flex items-center gap-3">
-              <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-                <KeyRound class="h-4 w-4" />
+            <span class="flex min-w-0 items-start gap-4">
+              <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                <KeyRound class="h-5 w-5" />
               </span>
-              <span>
-                <span class="block text-sm font-semibold">{{ t('settings.advanced_login_method') }}</span>
-                <span class="mt-0.5 block text-xs text-muted-foreground">{{ t('settings.advanced_login_desc') }}</span>
+              <span class="min-w-0">
+                <span class="block font-semibold">{{ t('settings.advanced_login_method') }}</span>
+                <span class="mt-1 block max-w-md text-sm leading-5 text-muted-foreground">{{ t('settings.advanced_login_desc') }}</span>
               </span>
             </span>
             <ChevronDown
@@ -497,7 +497,7 @@ onUnmounted(() => {
           <Transition name="manual-disclosure">
             <div v-if="manualExpanded" id="manual-token-form" class="manual-disclosure-grid">
               <div class="min-h-0">
-                <form class="space-y-3 pt-4 pl-0 sm:pl-12" @submit.prevent="handleManualLogin">
+                <form class="space-y-3 pt-4 pl-0 sm:pl-[3.75rem]" @submit.prevent="handleManualLogin">
                   <div class="flex flex-col gap-2 sm:flex-row">
                     <Input
                       v-model="manualTokenInput"
