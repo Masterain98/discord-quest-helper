@@ -696,7 +696,19 @@ onMounted(() => {
           </div>
 
           <div v-if="showIdentityBaseline" :class="['rounded p-3 text-sm', identityAudit.baseline.matches ? 'bg-green-500/10 text-green-600' : 'bg-yellow-500/10 text-yellow-700']">
-            <div class="font-medium">{{ identityAudit.baseline.matches ? 'Matches release baseline' : 'Release baseline differences' }}</div>
+            <div class="font-medium">{{ identityAudit.baseline.matches ? 'No release baseline differences' : 'Release baseline differences' }}</div>
+            <div v-if="identityAudit.baseline.configuredWindowIdentityMatches !== null" class="mt-2 text-xs">
+              Configured window identity:
+              <code>{{ identityAudit.baseline.configuredWindowIdentityMatches ? 'matches baseline' : 'mismatch' }}</code>
+            </div>
+            <div v-if="identityAudit.baseline.observedWindowIdentityMatches !== null" class="mt-1 text-xs">
+              Observed window identity:
+              <code>{{ identityAudit.baseline.observedWindowIdentityMatches ? 'matches configuration' : 'mismatch' }}</code>
+            </div>
+            <div v-else-if="identityAudit.baseline.unavailableObservations.length" class="mt-1 text-xs">
+              Observed window identity: <code>unavailable</code>
+              (requires external release smoke manifests)
+            </div>
             <ul v-if="identityAudit.baseline.differences.length" class="mt-2 list-disc pl-5 text-xs space-y-1">
               <li v-for="difference in identityAudit.baseline.differences" :key="difference">{{ difference }}</li>
             </ul>

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { containsProductToken, fingerprintSummary, redactPath } from './audit-runtime-identity.mjs';
+import { containsProductToken, fingerprintSummary, inspected, redactPath } from './audit-runtime-identity.mjs';
 
 test('product token matching is case insensitive and avoids neutral names', () => {
   assert.equal(containsProductToken('/opt/DiscordQuestHelper/bin'), true);
@@ -15,6 +15,11 @@ test('product token matching is case insensitive and avoids neutral names', () =
 test('home paths are redacted without changing unrelated paths', () => {
   assert.equal(redactPath('/Users/alice/Library/App', '/Users/alice'), '$HOME/Library/App');
   assert.equal(redactPath('/opt/runtime', '/Users/alice'), '/opt/runtime');
+});
+
+test('audited values state whether they were observed or read from a package', () => {
+  assert.equal(inspected('meridian').source, 'observed');
+  assert.equal(inspected('meridian', 'package').source, 'package');
 });
 
 test('fingerprint summary never includes the raw fingerprint', () => {

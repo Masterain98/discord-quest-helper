@@ -6,8 +6,10 @@
   "linux": {
     "comm": "meridian",
     "desktopFileId": "com.masterain.discord-quest-helper.desktop",
-    "wmClass": "meridian",
-    "waylandAppId": "meridian"
+    "windowIdentity": {
+      "x11WmClass": "meridian",
+      "waylandAppId": "meridian"
+    }
   },
   "macos": {
     "bundleExecutable": "meridian",

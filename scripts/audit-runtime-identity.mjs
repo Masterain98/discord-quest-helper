@@ -97,10 +97,11 @@ function run(command, args = []) {
   }
 }
 
-function inspected(value) {
+export function inspected(value, source = 'observed') {
   return {
     value: redactPath(value),
     containsProductToken: containsProductToken(value),
+    source,
   };
 }
 
@@ -167,11 +168,11 @@ function parseDesktopFile(path) {
   const fields = {};
   for (const line of content.split(/\r?\n/)) {
     const match = /^(Name|Icon|Exec|StartupWMClass|Terminal)=(.*)$/.exec(line);
-    if (match && fields[match[1]] === undefined) fields[match[1]] = inspected(match[2]);
+    if (match && fields[match[1]] === undefined) fields[match[1]] = inspected(match[2], 'package');
   }
   return {
     status: 'available',
-    fileName: inspected(basename(path)),
+    fileName: inspected(basename(path), 'package'),
     fields,
   };
 }
@@ -218,12 +219,12 @@ function macBundleAudit(app) {
 
   return {
     status: 'available',
-    appName: inspected(basename(app)),
+    appName: inspected(basename(app), 'package'),
     infoPlist: {
-      CFBundleExecutable: inspected(executableName),
-      CFBundleDisplayName: inspected(plistValue(app, 'CFBundleDisplayName')),
-      CFBundleName: inspected(plistValue(app, 'CFBundleName')),
-      CFBundleIdentifier: inspected(plistValue(app, 'CFBundleIdentifier')),
+      CFBundleExecutable: inspected(executableName, 'package'),
+      CFBundleDisplayName: inspected(plistValue(app, 'CFBundleDisplayName'), 'package'),
+      CFBundleName: inspected(plistValue(app, 'CFBundleName'), 'package'),
+      CFBundleIdentifier: inspected(plistValue(app, 'CFBundleIdentifier'), 'package'),
     },
     executablePath: inspected(executablePath),
     signing: {
@@ -293,7 +294,7 @@ function collectAudit(options) {
   const platform = process.platform === 'darwin' ? 'macos' : process.platform;
   if (!['linux', 'macos'].includes(platform)) throw new Error('Only Linux and macOS are supported');
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     generatedAt: new Date().toISOString(),
     platform,
     build: options.build,

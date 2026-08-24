@@ -47,6 +47,9 @@ pub struct FingerprintAudit {
 pub struct BaselineComparison {
     matches: bool,
     differences: Vec<String>,
+    configured_window_identity_matches: Option<bool>,
+    observed_window_identity_matches: Option<bool>,
+    unavailable_observations: Vec<String>,
     fingerprint_fields_added: Vec<String>,
     fingerprint_fields_removed: Vec<String>,
 }
@@ -295,8 +298,26 @@ fn platform_details() -> Value {
         "procExe": proc_exe.as_deref().map(redacted_path),
         "desktopFileId": desktop_id,
         "desktopFileInstalled": desktop_installed,
-        "wmClass": RUNTIME_MAIN_NAME,
-        "waylandAppId": RUNTIME_MAIN_NAME,
+        "windowIdentity": {
+            "configured": {
+                "x11WmClass": RUNTIME_MAIN_NAME,
+                "waylandAppId": RUNTIME_MAIN_NAME,
+            },
+            "observed": {
+                "x11WmClass": Value::Null,
+                "waylandAppId": Value::Null,
+            },
+            "observationStatus": "unavailable",
+            "releaseSmoke": {
+                "status": "external",
+                "manifests": [
+                    "identity-smoke-linux-deb-x11.json",
+                    "identity-smoke-linux-deb-wayland.json",
+                    "identity-smoke-linux-appimage-x11.json",
+                    "identity-smoke-linux-appimage-wayland.json",
+                ],
+            },
+        },
         "packageType": if std::env::var_os("APPIMAGE").is_some() { "appimage" } else if proc_exe.as_ref().is_some_and(|path| path.starts_with("/usr/bin")) { "deb" } else { "development" },
         "appImageResidualFields": residuals,
     })
@@ -389,6 +410,57 @@ fn string_field<'a>(value: &'a Value, field: &str) -> Option<&'a str> {
     value.get(field).and_then(Value::as_str)
 }
 
+#[cfg(any(target_os = "linux", test))]
+fn nested_string_field<'a>(value: &'a Value, path: &[&str]) -> Option<&'a str> {
+    path.iter()
+        .try_fold(value, |current, field| current.get(field))
+        .and_then(Value::as_str)
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn compare_linux_window_identity(
+    details: &Value,
+    linux_baseline: &Value,
+) -> (bool, Option<bool>, Vec<String>, Vec<String>) {
+    let fields = [
+        ("x11WmClass", "X11 WM_CLASS"),
+        ("waylandAppId", "Wayland app_id"),
+    ];
+    let mut configured_matches = true;
+    let mut observed_matches = None;
+    let mut unavailable = Vec::new();
+    let mut differences = Vec::new();
+
+    for (field, label) in fields {
+        let expected = nested_string_field(linux_baseline, &["windowIdentity", field]);
+        let configured = nested_string_field(details, &["windowIdentity", "configured", field]);
+        if configured != expected {
+            configured_matches = false;
+            differences.push(format!(
+                "configured Linux {label} differs from release baseline"
+            ));
+        }
+
+        match nested_string_field(details, &["windowIdentity", "observed", field]) {
+            Some(observed) => {
+                let matches = configured == Some(observed);
+                observed_matches = Some(observed_matches.unwrap_or(true) && matches);
+                if !matches {
+                    differences.push(format!("observed Linux {label} differs from configuration"));
+                }
+            }
+            None => unavailable.push(format!("Linux {label}")),
+        }
+    }
+
+    (
+        configured_matches,
+        observed_matches,
+        unavailable,
+        differences,
+    )
+}
+
 fn baseline_comparison(
     main: &ExecutableAudit,
     helper: &HelperAudit,
@@ -420,7 +492,11 @@ fn baseline_comparison(
         differences.push("legacy runtime artifacts remain".into());
     }
     #[cfg(target_os = "linux")]
-    {
+    let (
+        configured_window_identity_matches,
+        observed_window_identity_matches,
+        unavailable_observations,
+    ) = {
         let linux_baseline = &baseline["linux"];
         if string_field(details, "comm") != Some(RUNTIME_MAIN_NAME) {
             differences.push("Linux comm differs from release baseline".into());
@@ -433,12 +509,17 @@ fn baseline_comparison(
         if string_field(details, "desktopFileId") != string_field(linux_baseline, "desktopFileId") {
             differences.push("Linux desktop file ID differs from release baseline".into());
         }
-        if string_field(details, "wmClass") != Some(RUNTIME_MAIN_NAME)
-            || string_field(details, "waylandAppId") != Some(RUNTIME_MAIN_NAME)
-        {
-            differences.push("Linux window identity differs from release baseline".into());
-        }
-    }
+        let (configured, observed, unavailable, window_differences) =
+            compare_linux_window_identity(details, linux_baseline);
+        differences.extend(window_differences);
+        (Some(configured), observed, unavailable)
+    };
+    #[cfg(not(target_os = "linux"))]
+    let (
+        configured_window_identity_matches,
+        observed_window_identity_matches,
+        unavailable_observations,
+    ) = (None, None, Vec::new());
     #[cfg(target_os = "macos")]
     {
         let macos_baseline = &baseline["macos"];
@@ -511,6 +592,9 @@ fn baseline_comparison(
     BaselineComparison {
         matches: differences.is_empty(),
         differences,
+        configured_window_identity_matches,
+        observed_window_identity_matches,
+        unavailable_observations,
         fingerprint_fields_added,
         fingerprint_fields_removed,
     }
@@ -539,7 +623,7 @@ pub fn collect(
         &platform_details,
     );
     RuntimeIdentityAudit {
-        schema_version: 1,
+        schema_version: 2,
         captured_at_unix: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -607,5 +691,63 @@ mod tests {
             assert!(!encoded.contains(&home.to_string_lossy().to_string()));
         }
         assert!(!encoded.to_ascii_lowercase().contains("authorization"));
+    }
+
+    fn window_identity_details(x11: Value, wayland: Value) -> Value {
+        json!({
+            "windowIdentity": {
+                "configured": {
+                    "x11WmClass": "meridian",
+                    "waylandAppId": "meridian"
+                },
+                "observed": {
+                    "x11WmClass": x11,
+                    "waylandAppId": wayland
+                }
+            }
+        })
+    }
+
+    fn window_identity_baseline() -> Value {
+        json!({
+            "windowIdentity": {
+                "x11WmClass": "meridian",
+                "waylandAppId": "meridian"
+            }
+        })
+    }
+
+    #[test]
+    fn configured_window_identity_is_not_reported_as_observed() {
+        let (configured, observed, unavailable, differences) = compare_linux_window_identity(
+            &window_identity_details(Value::Null, Value::Null),
+            &window_identity_baseline(),
+        );
+        assert!(configured);
+        assert_eq!(observed, None);
+        assert_eq!(unavailable.len(), 2);
+        assert!(differences.is_empty());
+    }
+
+    #[test]
+    fn observed_window_identity_mismatch_fails_comparison() {
+        let (_, observed, unavailable, differences) = compare_linux_window_identity(
+            &window_identity_details(json!("discord-quest-helper"), json!("meridian")),
+            &window_identity_baseline(),
+        );
+        assert_eq!(observed, Some(false));
+        assert!(unavailable.is_empty());
+        assert_eq!(differences.len(), 1);
+    }
+
+    #[test]
+    fn matching_observed_window_identity_passes_comparison() {
+        let (_, observed, unavailable, differences) = compare_linux_window_identity(
+            &window_identity_details(json!("meridian"), json!("meridian")),
+            &window_identity_baseline(),
+        );
+        assert_eq!(observed, Some(true));
+        assert!(unavailable.is_empty());
+        assert!(differences.is_empty());
     }
 }

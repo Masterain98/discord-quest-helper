@@ -14,7 +14,7 @@
     "privacy"
   ],
   "properties": {
-    "schemaVersion": { "const": 1 },
+    "schemaVersion": { "const": 2 },
     "generatedAt": { "type": "string", "format": "date-time" },
     "platform": { "enum": ["linux", "macos"] },
     "build": { "enum": ["debug", "release", "unknown"] },
@@ -57,10 +57,11 @@
   "$defs": {
     "inspectedValue": {
       "type": "object",
-      "required": ["value", "containsProductToken"],
+      "required": ["value", "containsProductToken", "source"],
       "properties": {
         "value": { "type": ["string", "null"] },
-        "containsProductToken": { "type": "boolean" }
+        "containsProductToken": { "type": "boolean" },
+        "source": { "enum": ["observed", "configured", "package", "releaseSmoke"] }
       }
     },
     "availability": {

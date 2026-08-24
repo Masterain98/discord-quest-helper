@@ -483,6 +483,9 @@ export interface RuntimeIdentityAudit {
   baseline: {
     matches: boolean
     differences: string[]
+    configuredWindowIdentityMatches: boolean | null
+    observedWindowIdentityMatches: boolean | null
+    unavailableObservations: string[]
     fingerprintFieldsAdded: string[]
     fingerprintFieldsRemoved: string[]
   }
