@@ -12,7 +12,7 @@ mod logger;
 mod models;
 mod platform_capabilities;
 mod quest_completer;
-#[cfg(unix)]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 mod runtime_bridge;
 mod runtime_identity;
 #[cfg(windows)]
@@ -1956,10 +1956,14 @@ fn cleanup_local_resources_on_exit_sync() {
 #[tauri::command]
 async fn start_discord_normal_restore_helper(app_handle: tauri::AppHandle) -> Result<(), String> {
     let launcher = find_bundled_cdp_launcher(&app_handle)?;
-    #[cfg(unix)]
-    runtime_bridge::verify_bundled_for_execution(&launcher).inspect_err(|error| {
-        runtime_identity::record_helper_identity(Err(error.clone()));
-    })?;
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    match runtime_bridge::verify_bundled_for_execution(&launcher) {
+        Ok(()) => runtime_identity::record_helper_identity(Ok(())),
+        Err(error) => {
+            runtime_identity::record_helper_identity(Err(error.clone()));
+            return Err(error);
+        }
+    }
     tauri::async_runtime::spawn_blocking(move || spawn_restore_helper(&launcher))
         .await
         .map_err(|error| format!("Discord restore helper task failed: {error}"))?
@@ -2252,7 +2256,7 @@ fn install_discord_cdp_launcher_impl(
 ) -> Result<(std::path::PathBuf, Option<String>), String> {
     let source = find_bundled_cdp_launcher(app_handle)?;
 
-    #[cfg(unix)]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     {
         let data_root = unix_runtime_data_root()?;
         let legacy = legacy_unix_cdp_launcher_path()?;
@@ -2294,6 +2298,12 @@ fn install_discord_cdp_launcher_impl(
             migrate_legacy_windows_cdp_launcher_at(std::path::Path::new(&local_appdata), &target);
         }
         Ok((target, None))
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        let _ = source;
+        Err("CDP launcher installation is unsupported on this platform".into())
     }
 }
 

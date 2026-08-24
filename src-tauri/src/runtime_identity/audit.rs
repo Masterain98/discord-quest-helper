@@ -3,6 +3,7 @@ use base64::Engine;
 use serde::Serialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 use std::fs;
 use std::path::{Path, PathBuf};
 #[cfg(target_os = "macos")]
@@ -125,7 +126,7 @@ fn unexpected_macos_path_product_token(path: &Path) -> bool {
     super::contains_product_token(&normalized.to_string_lossy())
 }
 
-#[cfg(unix)]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn sha256_file(path: &Path) -> Option<String> {
     Some(format!("{:x}", Sha256::digest(fs::read(path).ok()?)))
 }
@@ -162,7 +163,7 @@ fn legacy_helper_path() -> Option<PathBuf> {
     )
 }
 
-#[cfg(unix)]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn helper_audit() -> (HelperAudit, usize, String) {
     let Some(data_root) = runtime_data_root() else {
         return (
@@ -241,7 +242,7 @@ fn helper_audit() -> (HelperAudit, usize, String) {
     )
 }
 
-#[cfg(not(unix))]
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 fn helper_audit() -> (HelperAudit, usize, String) {
     (
         HelperAudit {
