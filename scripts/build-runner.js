@@ -22,7 +22,7 @@ function rustHostTriple() {
 
 const targetTriple = process.env.CARGO_BUILD_TARGET || process.env.TAURI_TARGET_TRIPLE || rustHostTriple();
 const ext = targetTriple.includes('windows') ? '.exe' : '';
-const exeName = `discord-quest-runner${ext}`;
+const exeName = `stagecraft${ext}`;
 const metadata = JSON.parse(execFileSync(
     'cargo',
     [
@@ -38,7 +38,7 @@ const runnerTargetDir = join(metadata.target_directory, targetTriple, 'sidecar-r
 const sourceExe = join(runnerTargetDir, exeName);
 const destExe = join(tauriDataDir, exeName);
 
-console.log('🚀 Building discord-quest-runner...');
+console.log('🚀 Building simulated-game runtime...');
 
 try {
     execFileSync('cargo', [

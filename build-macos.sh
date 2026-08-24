@@ -68,7 +68,7 @@ else
 fi
 
 # Copy runner to data directory for development
-RUNNER_DST="$SRC_TAURI/data/discord-quest-runner"
+RUNNER_DST="$SRC_TAURI/data/stagecraft"
 if [ -f "$RUNNER_DST" ]; then
     chmod +x "$RUNNER_DST"
 fi

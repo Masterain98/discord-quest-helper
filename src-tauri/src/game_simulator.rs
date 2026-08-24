@@ -44,13 +44,13 @@ static RUNNING_LINUX_GAMES: Lazy<Mutex<std::collections::HashMap<String, LinuxMa
 // build.rs ensures an empty placeholder exists if the runner hasn't been built yet,
 // so this never causes a hard compile-time failure on a fresh clone or `cargo check`.
 #[cfg(target_os = "windows")]
-const RUNNER_BYTES: &[u8] = include_bytes!("../data/discord-quest-runner.exe");
+const RUNNER_BYTES: &[u8] = include_bytes!("../data/stagecraft.exe");
 
 #[cfg(target_os = "macos")]
-const RUNNER_BYTES: &[u8] = include_bytes!("../data/discord-quest-runner");
+const RUNNER_BYTES: &[u8] = include_bytes!("../data/stagecraft");
 
 #[cfg(target_os = "linux")]
-const RUNNER_BYTES: &[u8] = include_bytes!("../data/discord-quest-runner");
+const RUNNER_BYTES: &[u8] = include_bytes!("../data/stagecraft");
 
 #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
 const RUNNER_BYTES: &[u8] = &[];

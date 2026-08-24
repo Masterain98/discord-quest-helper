@@ -2573,9 +2573,9 @@ fn cdp_launcher_binary_names() -> Vec<&'static str> {
     {
         vec![
             // Tauri bundles externalBin sidecars under the base name in installed apps.
-            "discord-cdp-launcher-sidecar.exe",
+            "waybridge.exe",
             // Dev/build trees keep the target triple because Tauri validates this input name.
-            "discord-cdp-launcher-sidecar-x86_64-pc-windows-msvc.exe",
+            "waybridge-x86_64-pc-windows-msvc.exe",
         ]
     }
 
@@ -2583,17 +2583,11 @@ fn cdp_launcher_binary_names() -> Vec<&'static str> {
     {
         #[cfg(target_arch = "aarch64")]
         {
-            vec![
-                "discord-cdp-launcher-sidecar",
-                "discord-cdp-launcher-sidecar-aarch64-apple-darwin",
-            ]
+            vec!["waybridge", "waybridge-aarch64-apple-darwin"]
         }
         #[cfg(target_arch = "x86_64")]
         {
-            vec![
-                "discord-cdp-launcher-sidecar",
-                "discord-cdp-launcher-sidecar-x86_64-apple-darwin",
-            ]
+            vec!["waybridge", "waybridge-x86_64-apple-darwin"]
         }
     }
 
@@ -2601,17 +2595,11 @@ fn cdp_launcher_binary_names() -> Vec<&'static str> {
     {
         #[cfg(target_arch = "aarch64")]
         {
-            vec![
-                "discord-cdp-launcher-sidecar",
-                "discord-cdp-launcher-sidecar-aarch64-unknown-linux-gnu",
-            ]
+            vec!["waybridge", "waybridge-aarch64-unknown-linux-gnu"]
         }
         #[cfg(not(target_arch = "aarch64"))]
         {
-            vec![
-                "discord-cdp-launcher-sidecar",
-                "discord-cdp-launcher-sidecar-x86_64-unknown-linux-gnu",
-            ]
+            vec!["waybridge", "waybridge-x86_64-unknown-linux-gnu"]
         }
     }
 

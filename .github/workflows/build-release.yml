@@ -163,7 +163,7 @@ jobs:
           $portableDir = 'build/windows-portable'
           New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
           Copy-Item 'target/release/discord-quest-helper.exe' "$portableDir/discord-quest-helper.exe"
-          Copy-Item "src-tauri/binaries/discord-cdp-launcher-sidecar-$env:CDP_TARGET.exe" "$portableDir/discord-cdp-launcher-sidecar.exe"
+          Copy-Item "src-tauri/binaries/waybridge-$env:CDP_TARGET.exe" "$portableDir/waybridge.exe"
       
       # Upload Windows artifact (portable)
       # Runner binary is embedded in the main executable via include_bytes!
