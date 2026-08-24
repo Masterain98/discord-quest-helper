@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 2,
+  "identity": {
+    "publicName": "Discord Quest Helper",
+    "publicBinary": "discord-quest-helper",
+    "bundleIdentifier": "com.masterain.discord-quest-helper",
+    "mainBinary": "meridian",
+    "bridgeBinary": "waybridge",
+    "runnerBuildBinary": "stagecraft",
+    "runtimeNamespace": "blueorbit"
+  },
+  "tokens": [
+    "discord-quest-helper",
+    "discord_quest_helper",
+    "discord quest helper",
+    "discord-cdp-launcher",
+    "discord-quest-runner",
+    "DiscordQuestHelper",
+    "dqh"
+  ]
+}

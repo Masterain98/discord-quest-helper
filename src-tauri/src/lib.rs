@@ -12,7 +12,9 @@ mod logger;
 mod models;
 mod platform_capabilities;
 mod quest_completer;
-mod stealth;
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+mod runtime_bridge;
+mod runtime_identity;
 #[cfg(windows)]
 #[cfg_attr(debug_assertions, allow(dead_code))]
 mod stealth_pe;
@@ -1601,15 +1603,11 @@ async fn open_in_explorer(path: String) -> Result<(), String> {
     Ok(())
 }
 
-/// Ensure stealth mode and run application
-///
-/// This is the new entry point that replaces direct run() call
-pub fn ensure_stealth_and_run() {
+/// Initialize the platform runtime identity before creating any window.
+pub fn initialize_runtime_identity_and_run() {
     configure_linux_webkit_runtime();
 
-    // Try to enter stealth mode
-    stealth::ensure_stealth_mode();
-    stealth::apply_process_identity();
+    runtime_identity::initialize();
 
     // Set up cleanup hook for panics with recursion guard
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -1620,11 +1618,11 @@ pub fn ensure_stealth_and_run() {
         if !CLEANUP_IN_PROGRESS.swap(true, Ordering::SeqCst) {
             // Use catch_unwind to safely run cleanup
             let cleanup_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                stealth::cleanup_on_exit();
+                runtime_identity::cleanup_on_exit();
             }));
 
             if cleanup_result.is_err() {
-                eprintln!("[Stealth] Error: panic occurred during cleanup in panic hook");
+                eprintln!("[Runtime] Error: panic occurred during cleanup in panic hook");
             }
 
             // Do NOT reset flag - if we panicked, we don't want to try cleaning up again
@@ -1635,7 +1633,7 @@ pub fn ensure_stealth_and_run() {
             original_hook(panic_info);
         }));
         if hook_result.is_err() {
-            eprintln!("[Stealth] Error: original panic hook panicked");
+            eprintln!("[Runtime] Error: original panic hook panicked");
         }
     }));
 
@@ -1649,12 +1647,12 @@ pub fn ensure_stealth_and_run() {
             eprintln!("[Cleanup] Error: panic during game cleanup in Ctrl+C handler");
         }
 
-        // Wrap stealth cleanup in catch_unwind to log any errors before exiting
+        // Wrap runtime cleanup in catch_unwind to log any errors before exiting
         let cleanup_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            stealth::cleanup_on_exit();
+            runtime_identity::cleanup_on_exit();
         }));
         if cleanup_result.is_err() {
-            eprintln!("[Stealth] Error: panic occurred during cleanup in Ctrl+C handler");
+            eprintln!("[Runtime] Error: panic occurred during cleanup in Ctrl+C handler");
         }
         std::process::exit(0);
     }) {
@@ -1670,6 +1668,16 @@ pub fn ensure_stealth_and_run() {
 /// Configure the upstream-supported fallback before Tauri initializes GTK.
 #[cfg(target_os = "linux")]
 fn configure_linux_webkit_runtime() {
+    // Tauri's AppImage GTK hook currently forces GDK_BACKEND=x11. If no X11
+    // display exists but a Wayland socket was explicitly supplied, restore the
+    // only usable backend before Tauri initializes GTK.
+    if std::env::var_os("WAYLAND_DISPLAY").is_some()
+        && std::env::var_os("DISPLAY").is_none()
+        && std::env::var_os("GDK_BACKEND").as_deref() == Some(std::ffi::OsStr::new("x11"))
+    {
+        std::env::set_var("GDK_BACKEND", "wayland");
+    }
+
     if std::env::var_os("WEBKIT_DISABLE_COMPOSITING_MODE").is_some()
         || std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_some()
     {
@@ -1723,10 +1731,10 @@ fn create_main_window(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>
 
     let mut builder = WebviewWindowBuilder::from_config(app.handle(), &window_config)?;
 
-    if stealth::is_stealth_mode() {
-        let title = stealth::generate_stealth_window_title();
+    if runtime_identity::uses_temporary_runtime() {
+        let title = runtime_identity::runtime_window_title();
         builder = builder.title(&title);
-        if let Some(user_data) = stealth::webview_user_data_dir() {
+        if let Some(user_data) = runtime_identity::webview_user_data_dir() {
             std::fs::create_dir_all(&user_data)?;
             builder = builder.data_directory(user_data);
         }
@@ -1812,7 +1820,6 @@ pub fn run() {
             discord_cdp_commands::list_running_discord_cdp_sessions,
             discord_cdp_commands::launch_discord_cdp,
             discord_cdp_commands::restart_discord_cdp,
-            install_discord_cdp_launcher,
             create_discord_cdp_launcher_shortcut,
             create_discord_debug_shortcut,
             start_discord_normal_restore_helper,
@@ -1823,7 +1830,9 @@ pub fn run() {
             retry_super_properties,
             capture_discord_headers_cdp,
             navigate_discord_spa,
-            platform_capabilities::get_platform_capabilities
+            platform_capabilities::get_platform_capabilities,
+            runtime_identity::get_runtime_identity_status,
+            runtime_identity::get_runtime_identity_audit
         ])
         .on_window_event(|_window, event| {
             if let tauri::WindowEvent::Destroyed = event {
@@ -1928,7 +1937,7 @@ async fn cleanup_local_resources_on_exit() {
             eprintln!("Discord RPC disconnect timed out during app exit");
         }
     }
-    stealth::cleanup_on_exit();
+    runtime_identity::cleanup_on_exit();
 }
 
 fn cleanup_local_resources_on_exit_sync() {
@@ -1941,12 +1950,20 @@ fn cleanup_local_resources_on_exit_sync() {
             client.discord.disconnect().await;
         });
     }
-    stealth::cleanup_on_exit();
+    runtime_identity::cleanup_on_exit();
 }
 
 #[tauri::command]
 async fn start_discord_normal_restore_helper(app_handle: tauri::AppHandle) -> Result<(), String> {
-    let launcher = install_discord_cdp_launcher_internal(&app_handle).await?;
+    let launcher = find_bundled_cdp_launcher(&app_handle)?;
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    match runtime_bridge::verify_bundled_for_execution(&launcher) {
+        Ok(()) => runtime_identity::record_helper_identity(Ok(())),
+        Err(error) => {
+            runtime_identity::record_helper_identity(Err(error.clone()));
+            return Err(error);
+        }
+    }
     tauri::async_runtime::spawn_blocking(move || spawn_restore_helper(&launcher))
         .await
         .map_err(|error| format!("Discord restore helper task failed: {error}"))?
@@ -2192,13 +2209,6 @@ async fn retry_super_properties(cdp_port: Option<u16>) -> serde_json::Value {
 }
 
 #[tauri::command]
-async fn install_discord_cdp_launcher(app_handle: tauri::AppHandle) -> Result<String, String> {
-    install_discord_cdp_launcher_internal(&app_handle)
-        .await
-        .map(|path| path.to_string_lossy().to_string())
-}
-
-#[tauri::command]
 async fn create_discord_cdp_launcher_shortcut(
     app_handle: tauri::AppHandle,
     port: Option<u16>,
@@ -2227,96 +2237,113 @@ async fn create_discord_debug_shortcut(
 async fn install_discord_cdp_launcher_internal(
     app_handle: &tauri::AppHandle,
 ) -> Result<std::path::PathBuf, String> {
-    use std::fs;
+    let app_handle = app_handle.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        install_discord_cdp_launcher_impl(&app_handle)
+    })
+    .await
+    .map_err(|error| format!("Runtime bridge installation task failed: {error}"))?;
+    match &result {
+        Ok((_, Some(warning))) => runtime_identity::record_helper_degraded(warning.clone()),
+        Ok((_, None)) => runtime_identity::record_helper_identity(Ok(())),
+        Err(error) => runtime_identity::record_helper_identity(Err(error.clone())),
+    }
+    result.map(|(path, _)| path)
+}
 
+fn install_discord_cdp_launcher_impl(
+    app_handle: &tauri::AppHandle,
+) -> Result<(std::path::PathBuf, Option<String>), String> {
     let source = find_bundled_cdp_launcher(app_handle)?;
-    let target = stable_cdp_launcher_path()?;
 
-    let source_size = fs::metadata(&source).map(|m| m.len()).unwrap_or(0);
-    println!(
-        "[cdp-launcher-install] source='{}' ({} bytes), target='{}'",
-        source.display(),
-        source_size,
-        target.display()
-    );
-
-    if let Some(parent) = target.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create CDP launcher directory: {}", e))?;
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        let data_root = unix_runtime_data_root()?;
+        let legacy = legacy_unix_cdp_launcher_path()?;
+        let report = runtime_bridge::install(&source, &data_root, &legacy)?;
+        Ok((report.executable, report.legacy_cleanup_warning))
     }
-
-    if source != target {
-        fs::copy(&source, &target).map_err(|e| {
-            format!(
-                "Failed to install CDP launcher to stable path from '{}' to '{}': {}",
-                source.display(),
-                target.display(),
-                e
-            )
-        })?;
-    }
-
-    stealth::strip_zone_identifier(&target);
 
     #[cfg(windows)]
     {
+        use std::fs;
+        let target = stable_cdp_launcher_path()?;
+
+        let source_size = fs::metadata(&source).map(|m| m.len()).unwrap_or(0);
+        if cfg!(debug_assertions) {
+            println!("[Runtime] Installing bridge payload ({source_size} bytes)");
+        }
+
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create CDP launcher directory: {}", e))?;
+        }
+
+        if source != target {
+            fs::copy(&source, &target)
+                .map_err(|e| format!("Failed to install runtime bridge: {e}"))?;
+        }
+
+        runtime_identity::strip_zone_identifier(&target);
+
         if let (Some(file_name), Some(stem)) = (
             target.file_name().and_then(|n| n.to_str()),
             target.file_stem().and_then(|n| n.to_str()),
         ) {
             if let Err(err) = stealth_pe::rewrite_copy_identity(&target, file_name, stem) {
-                eprintln!("[cdp-launcher-install] Failed to rewrite version info: {err}");
+                eprintln!("[Runtime] Failed to rewrite bridge version info: {err}");
             }
         }
         if let Some(local_appdata) = std::env::var_os("LOCALAPPDATA") {
             migrate_legacy_windows_cdp_launcher_at(std::path::Path::new(&local_appdata), &target);
         }
-    }
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&target, fs::Permissions::from_mode(0o755))
-            .map_err(|e| format!("Failed to mark CDP launcher executable: {}", e))?;
-    }
-
-    Ok(target)
-}
-
-fn stable_cdp_launcher_path() -> Result<std::path::PathBuf, String> {
-    #[cfg(target_os = "windows")]
-    {
-        let local_appdata = std::env::var_os("LOCALAPPDATA")
-            .ok_or_else(|| "Could not get LOCALAPPDATA".to_string())?;
-        let pointer = windows_cdp_runtime_pointer_path()?;
-        Ok(resolve_windows_cdp_runtime_path(
-            std::path::Path::new(&local_appdata),
-            &pointer,
-        ))
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        let home = std::env::var_os("HOME").ok_or_else(|| "Could not get HOME".to_string())?;
-        Ok(std::path::PathBuf::from(home)
-            .join("Library")
-            .join("Application Support")
-            .join("Discord Quest Helper")
-            .join("discord-cdp-launcher"))
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        Ok(linux_xdg_data_home()?
-            .join("discord-quest-helper")
-            .join("bin")
-            .join("discord-cdp-launcher"))
+        Ok((target, None))
     }
 
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
     {
-        Err("Discord CDP launcher is only supported on Windows, macOS and Linux.".to_string())
+        let _ = source;
+        Err("CDP launcher installation is unsupported on this platform".into())
     }
+}
+
+#[cfg(windows)]
+fn stable_cdp_launcher_path() -> Result<std::path::PathBuf, String> {
+    let local_appdata =
+        std::env::var_os("LOCALAPPDATA").ok_or_else(|| "Could not get LOCALAPPDATA".to_string())?;
+    let pointer = windows_cdp_runtime_pointer_path()?;
+    Ok(resolve_windows_cdp_runtime_path(
+        std::path::Path::new(&local_appdata),
+        &pointer,
+    ))
+}
+
+#[cfg(target_os = "macos")]
+fn unix_runtime_data_root() -> Result<std::path::PathBuf, String> {
+    let home = std::env::var_os("HOME").ok_or_else(|| "Could not get HOME".to_string())?;
+    Ok(std::path::PathBuf::from(home)
+        .join("Library")
+        .join("Application Support"))
+}
+
+#[cfg(target_os = "linux")]
+fn unix_runtime_data_root() -> Result<std::path::PathBuf, String> {
+    linux_xdg_data_home()
+}
+
+#[cfg(target_os = "macos")]
+fn legacy_unix_cdp_launcher_path() -> Result<std::path::PathBuf, String> {
+    Ok(unix_runtime_data_root()?
+        .join("Discord Quest Helper")
+        .join("discord-cdp-launcher"))
+}
+
+#[cfg(target_os = "linux")]
+fn legacy_unix_cdp_launcher_path() -> Result<std::path::PathBuf, String> {
+    Ok(unix_runtime_data_root()?
+        .join("discord-quest-helper")
+        .join("bin")
+        .join("discord-cdp-launcher"))
 }
 
 #[cfg(any(windows, test))]
@@ -2352,7 +2379,7 @@ fn is_windows_bland_runtime_exe(path: &std::path::Path, local_appdata: &std::pat
         _ => return false,
     }
     let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-    if !stealth::is_hex_str(stem, stealth::FILE_HEX_LEN) {
+    if !runtime_identity::is_hex_str(stem, runtime_identity::FILE_HEX_LEN) {
         return false;
     }
     let parent = match path.parent() {
@@ -2360,22 +2387,24 @@ fn is_windows_bland_runtime_exe(path: &std::path::Path, local_appdata: &std::pat
         None => return false,
     };
     let parent_name = parent.file_name().and_then(|s| s.to_str()).unwrap_or("");
-    if !stealth::is_hex_str(parent_name, stealth::DIR_HEX_LEN) {
+    if !runtime_identity::is_hex_str(parent_name, runtime_identity::DIR_HEX_LEN) {
         return false;
     }
     let Some(grandparent) = parent.parent() else {
         return false;
     };
-    stealth::paths_eq(grandparent, local_appdata)
+    runtime_identity::paths_eq(grandparent, local_appdata)
 }
 
 #[cfg(any(windows, test))]
 fn allocate_windows_bland_runtime_exe(local_appdata: &std::path::Path) -> std::path::PathBuf {
     local_appdata
-        .join(stealth::generate_random_suffix(stealth::DIR_HEX_LEN))
+        .join(runtime_identity::generate_random_suffix(
+            runtime_identity::DIR_HEX_LEN,
+        ))
         .join(format!(
             "{}.exe",
-            stealth::generate_random_suffix(stealth::FILE_HEX_LEN)
+            runtime_identity::generate_random_suffix(runtime_identity::FILE_HEX_LEN)
         ))
 }
 
@@ -2420,7 +2449,7 @@ fn migrate_legacy_windows_cdp_launcher_at(
 fn windows_shortcut_temp_ps1_name() -> String {
     format!(
         "{}.ps1",
-        stealth::generate_random_suffix(stealth::DIR_HEX_LEN)
+        runtime_identity::generate_random_suffix(runtime_identity::DIR_HEX_LEN)
     )
 }
 
@@ -2541,15 +2570,21 @@ fn find_bundled_cdp_launcher(app_handle: &tauri::AppHandle) -> Result<std::path:
         }
     }
 
-    let searched: Vec<String> = candidate_dirs
-        .iter()
-        .map(|d| d.display().to_string())
-        .collect();
-    Err(format!(
-        "Failed to find bundled CDP launcher (names: {:?}, searched: {:?}). \
-         Run `pnpm build:cdp-launcher` and try again.",
-        names, searched
-    ))
+    if cfg!(debug_assertions) {
+        let searched: Vec<String> = candidate_dirs
+            .iter()
+            .map(|directory| directory.display().to_string())
+            .collect();
+        Err(format!(
+            "Runtime bridge is unavailable (names: {names:?}, searched: {searched:?}). \
+             Run `pnpm build:cdp-launcher` and try again."
+        ))
+    } else {
+        Err(
+            "The packaged runtime bridge is unavailable or invalid. Reinstall the application."
+                .to_string(),
+        )
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -2574,9 +2609,9 @@ fn cdp_launcher_binary_names() -> Vec<&'static str> {
     {
         vec![
             // Tauri bundles externalBin sidecars under the base name in installed apps.
-            "discord-cdp-launcher-sidecar.exe",
+            "waybridge.exe",
             // Dev/build trees keep the target triple because Tauri validates this input name.
-            "discord-cdp-launcher-sidecar-x86_64-pc-windows-msvc.exe",
+            "waybridge-x86_64-pc-windows-msvc.exe",
         ]
     }
 
@@ -2584,17 +2619,11 @@ fn cdp_launcher_binary_names() -> Vec<&'static str> {
     {
         #[cfg(target_arch = "aarch64")]
         {
-            vec![
-                "discord-cdp-launcher-sidecar",
-                "discord-cdp-launcher-sidecar-aarch64-apple-darwin",
-            ]
+            vec!["waybridge", "waybridge-aarch64-apple-darwin"]
         }
         #[cfg(target_arch = "x86_64")]
         {
-            vec![
-                "discord-cdp-launcher-sidecar",
-                "discord-cdp-launcher-sidecar-x86_64-apple-darwin",
-            ]
+            vec!["waybridge", "waybridge-x86_64-apple-darwin"]
         }
     }
 
@@ -2602,17 +2631,11 @@ fn cdp_launcher_binary_names() -> Vec<&'static str> {
     {
         #[cfg(target_arch = "aarch64")]
         {
-            vec![
-                "discord-cdp-launcher-sidecar",
-                "discord-cdp-launcher-sidecar-aarch64-unknown-linux-gnu",
-            ]
+            vec!["waybridge", "waybridge-aarch64-unknown-linux-gnu"]
         }
         #[cfg(not(target_arch = "aarch64"))]
         {
-            vec![
-                "discord-cdp-launcher-sidecar",
-                "discord-cdp-launcher-sidecar-x86_64-unknown-linux-gnu",
-            ]
+            vec!["waybridge", "waybridge-x86_64-unknown-linux-gnu"]
         }
     }
 
@@ -2929,7 +2952,7 @@ mod windows_cdp_runtime_path_tests {
     fn unique_root() -> PathBuf {
         std::env::temp_dir().join(format!(
             "dqh-cdp-runtime-{}",
-            stealth::generate_random_suffix(8)
+            runtime_identity::generate_random_suffix(8)
         ))
     }
 
@@ -2940,8 +2963,14 @@ mod windows_cdp_runtime_path_tests {
             .and_then(|p| p.file_name())
             .and_then(|s| s.to_str())
             .unwrap();
-        assert!(stealth::is_hex_str(dir, stealth::DIR_HEX_LEN), "{dir}");
-        assert!(stealth::is_hex_str(file, stealth::FILE_HEX_LEN), "{file}");
+        assert!(
+            runtime_identity::is_hex_str(dir, runtime_identity::DIR_HEX_LEN),
+            "{dir}"
+        );
+        assert!(
+            runtime_identity::is_hex_str(file, runtime_identity::FILE_HEX_LEN),
+            "{file}"
+        );
         assert!(!runtime_name_has_product_tokens(dir));
         assert!(!runtime_name_has_product_tokens(file));
         assert!(!runtime_name_has_product_tokens(&format!("{file}.exe")));
@@ -3060,7 +3089,10 @@ mod windows_cdp_runtime_path_tests {
     fn shortcut_temp_script_is_hex_named() {
         let name = windows_shortcut_temp_ps1_name();
         let stem = name.strip_suffix(".ps1").unwrap();
-        assert!(stealth::is_hex_str(stem, stealth::DIR_HEX_LEN));
+        assert!(runtime_identity::is_hex_str(
+            stem,
+            runtime_identity::DIR_HEX_LEN
+        ));
         assert!(!runtime_name_has_product_tokens(&name));
         assert!(!name.to_ascii_lowercase().contains("discord"));
     }

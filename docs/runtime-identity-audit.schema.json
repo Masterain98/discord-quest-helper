@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Masterain98/discord-quest-helper/schemas/runtime-identity-audit.schema.json",
+  "title": "RuntimeIdentityCliAudit",
+  "description": "Output contract for scripts/audit-runtime-identity.sh. Interactive debug exports use runtime-identity-debug-audit.schema.json.",
+  "type": "object",
+  "unevaluatedProperties": false,
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "platform",
+    "build",
+    "artifact",
+    "process",
+    "nativeExecutableFingerprint",
+    "privacy"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "platform": { "enum": ["linux", "macos"] },
+    "build": { "enum": ["debug", "release", "unknown"] },
+    "artifact": { "type": "string" },
+    "process": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "required": ["pid", "executablePath", "executableBasename", "comm", "argv0", "command", "tree"],
+      "properties": {
+        "pid": { "type": "integer", "minimum": 1 },
+        "executablePath": { "$ref": "#/$defs/inspectedValue" },
+        "executableBasename": { "$ref": "#/$defs/inspectedValue" },
+        "comm": { "$ref": "#/$defs/inspectedValue" },
+        "argv0": { "$ref": "#/$defs/inspectedValue" },
+        "command": { "$ref": "#/$defs/inspectedValue" },
+        "tree": { "$ref": "#/$defs/availability" }
+      }
+    },
+    "desktop": { "type": "object" },
+    "appImageEnvironment": { "type": ["object", "null"] },
+    "macosBundle": { "type": "object" },
+    "nativeExecutableFingerprint": {
+      "allOf": [
+        { "$ref": "#/$defs/availabilityBase" },
+        {
+          "properties": {
+            "length": { "type": "integer", "minimum": 0 },
+            "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+            "containsProductToken": { "type": "boolean" }
+          },
+          "if": { "properties": { "status": { "const": "available" } } },
+          "then": { "required": ["length", "sha256", "containsProductToken"] }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "privacy": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "required": ["homePathsRedacted", "rawFingerprintStored", "sensitiveHeadersStored"],
+      "properties": {
+        "homePathsRedacted": { "const": true },
+        "rawFingerprintStored": { "const": false },
+        "sensitiveHeadersStored": { "const": false }
+      }
+    }
+  },
+  "$defs": {
+    "inspectedValue": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "required": ["value", "containsProductToken", "source"],
+      "properties": {
+        "value": { "type": ["string", "null"] },
+        "containsProductToken": { "type": "boolean" },
+        "source": { "enum": ["observed", "configured", "package", "releaseSmoke"] }
+      }
+    },
+    "availabilityBase": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": { "enum": ["available", "unavailable", "error", "not-requested", "not-applicable"] },
+        "reason": { "type": ["string", "null"] },
+        "containsProductToken": { "type": "boolean" }
+      }
+    },
+    "availability": {
+      "allOf": [{ "$ref": "#/$defs/availabilityBase" }],
+      "unevaluatedProperties": false
+    }
+  }
+}

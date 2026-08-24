@@ -15,9 +15,13 @@
     "build:runner": "node scripts/build-runner.js",
     "build:cdp-launcher": "node scripts/build-cdp-launcher.js",
     "check:cdp-core-deps": "node scripts/check-cdp-core-deps.js",
+    "test:identity-audit": "node --test scripts/audit-runtime-identity.test.mjs",
+    "test:packaged-identity": "node --test scripts/audit-packaged-identity.test.mjs",
+    "audit:package": "node scripts/audit-packaged-identity.mjs",
+    "check:runtime-identity": "node scripts/check-runtime-identity-config.mjs",
     "analyze:har": "python scripts/analyze-har-quests.py",
     "i18n:check": "node scripts/i18n-validate.mjs",
-    "test": "vitest run",
+    "test": "vitest run src",
     "test:quest-schema": "python scripts/validate-quest-schema-fixture.py tests/fixtures/quests_2026_06_16.schema.json"
   },
   "dependencies": {

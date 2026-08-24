@@ -46,10 +46,7 @@ fn main() {
         );
     }
 
-    println!(
-        "cargo:rustc-link-arg-bin=discord-cdp-launcher={}",
-        res_path.display()
-    );
+    println!("cargo:rustc-link-arg-bin=waybridge={}", res_path.display());
 }
 
 fn resource_compiler_candidates() -> Vec<PathBuf> {

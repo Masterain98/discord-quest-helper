@@ -33,7 +33,7 @@
     "active": true,
     "targets": "all",
     "externalBin": [
-      "binaries/discord-cdp-launcher-sidecar"
+      "binaries/waybridge"
     ],
     "icon": [
       "icons/32x32.png",

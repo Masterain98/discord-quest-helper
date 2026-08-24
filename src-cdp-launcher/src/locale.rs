@@ -7,14 +7,14 @@ pub(crate) struct Strings {
 }
 
 const EN: Strings = Strings {
-    title: "Discord CDP Launcher",
+    title: "Runtime Launcher",
     cdp_already_running: "Discord is already running with CDP mode enabled.",
     restart_confirm: "Discord is already running. Do you want to restart it with CDP mode enabled?",
     restore_failure: "Some Discord clients could not be confirmed in normal mode. Please fully quit and reopen Discord manually.",
 };
 
 const ZH: Strings = Strings {
-    title: "Discord CDP 启动器",
+    title: "运行时启动器",
     cdp_already_running: "Discord 已在 CDP 模式下运行。",
     restart_confirm: "Discord 正在运行。是否要重启并启用 CDP 模式？",
     restore_failure:
@@ -22,7 +22,7 @@ const ZH: Strings = Strings {
 };
 
 const ZH_TW: Strings = Strings {
-    title: "Discord CDP 啟動器",
+    title: "執行階段啟動器",
     cdp_already_running: "Discord 已在 CDP 模式下執行。",
     restart_confirm: "Discord 正在執行。是否要重新啟動並啟用 CDP 模式？",
     restore_failure:
@@ -30,28 +30,28 @@ const ZH_TW: Strings = Strings {
 };
 
 const JA: Strings = Strings {
-    title: "Discord CDP ランチャー",
+    title: "ランタイムランチャー",
     cdp_already_running: "Discord は既に CDP モードで実行中です。",
     restart_confirm: "Discord は実行中です。CDP モードを有効にして再起動しますか？",
     restore_failure: "一部の Discord クライアントが通常モードに復帰したことを確認できませんでした。Discord を完全に終了して手動で再起動してください。",
 };
 
 const KO: Strings = Strings {
-    title: "Discord CDP 런처",
+    title: "런타임 런처",
     cdp_already_running: "Discord가 이미 CDP 모드로 실행 중입니다.",
     restart_confirm: "Discord가 실행 중입니다. CDP 모드를 활성화하여 재시작하시겠습니까?",
     restore_failure: "일부 Discord 클라이언트가 일반 모드로 복원되었는지 확인할 수 없습니다. Discord를 완전히 종료한 후 수동으로 다시 여세요.",
 };
 
 const RU: Strings = Strings {
-    title: "Discord CDP Лаунчер",
+    title: "Средство запуска",
     cdp_already_running: "Discord уже запущен в режиме CDP.",
     restart_confirm: "Discord уже запущен. Хотите перезапустить его с включенным CDP?",
     restore_failure: "Не удалось подтвердить, что некоторые клиенты Discord восстановлены в обычном режиме. Полностью закройте и снова откройте Discord вручную.",
 };
 
 const ES: Strings = Strings {
-    title: "Discord CDP Lanzador",
+    title: "Iniciador de Runtime",
     cdp_already_running: "Discord ya está ejecutándose con el modo CDP activado.",
     restart_confirm: "Discord ya está ejecutándose. ¿Deseas reiniciarlo con el modo CDP activado?",
     restore_failure: "No se pudo confirmar que algunos clientes de Discord se restauraran al modo normal. Cierra Discord por completo y vuelve a abrirlo manualmente.",

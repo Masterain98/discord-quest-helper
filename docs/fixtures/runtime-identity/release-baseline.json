@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "mainExecutable": "meridian",
+  "helperExecutable": "waybridge",
+  "runtimeNamespace": "blueorbit",
+  "linux": {
+    "comm": "meridian",
+    "desktopFileId": "com.masterain.discord-quest-helper.desktop",
+    "windowIdentity": {
+      "x11WmClass": "meridian",
+      "waylandAppId": "meridian"
+    }
+  },
+  "macos": {
+    "bundleExecutable": "meridian",
+    "bundleDisplayName": "Discord Quest Helper",
+    "bundleIdentifier": "com.masterain.discord-quest-helper"
+  },
+  "fingerprintFields": [
+    "browser",
+    "browser_user_agent",
+    "browser_version",
+    "client_build_number",
+    "client_event_source",
+    "has_client_mods",
+    "os",
+    "os_version",
+    "release_channel",
+    "system_locale"
+  ]
+}

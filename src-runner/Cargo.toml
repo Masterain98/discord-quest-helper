@@ -8,5 +8,5 @@ winit = "0.29"
 softbuffer = "0.4"
 
 [[bin]]
-name = "discord-quest-runner"
+name = "stagecraft"
 path = "src/main.rs"

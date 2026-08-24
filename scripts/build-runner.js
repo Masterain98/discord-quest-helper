@@ -22,7 +22,7 @@ function rustHostTriple() {
 
 const targetTriple = process.env.CARGO_BUILD_TARGET || process.env.TAURI_TARGET_TRIPLE || rustHostTriple();
 const ext = targetTriple.includes('windows') ? '.exe' : '';
-const exeName = `discord-quest-runner${ext}`;
+const exeName = `stagecraft${ext}`;
 const metadata = JSON.parse(execFileSync(
     'cargo',
     [
@@ -38,7 +38,7 @@ const runnerTargetDir = join(metadata.target_directory, targetTriple, 'sidecar-r
 const sourceExe = join(runnerTargetDir, exeName);
 const destExe = join(tauriDataDir, exeName);
 
-console.log('🚀 Building discord-quest-runner...');
+console.log('🚀 Building simulated-game runtime...');
 
 try {
     execFileSync('cargo', [
@@ -59,6 +59,10 @@ try {
 
     console.log(`📦 Copying ${exeName} to src-tauri/data/...`);
     copyFileSync(sourceExe, destExe);
+    if (targetTriple.includes('apple-darwin')) {
+        execFileSync('/usr/bin/codesign', ['--force', '--sign', '-', destExe], { stdio: 'inherit' });
+        execFileSync('/usr/bin/codesign', ['--verify', '--strict', '--verbose=2', destExe], { stdio: 'inherit' });
+    }
     console.log('✨ Runner copied successfully.');
 
     // Write runner version info (git hash + build timestamp)

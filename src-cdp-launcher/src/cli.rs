@@ -76,11 +76,11 @@ pub(crate) fn parse_args(args: Vec<String>) -> Result<CliOptions, String> {
 
 pub(crate) fn help_text() -> &'static str {
     "Usage:
-  discord-cdp-launcher --port 9223 --channel auto
-  discord-cdp-launcher --port 9223 --channel stable
-  discord-cdp-launcher --port 9223 --restart
-  discord-cdp-launcher --status --port 9223
-  discord-cdp-launcher --restore-normal-all
+  waybridge --port 9223 --channel auto
+  waybridge --port 9223 --channel stable
+  waybridge --port 9223 --restart
+  waybridge --status --port 9223
+  waybridge --restore-normal-all
 
 Options:
   --port <port>                 CDP debugging port. Defaults to 9223.

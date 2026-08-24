@@ -40,6 +40,8 @@ tauri-plugin-dialog = "=2.6.0"
 # Zero-on-drop wrapper for the Authorization token captured by CDP auto-login;
 # the raw token is held only in Rust, never serialized to the frontend or logs.
 zeroize = "1"
+sha2 = "0.10"
+libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62", features = [

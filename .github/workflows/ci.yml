@@ -73,7 +73,16 @@ jobs:
             libxdo-dev \
             libssl-dev \
             libayatana-appindicator3-dev \
-            librsvg2-dev
+            librsvg2-dev \
+            patchelf \
+            desktop-file-utils \
+            xdg-utils \
+            xvfb \
+            xdotool \
+            x11-utils \
+            weston \
+            dbus-x11 \
+            libfuse2
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -88,6 +97,12 @@ jobs:
 
       - name: Run frontend tests
         run: pnpm test
+
+      - name: Validate runtime identity policy and audit tools
+        run: |
+          pnpm run check:runtime-identity
+          pnpm run test:identity-audit
+          pnpm run test:packaged-identity
 
       # `tauri::generate_context!` resolves `frontendDist` (../dist) at compile
       # time, so the bundle has to exist before any cargo step touches src-tauri.
@@ -117,3 +132,68 @@ jobs:
         env:
           TAURI_TARGET_TRIPLE: ${{ matrix.cdp_target }}
         run: pnpm run build:cdp-launcher
+
+      - name: Build Linux DEB and AppImage identity smoke artifacts
+        if: matrix.platform == 'ubuntu-22.04'
+        run: pnpm exec tauri build --bundles deb,appimage
+
+      - name: Audit and smoke-test Linux desktop identities
+        if: matrix.platform == 'ubuntu-22.04'
+        shell: bash
+        run: |
+          deb="$(find target/release/bundle/deb -maxdepth 1 -name '*.deb' -type f | head -n 1)"
+          appimage="$(find target/release/bundle/appimage -maxdepth 1 -name '*.AppImage' -type f | head -n 1)"
+          test -n "$deb"
+          test -n "$appimage"
+          node scripts/audit-packaged-identity.mjs \
+            --platform linux --artifact "$deb" \
+            --output target/release/bundle/identity-manifest-linux-deb.json
+          node scripts/audit-packaged-identity.mjs \
+            --platform linux --artifact "$appimage" \
+            --output target/release/bundle/identity-manifest-linux-appimage.json
+          mkdir -p "$RUNNER_TEMP/deb-root"
+          dpkg-deb -x "$deb" "$RUNNER_TEMP/deb-root"
+          binary="$RUNNER_TEMP/deb-root/usr/bin/meridian"
+          dbus-run-session -- xvfb-run -a scripts/smoke-linux-runtime-identity.sh \
+            x11 --kind binary "$binary" \
+            target/release/bundle/identity-smoke-linux-deb-x11.json
+          dbus-run-session -- scripts/smoke-linux-runtime-identity.sh \
+            wayland --kind binary "$binary" \
+            target/release/bundle/identity-smoke-linux-deb-wayland.json
+          dbus-run-session -- xvfb-run -a scripts/smoke-linux-runtime-identity.sh \
+            x11 --kind appimage "$appimage" \
+            target/release/bundle/identity-smoke-linux-appimage-x11.json
+          dbus-run-session -- scripts/smoke-linux-runtime-identity.sh \
+            wayland --kind appimage "$appimage" \
+            target/release/bundle/identity-smoke-linux-appimage-wayland.json
+
+      - name: Build ad-hoc macOS app and DMG identity smoke artifacts
+        if: matrix.platform == 'macos-14'
+        run: pnpm exec tauri build --target ${{ matrix.cdp_target }} --bundles app,dmg
+
+      - name: Sign, audit, and smoke-test macOS bundle
+        if: matrix.platform == 'macos-14'
+        shell: bash
+        run: |
+          app="$(find target/${{ matrix.cdp_target }}/release/bundle/macos -maxdepth 1 -name '*.app' -type d | head -n 1)"
+          test -n "$app"
+          scripts/sign-macos-bundle-smoke.sh "$app"
+          scripts/verify-macos-bundle.sh "$app"
+          node scripts/audit-packaged-identity.mjs \
+            --platform macos --artifact "$app" --allow-adhoc \
+            --output target/${{ matrix.cdp_target }}/release/bundle/identity-manifest-macos-smoke.json
+          scripts/smoke-macos-runtime-identity.sh "$app" \
+            target/${{ matrix.cdp_target }}/release/bundle/identity-smoke-macos.json
+          renamed_root="$(mktemp -d "$RUNNER_TEMP/runtime-identity-renamed.XXXXXX")"
+          renamed_app="$renamed_root/DQH.app"
+          cp -R "$app" "$renamed_app"
+          scripts/smoke-macos-runtime-identity.sh "$renamed_app" \
+            target/${{ matrix.cdp_target }}/release/bundle/identity-smoke-macos-renamed.json
+
+      - name: Upload desktop identity manifests
+        if: matrix.platform == 'ubuntu-22.04' || matrix.platform == 'macos-14'
+        uses: actions/upload-artifact@v7
+        with:
+          name: runtime-identity-${{ matrix.cdp_target }}
+          path: |
+            target/**/bundle/identity-*.json

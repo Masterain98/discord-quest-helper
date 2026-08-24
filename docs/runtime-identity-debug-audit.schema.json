@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Masterain98/discord-quest-helper/schemas/runtime-identity-debug-audit.schema.json",
+  "title": "RuntimeIdentityDebugAudit",
+  "description": "Interactive audit returned by get_runtime_identity_audit and exported by the Debug view.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "capturedAtUnix",
+    "platform",
+    "buildProfile",
+    "status",
+    "main",
+    "helper",
+    "legacyArtifactCount",
+    "migrationResult",
+    "fingerprint",
+    "platformDetails",
+    "baseline"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "capturedAtUnix": { "type": "integer", "minimum": 0 },
+    "platform": { "type": "string" },
+    "buildProfile": { "enum": ["debug", "release"] },
+    "status": { "$ref": "#/$defs/status" },
+    "main": { "$ref": "#/$defs/main" },
+    "helper": { "$ref": "#/$defs/helper" },
+    "legacyArtifactCount": { "type": "integer", "minimum": 0 },
+    "migrationResult": { "type": "string" },
+    "fingerprint": { "$ref": "#/$defs/fingerprint" },
+    "platformDetails": { "type": "object" },
+    "baseline": { "$ref": "#/$defs/baseline" }
+  },
+  "$defs": {
+    "nullableBoolean": { "type": ["boolean", "null"] },
+    "nullableString": { "type": ["string", "null"] },
+    "status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["platform", "level", "mainExecutableOk", "helperIdentityOk", "packageSignatureOk", "desktopIntegrationOk", "reasons"],
+      "properties": {
+        "platform": { "type": "string" },
+        "level": { "enum": ["full", "degraded", "disabled", "notApplicable"] },
+        "mainExecutableOk": { "type": "boolean" },
+        "helperIdentityOk": { "$ref": "#/$defs/nullableBoolean" },
+        "packageSignatureOk": { "$ref": "#/$defs/nullableBoolean" },
+        "desktopIntegrationOk": { "$ref": "#/$defs/nullableBoolean" },
+        "reasons": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "main": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["basename", "path", "pathHasProductToken", "unexpectedPathProductToken"],
+      "properties": {
+        "basename": { "type": "string" },
+        "path": { "type": "string" },
+        "pathHasProductToken": { "type": "boolean" },
+        "unexpectedPathProductToken": { "type": "boolean" }
+      }
+    },
+    "helper": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["installed", "basename", "path", "pathHasProductToken", "manifestHashOk", "signatureOk"],
+      "properties": {
+        "installed": { "type": "boolean" },
+        "basename": { "$ref": "#/$defs/nullableString" },
+        "path": { "$ref": "#/$defs/nullableString" },
+        "pathHasProductToken": { "$ref": "#/$defs/nullableBoolean" },
+        "manifestHashOk": { "$ref": "#/$defs/nullableBoolean" },
+        "signatureOk": { "$ref": "#/$defs/nullableBoolean" }
+      }
+    },
+    "fingerprint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "sha256", "length", "fieldCount", "fieldNames", "rawAvailableLocally"],
+      "properties": {
+        "status": { "type": "string" },
+        "sha256": { "anyOf": [{ "type": "null" }, { "type": "string", "pattern": "^[a-f0-9]{64}$" }] },
+        "length": { "type": "integer", "minimum": 0 },
+        "fieldCount": { "type": "integer", "minimum": 0 },
+        "fieldNames": { "type": "array", "items": { "type": "string" } },
+        "rawAvailableLocally": { "type": "boolean" }
+      }
+    },
+    "baseline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["matches", "differences", "configuredWindowIdentityMatches", "observedWindowIdentityMatches", "unavailableObservations", "fingerprintFieldsAdded", "fingerprintFieldsRemoved"],
+      "properties": {
+        "matches": { "type": "boolean" },
+        "differences": { "type": "array", "items": { "type": "string" } },
+        "configuredWindowIdentityMatches": { "$ref": "#/$defs/nullableBoolean" },
+        "observedWindowIdentityMatches": { "$ref": "#/$defs/nullableBoolean" },
+        "unavailableObservations": { "type": "array", "items": { "type": "string" } },
+        "fingerprintFieldsAdded": { "type": "array", "items": { "type": "string" } },
+        "fingerprintFieldsRemoved": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

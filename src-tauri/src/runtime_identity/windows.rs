@@ -1,4 +1,4 @@
-//! Stealth Mode Module
+//! Windows runtime identity implementation.
 //!
 //! Release builds copy the main executable into a randomly named temp
 //! directory and relaunch from that copy so Discord's process scanner does

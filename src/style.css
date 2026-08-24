@@ -1,4 +1,6 @@
-@import "tailwindcss";
+@import "tailwindcss" source(none);
+@source "./**/*.{vue,ts}";
+@source "../index.html";
 @plugin "tailwindcss-animate";
 
 @custom-variant dark (&:is(.dark *));

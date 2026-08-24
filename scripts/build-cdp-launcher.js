@@ -23,7 +23,8 @@ function rustHostTriple() {
 const targetTriple = process.env.CARGO_BUILD_TARGET || process.env.TAURI_TARGET_TRIPLE || rustHostTriple();
 const isWindowsTarget = targetTriple.includes('windows');
 const exeExt = isWindowsTarget ? '.exe' : '';
-const exeName = `discord-cdp-launcher${exeExt}`;
+const runtimeBridgeName = 'waybridge';
+const exeName = `${runtimeBridgeName}${exeExt}`;
 const metadata = JSON.parse(execFileSync(
   'cargo',
   [
@@ -45,6 +46,8 @@ const stalePatterns = [
   'discord-cdp-launcher-sidecar.exe',
   'discord-cdp-launcher',
   'discord-cdp-launcher-sidecar',
+  'waybridge.exe',
+  'waybridge',
 ];
 for (const baseTargetDir of [cargoTargetDir, join(tauriDir, 'target')]) {
   for (const target of ['release', 'debug']) {
@@ -63,12 +66,12 @@ for (const baseTargetDir of [cargoTargetDir, join(tauriDir, 'target')]) {
   }
 }
 
-const destExe = join(binariesDir, `discord-cdp-launcher-sidecar-${targetTriple}${exeExt}`);
+const destExe = join(binariesDir, `${runtimeBridgeName}-${targetTriple}${exeExt}`);
 if (!existsSync(destExe)) {
   writeFileSync(destExe, '');
 }
 
-console.log(`Building discord-cdp-launcher for ${targetTriple}...`);
+console.log(`Building runtime bridge for ${targetTriple}...`);
 
 execFileSync('cargo', [
   'build',
@@ -87,6 +90,11 @@ if (!existsSync(sourceExe)) {
 }
 
 copyFileSync(sourceExe, destExe);
+
+if (targetTriple.includes('apple-darwin')) {
+  execFileSync('/usr/bin/codesign', ['--force', '--sign', '-', destExe], { stdio: 'inherit' });
+  execFileSync('/usr/bin/codesign', ['--verify', '--strict', '--verbose=2', destExe], { stdio: 'inherit' });
+}
 
 const size = statSync(destExe).size;
 console.log(`Copied launcher to ${destExe} (${size} bytes).`);
