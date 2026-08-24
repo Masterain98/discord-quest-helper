@@ -91,5 +91,10 @@ if (!existsSync(sourceExe)) {
 
 copyFileSync(sourceExe, destExe);
 
+if (targetTriple.includes('apple-darwin')) {
+  execFileSync('/usr/bin/codesign', ['--force', '--sign', '-', destExe], { stdio: 'inherit' });
+  execFileSync('/usr/bin/codesign', ['--verify', '--strict', '--verbose=2', destExe], { stdio: 'inherit' });
+}
+
 const size = statSync(destExe).size;
 console.log(`Copied launcher to ${destExe} (${size} bytes).`);

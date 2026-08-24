@@ -7,9 +7,12 @@ mod model;
 mod windows;
 
 use model::{configured_internal_names_are_valid, RuntimeIdentityStatus};
+pub(crate) use model::{contains_product_token, RUNTIME_BRIDGE_NAME, RUNTIME_NAMESPACE};
 
 use once_cell::sync::Lazy;
-use std::path::{Path, PathBuf};
+#[cfg(any(target_os = "windows", test))]
+use std::path::Path;
+use std::path::PathBuf;
 use std::sync::RwLock;
 
 #[cfg(any(target_os = "windows", test))]
@@ -98,15 +101,28 @@ pub fn record_helper_identity(result: Result<(), String>) {
     let mut status = STATUS
         .write()
         .expect("runtime identity status lock poisoned");
+    status
+        .reasons
+        .retain(|reason| !reason.starts_with("runtime bridge:"));
     match result {
         Ok(()) => status.helper_identity_ok = Some(true),
         Err(reason) => {
             status.helper_identity_ok = Some(false);
-            if !status.reasons.contains(&reason) {
-                status.reasons.push(reason);
-            }
+            status.reasons.push(format!("runtime bridge: {reason}"));
         }
     }
+    status.recompute_level();
+}
+
+pub fn record_helper_degraded(reason: String) {
+    let mut status = STATUS
+        .write()
+        .expect("runtime identity status lock poisoned");
+    status.helper_identity_ok = Some(true);
+    status
+        .reasons
+        .retain(|existing| !existing.starts_with("runtime bridge:"));
+    status.reasons.push(format!("runtime bridge: {reason}"));
     status.recompute_level();
 }
 
@@ -176,11 +192,9 @@ pub(crate) fn paths_eq(left: &Path, right: &Path) -> bool {
     }
 }
 
+#[cfg(target_os = "windows")]
 pub(crate) fn strip_zone_identifier(path: &Path) {
-    #[cfg(target_os = "windows")]
     windows::strip_zone_identifier(path);
-    #[cfg(not(target_os = "windows"))]
-    let _ = path;
 }
 
 #[tauri::command]

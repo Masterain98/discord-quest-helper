@@ -12,6 +12,8 @@ mod logger;
 mod models;
 mod platform_capabilities;
 mod quest_completer;
+#[cfg(unix)]
+mod runtime_bridge;
 mod runtime_identity;
 #[cfg(windows)]
 #[cfg_attr(debug_assertions, allow(dead_code))]
@@ -1808,7 +1810,6 @@ pub fn run() {
             discord_cdp_commands::list_running_discord_cdp_sessions,
             discord_cdp_commands::launch_discord_cdp,
             discord_cdp_commands::restart_discord_cdp,
-            install_discord_cdp_launcher,
             create_discord_cdp_launcher_shortcut,
             create_discord_debug_shortcut,
             start_discord_normal_restore_helper,
@@ -1943,7 +1944,11 @@ fn cleanup_local_resources_on_exit_sync() {
 
 #[tauri::command]
 async fn start_discord_normal_restore_helper(app_handle: tauri::AppHandle) -> Result<(), String> {
-    let launcher = install_discord_cdp_launcher_internal(&app_handle).await?;
+    let launcher = find_bundled_cdp_launcher(&app_handle)?;
+    #[cfg(unix)]
+    runtime_bridge::verify_bundled_for_execution(&launcher).inspect_err(|error| {
+        runtime_identity::record_helper_identity(Err(error.clone()));
+    })?;
     tauri::async_runtime::spawn_blocking(move || spawn_restore_helper(&launcher))
         .await
         .map_err(|error| format!("Discord restore helper task failed: {error}"))?
@@ -2189,13 +2194,6 @@ async fn retry_super_properties(cdp_port: Option<u16>) -> serde_json::Value {
 }
 
 #[tauri::command]
-async fn install_discord_cdp_launcher(app_handle: tauri::AppHandle) -> Result<String, String> {
-    install_discord_cdp_launcher_internal(&app_handle)
-        .await
-        .map(|path| path.to_string_lossy().to_string())
-}
-
-#[tauri::command]
 async fn create_discord_cdp_launcher_shortcut(
     app_handle: tauri::AppHandle,
     port: Option<u16>,
@@ -2224,96 +2222,102 @@ async fn create_discord_debug_shortcut(
 async fn install_discord_cdp_launcher_internal(
     app_handle: &tauri::AppHandle,
 ) -> Result<std::path::PathBuf, String> {
-    use std::fs;
+    let result = install_discord_cdp_launcher_impl(app_handle);
+    match &result {
+        Ok((_, Some(warning))) => runtime_identity::record_helper_degraded(warning.clone()),
+        Ok((_, None)) => runtime_identity::record_helper_identity(Ok(())),
+        Err(error) => runtime_identity::record_helper_identity(Err(error.clone())),
+    }
+    result.map(|(path, _)| path)
+}
 
+fn install_discord_cdp_launcher_impl(
+    app_handle: &tauri::AppHandle,
+) -> Result<(std::path::PathBuf, Option<String>), String> {
     let source = find_bundled_cdp_launcher(app_handle)?;
-    let target = stable_cdp_launcher_path()?;
 
-    let source_size = fs::metadata(&source).map(|m| m.len()).unwrap_or(0);
-    println!(
-        "[cdp-launcher-install] source='{}' ({} bytes), target='{}'",
-        source.display(),
-        source_size,
-        target.display()
-    );
-
-    if let Some(parent) = target.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create CDP launcher directory: {}", e))?;
+    #[cfg(unix)]
+    {
+        let data_root = unix_runtime_data_root()?;
+        let legacy = legacy_unix_cdp_launcher_path()?;
+        let report = runtime_bridge::install(&source, &data_root, &legacy)?;
+        Ok((report.executable, report.legacy_cleanup_warning))
     }
-
-    if source != target {
-        fs::copy(&source, &target).map_err(|e| {
-            format!(
-                "Failed to install CDP launcher to stable path from '{}' to '{}': {}",
-                source.display(),
-                target.display(),
-                e
-            )
-        })?;
-    }
-
-    runtime_identity::strip_zone_identifier(&target);
 
     #[cfg(windows)]
     {
+        use std::fs;
+        let target = stable_cdp_launcher_path()?;
+
+        let source_size = fs::metadata(&source).map(|m| m.len()).unwrap_or(0);
+        if cfg!(debug_assertions) {
+            println!("[Runtime] Installing bridge payload ({source_size} bytes)");
+        }
+
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create CDP launcher directory: {}", e))?;
+        }
+
+        if source != target {
+            fs::copy(&source, &target)
+                .map_err(|e| format!("Failed to install runtime bridge: {e}"))?;
+        }
+
+        runtime_identity::strip_zone_identifier(&target);
+
         if let (Some(file_name), Some(stem)) = (
             target.file_name().and_then(|n| n.to_str()),
             target.file_stem().and_then(|n| n.to_str()),
         ) {
             if let Err(err) = stealth_pe::rewrite_copy_identity(&target, file_name, stem) {
-                eprintln!("[cdp-launcher-install] Failed to rewrite version info: {err}");
+                eprintln!("[Runtime] Failed to rewrite bridge version info: {err}");
             }
         }
         if let Some(local_appdata) = std::env::var_os("LOCALAPPDATA") {
             migrate_legacy_windows_cdp_launcher_at(std::path::Path::new(&local_appdata), &target);
         }
+        Ok((target, None))
     }
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&target, fs::Permissions::from_mode(0o755))
-            .map_err(|e| format!("Failed to mark CDP launcher executable: {}", e))?;
-    }
-
-    Ok(target)
 }
 
+#[cfg(windows)]
 fn stable_cdp_launcher_path() -> Result<std::path::PathBuf, String> {
-    #[cfg(target_os = "windows")]
-    {
-        let local_appdata = std::env::var_os("LOCALAPPDATA")
-            .ok_or_else(|| "Could not get LOCALAPPDATA".to_string())?;
-        let pointer = windows_cdp_runtime_pointer_path()?;
-        Ok(resolve_windows_cdp_runtime_path(
-            std::path::Path::new(&local_appdata),
-            &pointer,
-        ))
-    }
+    let local_appdata =
+        std::env::var_os("LOCALAPPDATA").ok_or_else(|| "Could not get LOCALAPPDATA".to_string())?;
+    let pointer = windows_cdp_runtime_pointer_path()?;
+    Ok(resolve_windows_cdp_runtime_path(
+        std::path::Path::new(&local_appdata),
+        &pointer,
+    ))
+}
 
-    #[cfg(target_os = "macos")]
-    {
-        let home = std::env::var_os("HOME").ok_or_else(|| "Could not get HOME".to_string())?;
-        Ok(std::path::PathBuf::from(home)
-            .join("Library")
-            .join("Application Support")
-            .join("Discord Quest Helper")
-            .join("discord-cdp-launcher"))
-    }
+#[cfg(target_os = "macos")]
+fn unix_runtime_data_root() -> Result<std::path::PathBuf, String> {
+    let home = std::env::var_os("HOME").ok_or_else(|| "Could not get HOME".to_string())?;
+    Ok(std::path::PathBuf::from(home)
+        .join("Library")
+        .join("Application Support"))
+}
 
-    #[cfg(target_os = "linux")]
-    {
-        Ok(linux_xdg_data_home()?
-            .join("discord-quest-helper")
-            .join("bin")
-            .join("discord-cdp-launcher"))
-    }
+#[cfg(target_os = "linux")]
+fn unix_runtime_data_root() -> Result<std::path::PathBuf, String> {
+    linux_xdg_data_home()
+}
 
-    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
-    {
-        Err("Discord CDP launcher is only supported on Windows, macOS and Linux.".to_string())
-    }
+#[cfg(target_os = "macos")]
+fn legacy_unix_cdp_launcher_path() -> Result<std::path::PathBuf, String> {
+    Ok(unix_runtime_data_root()?
+        .join("Discord Quest Helper")
+        .join("discord-cdp-launcher"))
+}
+
+#[cfg(target_os = "linux")]
+fn legacy_unix_cdp_launcher_path() -> Result<std::path::PathBuf, String> {
+    Ok(unix_runtime_data_root()?
+        .join("discord-quest-helper")
+        .join("bin")
+        .join("discord-cdp-launcher"))
 }
 
 #[cfg(any(windows, test))]
@@ -2540,15 +2544,21 @@ fn find_bundled_cdp_launcher(app_handle: &tauri::AppHandle) -> Result<std::path:
         }
     }
 
-    let searched: Vec<String> = candidate_dirs
-        .iter()
-        .map(|d| d.display().to_string())
-        .collect();
-    Err(format!(
-        "Failed to find bundled CDP launcher (names: {:?}, searched: {:?}). \
-         Run `pnpm build:cdp-launcher` and try again.",
-        names, searched
-    ))
+    if cfg!(debug_assertions) {
+        let searched: Vec<String> = candidate_dirs
+            .iter()
+            .map(|directory| directory.display().to_string())
+            .collect();
+        Err(format!(
+            "Runtime bridge is unavailable (names: {names:?}, searched: {searched:?}). \
+             Run `pnpm build:cdp-launcher` and try again."
+        ))
+    } else {
+        Err(
+            "The packaged runtime bridge is unavailable or invalid. Reinstall the application."
+                .to_string(),
+        )
+    }
 }
 
 #[cfg(target_os = "windows")]

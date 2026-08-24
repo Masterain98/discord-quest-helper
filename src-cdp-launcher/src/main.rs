@@ -42,17 +42,21 @@ fn run(strings: &Strings) -> Result<i32, String> {
     }
 
     if options.restore_normal_all {
-        let result =
-            cdp_launch::restore_all_discord_to_normal().map_err(|error| error.to_string())?;
+        let result = cdp_launch::restore_all_discord_to_normal()
+            .map_err(|error| runtime_error("Restore", &error))?;
         if result.failures.is_empty() {
             return Ok(0);
         }
-        let details = result
-            .failures
-            .iter()
-            .map(|failure| format!("{}: {}", failure.channel.display_name(), failure.error))
-            .collect::<Vec<_>>()
-            .join("\n");
+        let details = if cfg!(debug_assertions) {
+            result
+                .failures
+                .iter()
+                .map(|failure| format!("{}: {}", failure.channel.display_name(), failure.error))
+                .collect::<Vec<_>>()
+                .join("\n")
+        } else {
+            "Please fully quit Discord and try again.".to_string()
+        };
         dialogs::show_error_dialog(
             strings.title,
             &format!("{}\n\n{details}", strings.restore_failure),
@@ -75,8 +79,8 @@ fn run(strings: &Strings) -> Result<i32, String> {
         return Ok(0);
     }
 
-    let running =
-        cdp_launch::is_discord_running(options.channel).map_err(|error| error.to_string())?;
+    let running = cdp_launch::is_discord_running(options.channel)
+        .map_err(|error| runtime_error("Status check", &error))?;
     if running && !options.restart {
         let want_restart = {
             #[cfg(any(target_os = "windows", target_os = "linux"))]
@@ -109,15 +113,22 @@ fn run(strings: &Strings) -> Result<i32, String> {
     } else {
         cdp_launch::launch_discord_with_cdp(request)
     }
-    .map_err(|error| error.to_string())?;
+    .map_err(|error| runtime_error("Launch", &error))?;
 
     println!(
-        "Launched Discord {} with CDP on port {}: {}",
+        "Launched Discord {} with CDP on port {}.",
         result.channel.display_name(),
-        result.port,
-        result.launched_path.display()
+        result.port
     );
     Ok(0)
+}
+
+fn runtime_error(action: &str, error: &impl std::fmt::Display) -> String {
+    if cfg!(debug_assertions) {
+        format!("{action} failed: {error}")
+    } else {
+        format!("{action} failed. Please fully quit Discord and try again.")
+    }
 }
 
 #[cfg(target_os = "linux")]
