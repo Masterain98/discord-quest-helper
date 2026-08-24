@@ -183,6 +183,11 @@ jobs:
             --output target/${{ matrix.cdp_target }}/release/bundle/identity-manifest-macos-smoke.json
           scripts/smoke-macos-runtime-identity.sh "$app" \
             target/${{ matrix.cdp_target }}/release/bundle/identity-smoke-macos.json
+          renamed_root="$(mktemp -d "$RUNNER_TEMP/runtime-identity-renamed.XXXXXX")"
+          renamed_app="$renamed_root/DQH.app"
+          cp -R "$app" "$renamed_app"
+          scripts/smoke-macos-runtime-identity.sh "$renamed_app" \
+            target/${{ matrix.cdp_target }}/release/bundle/identity-smoke-macos-renamed.json
 
       - name: Upload desktop identity manifests
         if: matrix.platform == 'ubuntu-22.04' || matrix.platform == 'macos-14'
