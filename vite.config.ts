@@ -14,8 +14,16 @@ export default defineConfig({
     port: 1420,
     strictPort: true,
     watch: {
-      // Tell Vite to ignore watching `src-tauri`
-      ignored: ['**/src-tauri/**', '**/src-runner/**']
+      // Rust builds replace executables under `target` while Vite is running.
+      // Watching those files on Windows can raise EBUSY and kill the dev server,
+      // leaving the still-open Tauri window on a blank page.
+      ignored: [
+        '**/target/**',
+        '**/src-tauri/**',
+        '**/src-runner/**',
+        '**/src-cdp-launcher/**',
+        '**/crates/**',
+      ]
     }
   },
   

@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { CheckCircle2, Gift, Layers3, ListTodo, PlayCircle, Sparkles } from 'lucide-vue-next'
 import type { QuestViewPreset } from '@/composables/useHomeQuestState'
 
 const { t } = useI18n()
@@ -17,27 +18,29 @@ const emit = defineEmits<{
 }>()
 
 const tabs = computed(() => [
-  { key: 'recommended' as QuestViewPreset, label: t('home.view_recommended') },
-  { key: 'to_accept' as QuestViewPreset, label: t('home.view_to_accept') },
-  { key: 'ready_to_run' as QuestViewPreset, label: t('home.view_ready_to_run') },
-  { key: 'ready_to_claim' as QuestViewPreset, label: t('home.view_ready_to_claim') },
-  { key: 'completed' as QuestViewPreset, label: t('home.view_completed') },
-  { key: 'all' as QuestViewPreset, label: t('home.view_all') },
+  { key: 'recommended' as QuestViewPreset, label: t('home.view_recommended'), icon: Sparkles, iconClass: 'text-violet-500' },
+  { key: 'to_accept' as QuestViewPreset, label: t('home.view_to_accept'), icon: ListTodo, iconClass: 'text-slate-500' },
+  { key: 'ready_to_run' as QuestViewPreset, label: t('home.view_ready_to_run'), icon: PlayCircle, iconClass: 'text-sky-500' },
+  { key: 'ready_to_claim' as QuestViewPreset, label: t('home.view_ready_to_claim'), icon: Gift, iconClass: 'text-emerald-500' },
+  { key: 'completed' as QuestViewPreset, label: t('home.view_completed'), icon: CheckCircle2, iconClass: 'text-green-500' },
+  { key: 'all' as QuestViewPreset, label: t('home.view_all'), icon: Layers3, iconClass: 'text-muted-foreground' },
 ])
 </script>
 
 <template>
-  <div class="flex min-w-0 flex-wrap gap-2">
+  <div class="grid min-w-0 grid-cols-3 gap-2 lg:grid-cols-[1.25fr_1fr_1.15fr_1.25fr_1fr_.65fr]">
     <Button
       v-for="tab in tabs"
       :key="tab.key"
       type="button"
       :variant="selected === tab.key ? 'secondary' : 'ghost'"
-      class="h-9 shrink-0 gap-2 px-3"
+      class="h-9 min-w-0 justify-start gap-1.5 px-2.5"
+      :title="tab.label"
       @click="emit('update:selected', tab.key)"
     >
-      {{ tab.label }}
-      <Badge variant="outline" class="h-5 min-w-5 justify-center px-1.5 text-[10px]">
+      <component :is="tab.icon" :class="['h-4 w-4 shrink-0', tab.iconClass]" aria-hidden="true" />
+      <span class="min-w-0 truncate">{{ tab.label }}</span>
+      <Badge variant="outline" class="ml-auto h-5 min-w-5 shrink-0 justify-center px-1.5 text-[10px]">
         {{ counts[tab.key] }}
       </Badge>
     </Button>

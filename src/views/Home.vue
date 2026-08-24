@@ -24,32 +24,14 @@
 
     <div class="space-y-6">
       <div class="space-y-6">
-        <div class="space-y-2">
-          <h2 class="text-2xl font-bold tracking-tight select-none">{{ t('home.dashboard_title') }}</h2>
-          <p class="text-sm text-muted-foreground">{{ t('home.dashboard_desc') }}</p>
+        <div class="flex min-w-0 items-center justify-between gap-4">
+          <div class="min-w-0 space-y-2">
+            <h2 class="text-2xl font-bold tracking-tight select-none">{{ t('home.dashboard_title') }}</h2>
+            <p class="text-sm text-muted-foreground text-pretty">{{ t('home.dashboard_desc') }}</p>
+          </div>
+
+          <OrbsNitroStatus class="shrink-0" />
         </div>
-
-        <HomeStatusSummary
-          :to-accept="questBuckets.toAccept.length"
-          :ready-to-run="questBuckets.readyToRun.length"
-          :running="runningCount"
-          :ready-to-claim="questBuckets.readyToClaim.length"
-          :attention-needed="questBuckets.attentionNeeded.length"
-          @select="selectPreset"
-        />
-
-        <NextBestActionPanel
-          :state="nextBestAction.state"
-          :title="nextBestAction.title"
-          :description="nextBestAction.description"
-          :primary-label="nextBestAction.primaryLabel"
-          :secondary-label="nextBestAction.secondaryLabel"
-          :primary-disabled="nextBestAction.primaryDisabled"
-          :secondary-disabled="nextBestAction.secondaryDisabled"
-          :busy="nextActionBusy"
-          @primary="handleNextPrimary"
-          @secondary="handleNextSecondary"
-        />
 
         <QuestViewTabs
           :selected="selectedPreset"
@@ -59,7 +41,6 @@
 
         <QuestListHeader
           v-model:query="searchQuery"
-          :result-count="filteredQuests.length"
           :active-filter-count="activeFilterCount"
           :show-filters="showFilters"
           :loading="questsStore.loading"
@@ -213,19 +194,6 @@
         </div>
 
         <template v-else>
-          <div
-            v-if="showPendingClaimBanner"
-            class="flex items-center justify-between gap-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3"
-          >
-            <div class="flex items-center gap-2 text-sm text-yellow-700 dark:text-yellow-300">
-              <Gift class="w-4 h-4 shrink-0" />
-              <span>{{ t('home.pending_claim_reminder', { count: pendingClaimCount }) }}</span>
-            </div>
-            <Button size="sm" variant="outline" class="shrink-0 border-yellow-500/40 text-yellow-700 hover:bg-yellow-500/10 dark:text-yellow-300" @click="showPendingClaimFilter">
-              {{ t('home.view_pending_claim') }}
-            </Button>
-          </div>
-
           <TransitionGroup name="quest-list" tag="div" class="space-y-3">
             <QuestCard
               v-for="quest in filteredQuests"
@@ -561,8 +529,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useQuestsStore } from '@/stores/quests'
 import { useVersionStore } from '@/stores/version'
-import HomeStatusSummary from '@/components/home/HomeStatusSummary.vue'
-import NextBestActionPanel, { type NextBestActionState } from '@/components/home/NextBestActionPanel.vue'
+import OrbsNitroStatus from '@/components/OrbsNitroStatus.vue'
 import QuestListHeader from '@/components/home/QuestListHeader.vue'
 import QuestViewTabs from '@/components/home/QuestViewTabs.vue'
 import QuestCard from '@/components/QuestCard.vue'
@@ -804,8 +771,6 @@ const { buckets: questBuckets, recommendedQuests } = useHomeQuestState(
   }
 )
 
-const runningCount = computed(() => (questBuckets.value.active ? 1 : 0) + questBuckets.value.queued.length)
-
 function selectPreset(preset: QuestViewPreset) {
   selectedPreset.value = preset
 }
@@ -842,10 +807,6 @@ async function refreshQuests() {
 }
 
 
-function formatBlockedUntil(value: string): string {
-  return new Date(value).toLocaleString()
-}
-
 // Determine quest type based on task_config
 function getQuestType(quest: Quest): 'video' | 'stream' | 'activity' {
   return getQuestKind(quest)
@@ -866,22 +827,6 @@ function getStartButtonText(quest: Quest): string {
 // Get reward type for a quest
 function getRewardType(quest: Quest): 'orbs' | 'avatar' | 'ingame' {
   return getQuestRewardCategory(quest)
-}
-
-// Quests completed but not yet claimed (across the full store, not filtered)
-// Excludes expired quests to align with filteredQuests visibility rules
-const pendingClaimCount = computed(() =>
-  questBuckets.value.readyToClaim.length
-)
-
-// Show banner only when pending-claim quests exist but aren't visible in the current filtered view
-const showPendingClaimBanner = computed(() => {
-  if (pendingClaimCount.value === 0) return false
-  return !filteredQuests.value.some(q => q.user_status?.completed_at && !q.user_status?.claimed_at)
-})
-
-function showPendingClaimFilter() {
-  selectedPreset.value = 'ready_to_claim'
 }
 
 function visibleQuest(quest: Quest): boolean {
@@ -1005,180 +950,6 @@ const enrolledAllCount = computed(() => {
 })
 
 const isBatchAccepting = computed(() => acceptingAllQuestIds.value.size > 0)
-
-type HomeNextAction = {
-  state: NextBestActionState
-  title: string
-  description: string
-  primaryLabel: string
-  secondaryLabel?: string
-  primaryDisabled?: boolean
-  secondaryDisabled?: boolean
-  targetQuest?: Quest
-}
-
-const recommendedRunQuest = computed(() => questBuckets.value.readyToRun[0] ?? null)
-const recommendedAcceptQuest = computed(() => questBuckets.value.toAccept[0] ?? null)
-const recommendedClaimQuest = computed(() => questBuckets.value.readyToClaim[0] ?? null)
-
-const nextBestAction = computed<HomeNextAction>(() => {
-  if (questsStore.error) {
-    return {
-      state: 'error',
-      title: t('home.next_error_title'),
-      description: questsStore.error,
-      primaryLabel: t('general.refresh'),
-    }
-  }
-
-  if (questBuckets.value.blockedUntil) {
-    return {
-      state: 'blocked',
-      title: t('home.next_blocked_title'),
-      description: t('home.next_blocked_desc', { time: formatBlockedUntil(questBuckets.value.blockedUntil) }),
-      primaryLabel: t('general.refresh'),
-      secondaryLabel: t('home.view_current_quests'),
-      primaryDisabled: questsStore.loading,
-    }
-  }
-
-  if (questBuckets.value.active) {
-    return {
-      state: 'active',
-      title: t('home.next_active_title', { name: questBuckets.value.active.config.messages.quest_name }),
-      description: t('home.next_active_desc'),
-      primaryLabel: t('home.stop'),
-      primaryDisabled: questsStore.stopping,
-      targetQuest: questBuckets.value.active,
-    }
-  }
-
-  if (questsStore.isQueueRunning || questBuckets.value.queued.length > 0) {
-    return {
-      state: 'queue',
-      title: t('home.next_queue_title', { count: questBuckets.value.queued.length }),
-      description: t('home.next_queue_desc'),
-      primaryLabel: t('home.stop_queue'),
-    }
-  }
-
-  if (recommendedClaimQuest.value) {
-    return {
-      state: 'claim',
-      title: t('home.next_claim_title', { count: questBuckets.value.readyToClaim.length }),
-      description: t('home.next_claim_desc', { name: recommendedClaimQuest.value.config.messages.quest_name }),
-      primaryLabel: t('home.claim_reward'),
-      secondaryLabel: t('home.view_all_ready_to_claim'),
-      primaryDisabled: claimingQuest.value === recommendedClaimQuest.value.id,
-      targetQuest: recommendedClaimQuest.value,
-    }
-  }
-
-  if (recommendedRunQuest.value) {
-    return {
-      state: 'run',
-      title: t('home.next_run_title', { count: questBuckets.value.readyToRun.length }),
-      description: t('home.next_run_desc', { name: recommendedRunQuest.value.config.messages.quest_name }),
-      primaryLabel: getStartButtonText(recommendedRunQuest.value),
-      secondaryLabel: enrolledAllCount.value > 1 ? t('home.complete_all_recommended') : t('home.view_all_ready'),
-      primaryDisabled: questsStore.activeQuestId !== null || startingQuestId.value !== null || isBatchAccepting.value,
-      targetQuest: recommendedRunQuest.value,
-    }
-  }
-
-  if (recommendedAcceptQuest.value) {
-    return {
-      state: 'accept',
-      title: t('home.next_accept_title', { count: questBuckets.value.toAccept.length }),
-      description: t('home.next_accept_desc', { name: recommendedAcceptQuest.value.config.messages.quest_name }),
-      primaryLabel: questBuckets.value.toAccept.length > 1 ? t('home.accept_all_quests') : t('home.accept_quest'),
-      primaryDisabled: isBatchAccepting.value || acceptingQuest.value === recommendedAcceptQuest.value.id,
-      targetQuest: recommendedAcceptQuest.value,
-    }
-  }
-
-  if (questsStore.quests.length === 0) {
-    return {
-      state: 'empty',
-      title: t('home.next_empty_title'),
-      description: t('home.next_empty_desc'),
-      primaryLabel: t('general.refresh'),
-      primaryDisabled: questsStore.loading,
-    }
-  }
-
-  return {
-    state: 'done',
-    title: t('home.next_done_title'),
-    description: t('home.next_done_desc'),
-    primaryLabel: t('general.refresh'),
-    secondaryLabel: selectedPreset.value === 'all' ? undefined : t('home.view_all'),
-    primaryDisabled: questsStore.loading,
-  }
-})
-
-const nextActionBusy = computed(() => {
-  const quest = nextBestAction.value.targetQuest
-  if (!quest) return questsStore.loading || questsStore.stopping
-  return startingQuestId.value === quest.id ||
-    acceptingQuest.value === quest.id ||
-    acceptingAllQuestIds.value.has(quest.id) ||
-    claimingQuest.value === quest.id ||
-    questsStore.stopping
-})
-
-function handleNextPrimary() {
-  const action = nextBestAction.value
-
-  if (action.state === 'active') {
-    questsStore.stop()
-    return
-  }
-
-  if (action.state === 'queue') {
-    questsStore.clearQueue()
-    return
-  }
-
-  if (action.state === 'claim' && action.targetQuest) {
-    claimReward(action.targetQuest)
-    return
-  }
-
-  if (action.state === 'run' && action.targetQuest) {
-    startQuest(action.targetQuest)
-    return
-  }
-
-  if (action.state === 'accept') {
-    if (questBuckets.value.toAccept.length > 1) handleAcceptAll()
-    else if (action.targetQuest) acceptQuest(action.targetQuest)
-    return
-  }
-
-  refreshQuests()
-}
-
-function handleNextSecondary() {
-  const action = nextBestAction.value
-  if (action.state === 'claim') {
-    selectedPreset.value = 'ready_to_claim'
-    return
-  }
-
-  if (action.state === 'run') {
-    if (enrolledAllCount.value > 1) handleCompleteAllTasks()
-    else selectedPreset.value = 'ready_to_run'
-    return
-  }
-
-  if (action.state === 'accept') {
-    selectedPreset.value = 'to_accept'
-    return
-  }
-
-  selectedPreset.value = 'all'
-}
 
 const emptyStateText = computed(() => {
   if (hasActiveFilters.value) return t('home.empty_filtered')
