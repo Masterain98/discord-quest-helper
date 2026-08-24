@@ -38,6 +38,14 @@ test('command summaries never retain credentials or raw arguments', () => {
   assert.equal(JSON.stringify(summary).includes('session-secret'), false);
 });
 
+test('argv0 summaries never retain a caller-controlled credential', () => {
+  const argv0 = '/opt/meridian?authorization=argv0-secret';
+  const serialized = JSON.stringify({ argv0: commandSummary(argv0) });
+
+  assert.equal(serialized.includes('argv0-secret'), false);
+  assert.equal(JSON.parse(serialized).argv0.containsProductToken, false);
+});
+
 test('fingerprint summary never includes the raw fingerprint', () => {
   const directory = mkdtempSync(join(tmpdir(), 'identity-audit-'));
   const snapshot = join(directory, 'snapshot.json');

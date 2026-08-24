@@ -1,4 +1,4 @@
-const SENSITIVE_KEY = /^(?:authorization|token|cookie|user_?id|raw)$/i
+const SENSITIVE_KEY = /^(?:authorization|token|cookie|user_?id|raw|argv0)$/i
 
 function redactHomePath(value: string): string {
   return value

@@ -161,7 +161,9 @@ function processAudit(pid, platform) {
     executablePath: inspected(executable),
     executableBasename: inspected(executable ? basename(executable) : null),
     comm: inspected(comm),
-    argv0: inspected(argv0),
+    // argv[0] is caller-controlled on Linux and can contain credentials just
+    // like the remaining command line. Preserve only the policy signal.
+    argv0: commandSummary(argv0),
     // Command lines can contain credentials passed by another process. Keep
     // only the identity-policy result, never the raw arguments.
     command: commandSummary(command),

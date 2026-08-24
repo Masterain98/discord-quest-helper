@@ -222,9 +222,10 @@ else
     tail -100 "$smoke_root/protocol.log" >&2
     exit 1
   }
-  if grep 'set_app_id' "$smoke_root/protocol.log" | grep -vq '"meridian"'; then
+  app_id_lines="$(grep 'set_app_id' "$smoke_root/protocol.log" || true)"
+  if grep -vq '"meridian"' <<< "$app_id_lines"; then
     echo "Wayland protocol log contains an unexpected app_id." >&2
-    grep 'set_app_id' "$smoke_root/protocol.log" >&2
+    printf '%s\n' "$app_id_lines" >&2
     exit 1
   fi
   printf '{\n  "platform": "linux",\n  "artifact": "%s",\n  "session": "wayland",\n  "launchPid": %s,\n  "runtimePid": %s,\n  "process": "%s",\n  "comm": "%s",\n  "executableBasename": "%s",\n  "appId": "%s",\n  "appImageResidualFields": %s\n}\n' \

@@ -46,6 +46,7 @@ test('configured artifact identities satisfy the stable naming policy', () => {
 test('product names and random-looking hex names fail internal validation', () => {
   assert.equal(validateInternalName('discord-quest-helper', 'discord-quest-helper'), false);
   assert.equal(validateInternalName('abcdef123456', 'abcdef123456'), false);
+  assert.equal(validateInternalName('deadbeef', 'deadbeef'), false);
 });
 
 test('public identity remains allowed outside internal executable metadata', () => {

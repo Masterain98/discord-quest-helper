@@ -10,6 +10,7 @@ describe('runtime identity audit export', () => {
         cookie: 'secret',
         userId: '123',
         raw: 'local-only',
+        argv0: '--authorization argv0-secret',
         safe: '/home/bob/.local/share/blueorbit',
       },
     })
