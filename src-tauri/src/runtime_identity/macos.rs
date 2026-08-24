@@ -4,7 +4,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-const PUBLIC_APP_BUNDLE_NAME: &str = "Discord Quest Helper.app";
+const PUBLIC_APP_DISPLAY_NAME: &str = "Discord Quest Helper";
 const LEGACY_DIR_HEX_LEN: usize = 16;
 const LEGACY_EXE_HEX_LEN: usize = 12;
 const BUNDLE_IDENTIFIER: &str = "com.masterain.discord-quest-helper";
@@ -126,9 +126,7 @@ pub(crate) fn verify_helper_identity_for_current_app(helper: &Path) -> Result<()
 
 pub(super) fn initial_status() -> RuntimeIdentityStatus {
     let cleanup_reasons = cleanup_legacy_temp_runtimes();
-    if cfg!(debug_assertions)
-        || std::env::var_os("RUNTIME_IDENTITY_MODE").as_deref() == Some(std::ffi::OsStr::new("off"))
-    {
+    if cfg!(debug_assertions) {
         let mut status = RuntimeIdentityStatus::disabled(
             "macos",
             "runtime identity minimization is disabled for this development process",
@@ -140,18 +138,24 @@ pub(super) fn initial_status() -> RuntimeIdentityStatus {
     let executable = std::env::current_exe().ok();
     let mut status = status_for_executable(executable.as_deref());
     match executable.as_deref().and_then(app_bundle_for_executable) {
-        Some(bundle) => match verify_bundle_signature(&bundle) {
-            Ok(()) => status.package_signature_ok = Some(true),
-            Err(reason) => {
-                status.package_signature_ok = Some(false);
+        Some(bundle) => {
+            if let Err(reason) = verify_bundle_metadata(&bundle) {
+                status.main_executable_ok = false;
                 status.reasons.push(reason);
             }
-        },
+            match verify_bundle_signature(&bundle) {
+                Ok(()) => status.package_signature_ok = Some(true),
+                Err(reason) => {
+                    status.package_signature_ok = Some(false);
+                    status.reasons.push(reason);
+                }
+            }
+        }
         None => {
             status.package_signature_ok = Some(false);
             status
                 .reasons
-                .push("release process is not running from the expected application bundle".into());
+                .push("release process is not running from an application bundle".into());
         }
     }
     status.reasons.extend(cleanup_reasons);
@@ -169,7 +173,45 @@ pub(crate) fn app_bundle_for_executable(executable: &Path) -> Option<PathBuf> {
         return None;
     }
     let app = contents.parent()?;
-    (app.file_name()?.to_str()? == PUBLIC_APP_BUNDLE_NAME).then(|| app.to_path_buf())
+    (app.extension().is_some_and(|extension| extension == "app")).then(|| app.to_path_buf())
+}
+
+fn plist_value(info_plist: &Path, key: &str) -> Option<String> {
+    let output = Command::new("/usr/libexec/PlistBuddy")
+        .args(["-c", &format!("Print :{key}")])
+        .arg(info_plist)
+        .output()
+        .ok()?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+fn validate_bundle_metadata(
+    executable: Option<&str>,
+    identifier: Option<&str>,
+    display_name: Option<&str>,
+) -> Result<(), String> {
+    if executable != Some(RUNTIME_MAIN_NAME) {
+        return Err("CFBundleExecutable does not match the configured runtime identity".into());
+    }
+    if identifier != Some(BUNDLE_IDENTIFIER) {
+        return Err("CFBundleIdentifier does not match the public application identity".into());
+    }
+    if display_name != Some(PUBLIC_APP_DISPLAY_NAME) {
+        return Err("CFBundleDisplayName does not match the public application identity".into());
+    }
+    Ok(())
+}
+
+fn verify_bundle_metadata(bundle: &Path) -> Result<(), String> {
+    let info = bundle.join("Contents/Info.plist");
+    validate_bundle_metadata(
+        plist_value(&info, "CFBundleExecutable").as_deref(),
+        plist_value(&info, "CFBundleIdentifier").as_deref(),
+        plist_value(&info, "CFBundleDisplayName").as_deref(),
+    )
 }
 
 fn verify_bundle_signature(bundle: &Path) -> Result<(), String> {
@@ -404,13 +446,38 @@ mod tests {
     }
 
     #[test]
-    fn bundle_path_requires_the_complete_public_app_bundle() {
+    fn bundle_path_accepts_a_renamed_app_but_rejects_a_bare_executable() {
         let bundled = Path::new("/Applications/Discord Quest Helper.app/Contents/MacOS/meridian");
         assert_eq!(
             app_bundle_for_executable(bundled),
             Some(PathBuf::from("/Applications/Discord Quest Helper.app"))
         );
+        let renamed = Path::new("/Applications/DQH.app/Contents/MacOS/meridian");
+        assert_eq!(
+            app_bundle_for_executable(renamed),
+            Some(PathBuf::from("/Applications/DQH.app"))
+        );
         assert!(app_bundle_for_executable(Path::new("/tmp/meridian")).is_none());
+        assert!(
+            app_bundle_for_executable(Path::new("/Applications/DQH/Contents/MacOS/meridian"))
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn renamed_bundle_still_requires_the_canonical_internal_metadata() {
+        assert!(validate_bundle_metadata(
+            Some("meridian"),
+            Some("com.masterain.discord-quest-helper"),
+            Some("Discord Quest Helper")
+        )
+        .is_ok());
+        assert!(validate_bundle_metadata(
+            Some("meridian"),
+            Some("com.example.renamed"),
+            Some("Discord Quest Helper")
+        )
+        .is_err());
     }
 
     #[test]

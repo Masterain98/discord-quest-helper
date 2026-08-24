@@ -5,9 +5,7 @@ use std::ffi::CString;
 use std::path::Path;
 
 pub(super) fn initial_status() -> RuntimeIdentityStatus {
-    if cfg!(debug_assertions)
-        || std::env::var_os("RUNTIME_IDENTITY_MODE").as_deref() == Some(std::ffi::OsStr::new("off"))
-    {
+    if cfg!(debug_assertions) {
         return RuntimeIdentityStatus::disabled(
             "linux",
             "runtime identity minimization is disabled for this development process",

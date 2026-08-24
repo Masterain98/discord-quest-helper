@@ -135,7 +135,10 @@ fn runtime_error(action: &str, error: &impl std::fmt::Display) -> String {
 fn apply_runtime_process_name() -> Result<(), String> {
     use std::ffi::CString;
 
-    if std::env::var_os("RUNTIME_IDENTITY_MODE").as_deref() == Some(std::ffi::OsStr::new("off")) {
+    if runtime_identity_override_enabled(
+        cfg!(debug_assertions),
+        std::env::var_os("RUNTIME_IDENTITY_MODE").as_deref(),
+    ) {
         return Ok(());
     }
     if !valid_runtime_process_name(RUNTIME_PROCESS_NAME) {
@@ -156,6 +159,11 @@ fn apply_runtime_process_name() -> Result<(), String> {
     }
 }
 
+#[cfg(any(target_os = "linux", test))]
+fn runtime_identity_override_enabled(debug_build: bool, mode: Option<&std::ffi::OsStr>) -> bool {
+    debug_build && mode == Some(std::ffi::OsStr::new("off"))
+}
+
 #[cfg(not(target_os = "linux"))]
 fn apply_runtime_process_name() -> Result<(), String> {
     Ok(())
@@ -169,5 +177,12 @@ mod runtime_identity_tests {
     fn launcher_process_name_fits_linux_comm_without_truncation() {
         assert!(valid_runtime_process_name(RUNTIME_PROCESS_NAME));
         assert!(RUNTIME_PROCESS_NAME.len() <= 15);
+    }
+
+    #[test]
+    fn release_build_ignores_runtime_identity_off_environment() {
+        let off = std::ffi::OsStr::new("off");
+        assert!(runtime_identity_override_enabled(true, Some(off)));
+        assert!(!runtime_identity_override_enabled(false, Some(off)));
     }
 }

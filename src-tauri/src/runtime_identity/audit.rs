@@ -97,9 +97,7 @@ fn main_executable_audit() -> ExecutableAudit {
     let path_text = path.to_string_lossy();
     let path_has_product_token = super::contains_product_token(&path_text);
     #[cfg(target_os = "macos")]
-    let unexpected_path_product_token = super::contains_product_token(
-        &path_text.replace("Discord Quest Helper.app", "PUBLIC_APP.app"),
-    );
+    let unexpected_path_product_token = unexpected_macos_path_product_token(&path);
     #[cfg(not(target_os = "macos"))]
     let unexpected_path_product_token = path_has_product_token;
     ExecutableAudit {
@@ -108,6 +106,21 @@ fn main_executable_audit() -> ExecutableAudit {
         path_has_product_token,
         unexpected_path_product_token,
     }
+}
+
+#[cfg(target_os = "macos")]
+fn unexpected_macos_path_product_token(path: &Path) -> bool {
+    let Some(bundle) = super::macos::app_bundle_for_executable(path) else {
+        return super::contains_product_token(&path.to_string_lossy());
+    };
+    let Some(parent) = bundle.parent() else {
+        return true;
+    };
+    let Ok(relative) = path.strip_prefix(&bundle) else {
+        return true;
+    };
+    let normalized = parent.join("PUBLIC_APP.app").join(relative);
+    super::contains_product_token(&normalized.to_string_lossy())
 }
 
 fn sha256_file(path: &Path) -> Option<String> {
@@ -700,6 +713,17 @@ mod tests {
                 "$HOME/private/file"
             );
         }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn renamed_macos_bundle_name_is_not_an_unexpected_runtime_token() {
+        assert!(!unexpected_macos_path_product_token(Path::new(
+            "/Applications/DQH.app/Contents/MacOS/meridian"
+        )));
+        assert!(unexpected_macos_path_product_token(Path::new(
+            "/opt/discord-quest-helper/DQH.app/Contents/MacOS/meridian"
+        )));
     }
 
     #[test]
