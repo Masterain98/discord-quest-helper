@@ -13,6 +13,7 @@ fi
 
 app="$1"
 while IFS= read -r executable; do
+  /usr/bin/file -b "$executable" | grep -q 'Mach-O' || continue
   codesign --force --options runtime --sign - "$executable"
 done < <(find "$app/Contents" -type f -perm +111 -print)
 

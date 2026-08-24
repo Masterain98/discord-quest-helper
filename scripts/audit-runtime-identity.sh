@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# shellcheck disable=SC1007 # CDPATH applies only to this intentional cd invocation.
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 
 if ! command -v node >/dev/null 2>&1; then

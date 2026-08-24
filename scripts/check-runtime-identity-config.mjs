@@ -5,13 +5,6 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const EXPECTED = {
-  main: 'meridian',
-  bridge: 'waybridge',
-  runner: 'stagecraft',
-  publicMain: 'discord-quest-helper',
-};
-
 function json(path) {
   return JSON.parse(readFileSync(join(ROOT, path), 'utf8'));
 }
@@ -26,6 +19,13 @@ function requireMatch(condition, message, failures) {
 
 export function validateConfiguration() {
   const failures = [];
+  const identity = json('scripts/runtime-identity-tokens.json').identity;
+  const expected = {
+    main: identity.mainBinary,
+    bridge: identity.bridgeBinary,
+    runner: identity.runnerBuildBinary,
+    publicMain: identity.publicBinary,
+  };
   const common = json('src-tauri/tauri.conf.json');
   const linux = json('src-tauri/tauri.linux.conf.json');
   const macos = json('src-tauri/tauri.macos.conf.json');
@@ -33,24 +33,24 @@ export function validateConfiguration() {
   const runnerCargo = text('src-runner/Cargo.toml');
   const workspaceCargo = text('Cargo.toml');
 
-  requireMatch(common.mainBinaryName === EXPECTED.publicMain,
+  requireMatch(common.mainBinaryName === expected.publicMain,
     'common/Windows mainBinaryName must retain the public executable name', failures);
-  requireMatch(linux.mainBinaryName === EXPECTED.main,
-    `Linux mainBinaryName must be ${EXPECTED.main}`, failures);
+  requireMatch(linux.mainBinaryName === expected.main,
+    `Linux mainBinaryName must be ${expected.main}`, failures);
   requireMatch(linux.app?.enableGTKAppId === false,
     'Linux must not expose the product identifier as the GTK app ID', failures);
   requireMatch(linux.bundle?.linux?.deb?.desktopTemplate === 'linux/discord-quest-helper.desktop.hbs',
     'Linux DEB must use the audited desktop entry template', failures);
-  requireMatch(macos.mainBinaryName === EXPECTED.main,
-    `macOS mainBinaryName must be ${EXPECTED.main}`, failures);
+  requireMatch(macos.mainBinaryName === expected.main,
+    `macOS mainBinaryName must be ${expected.main}`, failures);
   requireMatch(macos.bundle?.macOS?.hardenedRuntime === true,
     'macOS hardenedRuntime must be enabled', failures);
-  requireMatch(JSON.stringify(common.bundle?.externalBin) === JSON.stringify([`binaries/${EXPECTED.bridge}`]),
-    `externalBin must contain only binaries/${EXPECTED.bridge}`, failures);
-  requireMatch(new RegExp(`\\[\\[bin\\]\\][\\s\\S]*?name\\s*=\\s*"${EXPECTED.bridge}"`).test(launcherCargo),
-    `launcher binary must be named ${EXPECTED.bridge}`, failures);
-  requireMatch(new RegExp(`\\[\\[bin\\]\\][\\s\\S]*?name\\s*=\\s*"${EXPECTED.runner}"`).test(runnerCargo),
-    `runner build binary must be named ${EXPECTED.runner}`, failures);
+  requireMatch(JSON.stringify(common.bundle?.externalBin) === JSON.stringify([`binaries/${expected.bridge}`]),
+    `externalBin must contain only binaries/${expected.bridge}`, failures);
+  requireMatch(new RegExp(`\\[\\[bin\\]\\][\\s\\S]*?name\\s*=\\s*"${expected.bridge}"`).test(launcherCargo),
+    `launcher binary must be named ${expected.bridge}`, failures);
+  requireMatch(new RegExp(`\\[\\[bin\\]\\][\\s\\S]*?name\\s*=\\s*"${expected.runner}"`).test(runnerCargo),
+    `runner build binary must be named ${expected.runner}`, failures);
   requireMatch(/\[profile\.release\][\s\S]*?strip\s*=\s*"symbols"/.test(workspaceCargo),
     'release profile must strip public symbols', failures);
   requireMatch(/\[profile\.release\][\s\S]*?split-debuginfo\s*=\s*"packed"/.test(workspaceCargo),

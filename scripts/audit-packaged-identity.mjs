@@ -17,13 +17,14 @@ import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
-const TOKENS = JSON.parse(readFileSync(join(SCRIPT_DIR, 'runtime-identity-tokens.json'), 'utf8')).tokens;
+const POLICY = JSON.parse(readFileSync(join(SCRIPT_DIR, 'runtime-identity-tokens.json'), 'utf8'));
+const TOKENS = POLICY.tokens;
 
 export const IDENTITY = Object.freeze({
-  publicName: 'Discord Quest Helper',
-  mainBinary: 'meridian',
-  bridgeBinary: 'waybridge',
-  runnerBuildBinary: 'stagecraft',
+  publicName: POLICY.identity.publicName,
+  mainBinary: POLICY.identity.mainBinary,
+  bridgeBinary: POLICY.identity.bridgeBinary,
+  runnerBuildBinary: POLICY.identity.runnerBuildBinary,
 });
 
 function usage() {
@@ -206,7 +207,7 @@ function auditMacApp(app, allowAdHoc) {
   if (plistValue(app, 'CFBundleName') !== IDENTITY.publicName) {
     violations.push(`CFBundleName must remain ${IDENTITY.publicName}`);
   }
-  if (plistValue(app, 'CFBundleIdentifier') !== 'com.masterain.discord-quest-helper') {
+  if (plistValue(app, 'CFBundleIdentifier') !== POLICY.identity.bundleIdentifier) {
     violations.push('CFBundleIdentifier changed without an approved data/keychain migration');
   }
   if (basename(app) !== `${IDENTITY.publicName}.app`) violations.push('public app bundle name changed');

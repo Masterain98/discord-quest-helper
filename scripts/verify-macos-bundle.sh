@@ -17,6 +17,7 @@ require_notarization="${REQUIRE_NOTARIZATION:-0}"
 codesign --verify --deep --strict --verbose=4 "$app"
 
 while IFS= read -r executable; do
+  /usr/bin/file -b "$executable" | grep -q 'Mach-O' || continue
   codesign --verify --strict --verbose=4 "$executable"
 done < <(find "$app/Contents" -type f -perm +111 -print)
 

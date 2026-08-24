@@ -88,7 +88,14 @@ if [ "$SKIP_TAURI_BUILD" = false ]; then
     BRIDGE_PATH="$SRC_TAURI/binaries/waybridge-$TARGET_TRIPLE"
     RUNNER_PATH="$SRC_TAURI/data/stagecraft"
     echo -e "${YELLOW}[3/5] Signing runtime payloads before bundling...${NC}"
-    "$PROJECT_ROOT/scripts/sign-macos-runtime.sh" "$BRIDGE_PATH" "$RUNNER_PATH"
+    runtime_payloads=("$BRIDGE_PATH")
+    if [ -f "$RUNNER_PATH" ]; then
+        runtime_payloads+=("$RUNNER_PATH")
+    elif [ "$SKIP_RUNNER_BUILD" = false ]; then
+        echo -e "${RED}Runner payload was not produced: $RUNNER_PATH${NC}" >&2
+        exit 1
+    fi
+    "$PROJECT_ROOT/scripts/sign-macos-runtime.sh" "${runtime_payloads[@]}"
 
     echo -e "${YELLOW}[4/5] Building Tauri application...${NC}"
     pnpm tauri build
@@ -116,7 +123,11 @@ if [ "$SKIP_TAURI_BUILD" = false ]; then
     fi
     node "$PROJECT_ROOT/scripts/audit-packaged-identity.mjs" "${audit_args[@]}"
 
-    if [ "${REQUIRE_NOTARIZATION:-0}" = "1" ] && [ -n "$DMG_FILE" ]; then
+    if [ "${REQUIRE_NOTARIZATION:-0}" = "1" ]; then
+        if [ -z "$DMG_FILE" ]; then
+            echo -e "${RED}Notarization is required but no DMG was produced.${NC}" >&2
+            exit 1
+        fi
         codesign --verify --verbose=4 "$DMG_FILE"
         xcrun stapler validate "$DMG_FILE"
     fi

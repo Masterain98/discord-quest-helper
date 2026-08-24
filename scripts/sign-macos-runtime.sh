@@ -11,7 +11,12 @@ if [[ $# -eq 0 ]]; then
   exit 2
 fi
 
-identity="${APPLE_SIGNING_IDENTITY:--}"
+identity="${APPLE_SIGNING_IDENTITY:-}"
+if [[ "${REQUIRE_NOTARIZATION:-0}" == "1" && ( -z "$identity" || "$identity" == "-" ) ]]; then
+  echo "Notarized builds require APPLE_SIGNING_IDENTITY to name a Developer ID identity." >&2
+  exit 1
+fi
+[[ -n "$identity" ]] || identity="-"
 for executable in "$@"; do
   if [[ ! -f "$executable" || ! -x "$executable" ]]; then
     echo "Runtime executable is missing or not executable: $executable" >&2

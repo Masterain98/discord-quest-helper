@@ -182,16 +182,26 @@ jobs:
           certificate="$RUNNER_TEMP/developer-id.p12"
           api_key_path="$RUNNER_TEMP/AuthKey_${API_KEY}.p8"
           keychain="$RUNNER_TEMP/runtime-signing.keychain-db"
+          original_keychains="$RUNNER_TEMP/runtime-signing-original-keychains.txt"
           keychain_password="$(uuidgen)"
           printf '%s' "$CERTIFICATE_BASE64" | base64 -D > "$certificate"
           printf '%s' "$API_PRIVATE_KEY_BASE64" | base64 -D > "$api_key_path"
+
+          security list-keychains -d user > "$original_keychains"
+          existing_keychains=()
+          while IFS= read -r existing; do
+            existing="${existing#"${existing%%[![:space:]]*}"}"
+            existing="${existing#\"}"
+            existing="${existing%\"}"
+            [ -n "$existing" ] && existing_keychains+=("$existing")
+          done < "$original_keychains"
 
           security create-keychain -p "$keychain_password" "$keychain"
           security set-keychain-settings -lut 21600 "$keychain"
           security unlock-keychain -p "$keychain_password" "$keychain"
           security import "$certificate" -k "$keychain" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
           security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain"
-          security list-keychains -d user -s "$keychain"
+          security list-keychains -d user -s "$keychain" "${existing_keychains[@]}"
 
           {
             echo "APPLE_SIGNING_IDENTITY=$SIGNING_IDENTITY"
@@ -310,11 +320,23 @@ jobs:
             target/release/bundle/deb/*.deb
             target/release/bundle/appimage/*.AppImage
             target/release/bundle/identity-manifest-linux-*.json
+            target/release/bundle/identity-smoke-linux-*.json
 
       - name: Remove temporary macOS signing keychain
         if: always() && matrix.platform == 'macos-14'
         shell: bash
         run: |
+          original_keychains="$RUNNER_TEMP/runtime-signing-original-keychains.txt"
+          if [ -f "$original_keychains" ]; then
+            existing_keychains=()
+            while IFS= read -r existing; do
+              existing="${existing#"${existing%%[![:space:]]*}"}"
+              existing="${existing#\"}"
+              existing="${existing%\"}"
+              [ -n "$existing" ] && existing_keychains+=("$existing")
+            done < "$original_keychains"
+            security list-keychains -d user -s "${existing_keychains[@]}"
+          fi
           if [ -n "${APPLE_KEYCHAIN_PATH:-}" ] && [ -f "$APPLE_KEYCHAIN_PATH" ]; then
             security delete-keychain "$APPLE_KEYCHAIN_PATH"
           fi

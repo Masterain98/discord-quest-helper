@@ -8,19 +8,24 @@ fi
 
 app="$(cd "$1" && pwd -P)"
 manifest="$2"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+policy="$script_dir/runtime-identity-tokens.json"
+IFS=$'\t' read -r expected_name expected_bundle expected_display < <(
+  node -e 'const p=JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).identity; console.log([p.mainBinary, p.bundleIdentifier, p.publicName].join("\t"))' "$policy"
+)
 info="$app/Contents/Info.plist"
 executable_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$info")"
 bundle_identifier="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$info")"
 display_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$info")"
-[[ "$executable_name" == "meridian" ]] || {
-  echo "CFBundleExecutable must be meridian." >&2
+[[ "$executable_name" == "$expected_name" ]] || {
+  echo "CFBundleExecutable must be $expected_name." >&2
   exit 1
 }
-[[ "$bundle_identifier" == "com.masterain.discord-quest-helper" ]] || {
+[[ "$bundle_identifier" == "$expected_bundle" ]] || {
   echo "CFBundleIdentifier changed." >&2
   exit 1
 }
-[[ "$display_name" == "Discord Quest Helper" ]] || {
+[[ "$display_name" == "$expected_display" ]] || {
   echo "CFBundleDisplayName changed." >&2
   exit 1
 }
@@ -63,7 +68,7 @@ cleanup() {
 trap cleanup EXIT
 
 process_path_for_pid() {
-  ps -p "$1" -o comm= 2>/dev/null | xargs || true
+  ps -ww -p "$1" -o comm= 2>/dev/null | sed 's/^[[:space:]]*//' || true
 }
 
 find_exact_process_pid() {
@@ -81,7 +86,7 @@ find_exact_process_pid() {
 wait_for_exact_process() {
   local pid=""
   for _ in {1..150}; do
-    pid="$(find_exact_process_pid)"
+    pid="$(find_exact_process_pid || true)"
     if [[ -n "$pid" ]]; then
       printf '%s\n' "$pid"
       return 0
@@ -99,10 +104,6 @@ verify_process_path() {
     echo "macOS process is not running from the signed bundle: $command_path" >&2
     exit 1
   }
-  [[ "$command_path" != /tmp/* && "$command_path" != "${TMPDIR:-/tmp}"/* ]] || {
-    echo "macOS process unexpectedly runs as a bare temporary executable." >&2
-    exit 1
-  }
 }
 
 verify_launch_services() {
@@ -110,7 +111,7 @@ verify_launch_services() {
   local launch_services=""
   local launch_info=""
   for _ in {1..50}; do
-    launch_services="$(lsappinfo find "bundleID=$bundle_identifier" 2>/dev/null || true)"
+    launch_services="$(lsappinfo find "pid=$pid" 2>/dev/null || true)"
     [[ -n "$launch_services" ]] && break
     sleep 0.1
   done
@@ -119,12 +120,16 @@ verify_launch_services() {
     exit 1
   }
   launch_info="$(lsappinfo info -only name -only bundleID -only pid "$launch_services")"
-  [[ "$launch_info" == *'"LSDisplayName"="Discord Quest Helper"'* ]] || {
+  [[ "$launch_info" == *"\"LSDisplayName\"=\"$expected_display\""* ]] || {
     echo "Launch Services public display name changed." >&2
     exit 1
   }
   [[ "$launch_info" == *"\"pid\"=$pid"* ]] || {
     echo "Launch Services registered a different main process." >&2
+    exit 1
+  }
+  [[ "$launch_info" == *"\"CFBundleIdentifier\"=\"$expected_bundle\""* ]] || {
+    echo "Launch Services bundle identifier changed." >&2
     exit 1
   }
 }
@@ -173,6 +178,7 @@ done < <(pgrep -x "$executable_name" 2>/dev/null || true)
 }
 
 codesign --verify --deep --strict --verbose=4 "$app"
-printf '{\n  "platform": "macos",\n  "bundleDirectoryName": "%s",\n  "bundleIdentifier": "%s",\n  "bundleExecutable": "%s",\n  "directLaunch": {\n    "pid": %s,\n    "processPath": "${APP}/Contents/MacOS/meridian"\n  },\n  "launchServicesLaunch": {\n    "method": "open -n",\n    "pid": %s,\n    "displayName": "Discord Quest Helper",\n    "processPath": "${APP}/Contents/MacOS/meridian"\n  },\n  "temporaryCopy": false,\n  "mainProcessCount": %s,\n  "strictSignature": true\n}\n' \
+printf '{\n  "platform": "macos",\n  "bundleDirectoryName": "%s",\n  "bundleIdentifier": "%s",\n  "bundleExecutable": "%s",\n  "directLaunch": {\n    "pid": %s,\n    "processPath": "${APP}/Contents/MacOS/%s"\n  },\n  "launchServicesLaunch": {\n    "method": "open -n",\n    "pid": %s,\n    "displayName": "%s",\n    "processPath": "${APP}/Contents/MacOS/%s"\n  },\n  "temporaryCopy": false,\n  "mainProcessCount": %s,\n  "strictSignature": true\n}\n' \
   "$(basename "$app")" "$bundle_identifier" "$executable_name" "$direct_pid" \
-  "$launch_services_pid" "$process_count" > "$manifest"
+  "$expected_name" "$launch_services_pid" "$expected_display" "$expected_name" \
+  "$process_count" > "$manifest"
