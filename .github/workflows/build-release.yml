@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - develop
     paths:
       - 'public/version.txt'
 
@@ -17,7 +18,42 @@ env:
   CARGO_TARGET_DIR: ${{ github.workspace }}/target
 
 jobs:
+  release_policy:
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.policy.outputs.should_release }}
+      version: ${{ steps.policy.outputs.version }}
+      prerelease: ${{ steps.policy.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Check release channel
+        id: policy
+        shell: bash
+        run: |
+          version=$(tr -d '\r\n' < public/version.txt)
+          ref="${GITHUB_REF}"
+          should_release=false
+          prerelease=false
+
+          if [[ "$ref" == "refs/heads/main" ]]; then
+            should_release=true
+            [[ "$version" =~ -rc[0-9]+$ ]] && prerelease=true
+          elif [[ "$ref" == "refs/heads/develop" && "$version" =~ -rc[0-9]+$ ]]; then
+            # Develop may publish release candidates only. A stable version on
+            # develop must never create or update a formal release.
+            should_release=true
+            prerelease=true
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "should_release=$should_release" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+          echo "Release policy: ref=$ref version=$version should_release=$should_release prerelease=$prerelease"
+
   build-tauri:
+    needs: release_policy
+    if: needs.release_policy.outputs.should_release == 'true'
     permissions:
       contents: write
     strategy:
@@ -342,7 +378,12 @@ jobs:
           fi
 
   release:
-    needs: build-tauri
+    needs:
+      - release_policy
+      - build-tauri
+    if: >-
+      needs.release_policy.outputs.should_release == 'true' &&
+      needs.build-tauri.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -350,13 +391,9 @@ jobs:
       - name: get version
         id: extract_version
         run: |
-          version=$(cat public/version.txt)
+          version='${{ needs.release_policy.outputs.version }}'
           echo "version=$version" >> $GITHUB_ENV
-          if [[ "$version" == *"rc"* ]]; then
-            echo "PRERELEASE=true" >> $GITHUB_ENV
-          else
-            echo "PRERELEASE=false" >> $GITHUB_ENV
-          fi
+          echo "PRERELEASE=${{ needs.release_policy.outputs.prerelease }}" >> $GITHUB_ENV
         shell: bash
 
       - name: Download Windows artifact (portable)
