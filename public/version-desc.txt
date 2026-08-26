@@ -1,17 +1,30 @@
-## Hotfix v0.10.2
+## ✨ What's Changed
 
-- Fixed the issue that main windows icon at taskbar was overwritten by 1x1 pixel
-
-## ✨ What's Changed in v0.10.1
-
-1. Added support for manually simulating a game you are playing through Discord's native running-game detection.
-    - You can now tell Discord that a specific game is running, even when it is not, so related quests can progress.
-    - Added a "Running Games" view that shows what the app is currently reporting to Discord.
-    - Added the ability to stop a simulated game and disconnect from Discord at any time.
-2. Improved the way the app detects and reports games, and fixed several cases where game detection could fail or get stuck after launch.
-3. On Windows, the app now runs in a more discreet way so Discord is less likely to notice it is a helper tool, making quest progress more reliable.
-4. Refreshed and added translations for the new text.
-5. Bumped default client config:
+1. Redesigned the quest dashboard to make daily quest management faster and clearer.
+    - Unified navigation across the login and main app with a compact, responsive header.
+    - Replaced redundant status and recommendation panels with clearer quest filters, icons, and live counts.
+    - Put search, advanced filters, refresh, and batch actions in one place, with direct actions for accepting quests and completing all, video, or game quests.
+    - Moved Orbs and Nitro status beside the dashboard title, with a compact next-claim countdown and smoother balance refresh feedback.
+    - Improved the layout for both desktop and smaller app windows.
+2. Refined the overall visual experience.
+    - Theme changes now ripple from the toggle location, respect reduced-motion preferences, and fall back smoothly when the browser does not support view transitions.
+    - Made manual token login easier to read and use with improved spacing, sizing, and visual hierarchy.
+    - Updated the dashboard copy and refreshed translations across all supported languages.
+3. Made game simulation safer and more reliable on macOS and Linux.
+    - Simulated games now track the exact process they launch and verify its executable before stopping it, avoiding interference with unrelated processes.
+    - Improved cleanup when games are stopped or the app closes, including reliable process reaping and protection against recycled process IDs.
+    - Improved runtime and window identity handling for native Discord detection, including packaged Linux and Wayland environments.
+4. Strengthened CDP runtime installation and launcher reliability across Windows, macOS, and Linux.
+    - Improved bundled runtime discovery for installed apps and desktop packages, while preventing empty or invalid placeholders from being executed.
+    - Runtime bridge updates are now versioned, hash-verified, launch-tested, and switched atomically so failed updates preserve the working version.
+    - Legacy helper files are cleaned up only after a successful migration, and platform-specific shortcuts and app layouts are handled more consistently.
+    - Improved launcher errors and reduced unnecessary console noise during normal use.
+5. Added better diagnostics for troubleshooting.
+    - The Debug page now reports runtime identity, bridge status, integrity checks, platform details, and differences from the release baseline.
+    - Added local-only JSON copy/export for diagnostics and clearer visibility into the embedded simulated-game runtime.
+6. Improved release quality across supported desktop platforms.
+    - Added package validation and smoke checks for Linux X11/Wayland environments and signed, hardened macOS bundles.
+7. Bumped default client config:
     - client version to `1.0.9254`
     - default client build number to `595897`
     - native build number to `88466`
