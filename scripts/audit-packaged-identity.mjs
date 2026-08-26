@@ -33,19 +33,14 @@ function usage() {
 Options:
   --kind <app|deb|appimage|appdir>  Override artifact detection
   --output <identity-manifest.json> Write the manifest to this path
-  --allow-adhoc                     Permit hardened ad-hoc macOS smoke signatures
   --help                            Show this help`;
 }
 
 function parseArgs(argv) {
-  const result = { platform: null, artifact: null, kind: null, output: null, allowAdHoc: false };
+  const result = { platform: null, artifact: null, kind: null, output: null };
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
     if (flag === '--help' || flag === '-h') return { help: true };
-    if (flag === '--allow-adhoc') {
-      result.allowAdHoc = true;
-      continue;
-    }
     const value = argv[++index];
     if (!value) throw new Error(`Missing value for ${flag}`);
     if (flag === '--platform') result.platform = value;
@@ -120,26 +115,13 @@ export function parseCodeIdentity(output) {
   };
 }
 
-export function relatedCodeIdentityViolations(main, helper, allowAdHoc) {
+export function relatedCodeIdentityViolations(main, helper) {
   const violations = [];
   if (!main.hardenedRuntime || !helper.hardenedRuntime) {
     violations.push('main app or runtime bridge signature is missing hardened runtime');
   }
-  if (allowAdHoc) {
-    if (!main.adHoc || !helper.adHoc) {
-      violations.push('smoke app and runtime bridge must both use ad-hoc signatures');
-    }
-    return violations;
-  }
-  if (main.adHoc || helper.adHoc) {
-    violations.push('release app or runtime bridge uses an ad-hoc signature');
-  }
-  if (!main.teamIdentifier || !helper.teamIdentifier || main.teamIdentifier !== helper.teamIdentifier) {
-    violations.push('runtime bridge TeamIdentifier does not match the main app');
-  }
-  if (!main.authorities.some((authority) => authority.startsWith('Developer ID Application:'))
-      || !helper.authorities.some((authority) => authority.startsWith('Developer ID Application:'))) {
-    violations.push('main app and runtime bridge must use Developer ID Application identities');
+  if (!main.adHoc || !helper.adHoc) {
+    violations.push('main app and runtime bridge must both use ad-hoc signatures');
   }
   return violations;
 }
@@ -190,7 +172,7 @@ function parseDesktopEntry(path) {
   return fields;
 }
 
-function auditMacApp(app, allowAdHoc) {
+function auditMacApp(app) {
   if (!app.endsWith('.app')) throw new Error('macOS artifact must be an .app bundle');
   const executableName = plistValue(app, 'CFBundleExecutable');
   const executable = executableName ? join(app, 'Contents', 'MacOS', executableName) : null;
@@ -235,10 +217,10 @@ function auditMacApp(app, allowAdHoc) {
     name: basename(file),
     signed: commandSucceeds('codesign', ['--verify', '--strict', '--verbose=4', file]).ok,
   }));
-  if (!allowAdHoc && !strictSigning.ok) violations.push('strict code-signing verification failed');
+  if (!strictSigning.ok) violations.push('strict code-signing verification failed');
   if (nestedSigning.some(({ signed }) => !signed)) violations.push('nested executable signature verification failed');
   if (bridgeCodeIdentity) {
-    violations.push(...relatedCodeIdentityViolations(mainCodeIdentity, bridgeCodeIdentity, allowAdHoc));
+    violations.push(...relatedCodeIdentityViolations(mainCodeIdentity, bridgeCodeIdentity));
   }
 
   return {
@@ -255,7 +237,7 @@ function auditMacApp(app, allowAdHoc) {
     signing: {
       strict: strictSigning.ok,
       hardenedRuntime: mainCodeIdentity.hardenedRuntime,
-      smokeArtifact: allowAdHoc,
+      adHocDistribution: mainCodeIdentity.adHoc,
       authorities: mainCodeIdentity.authorities,
       teamIdentifier: mainCodeIdentity.teamIdentifier,
       bridgeIdentity: bridgeCodeIdentity,
@@ -351,7 +333,7 @@ function auditLinux(path, kind) {
 export function auditArtifact(options) {
   const kind = options.platform === 'macos' ? 'app' : detectLinuxKind(options.artifact, options.kind);
   const result = options.platform === 'macos'
-    ? auditMacApp(options.artifact, options.allowAdHoc)
+    ? auditMacApp(options.artifact)
     : auditLinux(options.artifact, kind);
   return {
     schemaVersion: 1,

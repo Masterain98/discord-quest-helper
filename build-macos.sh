@@ -106,31 +106,17 @@ fi
 
 # Step 5: Verify and archive symbols
 APP_FILE=$(find "$RELEASE_DIR/bundle/macos" -name "*.app" -type d 2>/dev/null | head -1 || true)
-DMG_FILE=$(find "$RELEASE_DIR/bundle/dmg" -name "*.dmg" 2>/dev/null | head -1 || true)
 if [ "$SKIP_TAURI_BUILD" = false ]; then
     if [ -z "$APP_FILE" ]; then
         echo -e "${RED}No macOS app bundle was produced.${NC}" >&2
         exit 1
     fi
     echo -e "${YELLOW}[5/5] Verifying bundle identity and signatures...${NC}"
-    if [ -z "${APPLE_SIGNING_IDENTITY:-}" ]; then
-        "$PROJECT_ROOT/scripts/sign-macos-bundle-smoke.sh" "$APP_FILE"
-    fi
     "$PROJECT_ROOT/scripts/verify-macos-bundle.sh" "$APP_FILE"
-    audit_args=(--platform macos --artifact "$APP_FILE" --output "$RELEASE_DIR/identity-manifest.json")
-    if [ -z "${APPLE_SIGNING_IDENTITY:-}" ]; then
-        audit_args+=(--allow-adhoc)
-    fi
-    node "$PROJECT_ROOT/scripts/audit-packaged-identity.mjs" "${audit_args[@]}"
-
-    if [ "${REQUIRE_NOTARIZATION:-0}" = "1" ]; then
-        if [ -z "$DMG_FILE" ]; then
-            echo -e "${RED}Notarization is required but no DMG was produced.${NC}" >&2
-            exit 1
-        fi
-        codesign --verify --verbose=4 "$DMG_FILE"
-        xcrun stapler validate "$DMG_FILE"
-    fi
+    node "$PROJECT_ROOT/scripts/audit-packaged-identity.mjs" \
+        --platform macos \
+        --artifact "$APP_FILE" \
+        --output "$RELEASE_DIR/identity-manifest.json"
 
     SYMBOL_ARCHIVE="$RELEASE_DIR/discord-quest-helper-macos-symbols.zip"
     symbol_paths=()

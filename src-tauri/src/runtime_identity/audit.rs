@@ -398,14 +398,7 @@ fn platform_details() -> Value {
     let nested_helper_identity_matches_main = main_code_identity
         .as_ref()
         .zip(nested_helper_identity.as_ref())
-        .map(|(main, helper)| {
-            let policy = if main.ad_hoc {
-                super::macos::SignaturePolicy::SmokeAdHoc
-            } else {
-                super::macos::SignaturePolicy::ReleaseStrict
-            };
-            super::macos::validate_related_code_identity(main, helper, policy).is_ok()
-        });
+        .map(|(main, helper)| super::macos::validate_related_code_identity(main, helper).is_ok());
     json!({
         "bundlePath": bundle.as_deref().map(redacted_path),
         "cfBundleExecutable": info.as_deref().and_then(|path| plist_value(path, "CFBundleExecutable")),
@@ -414,11 +407,8 @@ fn platform_details() -> Value {
         "codeSigningAuthority": authority,
         "codeSigningTeamIdentifier": main_code_identity.as_ref().and_then(|identity| identity.team_identifier.clone()),
         "hardenedRuntime": hardened_runtime,
-        // Notarization validation can perform network or trust-service work.
-        // Keep this interactive command bounded by omitting that probe; release
-        // workflows perform stapler validation separately.
         "notarizationStaplerOk": Value::Null,
-        "notarizationObservationStatus": "external",
+        "notarizationObservationStatus": "disabled",
         "nestedHelperSignatureOk": nested_helper_signature_ok,
         "nestedHelperTeamIdentifier": nested_helper_identity.as_ref().and_then(|identity| identity.team_identifier.clone()),
         "nestedHelperHardenedRuntime": nested_helper_identity.as_ref().map(|identity| identity.hardened_runtime),

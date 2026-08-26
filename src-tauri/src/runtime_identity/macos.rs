@@ -21,12 +21,6 @@ pub(crate) struct MacCodeIdentity {
     pub ad_hoc: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SignaturePolicy {
-    ReleaseStrict,
-    SmokeAdHoc,
-}
-
 fn parse_code_identity(details: &str) -> MacCodeIdentity {
     let field = |name: &str| {
         details
@@ -66,48 +60,12 @@ pub(crate) fn read_code_identity(path: &Path) -> Result<MacCodeIdentity, String>
 pub(crate) fn validate_related_code_identity(
     main: &MacCodeIdentity,
     helper: &MacCodeIdentity,
-    policy: SignaturePolicy,
 ) -> Result<(), String> {
     if !main.hardened_runtime || !helper.hardened_runtime {
         return Err("main app or runtime bridge signature is missing hardened runtime".into());
     }
-
-    match policy {
-        SignaturePolicy::ReleaseStrict => {
-            if main.ad_hoc || helper.ad_hoc {
-                return Err("release runtime bridge must not use an ad-hoc signature".into());
-            }
-            let main_team = main
-                .team_identifier
-                .as_deref()
-                .ok_or_else(|| "main app TeamIdentifier is unavailable".to_string())?;
-            let helper_team = helper
-                .team_identifier
-                .as_deref()
-                .ok_or_else(|| "runtime bridge TeamIdentifier is unavailable".to_string())?;
-            if main_team != helper_team {
-                return Err("runtime bridge TeamIdentifier does not match the main app".into());
-            }
-            if !main
-                .authorities
-                .iter()
-                .any(|authority| authority.starts_with("Developer ID Application:"))
-                || !helper
-                    .authorities
-                    .iter()
-                    .any(|authority| authority.starts_with("Developer ID Application:"))
-            {
-                return Err(
-                    "main app and runtime bridge must use Developer ID Application identities"
-                        .into(),
-                );
-            }
-        }
-        SignaturePolicy::SmokeAdHoc => {
-            if !main.ad_hoc || !helper.ad_hoc {
-                return Err("smoke identity policy requires ad-hoc signatures".into());
-            }
-        }
+    if !main.ad_hoc || !helper.ad_hoc {
+        return Err("main app and runtime bridge must both use ad-hoc signatures".into());
     }
     Ok(())
 }
@@ -115,11 +73,7 @@ pub(crate) fn validate_related_code_identity(
 pub(crate) fn verify_helper_identity_for_current_app(helper: &Path) -> Result<(), String> {
     let main_identity = verified_current_app_identity()?;
     let helper_identity = read_code_identity(helper)?;
-    validate_related_code_identity(
-        main_identity,
-        &helper_identity,
-        SignaturePolicy::ReleaseStrict,
-    )
+    validate_related_code_identity(main_identity, &helper_identity)
 }
 
 fn verified_current_app_identity() -> Result<&'static MacCodeIdentity, String> {
@@ -241,14 +195,8 @@ fn verify_bundle_signature(bundle: &Path) -> Result<(), String> {
     }
 
     let identity = read_code_identity(bundle)?;
-    if !identity
-        .authorities
-        .iter()
-        .any(|authority| authority.starts_with("Developer ID Application:"))
-    {
-        return Err(
-            "application bundle is not signed with a Developer ID Application identity".into(),
-        );
+    if !identity.ad_hoc {
+        return Err("application bundle does not use the configured ad-hoc signature".into());
     }
     if !identity.hardened_runtime {
         return Err("application bundle signature is missing the hardened runtime flag".into());
@@ -420,20 +368,11 @@ fn status_for_executable(executable: Option<&Path>) -> RuntimeIdentityStatus {
 mod tests {
     use super::*;
 
-    fn identity(
-        team: Option<&str>,
-        developer_id: bool,
-        hardened: bool,
-        ad_hoc: bool,
-    ) -> MacCodeIdentity {
+    fn identity(hardened: bool, ad_hoc: bool) -> MacCodeIdentity {
         MacCodeIdentity {
             identifier: Some("fixture".into()),
-            team_identifier: team.map(str::to_string),
-            authorities: if developer_id {
-                vec!["Developer ID Application: Example (ABC123)".into()]
-            } else {
-                Vec::new()
-            },
+            team_identifier: None,
+            authorities: Vec::new(),
             hardened_runtime: hardened,
             ad_hoc,
         }
@@ -442,50 +381,30 @@ mod tests {
     #[test]
     fn parses_codesign_identity_fields() {
         let parsed = parse_code_identity(
-            "Identifier=com.example.app\nAuthority=Developer ID Application: Example (ABC123)\nTeamIdentifier=ABC123\nflags=0x10000(runtime)\n",
+            "Identifier=com.example.app\nTeamIdentifier=not set\nSignature=adhoc\nflags=0x10000(runtime)\n",
         );
         assert_eq!(parsed.identifier.as_deref(), Some("com.example.app"));
-        assert_eq!(parsed.team_identifier.as_deref(), Some("ABC123"));
+        assert_eq!(parsed.team_identifier, None);
+        assert!(parsed.authorities.is_empty());
         assert!(parsed.hardened_runtime);
-        assert!(!parsed.ad_hoc);
+        assert!(parsed.ad_hoc);
     }
 
     #[test]
-    fn release_helper_requires_matching_team_identifier() {
-        let main = identity(Some("ABC123"), true, true, false);
-        let helper = identity(Some("ABC123"), true, true, false);
-        assert!(
-            validate_related_code_identity(&main, &helper, SignaturePolicy::ReleaseStrict).is_ok()
-        );
+    fn identity_policy_accepts_only_hardened_ad_hoc_app_and_helper() {
+        let ad_hoc = identity(true, true);
+        assert!(validate_related_code_identity(&ad_hoc, &ad_hoc).is_ok());
 
-        let wrong_team = identity(Some("XYZ999"), true, true, false);
+        let unsigned = identity(true, false);
         assert_eq!(
-            validate_related_code_identity(&main, &wrong_team, SignaturePolicy::ReleaseStrict)
-                .unwrap_err(),
-            "runtime bridge TeamIdentifier does not match the main app"
+            validate_related_code_identity(&ad_hoc, &unsigned).unwrap_err(),
+            "main app and runtime bridge must both use ad-hoc signatures"
         );
-    }
 
-    #[test]
-    fn release_helper_rejects_unsigned_or_ad_hoc_identity() {
-        let main = identity(Some("ABC123"), true, true, false);
-        let unsigned = identity(None, false, false, false);
-        assert!(
-            validate_related_code_identity(&main, &unsigned, SignaturePolicy::ReleaseStrict)
-                .is_err()
-        );
-        let ad_hoc = identity(None, false, true, true);
-        assert!(
-            validate_related_code_identity(&main, &ad_hoc, SignaturePolicy::ReleaseStrict).is_err()
-        );
-    }
-
-    #[test]
-    fn smoke_policy_accepts_hardened_ad_hoc_app_and_helper() {
-        let main = identity(None, false, true, true);
-        let helper = identity(None, false, true, true);
-        assert!(
-            validate_related_code_identity(&main, &helper, SignaturePolicy::SmokeAdHoc).is_ok()
+        let unhardened = identity(false, true);
+        assert_eq!(
+            validate_related_code_identity(&ad_hoc, &unhardened).unwrap_err(),
+            "main app or runtime bridge signature is missing hardened runtime"
         );
     }
 

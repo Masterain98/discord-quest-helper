@@ -3,7 +3,8 @@
   "mainBinaryName": "meridian",
   "bundle": {
     "macOS": {
-      "hardenedRuntime": true
+      "hardenedRuntime": true,
+      "signingIdentity": "-"
     }
   }
 }

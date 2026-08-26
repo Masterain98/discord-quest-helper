@@ -32,6 +32,7 @@ export function validateConfiguration() {
   const launcherCargo = text('src-cdp-launcher/Cargo.toml');
   const runnerCargo = text('src-runner/Cargo.toml');
   const workspaceCargo = text('Cargo.toml');
+  const releaseWorkflow = text('.github/workflows/build-release.yml');
 
   requireMatch(common.mainBinaryName === expected.publicMain,
     'common/Windows mainBinaryName must retain the public executable name', failures);
@@ -45,6 +46,10 @@ export function validateConfiguration() {
     `macOS mainBinaryName must be ${expected.main}`, failures);
   requireMatch(macos.bundle?.macOS?.hardenedRuntime === true,
     'macOS hardenedRuntime must be enabled', failures);
+  requireMatch(macos.bundle?.macOS?.signingIdentity === '-',
+    'macOS builds must use the configured ad-hoc signing identity', failures);
+  requireMatch(!/APPLE_(?:CERTIFICATE|SIGNING|API|KEYCHAIN)|REQUIRE_NOTARIZATION|notarytool|stapler/.test(releaseWorkflow),
+    'release workflow must not require Apple signing or notarization credentials', failures);
   requireMatch(JSON.stringify(common.bundle?.externalBin) === JSON.stringify([`binaries/${expected.bridge}`]),
     `externalBin must contain only binaries/${expected.bridge}`, failures);
   requireMatch(new RegExp(`\\[\\[bin\\]\\][\\s\\S]*?name\\s*=\\s*"${expected.bridge}"`).test(launcherCargo),

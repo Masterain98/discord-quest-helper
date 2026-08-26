@@ -177,10 +177,9 @@ jobs:
         run: |
           app="$(find target/${{ matrix.cdp_target }}/release/bundle/macos -maxdepth 1 -name '*.app' -type d | head -n 1)"
           test -n "$app"
-          scripts/sign-macos-bundle-smoke.sh "$app"
           scripts/verify-macos-bundle.sh "$app"
           node scripts/audit-packaged-identity.mjs \
-            --platform macos --artifact "$app" --allow-adhoc \
+            --platform macos --artifact "$app" \
             --output target/${{ matrix.cdp_target }}/release/bundle/identity-manifest-macos-smoke.json
           scripts/smoke-macos-runtime-identity.sh "$app" \
             target/${{ matrix.cdp_target }}/release/bundle/identity-smoke-macos.json
