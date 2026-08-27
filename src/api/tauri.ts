@@ -142,6 +142,9 @@ export interface DetectableGame {
 }
 
 // Auth commands
+export type DesktopClientArg = 'auto' | 'official' | 'vesktop'
+export type CdpPortOwner = 'none' | 'official' | 'vesktop' | 'other'
+
 export interface ExtractedAccount {
   token: string
   user: DiscordUser
@@ -171,8 +174,12 @@ function createAuthProgressChannel(onProgress?: AuthProgressHandler): Channel<Au
   return new Channel<AuthProgress>((progress) => onProgress?.(progress))
 }
 
-export async function autoDetectToken(onProgress?: AuthProgressHandler): Promise<ExtractedAccount[]> {
-  return await invoke('auto_detect_token', { onProgress: createAuthProgressChannel(onProgress) })
+export async function autoDetectToken(
+  onProgress?: AuthProgressHandler,
+): Promise<ExtractedAccount[]> {
+  return await invoke('auto_detect_token', {
+    onProgress: createAuthProgressChannel(onProgress),
+  })
 }
 
 export async function setToken(token: string, onProgress?: AuthProgressHandler): Promise<DiscordUser> {
@@ -555,6 +562,22 @@ export async function fetchRunningGamesCdp(port?: number): Promise<CdpRunningGam
 export type DiscordChannelArg = 'auto' | 'stable' | 'ptb' | 'canary'
 export type DiscordChannelResult = 'stable' | 'ptb' | 'canary'
 
+export interface DesktopClientInventory {
+  officialInstalled: boolean
+  vesktopInstalled: boolean
+  officialRunning: boolean
+  vesktopRunning: boolean
+  cdpOwner: CdpPortOwner
+  stableInstalled: boolean
+  ptbInstalled: boolean
+  canaryInstalled: boolean
+  stableRunning: boolean
+  ptbRunning: boolean
+  canaryRunning: boolean
+}
+
+export type CdpLaunchTarget = 'stable' | 'ptb' | 'canary' | 'vesktop'
+
 export interface DiscordCdpLaunchResult {
   launched_path: string
   channel: DiscordChannelResult
@@ -566,12 +589,24 @@ export async function isDiscordRunning(channel?: DiscordChannelArg): Promise<boo
   return await invoke('is_discord_running', { channel })
 }
 
-export async function launchDiscordCdp(port?: number, channel?: DiscordChannelArg): Promise<DiscordCdpLaunchResult> {
-  return await invoke('launch_discord_cdp', { port, channel })
+export async function listDesktopClients(port?: number): Promise<DesktopClientInventory> {
+  return await invoke('list_desktop_clients', { port })
 }
 
-export async function restartDiscordCdp(port?: number, channel?: DiscordChannelArg): Promise<DiscordCdpLaunchResult> {
-  return await invoke('restart_discord_cdp', { port, channel })
+export async function launchDiscordCdp(
+  port?: number,
+  channel?: DiscordChannelArg,
+  client?: DesktopClientArg,
+): Promise<DiscordCdpLaunchResult> {
+  return await invoke('launch_discord_cdp', { port, channel, client })
+}
+
+export async function restartDiscordCdp(
+  port?: number,
+  channel?: DiscordChannelArg,
+  client?: DesktopClientArg,
+): Promise<DiscordCdpLaunchResult> {
+  return await invoke('restart_discord_cdp', { port, channel, client })
 }
 
 export async function createDiscordCdpLauncherShortcut(port?: number, channel?: DiscordChannelArg): Promise<string> {

@@ -1,12 +1,34 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { AuthProgress, CdpStatus } from '@/api/tauri'
+import type { AuthProgress, CdpStatus, DesktopClientInventory } from '@/api/tauri'
 import {
   canBeginLogin,
   classifyCdpAvailability,
+  installedCdpLaunchTargets,
+  isCdpLaunchTargetRunning,
+  launchArgsForCdpTarget,
   presentAuthProgress,
+  shouldAskCdpLaunchTarget,
   shouldPollCdp,
   startCdpPolling,
+  usesVesktopForCdpLogin,
 } from './loginFlow'
+
+function inventory(overrides: Partial<DesktopClientInventory> = {}): DesktopClientInventory {
+  return {
+    officialInstalled: true,
+    vesktopInstalled: true,
+    officialRunning: false,
+    vesktopRunning: false,
+    cdpOwner: 'none',
+    stableInstalled: true,
+    ptbInstalled: false,
+    canaryInstalled: false,
+    stableRunning: false,
+    ptbRunning: false,
+    canaryRunning: false,
+    ...overrides,
+  }
+}
 
 function progress(overrides: Partial<AuthProgress>): AuthProgress {
   return {
@@ -87,6 +109,50 @@ describe('CDP status and polling', () => {
     stop()
     vi.advanceTimersByTime(5_000)
     expect(callback).toHaveBeenCalledTimes(3)
+  })
+})
+
+describe('CDP login client copy', () => {
+  it('uses Discord copy unless Vesktop is the only available client', () => {
+    expect(usesVesktopForCdpLogin(null)).toBe(false)
+    expect(usesVesktopForCdpLogin(inventory())).toBe(false)
+    expect(usesVesktopForCdpLogin(inventory({ officialRunning: true, vesktopRunning: true }))).toBe(false)
+    expect(usesVesktopForCdpLogin(inventory({ officialInstalled: false, stableInstalled: false }))).toBe(true)
+    expect(usesVesktopForCdpLogin(inventory({ vesktopRunning: true }))).toBe(true)
+    expect(usesVesktopForCdpLogin(inventory({ cdpOwner: 'vesktop' }))).toBe(true)
+  })
+})
+
+describe('CDP launch target selection', () => {
+  it('lists only installed official channels and Vesktop', () => {
+    expect(installedCdpLaunchTargets(null)).toEqual([])
+    expect(installedCdpLaunchTargets(inventory())).toEqual(['stable', 'vesktop'])
+    expect(installedCdpLaunchTargets(inventory({
+      ptbInstalled: true,
+      canaryInstalled: true,
+    }))).toEqual(['stable', 'ptb', 'canary', 'vesktop'])
+  })
+
+  it('asks only when CDP is down and more than one client is installed', () => {
+    expect(shouldAskCdpLaunchTarget(true, ['stable', 'vesktop'])).toBe(false)
+    expect(shouldAskCdpLaunchTarget(false, ['stable'])).toBe(false)
+    expect(shouldAskCdpLaunchTarget(false, ['stable', 'canary', 'vesktop'])).toBe(true)
+  })
+
+  it('maps a chosen client to explicit launch arguments', () => {
+    expect(launchArgsForCdpTarget('stable')).toEqual({ channel: 'stable', client: 'official' })
+    expect(launchArgsForCdpTarget('ptb')).toEqual({ channel: 'ptb', client: 'official' })
+    expect(launchArgsForCdpTarget('canary')).toEqual({ channel: 'canary', client: 'official' })
+    expect(launchArgsForCdpTarget('vesktop')).toEqual({ channel: 'auto', client: 'vesktop' })
+    expect(launchArgsForCdpTarget(null)).toEqual({ channel: 'auto', client: 'auto' })
+  })
+
+  it('detects whether the chosen client is already running', () => {
+    expect(isCdpLaunchTargetRunning(null, 'stable')).toBe(false)
+    expect(isCdpLaunchTargetRunning(inventory({ stableRunning: true }), 'stable')).toBe(true)
+    expect(isCdpLaunchTargetRunning(inventory({ ptbInstalled: true, ptbRunning: true }), 'ptb')).toBe(true)
+    expect(isCdpLaunchTargetRunning(inventory({ vesktopRunning: true }), 'vesktop')).toBe(true)
+    expect(isCdpLaunchTargetRunning(inventory({ officialRunning: true }), null)).toBe(true)
   })
 })
 

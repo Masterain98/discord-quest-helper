@@ -41,8 +41,24 @@
       "launching_discord": "Запуск Discord с включённым CDP...",
       "restart_required": "Discord уже запущен. Его необходимо перезапустить с включённым CDP.",
       "restarting_discord": "Перезапуск Discord с включённым CDP...",
-      "restart_cancelled": "Перезапуск Discord отменён. Вход не выполнен."
-    }
+      "restart_cancelled": "Перезапуск Discord отменён. Вход не выполнен.",
+      "launching_vesktop": "Starting Vesktop with CDP enabled...",
+      "restart_required_vesktop": "Vesktop is already running and must be restarted with CDP enabled.",
+      "restarting_vesktop": "Restarting Vesktop with CDP enabled...",
+      "choose_client": "Choose which Discord client to start with CDP...",
+      "launch_cancelled": "Client launch was cancelled. No account was logged in."
+    },
+    "cdp_login_action_vesktop": "Use Vesktop to Log In",
+    "client_auto": "Auto",
+    "client_official": "Discord",
+    "client_vesktop": "Vesktop",
+    "cdp_login_detail_vesktop": "Use the account currently signed in to Vesktop. Vesktop must be running with CDP enabled.",
+    "cdp_choose_title": "Choose a Discord client",
+    "cdp_choose_desc": "No client is running with CDP enabled. Choose which installed client to start.",
+    "cdp_client_stable": "Discord",
+    "cdp_client_ptb": "Discord PTB",
+    "cdp_client_canary": "Discord Canary",
+    "cdp_client_vesktop": "Vesktop"
   },
   "nav": {
     "home": "Главная",
@@ -94,13 +110,9 @@
     "include_expired": "Включить просроченные квесты",
     "include_expired_desc": "Показывать просроченные записи для проверки и восстановления.",
     "current_orbs": "Текущие Orbs",
-
     "nitro_next_orbs_title": "Ежемесячные Orbs Nitro — обратный отсчёт до следующего получения",
-
     "nitro_next_orbs_days": "Следующий эирдроп Orbs через {days} дн",
-
     "nitro_next_orbs_hours": "Следующий эирдроп Orbs через {hours} ч",
-
     "nitro_next_orbs_minutes": "Следующий эирдроп Orbs через {minutes} мин",
     "claim_reward": "Получить награду",
     "claim_navigated": "Discord перенаправлен на страницу квеста. Получите награду в Discord.",
@@ -290,7 +302,11 @@
     "debug_already_unlocked": "Режим разработчика включён",
     "disable_developer_mode": "Отключить режим разработчика",
     "disable_debug_confirm_title": "Отключить режим разработчика?",
-    "disable_debug_confirm_desc": "Вкладка Debug и инструменты разработчика будут скрыты. Вы можете повторно включить, нажав на номер версии 7 раз."
+    "disable_debug_confirm_desc": "Вкладка Debug и инструменты разработчика будут скрыты. Вы можете повторно включить, нажав на номер версии 7 раз.",
+    "cdp_dialog_title_disconnected_vesktop": "Restart Vesktop to enable CDP?",
+    "cdp_dialog_desc_disconnected_vesktop": "Vesktop is running but CDP is not connected. We need to restart Vesktop with the CDP debug port enabled.",
+    "desktop_client": "Desktop client",
+    "desktop_client_desc": "When Discord and Vesktop are both installed, this choice only affects CDP login. Local token extraction always uses the official Discord client."
   },
   "version": {
     "update_available": "Доступна новая версия!",

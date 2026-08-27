@@ -1817,6 +1817,7 @@ pub fn run() {
             fetch_super_properties_cdp,
             fetch_running_games_cdp,
             discord_cdp_commands::is_discord_running,
+            discord_cdp_commands::list_desktop_clients,
             discord_cdp_commands::list_running_discord_cdp_sessions,
             discord_cdp_commands::launch_discord_cdp,
             discord_cdp_commands::restart_discord_cdp,

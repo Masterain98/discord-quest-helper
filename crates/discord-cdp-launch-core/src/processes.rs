@@ -269,6 +269,42 @@ fn paths_refer_to_same_executable(left: &Path, right: &Path) -> bool {
     }
 }
 
+pub fn inspect_cdp_port_owner(port: u16) -> crate::CdpPortOwner {
+    classify_cdp_port_owner(&process_snapshots(), port)
+}
+
+pub(crate) fn classify_cdp_port_owner(
+    processes: &[ProcessSnapshot],
+    port: u16,
+) -> crate::CdpPortOwner {
+    let mut official = false;
+    let mut vesktop = false;
+    let mut other = false;
+    for process in processes {
+        if !process
+            .command_line
+            .iter()
+            .any(|argument| parse_cdp_port(argument) == Some(port))
+        {
+            continue;
+        }
+        let name = process.name.to_string_lossy();
+        if crate::is_vesktop_process_name(&name) {
+            vesktop = true;
+        } else if channel_from_process_name(&process.name).is_some() {
+            official = true;
+        } else {
+            other = true;
+        }
+    }
+    match (official, vesktop, other) {
+        (false, false, false) => crate::CdpPortOwner::None,
+        (true, false, _) => crate::CdpPortOwner::Official,
+        (false, true, _) => crate::CdpPortOwner::Vesktop,
+        _ => crate::CdpPortOwner::Other,
+    }
+}
+
 fn parse_cdp_port(argument: &OsStr) -> Option<u16> {
     let value = argument.to_str()?;
     value
@@ -340,6 +376,53 @@ mod tests {
                 channel: DiscordChannel::Stable,
                 port: 9223
             }]
+        );
+    }
+
+    #[test]
+    fn vesktop_is_not_classified_as_a_discord_release_channel() {
+        assert_eq!(channel_from_process_name(OsStr::new("vesktop.exe")), None);
+        assert_eq!(channel_from_process_name(OsStr::new("Vesktop")), None);
+        let installs = vec![install(DiscordChannel::Stable, "C:\\Discord\\Discord.exe")];
+        let vesktop = ProcessSnapshot {
+            name: "vesktop.exe".into(),
+            executable_path: Some("C:\\Users\\user\\AppData\\Local\\vesktop\\vesktop.exe".into()),
+            command_line: vec!["vesktop.exe".into(), "--remote-debugging-port=9223".into()],
+        };
+        assert!(classify_known_discord_process(&vesktop, &installs).is_none());
+        assert!(
+            sessions_from_processes(&[vesktop], &installs, &Probe(HashSet::from([9223])))
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn classifies_which_desktop_client_owns_a_cdp_port() {
+        let official = ProcessSnapshot {
+            name: "Discord.exe".into(),
+            executable_path: Some("C:\\Discord\\Discord.exe".into()),
+            command_line: vec!["Discord.exe".into(), "--remote-debugging-port=9223".into()],
+        };
+        let vesktop = ProcessSnapshot {
+            name: "vesktop.exe".into(),
+            executable_path: Some("C:\\vesktop\\vesktop.exe".into()),
+            command_line: vec!["vesktop.exe".into(), "--remote-debugging-port=9223".into()],
+        };
+        assert_eq!(
+            classify_cdp_port_owner(std::slice::from_ref(&official), 9223),
+            crate::CdpPortOwner::Official
+        );
+        assert_eq!(
+            classify_cdp_port_owner(std::slice::from_ref(&vesktop), 9223),
+            crate::CdpPortOwner::Vesktop
+        );
+        assert_eq!(
+            classify_cdp_port_owner(&[official, vesktop], 9223),
+            crate::CdpPortOwner::Other
+        );
+        assert_eq!(
+            classify_cdp_port_owner(&[], 9223),
+            crate::CdpPortOwner::None
         );
     }
 

@@ -41,8 +41,24 @@
       "launching_discord": "正在以 CDP 模式啟動 Discord...",
       "restart_required": "Discord 已在執行，必須重新啟動才能啟用 CDP。",
       "restarting_discord": "正在重新啟動 Discord 並啟用 CDP...",
-      "restart_cancelled": "已取消重新啟動 Discord，未登入任何帳號。"
-    }
+      "restart_cancelled": "已取消重新啟動 Discord，未登入任何帳號。",
+      "launching_vesktop": "Starting Vesktop with CDP enabled...",
+      "restart_required_vesktop": "Vesktop is already running and must be restarted with CDP enabled.",
+      "restarting_vesktop": "Restarting Vesktop with CDP enabled...",
+      "choose_client": "Choose which Discord client to start with CDP...",
+      "launch_cancelled": "Client launch was cancelled. No account was logged in."
+    },
+    "cdp_login_action_vesktop": "Use Vesktop to Log In",
+    "client_auto": "Auto",
+    "client_official": "Discord",
+    "client_vesktop": "Vesktop",
+    "cdp_login_detail_vesktop": "Use the account currently signed in to Vesktop. Vesktop must be running with CDP enabled.",
+    "cdp_choose_title": "Choose a Discord client",
+    "cdp_choose_desc": "No client is running with CDP enabled. Choose which installed client to start.",
+    "cdp_client_stable": "Discord",
+    "cdp_client_ptb": "Discord PTB",
+    "cdp_client_canary": "Discord Canary",
+    "cdp_client_vesktop": "Vesktop"
   },
   "nav": {
     "home": "首頁",
@@ -94,13 +110,9 @@
     "include_expired": "包括過期的任務",
     "include_expired_desc": "顯示過期條目以供檢查和恢復。",
     "current_orbs": "目前 Orbs",
-
     "nitro_next_orbs_title": "Nitro 每月 Orbs — 下次領取倒數",
-
     "nitro_next_orbs_days": "下次 Orbs 空投剩餘 {days} 天",
-
     "nitro_next_orbs_hours": "下次 Orbs 空投剩餘 {hours} 小時",
-
     "nitro_next_orbs_minutes": "下次 Orbs 空投剩餘 {minutes} 分鐘",
     "claim_reward": "領取獎勵",
     "claim_navigated": "Discord 已跳轉到對應任務頁面，請在 Discord 中領取獎勵。",
@@ -290,7 +302,11 @@
     "debug_already_unlocked": "已開啟開發者模式",
     "disable_developer_mode": "關閉開發者模式",
     "disable_debug_confirm_title": "確認關閉開發者模式？",
-    "disable_debug_confirm_desc": "Debug 標籤頁和開發者工具將被隱藏。你可以透過連續點擊版本號 7 次重新啟用。"
+    "disable_debug_confirm_desc": "Debug 標籤頁和開發者工具將被隱藏。你可以透過連續點擊版本號 7 次重新啟用。",
+    "cdp_dialog_title_disconnected_vesktop": "Restart Vesktop to enable CDP?",
+    "cdp_dialog_desc_disconnected_vesktop": "Vesktop is running but CDP is not connected. We need to restart Vesktop with the CDP debug port enabled.",
+    "desktop_client": "Desktop client",
+    "desktop_client_desc": "When Discord and Vesktop are both installed, this choice only affects CDP login. Local token extraction always uses the official Discord client."
   },
   "version": {
     "update_available": "發現新版本！",

@@ -4,10 +4,8 @@ use regex::Regex;
 use std::collections::HashSet;
 #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
 use std::fs;
-#[cfg(target_os = "linux")]
-use std::path::Path;
 #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 // Windows-specific imports
 #[cfg(target_os = "windows")]
@@ -79,6 +77,36 @@ impl DiscordClient {
             DiscordClient::Ptb => &["discordptb"],
         }
     }
+
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+    fn display_name(&self) -> &'static str {
+        match self {
+            DiscordClient::Stable => "Discord Stable",
+            DiscordClient::Canary => "Discord Canary",
+            DiscordClient::Ptb => "Discord PTB",
+        }
+    }
+}
+
+/// Official Discord Chromium profile paths used by token extraction.
+#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ChromiumProfile {
+    display_name: &'static str,
+    local_state_path: PathBuf,
+    leveldb_path: PathBuf,
+}
+
+#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn official_profile_for_client(appdata: &Path, client: &DiscordClient) -> ChromiumProfile {
+    let root = appdata.join(client.path());
+    ChromiumProfile {
+        display_name: client.display_name(),
+        local_state_path: root.join("Local State"),
+        leveldb_path: root.join("Local Storage").join("leveldb"),
+    }
 }
 
 /// Auto-detect and extract Discord tokens (returns all unique tokens found)
@@ -92,40 +120,81 @@ pub fn extract_tokens() -> Result<Vec<String>> {
         None,
     );
     let mut tokens = HashSet::new();
-    let clients = vec![
-        DiscordClient::Stable,
-        DiscordClient::Canary,
-        DiscordClient::Ptb,
-    ];
 
-    for client in clients {
-        log(
-            LogLevel::Debug,
-            LogCategory::TokenExtraction,
-            &format!("Checking Discord client: {:?}", client),
-            None,
-        );
-        match try_extract_from_client(&client) {
-            Ok(client_tokens) => {
-                log(
-                    LogLevel::Debug,
-                    LogCategory::TokenExtraction,
-                    &format!("Found {} tokens in {:?}", client_tokens.len(), client),
-                    None,
-                );
-                for token in client_tokens {
-                    tokens.insert(token);
+    #[cfg(target_os = "windows")]
+    {
+        for profile in discover_windows_profiles() {
+            log(
+                LogLevel::Debug,
+                LogCategory::TokenExtraction,
+                &format!("Checking profile: {}", profile.display_name),
+                None,
+            );
+            match try_extract_from_profile(&profile) {
+                Ok(client_tokens) => {
+                    log(
+                        LogLevel::Debug,
+                        LogCategory::TokenExtraction,
+                        &format!(
+                            "Found {} tokens in {}",
+                            client_tokens.len(),
+                            profile.display_name
+                        ),
+                        None,
+                    );
+                    for token in client_tokens {
+                        tokens.insert(token);
+                    }
+                }
+                Err(e) => {
+                    let sanitized_error = sanitize_path(&e.to_string());
+                    log(
+                        LogLevel::Debug,
+                        LogCategory::TokenExtraction,
+                        &format!("No tokens from {}", profile.display_name),
+                        Some(&sanitized_error),
+                    );
                 }
             }
-            Err(e) => {
-                // Sanitize error details to prevent path leakage
-                let sanitized_error = sanitize_path(&e.to_string());
-                log(
-                    LogLevel::Debug,
-                    LogCategory::TokenExtraction,
-                    &format!("No tokens from {:?}", client),
-                    Some(&sanitized_error),
-                );
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let clients = vec![
+            DiscordClient::Stable,
+            DiscordClient::Canary,
+            DiscordClient::Ptb,
+        ];
+
+        for client in clients {
+            log(
+                LogLevel::Debug,
+                LogCategory::TokenExtraction,
+                &format!("Checking Discord client: {:?}", client),
+                None,
+            );
+            match try_extract_from_client(&client) {
+                Ok(client_tokens) => {
+                    log(
+                        LogLevel::Debug,
+                        LogCategory::TokenExtraction,
+                        &format!("Found {} tokens in {:?}", client_tokens.len(), client),
+                        None,
+                    );
+                    for token in client_tokens {
+                        tokens.insert(token);
+                    }
+                }
+                Err(e) => {
+                    let sanitized_error = sanitize_path(&e.to_string());
+                    log(
+                        LogLevel::Debug,
+                        LogCategory::TokenExtraction,
+                        &format!("No tokens from {:?}", client),
+                        Some(&sanitized_error),
+                    );
+                }
             }
         }
     }
@@ -157,59 +226,70 @@ fn sorted_tokens(tokens: HashSet<String>) -> Vec<String> {
 }
 
 #[cfg(target_os = "windows")]
-fn try_extract_from_client(client: &DiscordClient) -> Result<Vec<String>> {
+fn discover_windows_profiles() -> Vec<ChromiumProfile> {
+    let Some(appdata) = std::env::var_os("APPDATA").map(PathBuf::from) else {
+        return Vec::new();
+    };
+
+    [
+        DiscordClient::Stable,
+        DiscordClient::Canary,
+        DiscordClient::Ptb,
+    ]
+    .iter()
+    .map(|client| official_profile_for_client(&appdata, client))
+    .collect()
+}
+
+#[cfg(target_os = "windows")]
+fn try_extract_from_profile(profile: &ChromiumProfile) -> Result<Vec<String>> {
     use crate::logger::{log, sanitize_path, LogCategory, LogLevel};
 
-    // Get APPDATA path
-    let appdata = std::env::var("APPDATA").context("Could not get APPDATA environment variable")?;
-
-    // Build Discord path
-    let discord_path = PathBuf::from(appdata).join(client.path());
+    let local_state_available = profile.local_state_path.is_file();
+    let leveldb_available = profile.leveldb_path.is_dir();
+    log(
+        LogLevel::Debug,
+        LogCategory::TokenExtraction,
+        &format!("Local State available: {}", yes_no(local_state_available)),
+        None,
+    );
+    log(
+        LogLevel::Debug,
+        LogCategory::TokenExtraction,
+        &format!("LevelDB available: {}", yes_no(leveldb_available)),
+        None,
+    );
 
     log(
         LogLevel::Debug,
         LogCategory::TokenExtraction,
         &format!(
-            "Checking Discord path: {}",
-            sanitize_path(&discord_path.to_string_lossy())
+            "Checking Chromium Local State: {}",
+            sanitize_path(&profile.local_state_path.to_string_lossy())
         ),
         None,
     );
 
-    // Read Local State file to get encryption key
-    let local_state_path = discord_path.join("Local State");
     let local_state_content =
-        fs::read_to_string(&local_state_path).context("Could not read Local State file")?;
-
-    // Parse JSON to get encryption key
+        fs::read_to_string(&profile.local_state_path).context("Could not read Local State file")?;
     let local_state: serde_json::Value =
         serde_json::from_str(&local_state_content).context("Could not parse Local State JSON")?;
-
     let encrypted_key = local_state["os_crypt"]["encrypted_key"]
         .as_str()
         .context("Could not find encrypted_key")?;
-
-    // Base64 decode
     let encrypted_key_bytes = BASE64
         .decode(encrypted_key)
         .context("Could not decode encrypted_key")?;
-
-    // Remove "DPAPI" prefix (first 5 bytes)
     let encrypted_key_bytes = &encrypted_key_bytes[5..];
-
-    // Use Windows DPAPI to decrypt master key
     let master_key = decrypt_with_dpapi(encrypted_key_bytes)?;
 
-    // Search for tokens in LevelDB
-    let leveldb_path = discord_path.join("Local Storage").join("leveldb");
-
-    if !leveldb_path.exists() {
+    if !leveldb_available {
         log(
             LogLevel::Debug,
             LogCategory::TokenExtraction,
             &format!(
                 "LevelDB path does not exist: {}",
-                sanitize_path(&leveldb_path.to_string_lossy())
+                sanitize_path(&profile.leveldb_path.to_string_lossy())
             ),
             None,
         );
@@ -218,9 +298,9 @@ fn try_extract_from_client(client: &DiscordClient) -> Result<Vec<String>> {
 
     let mut tokens = Vec::new();
     let mut file_count = 0;
+    let mut candidate_count = 0;
 
-    // Read all .ldb and .log files
-    for entry in fs::read_dir(&leveldb_path)? {
+    for entry in fs::read_dir(&profile.leveldb_path)? {
         let entry = entry?;
         let path = entry.path();
 
@@ -228,9 +308,8 @@ fn try_extract_from_client(client: &DiscordClient) -> Result<Vec<String>> {
             if ext == "ldb" || ext == "log" {
                 file_count += 1;
                 if let Ok(content) = fs::read(&path) {
-                    // Search for all token patterns
-                    let found_tokens = find_and_decrypt_tokens(&content, &master_key);
-                    tokens.extend(found_tokens);
+                    candidate_count += find_encrypted_token_payloads(&content).len();
+                    tokens.extend(find_and_decrypt_tokens(&content, &master_key));
                 }
             }
         }
@@ -239,15 +318,26 @@ fn try_extract_from_client(client: &DiscordClient) -> Result<Vec<String>> {
     log(
         LogLevel::Debug,
         LogCategory::TokenExtraction,
-        &format!(
-            "Searched {} LevelDB files, found {} tokens",
-            file_count,
-            tokens.len()
-        ),
+        &format!("Scanned LevelDB files: {file_count}"),
+        None,
+    );
+    log(
+        LogLevel::Debug,
+        LogCategory::TokenExtraction,
+        &format!("Found encrypted candidates: {candidate_count}"),
         None,
     );
 
     Ok(tokens)
+}
+
+#[cfg(target_os = "windows")]
+fn yes_no(value: bool) -> &'static str {
+    if value {
+        "yes"
+    } else {
+        "no"
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -1183,5 +1273,38 @@ mod tests {
             Ok(tokens) => println!("Extracted {} tokens", tokens.len()),
             Err(e) => println!("Error: {}", e),
         }
+    }
+
+    #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn official_windows_style_paths_stay_under_appdata_client_folders() {
+        let appdata = Path::new("/tmp/appdata");
+        let stable = official_profile_for_client(appdata, &DiscordClient::Stable);
+        let canary = official_profile_for_client(appdata, &DiscordClient::Canary);
+        let ptb = official_profile_for_client(appdata, &DiscordClient::Ptb);
+
+        assert_eq!(stable.display_name, "Discord Stable");
+        assert_eq!(
+            stable.local_state_path,
+            appdata.join("discord").join("Local State")
+        );
+        assert_eq!(
+            stable.leveldb_path,
+            appdata
+                .join("discord")
+                .join("Local Storage")
+                .join("leveldb")
+        );
+        assert_eq!(
+            canary.local_state_path,
+            appdata.join("discordcanary").join("Local State")
+        );
+        assert_eq!(
+            ptb.leveldb_path,
+            appdata
+                .join("discordptb")
+                .join("Local Storage")
+                .join("leveldb")
+        );
     }
 }

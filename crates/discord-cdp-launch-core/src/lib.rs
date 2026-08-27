@@ -5,6 +5,7 @@ mod launcher;
 mod model;
 mod platform;
 mod processes;
+mod vesktop;
 
 pub use cdp::{
     is_discord_auxiliary_page, is_discord_auxiliary_window, is_discord_target, pick_discord_target,
@@ -18,12 +19,20 @@ pub use launcher::{
     select_preferred_install, terminate_discord_processes, PlatformBackend,
 };
 pub use model::{
-    CdpProbeStatus, CdpTarget, DiscordInstall, DiscordLaunchMode, LaunchOptions, LaunchOutcome,
-    LaunchResult, LinuxDesktopProxySettings, RestoreFailure, RestoreResult, RunningCdpSession,
-    DEFAULT_CDP_PORT,
+    CdpPortOwner, CdpProbeStatus, CdpTarget, DesktopClientPreference, DiscordInstall,
+    DiscordLaunchMode, LaunchOptions, LaunchOutcome, LaunchResult, LinuxDesktopProxySettings,
+    RestoreFailure, RestoreResult, RunningCdpSession, DEFAULT_CDP_PORT,
 };
 pub use platform::SystemPlatform;
-pub use processes::{list_running_discord_cdp_sessions, restore_all_discord_to_normal};
+pub use processes::{
+    inspect_cdp_port_owner, list_running_discord_cdp_sessions, restore_all_discord_to_normal,
+};
+pub use vesktop::{
+    cdp_ready_matches_preference, discover_linux_vesktop_install_in,
+    discover_macos_vesktop_install_in, discover_windows_vesktop_install_in, find_vesktop_install,
+    is_vesktop_process_name, is_vesktop_running, parse_desktop_client_preference, vesktop_cdp_args,
+    vesktop_launch_plan, VesktopInstall, VesktopLaunchPlan,
+};
 
 #[cfg(target_os = "windows")]
 #[doc(hidden)]

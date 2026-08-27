@@ -1,4 +1,13 @@
-import type { AuthProgress, CdpStatus } from '@/api/tauri'
+import type {
+  AuthProgress,
+  CdpLaunchTarget,
+  CdpStatus,
+  DesktopClientArg,
+  DesktopClientInventory,
+  DiscordChannelArg,
+} from '@/api/tauri'
+
+export type { CdpLaunchTarget }
 
 export type LoginMethod = 'local' | 'cdp' | 'manual'
 export type LoginProgressState = 'running' | 'waiting' | 'success' | 'error' | 'neutral'
@@ -63,6 +72,55 @@ export function shouldPollCdp(options: {
 
 export function canBeginLogin(activeMethod: LoginMethod | null, storeLoading: boolean): boolean {
   return activeMethod === null && !storeLoading
+}
+
+export function usesVesktopForCdpLogin(inventory: DesktopClientInventory | null): boolean {
+  if (!inventory) return false
+  if (inventory.cdpOwner === 'vesktop') return true
+  if (inventory.vesktopRunning && !inventory.officialRunning) return true
+  return inventory.vesktopInstalled && !inventory.officialInstalled
+}
+
+export function installedCdpLaunchTargets(
+  inventory: DesktopClientInventory | null,
+): CdpLaunchTarget[] {
+  if (!inventory) return []
+  const targets: CdpLaunchTarget[] = []
+  if (inventory.stableInstalled) targets.push('stable')
+  if (inventory.ptbInstalled) targets.push('ptb')
+  if (inventory.canaryInstalled) targets.push('canary')
+  if (inventory.vesktopInstalled) targets.push('vesktop')
+  return targets
+}
+
+export function shouldAskCdpLaunchTarget(
+  cdpAvailable: boolean,
+  targets: CdpLaunchTarget[],
+): boolean {
+  return !cdpAvailable && targets.length > 1
+}
+
+export function isCdpLaunchTargetRunning(
+  inventory: DesktopClientInventory | null,
+  target: CdpLaunchTarget | null,
+): boolean {
+  if (!inventory) return false
+  if (target === 'vesktop') return inventory.vesktopRunning
+  if (target === 'stable') return inventory.stableRunning
+  if (target === 'ptb') return inventory.ptbRunning
+  if (target === 'canary') return inventory.canaryRunning
+  return inventory.officialRunning || inventory.vesktopRunning
+}
+
+export function launchArgsForCdpTarget(target: CdpLaunchTarget | null): {
+  channel: DiscordChannelArg
+  client: DesktopClientArg
+} {
+  if (target === 'vesktop') return { channel: 'auto', client: 'vesktop' }
+  if (target === 'stable' || target === 'ptb' || target === 'canary') {
+    return { channel: target, client: 'official' }
+  }
+  return { channel: 'auto', client: 'auto' }
 }
 
 export function startCdpPolling(callback: () => void, intervalMs = 5_000): () => void {

@@ -5,17 +5,39 @@ use std::time::{Duration, Instant};
 
 fn serve_once(response: Option<&'static str>, delay: Duration) -> u16 {
     let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    listener.set_nonblocking(true).unwrap();
     let port = listener.local_addr().unwrap().port();
     std::thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
-        let _ = stream.set_read_timeout(Some(Duration::from_millis(100)));
-        let mut request = [0_u8; 1024];
-        let _ = stream.read(&mut request);
-        if !delay.is_zero() {
-            std::thread::sleep(delay);
-        }
-        if let Some(response) = response {
-            let _ = stream.write_all(response.as_bytes());
+        let deadline = Instant::now() + Duration::from_millis(1500);
+        let mut delayed = false;
+        while Instant::now() < deadline {
+            match listener.accept() {
+                Ok((mut stream, _)) => {
+                    let _ = stream.set_nonblocking(false);
+                    let _ = stream.set_nodelay(true);
+                    let _ = stream.set_read_timeout(Some(Duration::from_millis(50)));
+                    let mut request = [0_u8; 1024];
+                    let _ = stream.read(&mut request);
+                    if !delay.is_zero() && !delayed {
+                        std::thread::sleep(delay);
+                        delayed = true;
+                    }
+                    if let Some(response) = response {
+                        let _ = stream.write_all(response.as_bytes());
+                        let _ = stream.flush();
+                    }
+                    // Keep the socket open. Closing right after a write-before-GET
+                    // makes the probe's request write fail as PortOccupied.
+                    std::thread::spawn(move || {
+                        std::thread::sleep(Duration::from_millis(400));
+                        drop(stream);
+                    });
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(2));
+                }
+                Err(_) => break,
+            }
         }
     });
     port
@@ -133,10 +155,24 @@ fn closed_port_is_unreachable() {
 #[test]
 fn unrelated_tcp_listener_is_not_misclassified_as_discord() {
     let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    listener.set_nonblocking(true).unwrap();
     let port = listener.local_addr().unwrap().port();
     std::thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
-        let _ = stream.write_all(b"HELLO");
+        let deadline = Instant::now() + Duration::from_millis(1500);
+        while Instant::now() < deadline {
+            match listener.accept() {
+                Ok((mut stream, _)) => {
+                    let _ = stream.set_nonblocking(false);
+                    let _ = stream.set_nodelay(true);
+                    let _ = stream.write_all(b"HELLO");
+                    let _ = stream.flush();
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(2));
+                }
+                Err(_) => break,
+            }
+        }
     });
     assert_eq!(fast_probe().probe(port), CdpProbeStatus::PortOccupied);
 }
@@ -146,13 +182,28 @@ fn complete_content_length_does_not_wait_for_connection_close() {
     let body = r#"[{"type":"page","title":"Discord","url":"https://discord.com/app","webSocketDebuggerUrl":"ws://example"}]"#;
     let response = response("200 OK", body);
     let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    listener.set_nonblocking(true).unwrap();
     let port = listener.local_addr().unwrap().port();
     std::thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
-        let mut request = [0_u8; 1024];
-        let _ = stream.read(&mut request);
-        stream.write_all(response.as_bytes()).unwrap();
-        std::thread::sleep(Duration::from_secs(2));
+        let deadline = Instant::now() + Duration::from_millis(2500);
+        while Instant::now() < deadline {
+            match listener.accept() {
+                Ok((mut stream, _)) => {
+                    let _ = stream.set_nonblocking(false);
+                    let _ = stream.set_nodelay(true);
+                    let _ = stream.write_all(response.as_bytes());
+                    let _ = stream.flush();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(Duration::from_secs(2));
+                        drop(stream);
+                    });
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(2));
+                }
+                Err(_) => break,
+            }
+        }
     });
     let started = Instant::now();
     assert!(matches!(

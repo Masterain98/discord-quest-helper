@@ -335,6 +335,20 @@ mod tests {
     }
 
     #[test]
+    fn vesktop_friends_page_is_a_main_discord_target() {
+        let vesktop = CdpTarget {
+            id: "vesktop-main".to_string(),
+            target_type: "page".to_string(),
+            title: "\u{0007} Discord | Friends".to_string(),
+            url: "https://discord.com/channels/@me".to_string(),
+            web_socket_debugger_url: Some("ws://127.0.0.1:9223/devtools/page/1".to_string()),
+        };
+        assert!(is_discord_target(&vesktop));
+        assert!(!is_discord_auxiliary_window(&vesktop));
+        assert_eq!(pick_discord_target(&[vesktop]).unwrap().id, "vesktop-main");
+    }
+
+    #[test]
     fn overlay_is_still_a_discord_page_target() {
         let overlay = target("overlay", "Discord Overlay", "https://discord.com/popout");
         assert!(is_discord_target(&overlay));

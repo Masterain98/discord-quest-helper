@@ -14,9 +14,12 @@ import {
   getDebugInfo,
   isDiscordRunning,
   launchDiscordCdp,
+  listDesktopClients,
   restartDiscordCdp,
   type CdpStatus,
-  type DebugInfo
+  type DebugInfo,
+  type DesktopClientArg,
+  type DesktopClientInventory
 } from '@/api/tauri'
 import {
   AlertDialog,
@@ -58,6 +61,11 @@ const discordWasRunning = ref(false)
 const discordWasConnected = ref(false)
 const debugInfo = ref<DebugInfo | null>(null)
 const debugInfoLoading = ref(false)
+const desktopClients = ref<DesktopClientInventory | null>(null)
+const desktopClientChoices: DesktopClientArg[] = ['auto', 'official', 'vesktop']
+const showClientPicker = computed(() => (
+  desktopClients.value?.officialInstalled === true && desktopClients.value?.vesktopInstalled === true
+))
 
 const cdpSectionTone = computed<SettingsTone>(() => cdpStatus.value?.connected ? 'success' : 'warning')
 const cdpStatusTone = computed<SettingsTone>(() => {
@@ -142,7 +150,11 @@ async function requestCdpAction() {
   resetLaunchMessage()
   cdpActionBusy.value = true
   try {
-    const running = await isDiscordRunning('auto')
+    const inventory = await listDesktopClients(questsStore.cdpPort)
+    desktopClients.value = inventory
+    const running = questsStore.desktopClient === 'vesktop'
+      ? inventory.vesktopRunning
+      : await isDiscordRunning('auto')
     discordWasRunning.value = running
     discordWasConnected.value = !!cdpStatus.value?.connected
     if (running) {
@@ -176,8 +188,8 @@ async function performLaunch(restart: boolean) {
 
   try {
     const result = restart
-      ? await restartDiscordCdp(questsStore.cdpPort, 'auto')
-      : await launchDiscordCdp(questsStore.cdpPort, 'auto')
+      ? await restartDiscordCdp(questsStore.cdpPort, 'auto', questsStore.desktopClient)
+      : await launchDiscordCdp(questsStore.cdpPort, 'auto', questsStore.desktopClient)
     cdpLaunchSuccess.value = result.cdp_connected
       ? t('settings.cdp_launch_success')
       : t('settings.cdp_launch_started')
@@ -194,6 +206,9 @@ async function performLaunch(restart: boolean) {
 onMounted(() => {
   checkCdp()
   loadDebugInfo()
+  listDesktopClients(questsStore.cdpPort).then((inventory) => {
+    desktopClients.value = inventory
+  }).catch(() => {})
 })
 </script>
 
@@ -249,6 +264,22 @@ onMounted(() => {
 
       <div class="space-y-3 rounded-lg border border-primary/20 bg-primary/5 p-4">
         <p class="text-sm font-semibold">{{ t('settings.integration_setup') }}</p>
+        <div v-if="showClientPicker" class="space-y-2">
+          <p class="text-sm font-medium">{{ t('settings.desktop_client') }}</p>
+          <p class="text-sm text-muted-foreground">{{ t('settings.desktop_client_desc') }}</p>
+          <div class="grid grid-cols-3 gap-2">
+            <Button
+              v-for="choice in desktopClientChoices"
+              :key="choice"
+              type="button"
+              size="sm"
+              :variant="questsStore.desktopClient === choice ? 'default' : 'outline'"
+              @click="questsStore.desktopClient = choice"
+            >
+              {{ t(`auth.client_${choice}`) }}
+            </Button>
+          </div>
+        </div>
         <p class="text-sm text-muted-foreground">{{ t('settings.cdp_launch_desc') }}</p>
         <div class="flex flex-wrap items-center gap-2">
           <Button

@@ -41,8 +41,24 @@
       "launching_discord": "CDP를 활성화하여 Discord 시작 중...",
       "restart_required": "Discord가 이미 실행 중입니다. CDP를 활성화하여 다시 시작해야 합니다.",
       "restarting_discord": "CDP를 활성화하여 Discord 다시 시작 중...",
-      "restart_cancelled": "Discord 다시 시작을 취소했습니다. 로그인된 계정이 없습니다."
-    }
+      "restart_cancelled": "Discord 다시 시작을 취소했습니다. 로그인된 계정이 없습니다.",
+      "launching_vesktop": "Starting Vesktop with CDP enabled...",
+      "restart_required_vesktop": "Vesktop is already running and must be restarted with CDP enabled.",
+      "restarting_vesktop": "Restarting Vesktop with CDP enabled...",
+      "choose_client": "Choose which Discord client to start with CDP...",
+      "launch_cancelled": "Client launch was cancelled. No account was logged in."
+    },
+    "cdp_login_action_vesktop": "Use Vesktop to Log In",
+    "client_auto": "Auto",
+    "client_official": "Discord",
+    "client_vesktop": "Vesktop",
+    "cdp_login_detail_vesktop": "Use the account currently signed in to Vesktop. Vesktop must be running with CDP enabled.",
+    "cdp_choose_title": "Choose a Discord client",
+    "cdp_choose_desc": "No client is running with CDP enabled. Choose which installed client to start.",
+    "cdp_client_stable": "Discord",
+    "cdp_client_ptb": "Discord PTB",
+    "cdp_client_canary": "Discord Canary",
+    "cdp_client_vesktop": "Vesktop"
   },
   "nav": {
     "home": "홈",
@@ -94,13 +110,9 @@
     "include_expired": "만료된 퀘스트 포함",
     "include_expired_desc": "검사 및 복구를 위해 만료된 항목을 표시합니다.",
     "current_orbs": "현재 Orbs",
-
     "nitro_next_orbs_title": "Nitro 월간 Orbs — 다음 받기까지 남은 시간",
-
     "nitro_next_orbs_days": "다음 Orbs 에어드롭까지 {days}일",
-
     "nitro_next_orbs_hours": "다음 Orbs 에어드롭까지 {hours}시간",
-
     "nitro_next_orbs_minutes": "다음 Orbs 에어드롭까지 {minutes}분",
     "claim_reward": "보상 받기",
     "claim_navigated": "Discord가 퀘스트 페이지로 이동되었습니다. Discord에서 보상을 수령하세요.",
@@ -290,7 +302,11 @@
     "debug_already_unlocked": "개발자 모드가 활성화되었습니다",
     "disable_developer_mode": "개발자 모드 비활성화",
     "disable_debug_confirm_title": "개발자 모드를 비활성화하시겠습니까?",
-    "disable_debug_confirm_desc": "디버그 탭과 개발자 도구가 숨겨집니다. 버전 번호를 7번 탭하면 다시 활성화할 수 있습니다."
+    "disable_debug_confirm_desc": "디버그 탭과 개발자 도구가 숨겨집니다. 버전 번호를 7번 탭하면 다시 활성화할 수 있습니다.",
+    "cdp_dialog_title_disconnected_vesktop": "Restart Vesktop to enable CDP?",
+    "cdp_dialog_desc_disconnected_vesktop": "Vesktop is running but CDP is not connected. We need to restart Vesktop with the CDP debug port enabled.",
+    "desktop_client": "Desktop client",
+    "desktop_client_desc": "When Discord and Vesktop are both installed, this choice only affects CDP login. Local token extraction always uses the official Discord client."
   },
   "version": {
     "update_available": "새 버전이 있습니다!",

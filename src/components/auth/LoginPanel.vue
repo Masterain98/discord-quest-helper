@@ -29,17 +29,25 @@ import {
   checkCdpStatus,
   isDiscordRunning,
   launchDiscordCdp,
+  listDesktopClients,
   restartDiscordCdp,
   type AuthProgress,
   type CdpStatus,
+  type DesktopClientInventory,
   type ExtractedAccount,
 } from '@/api/tauri'
 import {
   classifyCdpAvailability,
   canBeginLogin,
+  installedCdpLaunchTargets,
+  isCdpLaunchTargetRunning,
+  launchArgsForCdpTarget,
   presentAuthProgress,
+  shouldAskCdpLaunchTarget,
   shouldPollCdp,
   startCdpPolling,
+  usesVesktopForCdpLogin,
+  type CdpLaunchTarget,
   type LoginMethod,
   type LoginProgressState,
 } from './loginFlow'
@@ -66,6 +74,10 @@ const cdpStatus = ref<CdpStatus | null>(null)
 const cdpChecking = ref(false)
 const cdpProbeFailed = ref(false)
 const cdpRestartDialogOpen = ref(false)
+const cdpChooseDialogOpen = ref(false)
+const cdpLaunchChoices = ref<CdpLaunchTarget[]>([])
+const selectedCdpTarget = ref<CdpLaunchTarget | null>(null)
+const desktopClients = ref<DesktopClientInventory | null>(null)
 let stopCdpPolling: (() => void) | null = null
 let accountViewTransitionRevision = 0
 
@@ -75,7 +87,12 @@ const showAutoDetect = computed(() => {
   return level !== 'manual_only' && level !== 'unavailable'
 })
 
-const busy = computed(() => activeMethod.value !== null || authStore.loading)
+const busy = computed(() => (
+  activeMethod.value !== null
+  || authStore.loading
+  || cdpRestartDialogOpen.value
+  || cdpChooseDialogOpen.value
+))
 const showingDetectedAccounts = computed(() => authStore.detectedAccounts.length > 0)
 const cdpAvailability = computed(() => classifyCdpAvailability(
   cdpChecking.value,
@@ -89,6 +106,15 @@ const cdpStatusKey = computed(() => ({
   offline: 'settings.cdp_disconnected_short',
   error: 'auth.cdp_status_error',
 })[cdpAvailability.value])
+const usingVesktopCdp = computed(() => (
+  selectedCdpTarget.value === 'vesktop' || usesVesktopForCdpLogin(desktopClients.value)
+))
+const cdpLoginDetailKey = computed(() => (
+  usingVesktopCdp.value ? 'auth.cdp_login_detail_vesktop' : 'auth.cdp_login_detail'
+))
+const cdpLoginActionKey = computed(() => (
+  usingVesktopCdp.value ? 'auth.cdp_login_action_vesktop' : 'auth.cdp_login_action'
+))
 const cdpStatusClass = computed(() => ({
   checking: 'bg-muted text-muted-foreground',
   ready: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
@@ -166,6 +192,14 @@ function begin(method: LoginMethod): boolean {
 
 function finish() {
   activeMethod.value = null
+}
+
+async function refreshDesktopClients() {
+  try {
+    desktopClients.value = await listDesktopClients(questsStore.cdpPort)
+  } catch (error) {
+    console.warn('Login page desktop client scan failed:', error)
+  }
 }
 
 async function refreshCdpStatus(): Promise<CdpStatus | null> {
@@ -261,30 +295,90 @@ async function finishCdpLogin() {
   return succeeded
 }
 
+function requestCdpRestart(target: CdpLaunchTarget | null) {
+  selectedCdpTarget.value = target
+  setProgress(
+    'cdp',
+    'waiting',
+    target === 'vesktop' ? 'auth.progress.restart_required_vesktop' : 'auth.progress.restart_required',
+  )
+  cdpRestartDialogOpen.value = true
+}
+
+async function launchOrRestartSelectedTarget(target: CdpLaunchTarget | null) {
+  selectedCdpTarget.value = target
+  if (isCdpLaunchTargetRunning(desktopClients.value, target)) {
+    requestCdpRestart(target)
+    return
+  }
+
+  const { channel, client } = launchArgsForCdpTarget(target)
+  setProgress(
+    'cdp',
+    'running',
+    target === 'vesktop' ? 'auth.progress.launching_vesktop' : 'auth.progress.launching_discord',
+  )
+  try {
+    await launchDiscordCdp(questsStore.cdpPort, channel, client)
+    await refreshCdpStatus()
+  } catch (launchError) {
+    const retryStatus = await refreshCdpStatus()
+    await refreshDesktopClients()
+    if (!retryStatus?.available) {
+      const running = isCdpLaunchTargetRunning(desktopClients.value, target)
+        || desktopClients.value?.officialRunning === true
+        || desktopClients.value?.vesktopRunning === true
+        || await isDiscordRunning('auto')
+      if (running) {
+        requestCdpRestart(target)
+        return
+      }
+      throw launchError
+    }
+  }
+  await finishCdpLogin()
+}
+
 async function handleCdpLogin() {
   if (!begin('cdp')) return
   setProgress('cdp', 'running', 'auth.progress.checking_cdp')
   try {
     const status = await refreshCdpStatus()
-    if (!status?.available) {
-      try {
-        setProgress('cdp', 'running', 'auth.progress.launching_discord')
-        await launchDiscordCdp(questsStore.cdpPort, 'auto')
-        await refreshCdpStatus()
-      } catch (launchError) {
-        const retryStatus = await refreshCdpStatus()
-        if (!retryStatus?.available) {
-          const running = await isDiscordRunning('auto')
-          if (running) {
-            setProgress('cdp', 'waiting', 'auth.progress.restart_required')
-            cdpRestartDialogOpen.value = true
-            return
-          }
-          throw launchError
-        }
-      }
+    await refreshDesktopClients()
+    if (status?.available) {
+      await finishCdpLogin()
+      return
     }
-    await finishCdpLogin()
+    const targets = installedCdpLaunchTargets(desktopClients.value)
+    if (shouldAskCdpLaunchTarget(false, targets)) {
+      cdpLaunchChoices.value = targets
+      selectedCdpTarget.value = null
+      setProgress('cdp', 'waiting', 'auth.progress.choose_client')
+      cdpChooseDialogOpen.value = true
+      return
+    }
+    await launchOrRestartSelectedTarget(targets[0] ?? null)
+  } catch (error) {
+    authStore.error = errorDetail(error)
+    setProgress('cdp', 'error', 'auth.progress.failed', undefined, authStore.error)
+  } finally {
+    finish()
+    if (!authStore.user && !cdpRestartDialogOpen.value && !cdpChooseDialogOpen.value) {
+      void refreshCdpStatus()
+    }
+  }
+}
+
+async function selectCdpLaunchTarget(target: CdpLaunchTarget) {
+  setProgress(
+    'cdp',
+    'running',
+    target === 'vesktop' ? 'auth.progress.launching_vesktop' : 'auth.progress.launching_discord',
+  )
+  cdpChooseDialogOpen.value = false
+  if (!begin('cdp')) return
+  try {
+    await launchOrRestartSelectedTarget(target)
   } catch (error) {
     authStore.error = errorDetail(error)
     setProgress('cdp', 'error', 'auth.progress.failed', undefined, authStore.error)
@@ -297,9 +391,16 @@ async function handleCdpLogin() {
 async function confirmCdpRestart() {
   cdpRestartDialogOpen.value = false
   if (!begin('cdp')) return
-  setProgress('cdp', 'running', 'auth.progress.restarting_discord')
+  const { channel, client } = launchArgsForCdpTarget(selectedCdpTarget.value)
+  setProgress(
+    'cdp',
+    'running',
+    selectedCdpTarget.value === 'vesktop'
+      ? 'auth.progress.restarting_vesktop'
+      : 'auth.progress.restarting_discord',
+  )
   try {
-    await restartDiscordCdp(questsStore.cdpPort, 'auto')
+    await restartDiscordCdp(questsStore.cdpPort, channel, client)
     await refreshCdpStatus()
     await finishCdpLogin()
   } catch (error) {
@@ -315,6 +416,14 @@ function handleRestartDialogOpenChange(open: boolean) {
   cdpRestartDialogOpen.value = open
   if (!open && progress.value?.state === 'waiting') {
     setProgress('cdp', 'neutral', 'auth.progress.restart_cancelled')
+    void refreshCdpStatus()
+  }
+}
+
+function handleChooseDialogOpenChange(open: boolean) {
+  cdpChooseDialogOpen.value = open
+  if (!open && progress.value?.key === 'auth.progress.choose_client') {
+    setProgress('cdp', 'neutral', 'auth.progress.launch_cancelled')
     void refreshCdpStatus()
   }
 }
@@ -335,6 +444,7 @@ function handleVisibilityChange() {
 
 onMounted(() => {
   pollCdpIfNeeded()
+  void refreshDesktopClients()
   stopCdpPolling = startCdpPolling(pollCdpIfNeeded, CDP_POLL_INTERVAL_MS)
   document.addEventListener('visibilitychange', handleVisibilityChange)
 })
@@ -406,7 +516,9 @@ onUnmounted(() => {
             </div>
             <span class="min-w-0">
               <span class="block truncate font-semibold">{{ account.user.global_name || account.user.username }}</span>
-              <span class="block truncate text-xs text-muted-foreground">@{{ account.user.username }}</span>
+              <span class="block truncate text-xs text-muted-foreground">
+                @{{ account.user.username }}
+              </span>
             </span>
           </Button>
         </div>
@@ -453,7 +565,7 @@ onUnmounted(() => {
                     {{ t(cdpStatusKey) }}
                   </span>
                 </div>
-                <p class="mt-1 max-w-md text-sm leading-5 text-muted-foreground">{{ t('auth.cdp_login_detail') }}</p>
+                <p class="mt-1 max-w-md text-sm leading-5 text-muted-foreground">{{ t(cdpLoginDetailKey) }}</p>
               </div>
             </div>
             <div class="login-method-action">
@@ -465,7 +577,7 @@ onUnmounted(() => {
                 @click="handleCdpLogin"
               >
                 <Loader2 v-if="activeMethod === 'cdp'" class="h-4 w-4 shrink-0 animate-spin" />
-                {{ t('auth.cdp_login_action') }}
+                {{ t(cdpLoginActionKey) }}
               </Button>
             </div>
           </article>
@@ -544,11 +656,43 @@ onUnmounted(() => {
       </Transition>
     </div>
 
+    <AlertDialog :open="cdpChooseDialogOpen" @update:open="handleChooseDialogOpenChange">
+      <AlertDialogContent class="max-w-[520px]">
+        <AlertDialogHeader>
+          <AlertDialogTitle>{{ t('auth.cdp_choose_title') }}</AlertDialogTitle>
+          <AlertDialogDescription>{{ t('auth.cdp_choose_desc') }}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <div class="grid gap-2">
+          <Button
+            v-for="target in cdpLaunchChoices"
+            :key="target"
+            type="button"
+            variant="outline"
+            class="h-auto justify-start px-4 py-3 text-left"
+            @click="selectCdpLaunchTarget(target)"
+          >
+            {{ t(`auth.cdp_client_${target}`) }}
+          </Button>
+        </div>
+        <AlertDialogFooter>
+          <AlertDialogCancel>{{ t('dialog.cancel') }}</AlertDialogCancel>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+
     <AlertDialog :open="cdpRestartDialogOpen" @update:open="handleRestartDialogOpenChange">
       <AlertDialogContent class="max-w-[520px]">
         <AlertDialogHeader>
-          <AlertDialogTitle>{{ t('settings.cdp_dialog_title_disconnected') }}</AlertDialogTitle>
-          <AlertDialogDescription>{{ t('settings.cdp_dialog_desc_disconnected') }}</AlertDialogDescription>
+          <AlertDialogTitle>{{
+            usingVesktopCdp
+              ? t('settings.cdp_dialog_title_disconnected_vesktop')
+              : t('settings.cdp_dialog_title_disconnected')
+          }}</AlertDialogTitle>
+          <AlertDialogDescription>{{
+            usingVesktopCdp
+              ? t('settings.cdp_dialog_desc_disconnected_vesktop')
+              : t('settings.cdp_dialog_desc_disconnected')
+          }}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>{{ t('dialog.cancel') }}</AlertDialogCancel>

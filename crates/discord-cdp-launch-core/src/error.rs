@@ -9,6 +9,7 @@ use std::time::Duration;
 pub enum LaunchError {
     InvalidPort(u16),
     UnsupportedChannel(String),
+    UnsupportedClient(String),
     UnsupportedPlatform,
     InstallNotFound {
         channel: Option<DiscordChannel>,
@@ -29,6 +30,13 @@ pub enum LaunchError {
     },
     PortOccupied {
         port: u16,
+    },
+    CdpOwnedByOtherClient {
+        port: u16,
+        owner: &'static str,
+    },
+    DesktopClientAlreadyRunning {
+        client: &'static str,
     },
     NonDiscordCdpTarget {
         port: u16,
@@ -52,6 +60,9 @@ impl fmt::Display for LaunchError {
             Self::InvalidPort(_) => write!(formatter, "CDP port must be between 1 and 65535."),
             Self::UnsupportedChannel(value) => {
                 write!(formatter, "Unsupported Discord channel: {value}")
+            }
+            Self::UnsupportedClient(value) => {
+                write!(formatter, "Unsupported desktop client: {value}")
             }
             Self::UnsupportedPlatform => write!(
                 formatter,
@@ -91,6 +102,14 @@ impl fmt::Display for LaunchError {
             Self::PortOccupied { port } => {
                 write!(formatter, "CDP port {port} is already used by another process.")
             }
+            Self::CdpOwnedByOtherClient { port, owner } => write!(
+                formatter,
+                "CDP port {port} is already used by {owner}. Choose that client or close it first."
+            ),
+            Self::DesktopClientAlreadyRunning { client } => write!(
+                formatter,
+                "{client} is already running without CDP. Restart it to close it and relaunch with CDP."
+            ),
             Self::NonDiscordCdpTarget { port } => write!(
                 formatter,
                 "CDP port {port} is already used by a non-Discord CDP target."

@@ -41,8 +41,24 @@
       "launching_discord": "Démarrage de Discord avec CDP activé...",
       "restart_required": "Discord est déjà ouvert et doit être redémarré avec CDP activé.",
       "restarting_discord": "Redémarrage de Discord avec CDP activé...",
-      "restart_cancelled": "Le redémarrage de Discord a été annulé. Aucun compte n’a été connecté."
-    }
+      "restart_cancelled": "Le redémarrage de Discord a été annulé. Aucun compte n’a été connecté.",
+      "launching_vesktop": "Starting Vesktop with CDP enabled...",
+      "restart_required_vesktop": "Vesktop is already running and must be restarted with CDP enabled.",
+      "restarting_vesktop": "Restarting Vesktop with CDP enabled...",
+      "choose_client": "Choose which Discord client to start with CDP...",
+      "launch_cancelled": "Client launch was cancelled. No account was logged in."
+    },
+    "cdp_login_action_vesktop": "Use Vesktop to Log In",
+    "client_auto": "Auto",
+    "client_official": "Discord",
+    "client_vesktop": "Vesktop",
+    "cdp_login_detail_vesktop": "Use the account currently signed in to Vesktop. Vesktop must be running with CDP enabled.",
+    "cdp_choose_title": "Choose a Discord client",
+    "cdp_choose_desc": "No client is running with CDP enabled. Choose which installed client to start.",
+    "cdp_client_stable": "Discord",
+    "cdp_client_ptb": "Discord PTB",
+    "cdp_client_canary": "Discord Canary",
+    "cdp_client_vesktop": "Vesktop"
   },
   "nav": {
     "home": "Accueil",
@@ -94,13 +110,9 @@
     "include_expired": "Inclure les quêtes expirées",
     "include_expired_desc": "Afficher les entrées expirées pour inspection et récupération.",
     "current_orbs": "Orbs actuel",
-
     "nitro_next_orbs_title": "Orbs Nitro mensuelles — compte à rebours jusqu’à la prochaine réclamation",
-
     "nitro_next_orbs_days": "Prochain airdrop d’Orbs dans {days} jours",
-
     "nitro_next_orbs_hours": "Prochain airdrop d’Orbs dans {hours} heures",
-
     "nitro_next_orbs_minutes": "Prochain airdrop d’Orbs dans {minutes} minutes",
     "claim_reward": "Réclamez une récompense",
     "claim_navigated": "Discord a été redirigé vers la page de quête. Veuillez y réclamer votre récompense.",
@@ -290,7 +302,11 @@
     "debug_already_unlocked": "Mode développeur activé",
     "disable_developer_mode": "Désactiver le mode développeur",
     "disable_debug_confirm_title": "Désactiver le mode développeur ?",
-    "disable_debug_confirm_desc": "L'onglet Débogage et les outils de développement seront masqués. Vous pouvez le réactiver en appuyant 7 fois sur le numéro de version."
+    "disable_debug_confirm_desc": "L'onglet Débogage et les outils de développement seront masqués. Vous pouvez le réactiver en appuyant 7 fois sur le numéro de version.",
+    "cdp_dialog_title_disconnected_vesktop": "Restart Vesktop to enable CDP?",
+    "cdp_dialog_desc_disconnected_vesktop": "Vesktop is running but CDP is not connected. We need to restart Vesktop with the CDP debug port enabled.",
+    "desktop_client": "Desktop client",
+    "desktop_client_desc": "When Discord and Vesktop are both installed, this choice only affects CDP login. Local token extraction always uses the official Discord client."
   },
   "version": {
     "update_available": "Une nouvelle version est disponible !",

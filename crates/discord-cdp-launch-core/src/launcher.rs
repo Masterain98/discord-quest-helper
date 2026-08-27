@@ -1,4 +1,8 @@
 use crate::platform::SystemPlatform;
+use crate::vesktop::{
+    cdp_ready_matches_preference, find_vesktop_install, is_vesktop_running, spawn_vesktop,
+    terminate_vesktop, vesktop_launch_plan, VesktopInstall, VesktopLaunchPlan,
+};
 use crate::{
     CdpProbe, CdpProbeStatus, DiscordChannel, DiscordInstall, DiscordLaunchMode, LaunchError,
     LaunchOptions, LaunchOutcome, LaunchResult, StdCdpProbe,
@@ -50,7 +54,152 @@ pub fn terminate_discord_processes(channel: Option<DiscordChannel>) -> Result<()
 }
 
 pub fn launch_discord_with_cdp(options: LaunchOptions) -> Result<LaunchResult, LaunchError> {
+    if is_cdp_available(options.port) {
+        let owner = crate::inspect_cdp_port_owner(options.port);
+        if !cdp_ready_matches_preference(options.client, owner) {
+            return Err(LaunchError::CdpOwnedByOtherClient {
+                port: options.port,
+                owner: owner.as_str(),
+            });
+        }
+    }
+    if should_launch_vesktop(&options)? {
+        let install =
+            find_vesktop_install().ok_or(LaunchError::InstallNotFound { channel: None })?;
+        return launch_vesktop_with_cdp(options, install, &StdCdpProbe::default());
+    }
     launch_with_backends(options, &SystemPlatform, &StdCdpProbe::default())
+}
+
+fn should_launch_vesktop(options: &LaunchOptions) -> Result<bool, LaunchError> {
+    let official_running = SystemPlatform.is_running(options.channel)?;
+    let vesktop_running = is_vesktop_running()?;
+    let official_install_found =
+        select_preferred_install(&SystemPlatform.find_installs()?, options.channel).is_ok();
+    Ok(vesktop_launch_plan(
+        options.channel,
+        options.client,
+        official_running,
+        vesktop_running,
+        official_install_found,
+        find_vesktop_install().is_some(),
+    ) == VesktopLaunchPlan::LaunchVesktop)
+}
+
+fn launch_vesktop_with_cdp<C: CdpProbe>(
+    options: LaunchOptions,
+    install: VesktopInstall,
+    cdp: &C,
+) -> Result<LaunchResult, LaunchError> {
+    if options.port == 0 {
+        return Err(LaunchError::InvalidPort(options.port));
+    }
+
+    match cdp.probe(options.port) {
+        CdpProbeStatus::DiscordReady { .. } => {
+            return Ok(vesktop_result(
+                &install,
+                &options,
+                LaunchOutcome::AlreadyAvailable,
+                None,
+                true,
+            ));
+        }
+        CdpProbeStatus::PortOccupied => {
+            return Err(LaunchError::PortOccupied { port: options.port });
+        }
+        CdpProbeStatus::Unreachable | CdpProbeStatus::CdpWithoutDiscordTarget => {}
+    }
+
+    let running = is_vesktop_running()?;
+    if running && !options.restart_existing {
+        return Err(LaunchError::DesktopClientAlreadyRunning { client: "Vesktop" });
+    }
+    if running {
+        terminate_vesktop()?;
+        wait_until_vesktop_exits(&options)?;
+    }
+
+    match cdp.probe(options.port) {
+        CdpProbeStatus::Unreachable => {}
+        CdpProbeStatus::DiscordReady { .. } => {
+            return Ok(vesktop_result(
+                &install,
+                &options,
+                LaunchOutcome::AlreadyAvailable,
+                None,
+                true,
+            ));
+        }
+        CdpProbeStatus::PortOccupied => {
+            return Err(LaunchError::PortOccupied { port: options.port });
+        }
+        CdpProbeStatus::CdpWithoutDiscordTarget => {
+            return Err(LaunchError::NonDiscordCdpTarget { port: options.port });
+        }
+    }
+
+    let pid = spawn_vesktop(&install, DiscordLaunchMode::Cdp { port: options.port })?;
+    if !options.wait_for_cdp {
+        return Ok(vesktop_result(
+            &install,
+            &options,
+            LaunchOutcome::Spawned,
+            Some(pid),
+            false,
+        ));
+    }
+
+    let started = Instant::now();
+    while started.elapsed() < options.readiness_timeout {
+        if matches!(cdp.probe(options.port), CdpProbeStatus::DiscordReady { .. }) {
+            return Ok(vesktop_result(
+                &install,
+                &options,
+                LaunchOutcome::Spawned,
+                Some(pid),
+                true,
+            ));
+        }
+        std::thread::sleep(options.poll_interval);
+    }
+
+    Err(LaunchError::ReadinessTimeout {
+        port: options.port,
+        timeout: options.readiness_timeout,
+    })
+}
+
+fn wait_until_vesktop_exits(options: &LaunchOptions) -> Result<(), LaunchError> {
+    let started = Instant::now();
+    while started.elapsed() < options.shutdown_timeout {
+        if !is_vesktop_running()? {
+            return Ok(());
+        }
+        std::thread::sleep(options.poll_interval);
+    }
+    Err(LaunchError::ShutdownTimeout {
+        timeout: options.shutdown_timeout,
+    })
+}
+
+fn vesktop_result(
+    install: &VesktopInstall,
+    options: &LaunchOptions,
+    outcome: LaunchOutcome,
+    pid: Option<u32>,
+    cdp_connected: bool,
+) -> LaunchResult {
+    // Vesktop is not a Discord release channel. LaunchResult still carries
+    // DiscordChannel for the existing DTO; Vesktop hosts discord.com stable.
+    LaunchResult {
+        outcome,
+        launched_path: install.executable_path.clone(),
+        channel: DiscordChannel::Stable,
+        port: options.port,
+        pid,
+        cdp_connected,
+    }
 }
 
 pub fn restart_discord_with_cdp(mut options: LaunchOptions) -> Result<LaunchResult, LaunchError> {

@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
-import type { Quest, DetectableGame, ExcludedQuest, GameQuestMode, PlatformCapabilities } from '@/api/tauri'
+import type { Quest, DetectableGame, DesktopClientArg, ExcludedQuest, GameQuestMode, PlatformCapabilities } from '@/api/tauri'
 import { getQuestKind, playActivityProgressPercentage } from '@/utils/questTasks'
 import { resolveSimulationExecutable } from '@/utils/executables'
 
@@ -188,6 +188,14 @@ export const useQuestsStore = defineStore('quests', () => {
   const savedCdpPort = localStorage.getItem(STORAGE_CDP_PORT_KEY)
   const cdpPort = ref(savedCdpPort ? parseInt(savedCdpPort) : 9223)
 
+  const STORAGE_DESKTOP_CLIENT_KEY = 'questHelper_desktopClient'
+  const savedDesktopClient = localStorage.getItem(STORAGE_DESKTOP_CLIENT_KEY)
+  const desktopClient = ref<DesktopClientArg>(
+    savedDesktopClient === 'official' || savedDesktopClient === 'vesktop' || savedDesktopClient === 'auto'
+      ? savedDesktopClient
+      : 'auto',
+  )
+
   // Optional display: account Orbs balance. Disabled by default to avoid extra requests.
   const STORAGE_SHOW_ORBS_BALANCE_KEY = 'questHelper_showOrbsBalance'
   const savedShowOrbsBalance = localStorage.getItem(STORAGE_SHOW_ORBS_BALANCE_KEY)
@@ -233,6 +241,10 @@ export const useQuestsStore = defineStore('quests', () => {
   // Persist CDP port changes
   watch(cdpPort, (newPort) => {
     localStorage.setItem(STORAGE_CDP_PORT_KEY, String(newPort))
+  })
+
+  watch(desktopClient, (client) => {
+    localStorage.setItem(STORAGE_DESKTOP_CLIENT_KEY, client)
   })
 
   watch(showOrbsBalance, (enabled) => {
@@ -1270,6 +1282,7 @@ export const useQuestsStore = defineStore('quests', () => {
     gamePollingInterval,
     gameQuestMode,
     cdpPort,
+    desktopClient,
     cdpAvailable,
     stopping,
     activeGameExe,

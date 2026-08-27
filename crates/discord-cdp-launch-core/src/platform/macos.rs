@@ -1,4 +1,5 @@
 use crate::launcher::build_launch_args;
+use crate::vesktop::VesktopInstall;
 use crate::{DiscordChannel, DiscordInstall, DiscordLaunchMode, LaunchError};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -132,4 +133,68 @@ fn process_name(channel: DiscordChannel) -> &'static str {
         DiscordChannel::Ptb => "Discord PTB",
         DiscordChannel::Canary => "Discord Canary",
     }
+}
+
+pub(crate) fn is_vesktop_running() -> Result<bool, LaunchError> {
+    for name in ["Vesktop", "vesktop"] {
+        let status = Command::new("/usr/bin/pgrep")
+            .args(["-x", name])
+            .status()
+            .map_err(|source| LaunchError::ProcessInspection {
+                operation: "pgrep",
+                source,
+            })?;
+        if status.success() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+pub(crate) fn terminate_vesktop() -> Result<(), LaunchError> {
+    let _ = Command::new("/usr/bin/osascript")
+        .args(["-e", "tell application \"Vesktop\" to quit"])
+        .output();
+    std::thread::sleep(Duration::from_secs(3));
+    for name in ["Vesktop", "vesktop"] {
+        let output = Command::new("/usr/bin/pkill")
+            .args(["-x", name])
+            .output()
+            .map_err(|source| LaunchError::ProcessInspection {
+                operation: "pkill",
+                source,
+            })?;
+        if !output.status.success() && output.status.code() != Some(1) {
+            return Err(LaunchError::ProcessTermination {
+                process: name.to_string(),
+                details: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+            });
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn spawn_vesktop(
+    install: &VesktopInstall,
+    mode: DiscordLaunchMode,
+) -> Result<u32, LaunchError> {
+    let mut command = Command::new(&install.executable_path);
+    command
+        .current_dir(&install.working_dir)
+        .args(build_launch_args(mode))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    command
+        .spawn()
+        .map(|mut child| {
+            let pid = child.id();
+            std::thread::spawn(move || {
+                let _ = child.wait();
+            });
+            pid
+        })
+        .map_err(|source| LaunchError::SpawnFailed {
+            path: install.executable_path.clone(),
+            source,
+        })
 }

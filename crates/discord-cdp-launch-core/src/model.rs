@@ -4,6 +4,47 @@ use std::time::Duration;
 
 pub const DEFAULT_CDP_PORT: u16 = 9223;
 
+/// Which desktop client Helper should extract from or attach to.
+///
+/// This is not a Discord release channel. Vesktop hosts discord.com; official
+/// Discord still uses Stable / PTB / Canary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DesktopClientPreference {
+    #[default]
+    Auto,
+    Official,
+    Vesktop,
+}
+
+impl DesktopClientPreference {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Official => "official",
+            Self::Vesktop => "vesktop",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CdpPortOwner {
+    None,
+    Official,
+    Vesktop,
+    Other,
+}
+
+impl CdpPortOwner {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Official => "official",
+            Self::Vesktop => "vesktop",
+            Self::Other => "other",
+        }
+    }
+}
+
 /// Manual proxy endpoints exposed by a Linux desktop session.
 ///
 /// The data model is platform-independent so consumers can test proxy client
@@ -60,6 +101,7 @@ pub struct RestoreResult {
 pub struct LaunchOptions {
     pub port: u16,
     pub channel: Option<DiscordChannel>,
+    pub client: DesktopClientPreference,
     pub restart_existing: bool,
     pub wait_for_cdp: bool,
     pub shutdown_timeout: Duration,
@@ -72,6 +114,7 @@ impl Default for LaunchOptions {
         Self {
             port: DEFAULT_CDP_PORT,
             channel: None,
+            client: DesktopClientPreference::Auto,
             restart_existing: false,
             wait_for_cdp: true,
             shutdown_timeout: Duration::from_secs(8),

@@ -41,8 +41,24 @@
       "launching_discord": "กำลังเริ่ม Discord พร้อมเปิดใช้ CDP...",
       "restart_required": "Discord กำลังทำงานอยู่และต้องเริ่มใหม่พร้อมเปิดใช้ CDP",
       "restarting_discord": "กำลังเริ่ม Discord ใหม่พร้อมเปิดใช้ CDP...",
-      "restart_cancelled": "ยกเลิกการเริ่ม Discord ใหม่แล้ว ยังไม่มีบัญชีเข้าสู่ระบบ"
-    }
+      "restart_cancelled": "ยกเลิกการเริ่ม Discord ใหม่แล้ว ยังไม่มีบัญชีเข้าสู่ระบบ",
+      "launching_vesktop": "Starting Vesktop with CDP enabled...",
+      "restart_required_vesktop": "Vesktop is already running and must be restarted with CDP enabled.",
+      "restarting_vesktop": "Restarting Vesktop with CDP enabled...",
+      "choose_client": "Choose which Discord client to start with CDP...",
+      "launch_cancelled": "Client launch was cancelled. No account was logged in."
+    },
+    "cdp_login_action_vesktop": "Use Vesktop to Log In",
+    "client_auto": "Auto",
+    "client_official": "Discord",
+    "client_vesktop": "Vesktop",
+    "cdp_login_detail_vesktop": "Use the account currently signed in to Vesktop. Vesktop must be running with CDP enabled.",
+    "cdp_choose_title": "Choose a Discord client",
+    "cdp_choose_desc": "No client is running with CDP enabled. Choose which installed client to start.",
+    "cdp_client_stable": "Discord",
+    "cdp_client_ptb": "Discord PTB",
+    "cdp_client_canary": "Discord Canary",
+    "cdp_client_vesktop": "Vesktop"
   },
   "nav": {
     "home": "หน้าแรก",
@@ -94,13 +110,9 @@
     "include_expired": "รวมภารกิจที่หมดอายุ",
     "include_expired_desc": "แสดงรายการที่หมดอายุสำหรับการตรวจสอบและการกู้คืน",
     "current_orbs": "ปัจจุบัน Orbs",
-
     "nitro_next_orbs_title": "Orbs รายเดือนของ Nitro — นับถอยหลังการรับครั้งถัดไป",
-
     "nitro_next_orbs_days": "Airdrop Orbs ครั้งต่อไปในอีก {days} วัน",
-
     "nitro_next_orbs_hours": "Airdrop Orbs ครั้งต่อไปในอีก {hours} ชั่วโมง",
-
     "nitro_next_orbs_minutes": "Airdrop Orbs ครั้งต่อไปในอีก {minutes} นาที",
     "claim_reward": "รับรางวัล",
     "claim_navigated": "Discord ถูกเปลี่ยนเส้นทางไปยังหน้าภารกิจ กรุณารับรางวัลของคุณที่นั่น",
@@ -290,7 +302,11 @@
     "debug_already_unlocked": "เปิดใช้งานโหมดนักพัฒนาซอฟต์แวร์แล้ว",
     "disable_developer_mode": "ปิดการใช้งานโหมดนักพัฒนาซอฟต์แวร์",
     "disable_debug_confirm_title": "ปิดการใช้งานโหมดนักพัฒนาซอฟต์แวร์?",
-    "disable_debug_confirm_desc": "แท็บแก้ไขข้อบกพร่องและเครื่องมือสำหรับนักพัฒนาจะถูกซ่อนไว้ คุณสามารถเปิดใช้งานได้อีกครั้งโดยแตะหมายเลขเวอร์ชัน 7 ครั้ง"
+    "disable_debug_confirm_desc": "แท็บแก้ไขข้อบกพร่องและเครื่องมือสำหรับนักพัฒนาจะถูกซ่อนไว้ คุณสามารถเปิดใช้งานได้อีกครั้งโดยแตะหมายเลขเวอร์ชัน 7 ครั้ง",
+    "cdp_dialog_title_disconnected_vesktop": "Restart Vesktop to enable CDP?",
+    "cdp_dialog_desc_disconnected_vesktop": "Vesktop is running but CDP is not connected. We need to restart Vesktop with the CDP debug port enabled.",
+    "desktop_client": "Desktop client",
+    "desktop_client_desc": "When Discord and Vesktop are both installed, this choice only affects CDP login. Local token extraction always uses the official Discord client."
   },
   "version": {
     "update_available": "มีเวอร์ชันใหม่แล้ว!",

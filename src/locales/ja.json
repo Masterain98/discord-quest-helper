@@ -41,8 +41,24 @@
       "launching_discord": "CDP を有効にして Discord を起動しています...",
       "restart_required": "Discord はすでに起動中です。CDP を有効にして再起動する必要があります。",
       "restarting_discord": "CDP を有効にして Discord を再起動しています...",
-      "restart_cancelled": "Discord の再起動をキャンセルしました。ログインしていません。"
-    }
+      "restart_cancelled": "Discord の再起動をキャンセルしました。ログインしていません。",
+      "launching_vesktop": "Starting Vesktop with CDP enabled...",
+      "restart_required_vesktop": "Vesktop is already running and must be restarted with CDP enabled.",
+      "restarting_vesktop": "Restarting Vesktop with CDP enabled...",
+      "choose_client": "Choose which Discord client to start with CDP...",
+      "launch_cancelled": "Client launch was cancelled. No account was logged in."
+    },
+    "cdp_login_action_vesktop": "Use Vesktop to Log In",
+    "client_auto": "Auto",
+    "client_official": "Discord",
+    "client_vesktop": "Vesktop",
+    "cdp_login_detail_vesktop": "Use the account currently signed in to Vesktop. Vesktop must be running with CDP enabled.",
+    "cdp_choose_title": "Choose a Discord client",
+    "cdp_choose_desc": "No client is running with CDP enabled. Choose which installed client to start.",
+    "cdp_client_stable": "Discord",
+    "cdp_client_ptb": "Discord PTB",
+    "cdp_client_canary": "Discord Canary",
+    "cdp_client_vesktop": "Vesktop"
   },
   "nav": {
     "home": "ホーム",
@@ -94,13 +110,9 @@
     "include_expired": "期限切れのクエストを含める",
     "include_expired_desc": "検査と回復のために期限切れのエントリを表示します。",
     "current_orbs": "現在の Orbs",
-
     "nitro_next_orbs_title": "Nitro 月額 Orbs — 次回受取までのカウントダウン",
-
     "nitro_next_orbs_days": "次回の Orbs エアドロップまで {days} 日",
-
     "nitro_next_orbs_hours": "次回の Orbs エアドロップまで {hours} 時間",
-
     "nitro_next_orbs_minutes": "次回の Orbs エアドロップまで {minutes} 分",
     "claim_reward": "報酬を受け取る",
     "claim_navigated": "Discord をクエストページに移動しました。Discord で報酬を受け取ってください。",
@@ -290,7 +302,11 @@
     "debug_already_unlocked": "開発者モードが有効です",
     "disable_developer_mode": "開発者モードを無効にする",
     "disable_debug_confirm_title": "開発者モードを無効にしますか？",
-    "disable_debug_confirm_desc": "デバッグタブと開発者ツールが非表示になります。バージョン番号を7回タップすると再有効化できます。"
+    "disable_debug_confirm_desc": "デバッグタブと開発者ツールが非表示になります。バージョン番号を7回タップすると再有効化できます。",
+    "cdp_dialog_title_disconnected_vesktop": "Restart Vesktop to enable CDP?",
+    "cdp_dialog_desc_disconnected_vesktop": "Vesktop is running but CDP is not connected. We need to restart Vesktop with the CDP debug port enabled.",
+    "desktop_client": "Desktop client",
+    "desktop_client_desc": "When Discord and Vesktop are both installed, this choice only affects CDP login. Local token extraction always uses the official Discord client."
   },
   "version": {
     "update_available": "新しいバージョンが利用可能です！",
