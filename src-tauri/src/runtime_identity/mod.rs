@@ -10,6 +10,8 @@ mod windows;
 #[cfg(target_os = "macos")]
 pub(crate) use macos::verify_helper_identity_for_current_app;
 pub(crate) use model::contains_product_token;
+#[cfg(target_os = "macos")]
+pub(crate) use model::MACOS_SIGNING_ENABLED;
 use model::{configured_internal_names_are_valid, RuntimeIdentityStatus};
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 pub(crate) use model::{RUNTIME_BRIDGE_NAME, RUNTIME_NAMESPACE};

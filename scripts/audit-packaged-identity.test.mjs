@@ -8,11 +8,16 @@ import {
   auditArtifact,
   containsProductToken,
   IDENTITY,
+  MACOS_SIGNING_ENABLED,
   parseCodeIdentity,
   pngDimensions,
   relatedCodeIdentityViolations,
   validateInternalName,
 } from './audit-packaged-identity.mjs';
+
+test('macOS signing remains disabled even though dormant verification helpers stay available', () => {
+  assert.equal(MACOS_SIGNING_ENABLED, false);
+});
 
 test('macOS policy accepts only hardened ad-hoc app and helper identities', () => {
   const adHoc = parseCodeIdentity('Identifier=fixture\nTeamIdentifier=not set\nSignature=adhoc\nflags=0x10000(runtime)');

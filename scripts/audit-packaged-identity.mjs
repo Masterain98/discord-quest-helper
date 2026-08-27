@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url';
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const POLICY = JSON.parse(readFileSync(join(SCRIPT_DIR, 'runtime-identity-tokens.json'), 'utf8'));
 const TOKENS = POLICY.tokens;
+export const MACOS_SIGNING_ENABLED = false;
 
 export const IDENTITY = Object.freeze({
   publicName: POLICY.identity.publicName,
@@ -206,21 +207,36 @@ function auditMacApp(app) {
     violations.push('macOS public icon is missing, empty, or 1x1');
   }
 
-  const strictSigning = commandSucceeds('codesign', ['--verify', '--deep', '--strict', '--verbose=4', app]);
-  const signingDetails = commandOutput('codesign', ['-dvvv', app]);
-  const mainCodeIdentity = parseCodeIdentity(signingDetails.output);
-  const bridgeSigningDetails = bridge ? commandOutput('codesign', ['-dvvv', bridge]) : null;
-  const bridgeCodeIdentity = bridgeSigningDetails?.ok
-    ? parseCodeIdentity(bridgeSigningDetails.output)
-    : null;
-  const nestedSigning = nested.map((file) => ({
-    name: basename(file),
-    signed: commandSucceeds('codesign', ['--verify', '--strict', '--verbose=4', file]).ok,
-  }));
-  if (!strictSigning.ok) violations.push('strict code-signing verification failed');
-  if (nestedSigning.some(({ signed }) => !signed)) violations.push('nested executable signature verification failed');
-  if (bridgeCodeIdentity) {
-    violations.push(...relatedCodeIdentityViolations(mainCodeIdentity, bridgeCodeIdentity));
+  let signing = { status: 'disabled' };
+  if (MACOS_SIGNING_ENABLED) {
+    const strictSigning = commandSucceeds('codesign', ['--verify', '--deep', '--strict', '--verbose=4', app]);
+    const signingDetails = commandOutput('codesign', ['-dvvv', app]);
+    const mainCodeIdentity = parseCodeIdentity(signingDetails.output);
+    const bridgeSigningDetails = bridge ? commandOutput('codesign', ['-dvvv', bridge]) : null;
+    const bridgeCodeIdentity = bridgeSigningDetails?.ok
+      ? parseCodeIdentity(bridgeSigningDetails.output)
+      : null;
+    const machOExecutables = nested.filter((file) =>
+      commandOutput('/usr/bin/file', ['-b', file]).output.includes('Mach-O'));
+    const nestedSigning = machOExecutables.map((file) => ({
+      name: basename(file),
+      signed: commandSucceeds('codesign', ['--verify', '--strict', '--verbose=4', file]).ok,
+    }));
+    if (!strictSigning.ok) violations.push('strict code-signing verification failed');
+    if (nestedSigning.some(({ signed }) => !signed)) violations.push('nested executable signature verification failed');
+    if (bridgeCodeIdentity) {
+      violations.push(...relatedCodeIdentityViolations(mainCodeIdentity, bridgeCodeIdentity));
+    }
+    signing = {
+      status: 'enabled',
+      strict: strictSigning.ok,
+      hardenedRuntime: mainCodeIdentity.hardenedRuntime,
+      adHocDistribution: mainCodeIdentity.adHoc,
+      authorities: mainCodeIdentity.authorities,
+      teamIdentifier: mainCodeIdentity.teamIdentifier,
+      bridgeIdentity: bridgeCodeIdentity,
+      nested: nestedSigning,
+    };
   }
 
   return {
@@ -234,15 +250,7 @@ function auditMacApp(app) {
       ...(bridge ? { [IDENTITY.bridgeBinary]: sha256(bridge) } : {}),
     },
     icons,
-    signing: {
-      strict: strictSigning.ok,
-      hardenedRuntime: mainCodeIdentity.hardenedRuntime,
-      adHocDistribution: mainCodeIdentity.adHoc,
-      authorities: mainCodeIdentity.authorities,
-      teamIdentifier: mainCodeIdentity.teamIdentifier,
-      bridgeIdentity: bridgeCodeIdentity,
-      nested: nestedSigning,
-    },
+    signing,
     knownResiduals: ['bundle identifier retains the public project identity'],
     violations,
   };

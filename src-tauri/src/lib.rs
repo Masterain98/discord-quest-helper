@@ -2529,6 +2529,7 @@ fn find_bundled_cdp_launcher(app_handle: &tauri::AppHandle) -> Result<std::path:
     let names = cdp_launcher_binary_names();
     #[cfg_attr(not(target_os = "windows"), allow(unused_mut))]
     let mut candidate_dirs = bundled_cdp_launcher_candidate_dirs(
+        cfg!(debug_assertions),
         std::env::current_dir().ok().as_deref(),
         app_handle.path().resource_dir().ok().as_deref(),
         std::env::current_exe().ok().as_deref(),
@@ -2559,6 +2560,7 @@ fn find_bundled_cdp_launcher(app_handle: &tauri::AppHandle) -> Result<std::path:
 }
 
 fn bundled_cdp_launcher_candidate_dirs(
+    include_development_dirs: bool,
     current_dir: Option<&std::path::Path>,
     resource_dir: Option<&std::path::Path>,
     current_exe: Option<&std::path::Path>,
@@ -2568,10 +2570,12 @@ fn bundled_cdp_launcher_candidate_dirs(
     // Dev mode: cwd-based paths (cwd is typically the repo root during `tauri dev`).
     // This also covers Windows portable/install layouts where the sidecar is
     // placed at the install root.
-    if let Some(cwd) = current_dir {
-        candidate_dirs.push(cwd.to_path_buf());
-        candidate_dirs.push(cwd.join("src-tauri").join("binaries"));
-        candidate_dirs.push(cwd.join("binaries"));
+    if include_development_dirs {
+        if let Some(cwd) = current_dir {
+            candidate_dirs.push(cwd.to_path_buf());
+            candidate_dirs.push(cwd.join("src-tauri").join("binaries"));
+            candidate_dirs.push(cwd.join("binaries"));
+        }
     }
 
     if let Some(resource_dir) = resource_dir {
@@ -2637,13 +2641,40 @@ mod bundled_cdp_launcher_tests {
             fs::write(&main, b"main").unwrap();
             fs::write(&helper, b"helper").unwrap();
 
-            let directories = bundled_cdp_launcher_candidate_dirs(None, None, Some(&main));
+            let directories = bundled_cdp_launcher_candidate_dirs(false, None, None, Some(&main));
             assert_eq!(
                 find_cdp_launcher_in_dirs(&["waybridge"], &directories),
                 Some(helper)
             );
             fs::remove_dir_all(root).unwrap();
         }
+    }
+
+    #[test]
+    fn release_lookup_ignores_current_directory_sidecar() {
+        let root = unique_root("dqh-bundled-launcher-release");
+        let cwd = root.join("cwd");
+        let resource = root.join("resource");
+        let main = root.join("app/Contents/MacOS/meridian");
+        fs::create_dir_all(&cwd).unwrap();
+        fs::create_dir_all(&resource).unwrap();
+        fs::create_dir_all(main.parent().unwrap()).unwrap();
+        fs::write(cwd.join("waybridge"), b"untrusted cwd helper").unwrap();
+        fs::write(resource.join("waybridge"), b"packaged helper").unwrap();
+
+        let directories =
+            bundled_cdp_launcher_candidate_dirs(true, Some(&cwd), Some(&resource), Some(&main));
+        assert_eq!(
+            find_cdp_launcher_in_dirs(&["waybridge"], &directories),
+            Some(cwd.join("waybridge"))
+        );
+        let release_directories =
+            bundled_cdp_launcher_candidate_dirs(false, Some(&cwd), Some(&resource), Some(&main));
+        assert_eq!(
+            find_cdp_launcher_in_dirs(&["waybridge"], &release_directories),
+            Some(resource.join("waybridge"))
+        );
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

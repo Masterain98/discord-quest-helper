@@ -153,7 +153,8 @@ jobs:
             --output target/release/bundle/identity-manifest-linux-appimage.json
           mkdir -p "$RUNNER_TEMP/deb-root"
           dpkg-deb -x "$deb" "$RUNNER_TEMP/deb-root"
-          binary="$RUNNER_TEMP/deb-root/usr/bin/meridian"
+          main_binary="$(node -p 'JSON.parse(require("fs").readFileSync("scripts/runtime-identity-tokens.json", "utf8")).identity.mainBinary')"
+          binary="$RUNNER_TEMP/deb-root/usr/bin/$main_binary"
           dbus-run-session -- xvfb-run -a scripts/smoke-linux-runtime-identity.sh \
             x11 --kind binary "$binary" \
             target/release/bundle/identity-smoke-linux-deb-x11.json
@@ -167,11 +168,11 @@ jobs:
             wayland --kind appimage "$appimage" \
             target/release/bundle/identity-smoke-linux-appimage-wayland.json
 
-      - name: Build ad-hoc macOS app and DMG identity smoke artifacts
+      - name: Build unsigned macOS app and DMG identity smoke artifacts
         if: matrix.platform == 'macos-14'
-        run: pnpm exec tauri build --target ${{ matrix.cdp_target }} --bundles app,dmg
+        run: pnpm exec tauri build --no-sign --target ${{ matrix.cdp_target }} --bundles app,dmg
 
-      - name: Sign, audit, and smoke-test macOS bundle
+      - name: Audit and smoke-test unsigned macOS bundle
         if: matrix.platform == 'macos-14'
         shell: bash
         run: |

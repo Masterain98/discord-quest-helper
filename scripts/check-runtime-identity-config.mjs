@@ -19,7 +19,8 @@ function requireMatch(condition, message, failures) {
 
 export function validateConfiguration() {
   const failures = [];
-  const identity = json('scripts/runtime-identity-tokens.json').identity;
+  const policy = json('scripts/runtime-identity-tokens.json');
+  const identity = policy.identity;
   const expected = {
     main: identity.mainBinary,
     bridge: identity.bridgeBinary,
@@ -44,12 +45,16 @@ export function validateConfiguration() {
     'Linux DEB must use the audited desktop entry template', failures);
   requireMatch(macos.mainBinaryName === expected.main,
     `macOS mainBinaryName must be ${expected.main}`, failures);
-  requireMatch(macos.bundle?.macOS?.hardenedRuntime === true,
-    'macOS hardenedRuntime must be enabled', failures);
-  requireMatch(macos.bundle?.macOS?.signingIdentity === '-',
-    'macOS builds must use the configured ad-hoc signing identity', failures);
-  requireMatch(!/APPLE_(?:CERTIFICATE|SIGNING|API|KEYCHAIN)|REQUIRE_NOTARIZATION|notarytool|stapler/.test(releaseWorkflow),
+  requireMatch(policy.policies?.macosSigningEnabled === false,
+    'macOS signing must remain disabled by policy', failures);
+  requireMatch(macos.bundle?.macOS?.hardenedRuntime === false,
+    'macOS hardenedRuntime must remain disabled with unsigned bundles', failures);
+  requireMatch(macos.bundle?.macOS?.signingIdentity == null,
+    'macOS signingIdentity must remain disabled', failures);
+  requireMatch(!/\bAPPLE_(?:CERTIFICATE|SIGNING|API|KEYCHAIN|ID|PASSWORD|TEAM_ID)[A-Z0-9_]*\b|\b(?:REQUIRE_NOTARIZATION|NOTARYTOOL|STAPLER|PROVIDER_SHORT_NAME)\b/i.test(releaseWorkflow),
     'release workflow must not require Apple signing or notarization credentials', failures);
+  requireMatch(!/sign-macos-runtime\.sh|\bcodesign\b/i.test(releaseWorkflow),
+    'release workflow must not invoke macOS signing tools', failures);
   requireMatch(JSON.stringify(common.bundle?.externalBin) === JSON.stringify([`binaries/${expected.bridge}`]),
     `externalBin must contain only binaries/${expected.bridge}`, failures);
   requireMatch(new RegExp(`\\[\\[bin\\]\\][\\s\\S]*?name\\s*=\\s*"${expected.bridge}"`).test(launcherCargo),

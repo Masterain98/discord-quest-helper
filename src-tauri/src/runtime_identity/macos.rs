@@ -1,4 +1,6 @@
-use super::model::{RuntimeIdentityLevel, RuntimeIdentityStatus, RUNTIME_MAIN_NAME};
+use super::model::{
+    RuntimeIdentityLevel, RuntimeIdentityStatus, MACOS_SIGNING_ENABLED, RUNTIME_MAIN_NAME,
+};
 use once_cell::sync::OnceCell;
 use std::fs;
 use std::os::unix::{ffi::OsStringExt, fs::PermissionsExt};
@@ -71,6 +73,9 @@ pub(crate) fn validate_related_code_identity(
 }
 
 pub(crate) fn verify_helper_identity_for_current_app(helper: &Path) -> Result<(), String> {
+    if !MACOS_SIGNING_ENABLED {
+        return Ok(());
+    }
     let main_identity = verified_current_app_identity()?;
     let helper_identity = read_code_identity(helper)?;
     validate_related_code_identity(main_identity, &helper_identity)
@@ -109,12 +114,16 @@ pub(super) fn initial_status() -> RuntimeIdentityStatus {
                 status.main_executable_ok = false;
                 status.reasons.push(reason);
             }
-            match verified_current_app_identity() {
-                Ok(_) => status.package_signature_ok = Some(true),
-                Err(reason) => {
-                    status.package_signature_ok = Some(false);
-                    status.reasons.push(reason);
+            if MACOS_SIGNING_ENABLED {
+                match verified_current_app_identity() {
+                    Ok(_) => status.package_signature_ok = Some(true),
+                    Err(reason) => {
+                        status.package_signature_ok = Some(false);
+                        status.reasons.push(reason);
+                    }
                 }
+            } else {
+                status.package_signature_ok = None;
             }
         }
         None => {

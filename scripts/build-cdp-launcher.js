@@ -1,5 +1,5 @@
 import { execFileSync } from 'child_process';
-import { copyFileSync, existsSync, mkdirSync, statSync, unlinkSync, writeFileSync } from 'fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'fs';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -10,6 +10,12 @@ const rootDir = resolve(__dirname, '..');
 const tauriDir = join(rootDir, 'src-tauri');
 const binariesDir = join(tauriDir, 'binaries');
 const manifestPath = join(rootDir, 'Cargo.toml');
+const runtimePolicy = JSON.parse(readFileSync(join(rootDir, 'scripts', 'runtime-identity-tokens.json'), 'utf8'));
+if (runtimePolicy.policies.macosSigningEnabled !== false) {
+  throw new Error('macOS signing policy must remain disabled.');
+}
+const macosSigningEnabled = false;
+const runtimeBridgeName = runtimePolicy.identity.bridgeBinary;
 
 function rustHostTriple() {
   const output = execFileSync('rustc', ['-vV'], { encoding: 'utf8' });
@@ -23,7 +29,6 @@ function rustHostTriple() {
 const targetTriple = process.env.CARGO_BUILD_TARGET || process.env.TAURI_TARGET_TRIPLE || rustHostTriple();
 const isWindowsTarget = targetTriple.includes('windows');
 const exeExt = isWindowsTarget ? '.exe' : '';
-const runtimeBridgeName = 'waybridge';
 const exeName = `${runtimeBridgeName}${exeExt}`;
 const metadata = JSON.parse(execFileSync(
   'cargo',
@@ -91,9 +96,11 @@ if (!existsSync(sourceExe)) {
 
 copyFileSync(sourceExe, destExe);
 
-if (targetTriple.includes('apple-darwin')) {
+if (targetTriple.includes('apple-darwin') && macosSigningEnabled) {
   execFileSync('/usr/bin/codesign', ['--force', '--sign', '-', destExe], { stdio: 'inherit' });
   execFileSync('/usr/bin/codesign', ['--verify', '--strict', '--verbose=2', destExe], { stdio: 'inherit' });
+} else if (targetTriple.includes('apple-darwin')) {
+  console.log('macOS signing is disabled by repository policy.');
 }
 
 const size = statSync(destExe).size;

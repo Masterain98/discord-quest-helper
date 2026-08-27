@@ -321,8 +321,8 @@ pub fn stop_simulated_game(exec_name: &str) -> Result<()> {
 
     let managed = RUNNING_UNIX_GAMES
         .lock()
-        .ok()
-        .and_then(|mut games| games.remove(&key));
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .remove(&key);
 
     let Some(mut managed) = managed else {
         println!("No tracked simulated game for '{}'", key);
@@ -333,7 +333,10 @@ pub fn stop_simulated_game(exec_name: &str) -> Result<()> {
     // recycled PID (or a real game with the same name) is never killed. On a
     // mismatch, collect the child if it already exited but never block on it.
     if unix_pid_is_runner(managed.pid, &managed.executable_path) {
-        terminate_unix_game(&mut managed);
+        terminate_unix_game(
+            &mut managed,
+            std::time::Instant::now() + std::time::Duration::from_secs(2),
+        );
         println!("Simulated game '{}' (pid {}) stopped", key, managed.pid);
     } else {
         println!(
@@ -391,7 +394,10 @@ fn track_unix_game(
             key, previous.pid
         );
         if unix_pid_is_runner(previous.pid, &previous.executable_path) {
-            terminate_unix_game(&mut previous);
+            terminate_unix_game(
+                &mut previous,
+                std::time::Instant::now() + std::time::Duration::from_secs(2),
+            );
         } else {
             try_reap_unix_game(&mut previous);
         }
@@ -454,15 +460,16 @@ fn unix_pid_is_runner(pid: u32, executable_path: &Path) -> bool {
 /// Cleanup has a fixed deadline; a child that cannot be reaped in time is
 /// handed to a background reaper so application shutdown is never blocked.
 #[cfg(any(target_os = "macos", target_os = "linux"))]
-fn terminate_unix_game(game: &mut UnixManagedGame) {
+fn terminate_unix_game(game: &mut UnixManagedGame, cleanup_deadline: std::time::Instant) {
     if send_unix_signal(game.pid, libc::SIGTERM).is_err() {
         try_reap_unix_game(game);
         return;
     }
 
-    let started_at = std::time::Instant::now();
-    let graceful_deadline = started_at + std::time::Duration::from_millis(1_500);
-    let cleanup_deadline = started_at + std::time::Duration::from_secs(2);
+    let graceful_deadline = std::cmp::min(
+        std::time::Instant::now() + std::time::Duration::from_millis(1_500),
+        cleanup_deadline,
+    );
     while std::time::Instant::now() < graceful_deadline {
         if unix_game_has_exited(game) {
             reap_unix_game(game);
@@ -637,6 +644,11 @@ pub fn simulated_process_hints() -> Vec<crate::cdp_game_spoof::SimulatedProcessH
     {
         Vec::new()
     }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        Vec::new()
+    }
 }
 
 /// Stop **all** tracked simulated game processes.
@@ -694,10 +706,11 @@ fn cleanup_all_unix_games() {
         "Cleaning up {} simulated game process(es) on exit...",
         games.len()
     );
+    let cleanup_deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
     for game in &mut games {
         if unix_pid_is_runner(game.pid, &game.executable_path) {
             println!("  Stopping pid {}", game.pid);
-            terminate_unix_game(game);
+            terminate_unix_game(game, cleanup_deadline);
         } else {
             try_reap_unix_game(game);
         }

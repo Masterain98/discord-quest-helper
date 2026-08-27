@@ -6,6 +6,18 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   exit 2
 fi
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+policy_signing_enabled="$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).policies.macosSigningEnabled' "$script_dir/runtime-identity-tokens.json")"
+if [[ "$policy_signing_enabled" != "false" ]]; then
+  echo "macOS signing policy must remain disabled." >&2
+  exit 1
+fi
+signing_enabled=false
+if [[ "$signing_enabled" != "true" ]]; then
+  echo "macOS signing is disabled by repository policy; payloads were left unsigned."
+  exit 0
+fi
+
 if [[ $# -eq 0 ]]; then
   echo "Usage: scripts/sign-macos-runtime.sh <executable> [...]" >&2
   exit 2

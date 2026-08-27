@@ -20,6 +20,8 @@ env:
 jobs:
   release_policy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       should_release: ${{ steps.policy.outputs.should_release }}
       version: ${{ steps.policy.outputs.version }}
@@ -35,6 +37,11 @@ jobs:
           ref="${GITHUB_REF}"
           should_release=false
           prerelease=false
+
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?$ ]]; then
+            echo "::error::Invalid release version: $version"
+            exit 1
+          fi
 
           if [[ "$ref" == "refs/heads/main" ]]; then
             should_release=true
@@ -66,7 +73,7 @@ jobs:
             cdp_target: 'x86_64-pc-windows-msvc'
             runner-ext: '.exe'
           - platform: 'macos-14'  # Apple Silicon M1/M2 runner
-            args: '--target aarch64-apple-darwin'
+            args: '--no-sign --target aarch64-apple-darwin'
             x-target: 'darwin-arm64'
             cdp_target: 'aarch64-apple-darwin'
             runner-ext: ''
@@ -139,9 +146,10 @@ jobs:
 
       - name: Get version
         shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.release_policy.outputs.version }}
         run: |
-          version=$(cat public/version.txt)
-          echo "version=$version" >> $GITHUB_ENV
+          printf 'version=%s\n' "$RELEASE_VERSION" >> "$GITHUB_ENV"
       
 
 
@@ -197,21 +205,13 @@ jobs:
           TAURI_TARGET_TRIPLE: ${{ matrix.cdp_target }}
         run: pnpm run build:cdp-launcher
 
-      - name: Ad-hoc sign macOS runtime payloads before bundling
-        if: matrix.platform == 'macos-14'
-        shell: bash
-        run: |
-          scripts/sign-macos-runtime.sh \
-            "src-tauri/binaries/waybridge-${{ matrix.cdp_target }}" \
-            "src-tauri/data/stagecraft"
-
       - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           args: ${{ matrix.args }}
 
-      - name: Verify ad-hoc signed macOS bundle
+      - name: Verify unsigned macOS bundle identity and integrity
         if: matrix.platform == 'macos-14'
         shell: bash
         run: |
@@ -242,7 +242,8 @@ jobs:
             --output target/release/bundle/identity-manifest-linux-appimage.json
           mkdir -p "$RUNNER_TEMP/deb-root"
           dpkg-deb -x "$deb" "$RUNNER_TEMP/deb-root"
-          binary="$RUNNER_TEMP/deb-root/usr/bin/meridian"
+          main_binary="$(node -p 'JSON.parse(require("fs").readFileSync("scripts/runtime-identity-tokens.json", "utf8")).identity.mainBinary')"
+          binary="$RUNNER_TEMP/deb-root/usr/bin/$main_binary"
           dbus-run-session -- xvfb-run -a scripts/smoke-linux-runtime-identity.sh \
             x11 --kind binary "$binary" \
             target/release/bundle/identity-smoke-linux-deb-x11.json
@@ -320,10 +321,12 @@ jobs:
 
       - name: get version
         id: extract_version
+        env:
+          RELEASE_VERSION: ${{ needs.release_policy.outputs.version }}
+          RELEASE_PRERELEASE: ${{ needs.release_policy.outputs.prerelease }}
         run: |
-          version='${{ needs.release_policy.outputs.version }}'
-          echo "version=$version" >> $GITHUB_ENV
-          echo "PRERELEASE=${{ needs.release_policy.outputs.prerelease }}" >> $GITHUB_ENV
+          printf 'version=%s\n' "$RELEASE_VERSION" >> "$GITHUB_ENV"
+          printf 'PRERELEASE=%s\n' "$RELEASE_PRERELEASE" >> "$GITHUB_ENV"
         shell: bash
 
       - name: Download Windows artifact (portable)
@@ -352,27 +355,28 @@ jobs:
 
       - name: prepare files
         env:
-          version: ${{ env.version }}
+          VERSION: ${{ env.version }}
         run: |
+          version="$VERSION"
           # Create output directory
           mkdir -p ./build
           
           # Package Windows portable build
           cd tauri-win-portable
-          zip -r ../build/discord-quest-helper-Windows-x64-${{ env.version }}-portable.zip .
+          zip -r "../build/discord-quest-helper-Windows-x64-$version-portable.zip" .
           cd ..
           
           # Copy Windows MSI installer
-          cp tauri-win-msi/*.msi ./build/discord-quest-helper-Windows-x64-${{ env.version }}-setup.msi
+          cp tauri-win-msi/*.msi "./build/discord-quest-helper-Windows-x64-$version-setup.msi"
           
           # Package macOS build (find the .dmg file).
           # softprops/action-gh-release skips missing `files:` entries silently,
           # so every platform validates its own artifact here instead.
           cd tauri-macos-arm64-release
           if [ -d "dmg" ]; then
-            cp dmg/*.dmg ../build/discord-quest-helper-MacOS-arm64-${{ env.version }}.dmg
+            cp dmg/*.dmg "../build/discord-quest-helper-MacOS-arm64-$version.dmg"
           elif [ -d "macos" ]; then
-            zip -r ../build/discord-quest-helper-MacOS-arm64-${{ env.version }}.zip macos/
+            zip -r "../build/discord-quest-helper-MacOS-arm64-$version.zip" macos/
           else
             echo "::error::No macOS dmg/ or macos/ output in tauri-macos-arm64-release"
             exit 1

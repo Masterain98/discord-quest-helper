@@ -1,13 +1,16 @@
 //! Verified, versioned installation for the optional desktop runtime bridge.
 
 use crate::runtime_identity::{contains_product_token, RUNTIME_BRIDGE_NAME, RUNTIME_NAMESPACE};
-use serde::Serialize;
+use once_cell::sync::Lazy;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::{Read, Write};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct InstallReport {
@@ -15,13 +18,46 @@ pub struct InstallReport {
     pub legacy_cleanup_warning: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ActiveRuntimeManifest<'a> {
+struct ActiveRuntimeManifest {
     schema_version: u8,
-    version: &'a str,
+    version: String,
     executable: String,
-    sha256: &'a str,
+    sha256: String,
+}
+
+static INSTALL_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+static TEMPORARY_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+struct TemporaryFile {
+    path: PathBuf,
+    armed: bool,
+}
+
+impl TemporaryFile {
+    fn new(parent: &Path, prefix: &str, extension: &str) -> Self {
+        let sequence = TEMPORARY_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        Self {
+            path: parent.join(format!(
+                ".{prefix}-{}-{sequence}{extension}",
+                std::process::id()
+            )),
+            armed: true,
+        }
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for TemporaryFile {
+    fn drop(&mut self) {
+        if self.armed {
+            let _ = fs::remove_file(&self.path);
+        }
+    }
 }
 
 pub fn versioned_executable_path(data_root: &Path) -> PathBuf {
@@ -76,6 +112,9 @@ fn validate_source_name(source: &Path) -> Result<(), String> {
 
 #[cfg(target_os = "macos")]
 fn verify_platform_signature(path: &Path) -> Result<(), String> {
+    if !crate::runtime_identity::MACOS_SIGNING_ENABLED {
+        return Ok(());
+    }
     let status = Command::new("/usr/bin/codesign")
         .args(["--verify", "--strict", "--verbose=2"])
         .arg(path)
@@ -140,12 +179,12 @@ fn write_active_manifest(data_root: &Path, sha256: &str) -> Result<(), String> {
     fs::create_dir_all(parent).map_err(|error| {
         format!("runtime bridge manifest directory could not be created: {error}")
     })?;
-    let temporary = parent.join(format!(".active-{}.json", std::process::id()));
+    let mut temporary = TemporaryFile::new(parent, "active", ".json");
     let manifest = ActiveRuntimeManifest {
         schema_version: 1,
-        version: env!("CARGO_PKG_VERSION"),
+        version: env!("CARGO_PKG_VERSION").to_string(),
         executable: format!("{}/{}", env!("CARGO_PKG_VERSION"), RUNTIME_BRIDGE_NAME),
-        sha256,
+        sha256: sha256.to_string(),
     };
     let encoded = serde_json::to_vec_pretty(&manifest)
         .map_err(|error| format!("runtime bridge manifest could not be encoded: {error}"))?;
@@ -154,15 +193,15 @@ fn write_active_manifest(data_root: &Path, sha256: &str) -> Result<(), String> {
         .truncate(true)
         .write(true)
         .mode(0o600)
-        .open(&temporary)
+        .open(&temporary.path)
         .map_err(|error| format!("runtime bridge manifest could not be written: {error}"))?;
     file.write_all(&encoded)
         .and_then(|_| file.sync_all())
         .map_err(|error| format!("runtime bridge manifest could not be committed: {error}"))?;
-    fs::rename(&temporary, &manifest_path).map_err(|error| {
-        let _ = fs::remove_file(&temporary);
-        format!("runtime bridge manifest switch failed: {error}")
-    })
+    fs::rename(&temporary.path, &manifest_path)
+        .map_err(|error| format!("runtime bridge manifest switch failed: {error}"))?;
+    temporary.disarm();
+    Ok(())
 }
 
 fn cleanup_legacy_executable(path: &Path) -> Option<String> {
@@ -176,11 +215,30 @@ fn cleanup_legacy_executable(path: &Path) -> Option<String> {
     }
     if let Some(parent) = path.parent() {
         let _ = fs::remove_dir(parent);
-        if let Some(grandparent) = parent.parent() {
-            let _ = fs::remove_dir(grandparent);
-        }
     }
     None
+}
+
+fn verify_installed_for_execution(data_root: &Path, target: &Path) -> Result<(), String> {
+    let manifest: ActiveRuntimeManifest = serde_json::from_slice(
+        &fs::read(active_manifest_path(data_root))
+            .map_err(|error| format!("runtime bridge active manifest is unavailable: {error}"))?,
+    )
+    .map_err(|error| format!("runtime bridge active manifest is invalid: {error}"))?;
+    let expected_version = env!("CARGO_PKG_VERSION");
+    let expected_executable = format!("{expected_version}/{RUNTIME_BRIDGE_NAME}");
+    if manifest.schema_version != 1
+        || manifest.version != expected_version
+        || manifest.executable != expected_executable
+    {
+        return Err("runtime bridge active manifest identity is invalid".into());
+    }
+    if manifest.sha256 != sha256_file(target)? {
+        return Err(
+            "runtime bridge active manifest hash does not match installed executable".into(),
+        );
+    }
+    Ok(())
 }
 
 fn install_with_verifier<F, G>(
@@ -194,6 +252,9 @@ where
     F: Fn(&Path) -> Result<(), String>,
     G: Fn(&Path) -> Result<(), String>,
 {
+    let _install_guard = INSTALL_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     validate_source_name(source)?;
     verify_signature(source)?;
 
@@ -212,37 +273,27 @@ where
     {
         source_hash
     } else {
-        let temporary = parent.join(format!(
-            ".{RUNTIME_BRIDGE_NAME}.installing-{}",
-            std::process::id()
-        ));
-        fs::copy(source, &temporary)
+        let mut temporary = TemporaryFile::new(parent, RUNTIME_BRIDGE_NAME, ".installing");
+        fs::copy(source, &temporary.path)
             .map_err(|error| format!("runtime bridge could not be copied: {error}"))?;
-        fs::set_permissions(&temporary, fs::Permissions::from_mode(0o755)).map_err(|error| {
-            let _ = fs::remove_file(&temporary);
-            format!("runtime bridge executable permission could not be set: {error}")
-        })?;
+        fs::set_permissions(&temporary.path, fs::Permissions::from_mode(0o755)).map_err(
+            |error| format!("runtime bridge executable permission could not be set: {error}"),
+        )?;
         let source_hash_after_copy = sha256_file(source)?;
-        let temporary_hash = sha256_file(&temporary)?;
+        let temporary_hash = sha256_file(&temporary.path)?;
         let verified = if source_hash_after_copy == temporary_hash {
-            verify_signature(&temporary)?;
+            verify_signature(&temporary.path)?;
             temporary_hash
         } else {
             return Err("runtime bridge copy failed SHA-256 verification".into());
         };
         if verified != source_hash {
-            let _ = fs::remove_file(&temporary);
             return Err("runtime bridge source changed during installation".into());
         }
-        if let Err(error) = verify_launch(&temporary) {
-            let _ = fs::remove_file(&temporary);
-            return Err(error);
-        }
-        let activation = fs::rename(&temporary, &target).map_err(|error| {
-            let _ = fs::remove_file(&temporary);
-            format!("runtime bridge activation failed: {error}")
-        });
-        activation?;
+        verify_launch(&temporary.path)?;
+        fs::rename(&temporary.path, &target)
+            .map_err(|error| format!("runtime bridge activation failed: {error}"))?;
+        temporary.disarm();
         let active_hash = sha256_file(&target)?;
         if active_hash != source_hash {
             return Err("activated runtime bridge failed SHA-256 verification".into());
@@ -252,6 +303,7 @@ where
     };
 
     write_active_manifest(data_root, &target_hash)?;
+    verify_installed_for_execution(data_root, &target)?;
     Ok(InstallReport {
         executable: target,
         legacy_cleanup_warning: cleanup_legacy_executable(legacy_executable),
@@ -353,6 +405,38 @@ mod tests {
                 .file_name()
                 .to_string_lossy()
                 .contains("installing")));
+        assert!(root.exists(), "shared parent directory must not be removed");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn rejects_tampered_active_manifest_before_execution() {
+        let root = std::env::temp_dir().join(format!(
+            "runtime-bridge-manifest-test-{}-{}",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("thread")
+        ));
+        let source_dir = root.join("source");
+        let data_root = root.join("data");
+        fs::create_dir_all(&source_dir).unwrap();
+        let source = source_dir.join("waybridge-test-target");
+        fs::write(&source, b"runtime bridge fixture").unwrap();
+        let report = install_with_verifier(
+            &source,
+            &data_root,
+            &root.join("legacy"),
+            |_| Ok(()),
+            |_| Ok(()),
+        )
+        .unwrap();
+
+        let manifest_path = active_manifest_path(&data_root);
+        let mut manifest: serde_json::Value =
+            serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
+        manifest["sha256"] = serde_json::Value::String("0".repeat(64));
+        fs::write(&manifest_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+
+        assert!(verify_installed_for_execution(&data_root, &report.executable).is_err());
         fs::remove_dir_all(root).unwrap();
     }
 

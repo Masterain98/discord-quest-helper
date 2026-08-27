@@ -57,6 +57,14 @@ echo ""
 # Define paths
 SRC_TAURI="$PROJECT_ROOT/src-tauri"
 RELEASE_DIR="$PROJECT_ROOT/target/release"
+MACOS_SIGNING_ENABLED=false
+policy_macos_signing_enabled="$(node -p "JSON.parse(require('fs').readFileSync('$PROJECT_ROOT/scripts/runtime-identity-tokens.json', 'utf8')).policies.macosSigningEnabled")"
+if [ "$policy_macos_signing_enabled" != false ]; then
+    echo -e "${RED}macOS signing policy must remain disabled.${NC}" >&2
+    exit 1
+fi
+RUNTIME_BRIDGE_NAME="$(node -p "JSON.parse(require('fs').readFileSync('$PROJECT_ROOT/scripts/runtime-identity-tokens.json', 'utf8')).identity.bridgeBinary")"
+RUNTIME_RUNNER_NAME="$(node -p "JSON.parse(require('fs').readFileSync('$PROJECT_ROOT/scripts/runtime-identity-tokens.json', 'utf8')).identity.runnerBuildBinary")"
 
 # Step 1: Build src-runner
 if [ "$SKIP_RUNNER_BUILD" = false ]; then
@@ -85,9 +93,9 @@ fi
 # Step 3: Build Tauri app
 if [ "$SKIP_TAURI_BUILD" = false ]; then
     TARGET_TRIPLE="${TAURI_TARGET_TRIPLE:-$(rustc -vV | awk '/^host:/ { print $2 }')}"
-    BRIDGE_PATH="$SRC_TAURI/binaries/waybridge-$TARGET_TRIPLE"
-    RUNNER_PATH="$SRC_TAURI/data/stagecraft"
-    echo -e "${YELLOW}[3/5] Signing runtime payloads before bundling...${NC}"
+    BRIDGE_PATH="$SRC_TAURI/binaries/$RUNTIME_BRIDGE_NAME-$TARGET_TRIPLE"
+    RUNNER_PATH="$SRC_TAURI/data/$RUNTIME_RUNNER_NAME"
+    echo -e "${YELLOW}[3/5] Preparing runtime payloads for bundling...${NC}"
     runtime_payloads=("$BRIDGE_PATH")
     if [ -f "$RUNNER_PATH" ]; then
         runtime_payloads+=("$RUNNER_PATH")
@@ -95,23 +103,28 @@ if [ "$SKIP_TAURI_BUILD" = false ]; then
         echo -e "${RED}Runner payload was not produced: $RUNNER_PATH${NC}" >&2
         exit 1
     fi
-    "$PROJECT_ROOT/scripts/sign-macos-runtime.sh" "${runtime_payloads[@]}"
+    if [ "$MACOS_SIGNING_ENABLED" = true ]; then
+        "$PROJECT_ROOT/scripts/sign-macos-runtime.sh" "${runtime_payloads[@]}"
+    else
+        echo -e "${GRAY}  macOS signing is disabled by policy.${NC}"
+    fi
 
     echo -e "${YELLOW}[4/5] Building Tauri application...${NC}"
-    pnpm tauri build
+    pnpm tauri build --no-sign
     echo -e "${GREEN}  Tauri build complete.${NC}"
 else
-    echo -e "${GRAY}[3/5] Skipping signing and Tauri build (--skip-tauri-build)${NC}"
+    echo -e "${GRAY}[3/5] Skipping payload preparation and Tauri build (--skip-tauri-build)${NC}"
 fi
 
 # Step 5: Verify and archive symbols
 APP_FILE=$(find "$RELEASE_DIR/bundle/macos" -name "*.app" -type d 2>/dev/null | head -1 || true)
+DMG_FILE=$(find "$RELEASE_DIR/bundle/dmg" -name "*.dmg" -type f 2>/dev/null | head -1 || true)
 if [ "$SKIP_TAURI_BUILD" = false ]; then
     if [ -z "$APP_FILE" ]; then
         echo -e "${RED}No macOS app bundle was produced.${NC}" >&2
         exit 1
     fi
-    echo -e "${YELLOW}[5/5] Verifying bundle identity and signatures...${NC}"
+    echo -e "${YELLOW}[5/5] Verifying bundle identity and integrity...${NC}"
     "$PROJECT_ROOT/scripts/verify-macos-bundle.sh" "$APP_FILE"
     node "$PROJECT_ROOT/scripts/audit-packaged-identity.mjs" \
         --platform macos \
