@@ -58,13 +58,13 @@ echo ""
 SRC_TAURI="$PROJECT_ROOT/src-tauri"
 RELEASE_DIR="$PROJECT_ROOT/target/release"
 MACOS_SIGNING_ENABLED=false
-policy_macos_signing_enabled="$(node -p "JSON.parse(require('fs').readFileSync('$PROJECT_ROOT/scripts/runtime-identity-tokens.json', 'utf8')).policies.macosSigningEnabled")"
-if [ "$policy_macos_signing_enabled" != false ]; then
+IFS=$'\t' read -r policy_macos_signing_enabled RUNTIME_BRIDGE_NAME RUNTIME_RUNNER_NAME < <(
+    node -e 'const p=JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); console.log([p.policies.macosSigningEnabled, p.identity.bridgeBinary, p.identity.runnerBuildBinary].join("\t"))' "$PROJECT_ROOT/scripts/runtime-identity-tokens.json"
+)
+if [ "$policy_macos_signing_enabled" != "false" ]; then
     echo -e "${RED}macOS signing policy must remain disabled.${NC}" >&2
     exit 1
 fi
-RUNTIME_BRIDGE_NAME="$(node -p "JSON.parse(require('fs').readFileSync('$PROJECT_ROOT/scripts/runtime-identity-tokens.json', 'utf8')).identity.bridgeBinary")"
-RUNTIME_RUNNER_NAME="$(node -p "JSON.parse(require('fs').readFileSync('$PROJECT_ROOT/scripts/runtime-identity-tokens.json', 'utf8')).identity.runnerBuildBinary")"
 
 # Step 1: Build src-runner
 if [ "$SKIP_RUNNER_BUILD" = false ]; then

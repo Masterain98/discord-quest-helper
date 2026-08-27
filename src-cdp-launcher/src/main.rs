@@ -92,7 +92,7 @@ fn run(strings: &Strings) -> Result<i32, String> {
 
             #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
             {
-                eprintln!(strings.restart_instruction);
+                eprintln!("{}", strings.restart_instruction);
                 false
             }
         };
