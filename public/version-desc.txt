@@ -23,8 +23,7 @@
     - The Debug page now reports runtime identity, bridge status, integrity checks, platform details, and differences from the release baseline.
     - Added local-only JSON copy/export for diagnostics and clearer visibility into the embedded simulated-game runtime.
 6. Improved release quality across supported desktop platforms.
-    - Added package validation and smoke checks for Linux X11/Wayland environments and signed, hardened macOS bundles.
 7. Bumped default client config:
-    - client version to `1.0.9254`
-    - default client build number to `595897`
-    - native build number to `88466`
+    - client version to `1.0.9255`
+    - default client build number to `602393`
+    - native build number to `89332`
