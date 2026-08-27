@@ -76,42 +76,61 @@ fn matches_by_comm_when_cmdline_missing() {
 }
 
 #[test]
-fn never_matches_own_helper_binaries() {
-    let installs = [install(DiscordChannel::Stable, "/opt/Discord/Discord")];
-    let helper = process(
+fn controlled_runtime_identities_are_never_classified_as_discord() {
+    let installs = [
+        install(DiscordChannel::Stable, "/opt/app/meridian"),
+        install(DiscordChannel::Ptb, "/tmp/games/stagecraft"),
+        install(DiscordChannel::Canary, "/opt/app/waybridge"),
+    ];
+    let main = process(
         15,
-        Some("/usr/lib/discord-quest-helper/discord-quest-helper"),
-        &["discord-quest-helper"],
-        Some("discord-quest-he"),
+        Some("/opt/app/meridian"),
+        &["/opt/app/meridian"],
+        Some("meridian"),
     );
     let runner = process(
         16,
-        None,
-        &["/tmp/DiscordQuestGames/discord-quest-runner"],
-        Some("discord-quest-ru"),
+        Some("/tmp/games/stagecraft"),
+        &["/tmp/games/stagecraft"],
+        Some("stagecraft"),
     );
-    let launcher = process(
+    let bridge = process(
         17,
-        None,
-        &["discord-cdp-launcher", "--port", "9223"],
-        Some("discord-cdp-laun"),
+        Some("/opt/app/waybridge"),
+        &["/opt/app/waybridge", "--port", "9223"],
+        Some("waybridge"),
     );
-    assert_eq!(classify_linux_process(&helper, &installs), None);
+    assert_eq!(classify_linux_process(&main, &installs), None);
     assert_eq!(classify_linux_process(&runner, &installs), None);
-    assert_eq!(classify_linux_process(&launcher, &installs), None);
+    assert_eq!(classify_linux_process(&bridge, &installs), None);
+}
+
+#[test]
+fn identity_matching_is_exact_and_does_not_hide_real_games() {
+    let installs = [install(DiscordChannel::Stable, "/games/meridian-online")];
+    let real_game = process(
+        18,
+        Some("/games/meridian-online"),
+        &["/games/meridian-online"],
+        Some("meridian-online"),
+    );
+    assert_eq!(
+        classify_linux_process(&real_game, &installs),
+        Some(DiscordChannel::Stable)
+    );
 }
 
 #[test]
 fn does_not_match_unrelated_processes_or_discord_arguments() {
     let installs = [install(DiscordChannel::Stable, "/opt/Discord/Discord")];
     let firefox = process(
-        18,
+        19,
         Some("/usr/bin/firefox"),
         &["/usr/bin/firefox", "https://discord.com/app"],
         Some("firefox"),
     );
     let pwa = process(
-        19,
+        20,
         Some("/usr/bin/chrome"),
         &["/usr/bin/chrome", "--app=https://discord.com"],
         Some("chrome"),

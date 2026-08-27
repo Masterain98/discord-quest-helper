@@ -292,7 +292,7 @@ fn get_os_info() -> String {
     #[cfg(target_os = "macos")]
     {
         // Get macOS version using sw_vers command
-        if let Ok(output) = std::process::Command::new("sw_vers")
+        if let Ok(output) = std::process::Command::new("/usr/bin/sw_vers")
             .args(["-productVersion"])
             .output()
         {
@@ -307,7 +307,19 @@ fn get_os_info() -> String {
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
         // Get Linux distribution info if available
-        if let Ok(output) = std::process::Command::new("uname").args(["-sr"]).output() {
+        let output = std::process::Command::new("/usr/bin/uname")
+            .args(["-sr"])
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .or_else(|| {
+                std::process::Command::new("uname")
+                    .args(["-sr"])
+                    .output()
+                    .ok()
+                    .filter(|output| output.status.success())
+            });
+        if let Some(output) = output {
             let version = String::from_utf8_lossy(&output.stdout);
             let version = version.trim();
             if !version.is_empty() {

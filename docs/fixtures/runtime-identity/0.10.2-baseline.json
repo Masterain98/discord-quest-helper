@@ -1,0 +1,67 @@
+{
+  "fixtureVersion": 1,
+  "release": "0.10.2",
+  "commit": "3b0c88aaca57a09645b5906e92bab2f5a01cd879",
+  "collection": "source-and-package-configuration-derived",
+  "notes": [
+    "No absolute user paths are stored.",
+    "Unavailable native fingerprints are not classified as clean.",
+    "Linux runtime observations require CI or a matching desktop session before they can be promoted to observed."
+  ],
+  "observations": [
+    {
+      "platform": "linux",
+      "artifact": "deb-x11",
+      "evidenceStatus": "source-derived",
+      "publicName": "Discord Quest Helper",
+      "mainExecutable": "discord-quest-helper",
+      "desktopSession": "x11",
+      "desktopIdentity": "unavailable",
+      "containsProductToken": true,
+      "nativeExecutableFingerprint": { "status": "unavailable" }
+    },
+    {
+      "platform": "linux",
+      "artifact": "deb-wayland",
+      "evidenceStatus": "source-derived",
+      "publicName": "Discord Quest Helper",
+      "mainExecutable": "discord-quest-helper",
+      "desktopSession": "wayland",
+      "desktopIdentity": "unavailable",
+      "containsProductToken": true,
+      "nativeExecutableFingerprint": { "status": "unavailable" }
+    },
+    {
+      "platform": "linux",
+      "artifact": "appimage",
+      "evidenceStatus": "source-derived",
+      "publicName": "Discord Quest Helper",
+      "mainExecutable": "discord-quest-helper",
+      "standardEnvironmentResiduals": ["APPIMAGE", "APPDIR", "ARGV0"],
+      "containsProductToken": true,
+      "nativeExecutableFingerprint": { "status": "unavailable" }
+    },
+    {
+      "platform": "macos",
+      "artifact": "app",
+      "evidenceStatus": "source-derived",
+      "publicName": "Discord Quest Helper",
+      "bundleExecutable": "discord-quest-helper",
+      "bundleIdentifier": "com.masterain.discord-quest-helper",
+      "releaseRuntimeBehavior": "copies-and-launches-bare-mach-o-from-temporary-directory",
+      "containsProductToken": true,
+      "nativeExecutableFingerprint": { "status": "unavailable" }
+    },
+    {
+      "platform": "macos",
+      "artifact": "dmg",
+      "evidenceStatus": "source-derived",
+      "publicName": "Discord Quest Helper",
+      "bundleExecutable": "discord-quest-helper",
+      "signingVerification": "unavailable",
+      "notarizationVerification": "unavailable",
+      "containsProductToken": true,
+      "nativeExecutableFingerprint": { "status": "unavailable" }
+    }
+  ]
+}

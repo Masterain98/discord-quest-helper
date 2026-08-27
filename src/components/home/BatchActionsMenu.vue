@@ -1,14 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Check, ChevronDown, Gamepad2, ListChecks, MonitorPlay } from 'lucide-vue-next'
+import { Check, Gamepad2, ListChecks, MonitorPlay } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 
 const { t } = useI18n()
 
@@ -36,31 +30,59 @@ const hasActions = computed(() =>
 </script>
 
 <template>
-  <DropdownMenu v-if="hasActions">
-    <DropdownMenuTrigger as-child>
-      <Button variant="outline" class="gap-2" :disabled="disabled">
-        <ListChecks class="h-4 w-4" />
-        {{ t('home.batch_actions') }}
-        <ChevronDown class="h-3.5 w-3.5 opacity-70" />
-      </Button>
-    </DropdownMenuTrigger>
-    <DropdownMenuContent align="end" class="w-64">
-      <DropdownMenuItem v-if="acceptCount > 0" class="gap-2" @click="emit('acceptAll')">
+  <div
+    v-if="hasActions"
+    class="mt-3 border-t border-border/60 pt-3"
+    :aria-label="t('home.batch_actions')"
+  >
+    <div class="flex max-w-full flex-wrap items-center gap-2">
+      <Button
+        v-if="acceptCount > 0"
+        size="sm"
+        variant="secondary"
+        class="shrink-0 gap-2"
+        :disabled="disabled"
+        @click="emit('acceptAll')"
+      >
         <Check class="h-4 w-4" />
-        {{ t('home.accept_all') }} ({{ acceptCount }})
-      </DropdownMenuItem>
-      <DropdownMenuItem v-if="completeAllCount > 0" class="gap-2" @click="emit('completeAll')">
+        {{ t('home.accept_all') }}
+        <span class="tabular-nums opacity-70">{{ acceptCount }}</span>
+      </Button>
+      <Button
+        v-if="completeAllCount > 0"
+        size="sm"
+        class="shrink-0 gap-2"
+        :disabled="disabled"
+        @click="emit('completeAll')"
+      >
         <ListChecks class="h-4 w-4" />
-        {{ t('home.complete_all_tasks') }} ({{ completeAllCount }})
-      </DropdownMenuItem>
-      <DropdownMenuItem v-if="videoCount > 0" class="gap-2" @click="emit('completeVideo')">
+        {{ t('home.complete_all_tasks') }}
+        <span class="tabular-nums opacity-80">{{ completeAllCount }}</span>
+      </Button>
+      <Button
+        v-if="videoCount > 0"
+        size="sm"
+        variant="outline"
+        class="shrink-0 gap-2"
+        :disabled="disabled"
+        @click="emit('completeVideo')"
+      >
         <MonitorPlay class="h-4 w-4" />
-        {{ t('home.complete_all_video') }} ({{ videoCount }})
-      </DropdownMenuItem>
-      <DropdownMenuItem v-if="gameCount > 0" class="gap-2" @click="emit('completeGame')">
+        {{ t('home.complete_all_video') }}
+        <span class="tabular-nums opacity-70">{{ videoCount }}</span>
+      </Button>
+      <Button
+        v-if="gameCount > 0"
+        size="sm"
+        variant="outline"
+        class="shrink-0 gap-2"
+        :disabled="disabled"
+        @click="emit('completeGame')"
+      >
         <Gamepad2 class="h-4 w-4" />
-        {{ t('home.complete_all_game') }} ({{ gameCount }})
-      </DropdownMenuItem>
-    </DropdownMenuContent>
-  </DropdownMenu>
+        {{ t('home.complete_all_game') }}
+        <span class="tabular-nums opacity-70">{{ gameCount }}</span>
+      </Button>
+    </div>
+  </div>
 </template>

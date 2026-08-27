@@ -10,9 +10,9 @@ fn main() {
 
     // Determine the runner binary name for the current platform
     let runner_exe_name = if cfg!(target_os = "windows") {
-        "discord-quest-runner.exe"
+        "stagecraft.exe"
     } else {
-        "discord-quest-runner"
+        "stagecraft"
     };
 
     let data_runner_path = data_dir.join(runner_exe_name);
@@ -64,10 +64,7 @@ fn main() {
     if !binaries_dir.exists() {
         fs::create_dir_all(binaries_dir).expect("Failed to create binaries directory");
     }
-    let launcher_path = binaries_dir.join(format!(
-        "discord-cdp-launcher-sidecar-{}{}",
-        target_triple, launcher_ext
-    ));
+    let launcher_path = binaries_dir.join(format!("waybridge-{}{}", target_triple, launcher_ext));
     if !launcher_path.exists() {
         fs::write(&launcher_path, b"").expect("Failed to create CDP launcher placeholder");
     }

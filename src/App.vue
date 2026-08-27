@@ -11,7 +11,7 @@ import { useVersionStore } from '@/stores/version'
 import { useI18n } from 'vue-i18n'
 import { Moon, Sun, Languages } from 'lucide-vue-next'
 import AccountMenu from './components/AccountMenu.vue'
-import OrbsNitroStatus from './components/OrbsNitroStatus.vue'
+import AppNavigation, { type AppTab } from './components/AppNavigation.vue'
 import QuestModeIndicator from './components/QuestModeIndicator.vue'
 import Toaster from './components/Toaster.vue'
 import DiscordCdpExitDialog from './components/DiscordCdpExitDialog.vue'
@@ -26,7 +26,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 
 const { t, locale } = useI18n()
-const currentTab = ref<'home' | 'game' | 'settings' | 'debug'>('home')
+const currentTab = ref<AppTab>('home')
 const authStore = useAuthStore()
 const authTransitioning = ref(false)
 const showStandardShell = computed(() => Boolean(authStore.user) || currentTab.value !== 'home')
@@ -40,58 +40,60 @@ const debugModeEnabled = ref(false)
 
 
 function toggleTheme(event: MouseEvent) {
-  // Get click coordinates for ripple origin
-  const x = event.clientX
-  const y = event.clientY
-  
-  // Calculate the end radius to cover the entire screen
+  const root = document.documentElement
+  const triggerRect = (event.currentTarget as HTMLElement | null)?.getBoundingClientRect()
+  const x = event.clientX || (triggerRect ? triggerRect.left + triggerRect.width / 2 : window.innerWidth / 2)
+  const y = event.clientY || (triggerRect ? triggerRect.top + triggerRect.height / 2 : window.innerHeight / 2)
   const endRadius = Math.hypot(
     Math.max(x, window.innerWidth - x),
     Math.max(y, window.innerHeight - y)
   )
-  
-  // Determine if switching to dark mode
-  const switchingToDark = !isDark.value
-  
-  // Check if View Transitions API is supported
-  if (document.startViewTransition) {
-    // Use View Transitions API for smooth animation
-    const transition = document.startViewTransition(() => {
-      isDark.value = !isDark.value
-      updateTheme()
-    })
-    
-    transition.ready.then(() => {
-      // For light-to-dark: shrink from full to center (reverse ripple)
-      // For dark-to-light: expand from center to full
-      const clipPathStart = switchingToDark 
-        ? `circle(${endRadius}px at ${x}px ${y}px)`
-        : `circle(0px at ${x}px ${y}px)`
-      const clipPathEnd = switchingToDark 
-        ? `circle(0px at ${x}px ${y}px)`
-        : `circle(${endRadius}px at ${x}px ${y}px)`
-      
-      // Animate the old view (shrinking) when going to dark
-      // Animate the new view (expanding) when going to light  
-      document.documentElement.animate(
-        {
-          clipPath: [clipPathStart, clipPathEnd]
-        },
-        {
-          duration: 500,
-          easing: 'ease-out',
-          fill: 'both',
-          pseudoElement: switchingToDark 
-            ? '::view-transition-old(root)' 
-            : '::view-transition-new(root)'
-        }
-      )
-    })
-  } else {
-    // Fallback for browsers without View Transitions API
+
+  const applyNextTheme = () => {
     isDark.value = !isDark.value
     updateTheme()
   }
+
+  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  if (!document.startViewTransition || prefersReducedMotion) {
+    applyNextTheme()
+    return
+  }
+
+  // Ignore overlapping toggles so an earlier transition cannot clean up the
+  // coordinates or stacking context used by a newer one.
+  if (root.classList.contains('theme-view-transition')) return
+
+  root.style.setProperty('--theme-transition-x', `${x}px`)
+  root.style.setProperty('--theme-transition-y', `${y}px`)
+  root.classList.add('theme-view-transition')
+
+  const transition = document.startViewTransition(applyNextTheme)
+
+  void transition.ready.then(() => {
+    root.animate(
+      {
+        clipPath: [
+          `circle(0px at ${x}px ${y}px)`,
+          `circle(${endRadius}px at ${x}px ${y}px)`,
+        ],
+      },
+      {
+        duration: 500,
+        easing: 'ease-out',
+        fill: 'both',
+        pseudoElement: '::view-transition-new(root)',
+      }
+    )
+  }).catch(() => undefined)
+
+  const cleanUpTransition = () => {
+    root.classList.remove('theme-view-transition')
+    root.style.removeProperty('--theme-transition-x')
+    root.style.removeProperty('--theme-transition-y')
+  }
+
+  void transition.finished.then(cleanUpTransition, cleanUpTransition)
 }
 
 function updateTheme() {
@@ -188,91 +190,80 @@ watch(
           showStandardShell ? 'p-6' : 'px-4 py-3 sm:px-6',
         ]"
       >
-        <header
-          v-if="showStandardShell"
-          class="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center"
-        >
-          <div class="app-brand-lockup flex items-center gap-3">
-            <img src="/icons/logo.png" alt="logo" class="h-10 w-10" />
-            <div>
-              <h1 class="select-none text-3xl font-bold tracking-tight text-primary">
-                {{ t('general.title') }}
-              </h1>
-              <p class="select-none text-muted-foreground">
-                {{ t('general.subtitle') }}
-              </p>
-            </div>
-          </div>
+        <Transition name="shell-reveal" appear>
+          <header
+            v-if="showStandardShell && !authTransitioning"
+            class="app-navbar mb-8 p-3 select-none"
+          >
+            <div class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+              <div class="app-brand-lockup flex min-w-0 items-center gap-3 px-1">
+                <img
+                  src="/icons/logo.png"
+                  :alt="t('general.title')"
+                  class="h-10 w-10 shrink-0"
+                />
+                <div class="min-w-0">
+                  <h1 class="whitespace-nowrap text-lg font-semibold tracking-tight text-foreground">
+                    {{ t('general.title') }}
+                  </h1>
+                  <p class="hidden max-w-[36rem] truncate text-xs text-muted-foreground sm:block">
+                    {{ t('general.subtitle') }}
+                  </p>
+                </div>
+              </div>
 
-          <Transition name="shell-reveal" appear>
-            <div v-if="!authTransitioning" class="flex items-center gap-2 select-none">
-              <QuestModeIndicator
-                v-if="authStore.user"
-                @open-settings="openSettingsSection('quest_behavior')"
+              <div class="flex shrink-0 items-center justify-end gap-1">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="h-9 w-9"
+                  @click="toggleTheme"
+                  :title="t('header.toggle_theme')"
+                >
+                  <Moon v-if="isDark" class="h-4 w-4" />
+                  <Sun v-else class="h-4 w-4" />
+                </Button>
+
+                <DropdownMenu>
+                  <DropdownMenuTrigger as-child>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      class="h-9 w-9"
+                      :title="t('header.change_language')"
+                    >
+                      <Languages class="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" class="max-h-[70vh] overflow-y-auto">
+                    <DropdownMenuItem
+                      v-for="item in supportedLocales"
+                      :key="item.code"
+                      @click="setLanguage(item.code)"
+                    >
+                      {{ item.label }}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                <AccountMenu v-if="authStore.user" @logout="authStore.logout" />
+              </div>
+            </div>
+
+            <div class="mt-2 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-t border-border/55 pt-2">
+              <AppNavigation
+                :current="currentTab"
+                :debug-enabled="debugModeEnabled"
+                @navigate="currentTab = $event"
               />
 
-              <Button variant="ghost" size="icon" @click="toggleTheme" :title="t('header.toggle_theme')">
-                <Moon v-if="isDark" class="h-5 w-5" />
-                <Sun v-else class="h-5 w-5" />
-              </Button>
-
-              <DropdownMenu>
-                <DropdownMenuTrigger as-child>
-                  <Button variant="ghost" size="icon" :title="t('header.change_language')">
-                    <Languages class="h-5 w-5" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" class="max-h-[70vh] overflow-y-auto">
-                  <DropdownMenuItem
-                    v-for="item in supportedLocales"
-                    :key="item.code"
-                    @click="setLanguage(item.code)"
-                  >
-                    {{ item.label }}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-
-              <AccountMenu v-if="authStore.user" @logout="authStore.logout" />
+              <QuestModeIndicator
+                v-if="authStore.user"
+                class="justify-self-end"
+                @open-settings="openSettingsSection('quest_behavior')"
+              />
             </div>
-          </Transition>
-        </header>
-
-        <Transition name="shell-reveal" appear>
-          <div
-            v-if="showStandardShell && !authTransitioning"
-            class="mb-8 flex items-center gap-2 border-b border-border pb-4 select-none"
-          >
-            <div class="flex gap-2">
-              <Button
-                :variant="currentTab === 'home' ? 'secondary' : 'ghost'"
-                @click="currentTab = 'home'"
-              >
-                {{ t('nav.home') }}
-              </Button>
-              <Button
-                :variant="currentTab === 'game' ? 'secondary' : 'ghost'"
-                @click="currentTab = 'game'"
-              >
-                {{ t('nav.game_simulator') }}
-              </Button>
-              <Button
-                :variant="currentTab === 'settings' ? 'secondary' : 'ghost'"
-                @click="currentTab = 'settings'"
-              >
-                {{ t('nav.settings') }}
-              </Button>
-              <Button
-                v-if="debugModeEnabled"
-                :variant="currentTab === 'debug' ? 'secondary' : 'ghost'"
-                @click="currentTab = 'debug'"
-              >
-                {{ t('nav.debug') }}
-              </Button>
-            </div>
-
-            <OrbsNitroStatus v-if="authStore.user" />
-          </div>
+          </header>
         </Transition>
 
         <main :class="['fade-in flex-1', !showStandardShell && 'flex min-h-0 w-full']">
@@ -280,20 +271,13 @@ watch(
             <Home v-if="authStore.user" :debug-mode-enabled="debugModeEnabled" />
             <LoginPanel v-else>
               <template #toolbar>
-                <nav class="login-toolbar select-none" :aria-label="t('general.title')">
+                <div class="login-toolbar select-none">
                   <div class="flex flex-wrap items-center justify-center gap-1">
-                    <Button size="sm" variant="secondary" @click="currentTab = 'home'">
-                      {{ t('nav.home') }}
-                    </Button>
-                    <Button size="sm" variant="ghost" @click="currentTab = 'game'">
-                      {{ t('nav.game_simulator') }}
-                    </Button>
-                    <Button size="sm" variant="ghost" @click="currentTab = 'settings'">
-                      {{ t('nav.settings') }}
-                    </Button>
-                    <Button v-if="debugModeEnabled" size="sm" variant="ghost" @click="currentTab = 'debug'">
-                      {{ t('nav.debug') }}
-                    </Button>
+                    <AppNavigation
+                      :current="currentTab"
+                      :debug-enabled="debugModeEnabled"
+                      @navigate="currentTab = $event"
+                    />
 
                     <span class="mx-1 hidden h-5 w-px bg-border sm:block" aria-hidden="true" />
 
@@ -319,7 +303,7 @@ watch(
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
-                </nav>
+                </div>
               </template>
             </LoginPanel>
           </template>
@@ -359,14 +343,24 @@ html.account-view-transition .login-card-shell {
   view-transition-name: login-card;
 }
 
-.login-toolbar {
+.login-toolbar,
+.app-navbar {
   max-width: 100%;
-  padding: 0.375rem;
-  border: 1px solid hsl(var(--border) / 0.75);
+  border: 1px solid hsl(var(--border) / 0.58);
   border-radius: 0.875rem;
-  background: hsl(var(--card) / 0.72);
-  box-shadow: 0 12px 32px -24px hsl(var(--foreground) / 0.45);
+  background: hsl(var(--card) / 0.64);
+  box-shadow:
+    inset 0 1px 0 hsl(var(--background) / 0.5),
+    0 12px 28px -26px hsl(var(--foreground) / 0.38);
   backdrop-filter: blur(14px);
+}
+
+.login-toolbar {
+  padding: 0.375rem;
+}
+
+html.account-view-transition .app-navbar {
+  view-transition-name: login-toolbar;
 }
 
 .shell-reveal-enter-active,

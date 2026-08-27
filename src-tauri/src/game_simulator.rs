@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use serde::Serialize;
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "windows")]
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -13,44 +13,43 @@ use once_cell::sync::Lazy;
 /// Entries are added in `run_simulated_game` and removed in `stop_simulated_game`.
 /// Used by `cleanup_all_simulated_games` to kill orphaned children on app exit.
 ///
-/// Windows/macOS match by process *name*; Linux tracks exact PIDs instead (see
-/// `RUNNING_LINUX_GAMES`) so it never risks killing a real game with the same
-/// executable name.
-#[cfg(not(target_os = "linux"))]
+/// Windows still tracks by image name. Unix platforms retain the exact child
+/// PID and executable path instead, so no fuzzy process-name termination is
+/// needed.
+#[cfg(target_os = "windows")]
 static RUNNING_GAMES: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| Mutex::new(HashSet::new()));
 
-/// A simulated-game child process tracked by exact PID on Linux.
+/// A simulated-game child process tracked by exact PID on macOS/Linux.
 ///
 /// The `Child` handle is kept alive so the process is actually reaped: dropping
 /// it would leave a zombie for the app's lifetime, and `kill(pid, 0)` succeeds
 /// against a zombie, so the termination poll below would never see it exit.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 #[derive(Debug)]
-struct LinuxManagedGame {
+struct UnixManagedGame {
     pid: u32,
     executable_path: PathBuf,
     /// `None` once the child has been waited on.
     child: Option<std::process::Child>,
 }
 
-/// Linux tracks simulated games by PID (keyed on executable name) so it can
-/// verify `/proc/<pid>/exe` before signalling and never kill an unrelated
-/// process that merely shares the game's executable name.
-#[cfg(target_os = "linux")]
-static RUNNING_LINUX_GAMES: Lazy<Mutex<std::collections::HashMap<String, LinuxManagedGame>>> =
+/// macOS/Linux track simulated games by PID (keyed on executable name), then
+/// revalidate the platform-reported executable path before every signal.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+static RUNNING_UNIX_GAMES: Lazy<Mutex<std::collections::HashMap<String, UnixManagedGame>>> =
     Lazy::new(|| Mutex::new(std::collections::HashMap::new()));
 
 // Embed the runner binary at compile time from the data/ directory.
 // build.rs ensures an empty placeholder exists if the runner hasn't been built yet,
 // so this never causes a hard compile-time failure on a fresh clone or `cargo check`.
 #[cfg(target_os = "windows")]
-const RUNNER_BYTES: &[u8] = include_bytes!("../data/discord-quest-runner.exe");
+const RUNNER_BYTES: &[u8] = include_bytes!("../data/stagecraft.exe");
 
 #[cfg(target_os = "macos")]
-const RUNNER_BYTES: &[u8] = include_bytes!("../data/discord-quest-runner");
+const RUNNER_BYTES: &[u8] = include_bytes!("../data/stagecraft");
 
 #[cfg(target_os = "linux")]
-const RUNNER_BYTES: &[u8] = include_bytes!("../data/discord-quest-runner");
+const RUNNER_BYTES: &[u8] = include_bytes!("../data/stagecraft");
 
 #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
 const RUNNER_BYTES: &[u8] = &[];
@@ -102,7 +101,7 @@ fn ensure_runner_bytes(target_path: &Path) -> Result<()> {
     }
     fs::write(target_path, RUNNER_BYTES).context("Failed to write embedded runner binary")?;
     // On macOS/Linux, set executable permission
-    #[cfg(unix)]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     {
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(target_path, fs::Permissions::from_mode(0o755))?;
@@ -229,39 +228,7 @@ pub fn run_simulated_game(
     Ok(())
 }
 
-#[cfg(target_os = "macos")]
-pub fn run_simulated_game(
-    name: &str,
-    path: &str,
-    executable_name: &str,
-    _app_id: &str,
-) -> Result<()> {
-    let exe_to_run = PathBuf::from(path).join(executable_name);
-    ensure_simulated_executable_parent(&exe_to_run)?;
-
-    if !exe_to_run.exists() {
-        ensure_runner_bytes(&exe_to_run).context("Could not create simulated game executable")?;
-    }
-
-    // Make the file executable
-    use std::os::unix::fs::PermissionsExt;
-    let mut perms = std::fs::metadata(&exe_to_run)?.permissions();
-    perms.set_mode(0o755);
-    std::fs::set_permissions(&exe_to_run, perms)?;
-
-    // Launch the process in background
-    let _ = Command::new(&exe_to_run)
-        .spawn()
-        .context("Could not start simulated game")?;
-
-    // Track the running process so we can clean it up on app exit
-    track_running_game(executable_name);
-
-    println!("Simulated game {} started from {:?}", name, exe_to_run);
-    Ok(())
-}
-
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 pub fn run_simulated_game(
     name: &str,
     path: &str,
@@ -295,7 +262,7 @@ pub fn run_simulated_game(
         .context("Could not start simulated game")?;
 
     let pid = child.id();
-    track_linux_game(executable_name, exe_to_run.clone(), pid, child);
+    track_unix_game(executable_name, exe_to_run.clone(), pid, child);
 
     println!(
         "Simulated game {} started from {:?} with PID {}",
@@ -348,61 +315,35 @@ pub fn stop_simulated_game(exec_name: &str) -> Result<()> {
     Ok(())
 }
 
-#[cfg(target_os = "macos")]
-pub fn stop_simulated_game(exec_name: &str) -> Result<()> {
-    // Extract just the filename from the path
-    let file_name = exec_name.split('/').next_back().unwrap_or(exec_name);
-
-    println!(
-        "Stopping simulated game: Input='{}' -> Process='{}'",
-        exec_name, file_name
-    );
-
-    // Use pkill to terminate process by name
-    let output = Command::new("pkill")
-        .args(["-f", file_name])
-        .output()
-        .context("Could not execute pkill command")?;
-
-    // pkill returns 0 if processes were killed, 1 if no processes matched
-    if !output.status.success() && output.status.code() != Some(1) {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        println!("pkill returned non-zero: {}", stderr);
-    }
-
-    // Remove from tracking set
-    untrack_running_game(exec_name);
-
-    println!("Simulated game {} stopped", exec_name);
-    Ok(())
-}
-
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 pub fn stop_simulated_game(exec_name: &str) -> Result<()> {
     let key = file_name_key(exec_name);
 
-    let managed = RUNNING_LINUX_GAMES
+    let managed = RUNNING_UNIX_GAMES
         .lock()
-        .ok()
-        .and_then(|mut games| games.remove(&key));
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .remove(&key);
 
     let Some(mut managed) = managed else {
-        println!("No tracked Linux simulated game for '{}'", key);
+        println!("No tracked simulated game for '{}'", key);
         return Ok(());
     };
 
     // Only signal the PID if it still points at the runner we launched, so a
     // recycled PID (or a real game with the same name) is never killed. On a
     // mismatch, collect the child if it already exited but never block on it.
-    if linux_pid_is_runner(managed.pid, &managed.executable_path) {
-        terminate_linux_game(&mut managed);
+    if unix_pid_is_runner(managed.pid, &managed.executable_path) {
+        terminate_unix_game(
+            &mut managed,
+            std::time::Instant::now() + std::time::Duration::from_secs(2),
+        );
         println!("Simulated game '{}' (pid {}) stopped", key, managed.pid);
     } else {
         println!(
             "Tracked pid {} no longer refers to '{}'; not signalling",
             managed.pid, key
         );
-        try_reap_linux_game(&mut managed);
+        try_reap_unix_game(&mut managed);
     }
 
     Ok(())
@@ -414,7 +355,7 @@ pub fn stop_simulated_game(_exec_name: &str) -> Result<()> {
 }
 
 /// Reduce an executable name/path to its bare file-name key.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn file_name_key(name: &str) -> String {
     name.rsplit(['/', '\\']).next().unwrap_or(name).to_string()
 }
@@ -423,29 +364,28 @@ fn file_name_key(name: &str) -> String {
 ///
 /// Re-launching the same name replaces the tracked entry; the superseded
 /// process is stopped first so it can never be orphaned past app exit.
-#[cfg(target_os = "linux")]
-fn track_linux_game(
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn track_unix_game(
     executable_name: &str,
     executable_path: PathBuf,
     pid: u32,
     child: std::process::Child,
 ) {
     let key = file_name_key(executable_name);
-    let previous = match RUNNING_LINUX_GAMES.lock() {
-        Ok(mut games) => {
-            let previous = games.insert(
-                key.clone(),
-                LinuxManagedGame {
-                    pid,
-                    executable_path,
-                    child: Some(child),
-                },
-            );
-            println!("Tracked Linux game '{}' pid {}", key, pid);
-            previous
-        }
-        Err(_) => None,
+    let mut games = match RUNNING_UNIX_GAMES.lock() {
+        Ok(games) => games,
+        Err(poisoned) => poisoned.into_inner(),
     };
+    let previous = games.insert(
+        key.clone(),
+        UnixManagedGame {
+            pid,
+            executable_path,
+            child: Some(child),
+        },
+    );
+    println!("Tracked simulated game '{}' pid {}", key, pid);
+    drop(games);
 
     // Terminating waits up to 2s, so do it after releasing the map lock.
     if let Some(mut previous) = previous {
@@ -453,17 +393,20 @@ fn track_linux_game(
             "Replacing tracked '{}': stopping previous pid {}",
             key, previous.pid
         );
-        if linux_pid_is_runner(previous.pid, &previous.executable_path) {
-            terminate_linux_game(&mut previous);
+        if unix_pid_is_runner(previous.pid, &previous.executable_path) {
+            terminate_unix_game(
+                &mut previous,
+                std::time::Instant::now() + std::time::Duration::from_secs(2),
+            );
         } else {
-            try_reap_linux_game(&mut previous);
+            try_reap_unix_game(&mut previous);
         }
     }
 }
 
 /// True when `/proc/<pid>/exe` still resolves to the runner we launched.
 #[cfg(target_os = "linux")]
-fn linux_pid_is_runner(pid: u32, executable_path: &Path) -> bool {
+fn unix_pid_is_runner(pid: u32, executable_path: &Path) -> bool {
     let exe_link = PathBuf::from("/proc").join(pid.to_string()).join("exe");
     match (
         std::fs::canonicalize(&exe_link),
@@ -483,51 +426,134 @@ fn linux_pid_is_runner(pid: u32, executable_path: &Path) -> bool {
     }
 }
 
-/// SIGTERM the tracked child, wait briefly, then SIGKILL if it is still alive.
-/// The child is always reaped before returning.
-#[cfg(target_os = "linux")]
-fn terminate_linux_game(game: &mut LinuxManagedGame) {
-    use nix::sys::signal::{self, Signal};
-    use nix::unistd::Pid;
+/// True when macOS still reports the exact executable path that we spawned.
+#[cfg(target_os = "macos")]
+fn unix_pid_is_runner(pid: u32, executable_path: &Path) -> bool {
+    use std::os::unix::ffi::OsStringExt;
 
-    let target = Pid::from_raw(game.pid as i32);
-    if signal::kill(target, Signal::SIGTERM).is_err() {
-        reap_linux_game(game);
+    let mut buffer = Vec::<u8>::with_capacity(libc::PROC_PIDPATHINFO_MAXSIZE as usize);
+    // SAFETY: `buffer` has the advertised writable capacity and is kept alive
+    // for the duration of `proc_pidpath`. A positive return is the byte length.
+    let length = unsafe {
+        libc::proc_pidpath(
+            pid as libc::c_int,
+            buffer.as_mut_ptr().cast(),
+            libc::PROC_PIDPATHINFO_MAXSIZE as u32,
+        )
+    };
+    if length <= 0 {
+        return false;
+    }
+    // SAFETY: `proc_pidpath` initialized exactly `length` bytes on success.
+    unsafe { buffer.set_len(length as usize) };
+    let actual = PathBuf::from(std::ffi::OsString::from_vec(buffer));
+    match (
+        std::fs::canonicalize(&actual),
+        std::fs::canonicalize(executable_path),
+    ) {
+        (Ok(actual), Ok(expected)) => actual == expected,
+        _ => actual == executable_path,
+    }
+}
+
+/// SIGTERM the tracked child, wait briefly, then SIGKILL if it is still alive.
+/// Cleanup has a fixed deadline; a child that cannot be reaped in time is
+/// handed to a background reaper so application shutdown is never blocked.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn terminate_unix_game(game: &mut UnixManagedGame, cleanup_deadline: std::time::Instant) {
+    if send_unix_signal(game.pid, libc::SIGTERM).is_err() {
+        try_reap_unix_game(game);
         return;
     }
 
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
-    while std::time::Instant::now() < deadline {
-        if linux_game_has_exited(game) {
-            reap_linux_game(game);
+    let graceful_deadline = std::cmp::min(
+        std::time::Instant::now() + std::time::Duration::from_millis(1_500),
+        cleanup_deadline,
+    );
+    while std::time::Instant::now() < graceful_deadline {
+        if unix_game_has_exited(game) {
+            reap_unix_game(game);
             return;
         }
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
 
-    let _ = signal::kill(target, Signal::SIGKILL);
-    reap_linux_game(game);
+    // Revalidate immediately before escalation so a recycled PID is never
+    // signalled after the graceful termination window.
+    if unix_pid_is_runner(game.pid, &game.executable_path) {
+        if send_unix_signal(game.pid, libc::SIGKILL).is_ok() {
+            if !reap_unix_game_until(game, cleanup_deadline) {
+                defer_unix_game_reap(game);
+            }
+        } else {
+            try_reap_unix_game(game);
+        }
+    } else {
+        try_reap_unix_game(game);
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn send_unix_signal(pid: u32, signal: libc::c_int) -> std::io::Result<()> {
+    // SAFETY: `kill` does not dereference pointers; PID and signal are
+    // revalidated by the caller against the tracked executable path.
+    let result = unsafe { libc::kill(pid as libc::pid_t, signal) };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
 }
 
 /// Whether the tracked process is gone. Prefers `Child::try_wait`, which also
 /// reaps the zombie; a bare `kill(pid, 0)` probe would report a zombie as alive.
-#[cfg(target_os = "linux")]
-fn linux_game_has_exited(game: &mut LinuxManagedGame) -> bool {
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn unix_game_has_exited(game: &mut UnixManagedGame) -> bool {
     match game.child.as_mut() {
-        Some(child) => !matches!(child.try_wait(), Ok(None)),
+        Some(child) => matches!(child.try_wait(), Ok(Some(_))),
         None => {
-            use nix::sys::signal;
-            use nix::unistd::Pid;
-            signal::kill(Pid::from_raw(game.pid as i32), None).is_err()
+            // Signal 0 performs an existence/permission probe without sending
+            // a signal.
+            send_unix_signal(game.pid, 0).is_err()
         }
     }
 }
 
+/// Poll for a child exit without exceeding the caller's cleanup deadline.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn reap_unix_game_until(game: &mut UnixManagedGame, deadline: std::time::Instant) -> bool {
+    loop {
+        match game.child.as_mut() {
+            Some(child) => match child.try_wait() {
+                Ok(Some(_)) => {
+                    game.child.take();
+                    return true;
+                }
+                Ok(None) if std::time::Instant::now() < deadline => {
+                    std::thread::sleep(std::time::Duration::from_millis(25));
+                }
+                Ok(None) | Err(_) => return false,
+            },
+            None => return true,
+        }
+    }
+}
+
+/// Preserve eventual zombie collection without holding up synchronous cleanup.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn defer_unix_game_reap(game: &mut UnixManagedGame) {
+    if let Some(mut child) = game.child.take() {
+        std::thread::spawn(move || {
+            let _ = child.wait();
+        });
+    }
+}
+
 /// Reap the child so an exited process doesn't linger as a zombie. Only called
-/// once the process is known to be gone (or has been SIGKILLed), so the
-/// underlying `wait()` returns immediately.
-#[cfg(target_os = "linux")]
-fn reap_linux_game(game: &mut LinuxManagedGame) {
+/// once `try_wait()` has confirmed the process is gone, so the underlying
+/// `wait()` returns immediately.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn reap_unix_game(game: &mut UnixManagedGame) {
     if let Some(mut child) = game.child.take() {
         let _ = child.wait();
     }
@@ -538,8 +564,8 @@ fn reap_linux_game(game: &mut LinuxManagedGame) {
 /// it is a zombie) is collected, but a live one — e.g. the runner file was
 /// moved or renamed, so the link no longer matches — is left running untouched.
 /// A blocking `wait()` here would hang until that unverified process exits.
-#[cfg(target_os = "linux")]
-fn try_reap_linux_game(game: &mut LinuxManagedGame) {
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn try_reap_unix_game(game: &mut UnixManagedGame) {
     if let Some(mut child) = game.child.take() {
         if matches!(child.try_wait(), Ok(None)) {
             // Still alive; not verified as ours to kill or wait on — put the
@@ -550,7 +576,7 @@ fn try_reap_linux_game(game: &mut LinuxManagedGame) {
 }
 
 /// Track a newly started simulated game process.
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "windows")]
 fn track_running_game(executable_name: &str) {
     let file_name = executable_name
         .rsplit(['/', '\\'])
@@ -564,7 +590,7 @@ fn track_running_game(executable_name: &str) {
 }
 
 /// Remove a game from the tracking set (called after explicit stop).
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "windows")]
 fn untrack_running_game(executable_name: &str) {
     let file_name = executable_name
         .rsplit(['/', '\\'])
@@ -591,12 +617,12 @@ pub(crate) fn simulated_game_spawn_flags() -> u32 {
 }
 
 /// Snapshot of simulated-game processes that CDP spoof can reuse as a real PID/path.
-/// Linux tracks exact child PIDs; Windows/macOS launch detached / via `open`
-/// and do not keep a pid, so they return no hints.
+/// macOS/Linux track exact child PIDs. Windows launches detached and therefore
+/// returns no process hints.
 pub fn simulated_process_hints() -> Vec<crate::cdp_game_spoof::SimulatedProcessHint> {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     {
-        let games = match RUNNING_LINUX_GAMES.lock() {
+        let games = match RUNNING_UNIX_GAMES.lock() {
             Ok(games) => games,
             Err(poisoned) => poisoned.into_inner(),
         };
@@ -614,7 +640,12 @@ pub fn simulated_process_hints() -> Vec<crate::cdp_game_spoof::SimulatedProcessH
             .collect()
     }
 
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "windows")]
+    {
+        Vec::new()
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
     {
         Vec::new()
     }
@@ -625,15 +656,15 @@ pub fn simulated_process_hints() -> Vec<crate::cdp_game_spoof::SimulatedProcessH
 /// Called on application exit to ensure no orphaned child processes are left
 /// running after the main app (and its RPC connection) closes.
 pub fn cleanup_all_simulated_games() {
-    #[cfg(target_os = "linux")]
-    cleanup_all_linux_games();
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    cleanup_all_unix_games();
 
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "windows")]
     cleanup_all_tracked_games();
 }
 
-/// Windows/macOS: stop every tracked game by name.
-#[cfg(not(target_os = "linux"))]
+/// Windows: stop every tracked game by image name.
+#[cfg(target_os = "windows")]
 fn cleanup_all_tracked_games() {
     let games: Vec<String> = match RUNNING_GAMES.lock() {
         Ok(mut set) => set.drain().collect(),
@@ -654,11 +685,11 @@ fn cleanup_all_tracked_games() {
     }
 }
 
-/// Linux: SIGTERM/SIGKILL every tracked PID whose `/proc/<pid>/exe` still
-/// matches the runner we launched.
-#[cfg(target_os = "linux")]
-fn cleanup_all_linux_games() {
-    let mut games: Vec<LinuxManagedGame> = match RUNNING_LINUX_GAMES.lock() {
+/// macOS/Linux: gracefully stop every tracked PID whose executable path still
+/// matches the runner we launched, escalating only after revalidation.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn cleanup_all_unix_games() {
+    let mut games: Vec<UnixManagedGame> = match RUNNING_UNIX_GAMES.lock() {
         Ok(mut games) => games.drain().map(|(_, value)| value).collect(),
         Err(poisoned) => poisoned
             .into_inner()
@@ -675,12 +706,13 @@ fn cleanup_all_linux_games() {
         "Cleaning up {} simulated game process(es) on exit...",
         games.len()
     );
+    let cleanup_deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
     for game in &mut games {
-        if linux_pid_is_runner(game.pid, &game.executable_path) {
+        if unix_pid_is_runner(game.pid, &game.executable_path) {
             println!("  Stopping pid {}", game.pid);
-            terminate_linux_game(game);
+            terminate_unix_game(game, cleanup_deadline);
         } else {
-            try_reap_linux_game(game);
+            try_reap_unix_game(game);
         }
     }
 }
@@ -715,5 +747,16 @@ mod tests {
         let flags = simulated_game_spawn_flags();
         assert_eq!(flags, DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
         assert_eq!(flags & CREATE_NO_WINDOW, 0);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_pid_path_verification_accepts_only_the_current_executable() {
+        let current = std::env::current_exe().unwrap();
+        assert!(unix_pid_is_runner(std::process::id(), &current));
+        assert!(!unix_pid_is_runner(
+            std::process::id(),
+            Path::new("/tmp/not-the-current-executable")
+        ));
     }
 }

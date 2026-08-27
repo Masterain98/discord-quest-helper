@@ -1,4 +1,6 @@
-@import "tailwindcss";
+@import "tailwindcss" source(none);
+@source "./**/*.{vue,ts}";
+@source "../index.html";
 @plugin "tailwindcss-animate";
 
 @custom-variant dark (&:is(.dark *));
@@ -167,22 +169,19 @@
   isolation: isolate;
 }
 
-/* Dark mode: old (light) view on top, shrinks to reveal dark */
-html.dark::view-transition-old(root) {
-  z-index: 999;
-}
-
-html.dark::view-transition-new(root) {
+/* Keep the captured theme visible until the clipped new theme is ready. */
+html.theme-view-transition::view-transition-old(root) {
   z-index: 1;
 }
 
-/* Light mode: new (light) view on top, expands over dark */
-html:not(.dark)::view-transition-old(root) {
-  z-index: 1;
-}
-
-html:not(.dark)::view-transition-new(root) {
+/* Both directions reveal the new theme from the toggle origin. Defining the
+   initial clip in CSS prevents a full-frame flash before the WAAPI animation
+   is attached after ViewTransition.ready resolves. */
+html.theme-view-transition::view-transition-new(root) {
   z-index: 999;
+  clip-path: circle(
+    0 at var(--theme-transition-x, 50%) var(--theme-transition-y, 50%)
+  );
 }
 
 /* Custom Scrollbar - Dark mode friendly */

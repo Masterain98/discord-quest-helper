@@ -157,21 +157,25 @@ pub(crate) fn show_info_dialog(title: &str, message: &str) {
 
 #[cfg(target_os = "macos")]
 fn show_macos_dialog(title: &str, message: &str, critical: bool) {
-    let escape = |value: &str| value.replace('\\', "\\\\").replace('"', "\\\"");
     let severity = if critical { " as critical" } else { "" };
     let script = format!(
         "display alert \"{}\" message \"{}\"{} buttons {{\"OK\"}} default button \"OK\"",
-        escape(title),
-        escape(message),
+        applescript_string(title),
+        applescript_string(message),
         severity
     );
-    if !std::process::Command::new("osascript")
+    if !std::process::Command::new("/usr/bin/osascript")
         .args(["-e", &script])
         .status()
         .is_ok_and(|status| status.success())
     {
         eprintln!("{title}: {message}");
     }
+}
+
+#[cfg(target_os = "macos")]
+fn applescript_string(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
 #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
@@ -211,6 +215,36 @@ pub(crate) fn show_confirm_dialog(title: &str, message: &str) -> Result<bool, St
             )),
             None => Err("The Zenity confirmation dialog was terminated by a signal.".to_string()),
         })
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn show_confirm_dialog(title: &str, message: &str) -> Result<bool, String> {
+    let script = format!(
+        "button returned of (display alert \"{}\" message \"{}\" buttons {{\"Cancel\", \"Restart\"}} default button \"Restart\")",
+        applescript_string(title),
+        applescript_string(message),
+    );
+    let output = std::process::Command::new("/usr/bin/osascript")
+        .args(["-e", &script])
+        .output()
+        .map_err(|error| format!("Could not show the macOS confirmation dialog: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "The macOS confirmation dialog failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim() == "Restart")
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod macos_tests {
+    use super::applescript_string;
+
+    #[test]
+    fn escapes_applescript_string_delimiters() {
+        assert_eq!(applescript_string(r#"a\"b\\c"#), r#"a\\\"b\\\\c"#);
+    }
 }
 
 #[cfg(target_os = "windows")]
