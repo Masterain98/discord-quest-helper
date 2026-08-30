@@ -1534,14 +1534,24 @@ async fn cdp_execute_json_on_all_targets(
     operation: &str,
 ) -> Result<CdpJsonExecutionSummary> {
     let rewritten = with_bridge(js_code);
-    let results = cdp_client::execute_js_via_all_discord_targets(
+    let results = match cdp_client::execute_js_via_all_discord_targets(
         port,
         &rewritten,
         await_promise,
         timeout_secs,
     )
     .await
-    .with_context(|| format!("Failed to execute CDP {} across Discord targets", operation))?;
+    {
+        Ok(results) => results,
+        Err(error) if cdp_client::error_is_cdp_endpoint_failure(&error) => {
+            return Err(error);
+        }
+        Err(error) => {
+            return Err(error).with_context(|| {
+                format!("Failed to execute CDP {} across Discord targets", operation)
+            });
+        }
+    };
 
     let total_targets = results.len();
     let mut successful_results = Vec::new();
@@ -1763,6 +1773,32 @@ async fn cdp_warmup_quest_route(port: u16) {
     );
 }
 
+async fn cdp_wait_for_endpoint(port: u16) -> Result<()> {
+    cdp_client::wait_for_cdp_targets(port).await.map(|_| ())
+}
+
+fn map_quest_module_init_error(quest_kind: &str, error: anyhow::Error) -> anyhow::Error {
+    if cdp_client::error_is_cdp_endpoint_failure(&error) {
+        error
+    } else {
+        error.context(format!("Failed to initialize CDP modules for {quest_kind}"))
+    }
+}
+
+async fn cdp_prepare_quest_modules(port: u16, quest_kind: &str) -> Result<()> {
+    cdp_wait_for_endpoint(port).await?;
+    cdp_init_modules(port)
+        .await
+        .map_err(|error| map_quest_module_init_error(quest_kind, error))
+}
+
+async fn cdp_prepare_quest_modules_on_primary(port: u16, quest_kind: &str) -> Result<()> {
+    cdp_wait_for_endpoint(port).await?;
+    cdp_init_modules_on_primary(port)
+        .await
+        .map_err(|error| map_quest_module_init_error(quest_kind, error))
+}
+
 /// Initialize Discord webpack modules via CDP.
 async fn cdp_init_modules(port: u16) -> Result<()> {
     use crate::logger::{log, LogCategory, LogLevel};
@@ -1831,14 +1867,21 @@ fn parse_play_activity_cdp_status(raw: &str) -> Result<PlayActivityHeartbeatStat
 }
 
 async fn cdp_init_modules_on_primary(port: u16) -> Result<()> {
-    let raw = cdp_client::execute_js_via_primary_discord_target(
+    let raw = match cdp_client::execute_js_via_primary_discord_target(
         port,
         &with_bridge(JS_INIT_QUEST_MODULES),
         true,
         60,
     )
     .await
-    .context("Failed to initialize Discord modules on the primary CDP target")?;
+    {
+        Ok(raw) => raw,
+        Err(error) if cdp_client::error_is_cdp_endpoint_failure(&error) => return Err(error),
+        Err(error) => {
+            return Err(error)
+                .context("Failed to initialize Discord modules on the primary CDP target");
+        }
+    };
     let parsed: serde_json::Value =
         serde_json::from_str(&raw).context("CDP module initialization returned invalid JSON")?;
     if parsed.get("success").and_then(|value| value.as_bool()) == Some(true) {
@@ -2108,9 +2151,7 @@ pub async fn start_manual_game_spoof(port: u16, app_id: &str, app_name: &str) ->
         .await
         .context("Failed to clear an existing CDP game simulation")?;
     cdp_warmup_quest_route(port).await;
-    cdp_init_modules(port)
-        .await
-        .context("Failed to initialize CDP modules for manual game simulation")?;
+    cdp_prepare_quest_modules(port, "manual game simulation").await?;
 
     let js = js_spoof_play_game(app_id, app_name);
     let summary = match cdp_execute_json_on_all_targets(
@@ -2323,11 +2364,7 @@ pub async fn complete_play_quest_via_cdp(
     // into the new quest session.
     cdp_cleanup_best_effort(port).await;
     cdp_warmup_quest_route(port).await;
-
-    // 1. Init modules
-    cdp_init_modules(port)
-        .await
-        .context("Failed to initialize CDP modules for play quest")?;
+    cdp_prepare_quest_modules(port, "play quest").await?;
 
     // 2. Spoof running game
     let js = js_spoof_play_game(&app_id, &app_name);
@@ -2506,11 +2543,7 @@ pub async fn complete_stream_quest_via_cdp(
     // Defensive pre-cleanup: ensure previous spoof state is removed before applying new patches.
     cdp_cleanup_best_effort(port).await;
     cdp_warmup_quest_route(port).await;
-
-    // 1. Init modules
-    cdp_init_modules(port)
-        .await
-        .context("Failed to initialize CDP modules for stream quest")?;
+    cdp_prepare_quest_modules(port, "stream quest").await?;
 
     // 2. Spoof streaming metadata
     let js = js_spoof_stream(&app_id);
@@ -2670,11 +2703,7 @@ pub async fn complete_video_quest_via_cdp(
     // Defensive pre-cleanup for cross-quest consistency.
     cdp_cleanup_best_effort(port).await;
     cdp_warmup_quest_route(port).await;
-
-    // 1. Init modules
-    cdp_init_modules(port)
-        .await
-        .context("Failed to initialize CDP modules for video quest")?;
+    cdp_prepare_quest_modules(port, "video quest").await?;
 
     let initial_pct = if seconds_needed > 0 {
         (initial_progress / seconds_needed as f64) * 100.0
@@ -3503,9 +3532,9 @@ pub async fn complete_play_activity_via_cdp(
 
     cdp_cleanup_best_effort(port).await;
     cdp_warmup_quest_route(port).await;
-    if let Err(error) = cdp_init_modules_on_primary(port).await {
+    if let Err(error) = cdp_prepare_quest_modules_on_primary(port, "PLAY_ACTIVITY").await {
         cdp_cleanup_after_stop(port, "PLAY_ACTIVITY init failed", false).await;
-        return Err(error.context("Failed to initialize CDP modules for PLAY_ACTIVITY"));
+        return Err(error);
     }
 
     let remaining_seconds = (seconds_needed as f64 - initial_progress.max(0.0))
@@ -3992,6 +4021,31 @@ pub async fn complete_activity_quest_via_cdp(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn module_init_errors_do_not_hide_cdp_endpoint_resets() {
+        let endpoint = map_quest_module_init_error(
+            "play quest",
+            anyhow::anyhow!("CDP endpoint reset / unreachable at 127.0.0.1:9223"),
+        );
+        assert!(
+            !endpoint
+                .to_string()
+                .contains("Failed to initialize CDP modules"),
+            "{endpoint:#}"
+        );
+        assert!(endpoint
+            .to_string()
+            .contains("CDP endpoint reset / unreachable"));
+
+        let module = map_quest_module_init_error(
+            "play quest",
+            anyhow::anyhow!("webpackChunkdiscord_app not found"),
+        );
+        assert!(module
+            .to_string()
+            .contains("Failed to initialize CDP modules for play quest"));
+    }
 
     #[test]
     fn play_activity_cdp_js_matches_har_payload_shapes() {
