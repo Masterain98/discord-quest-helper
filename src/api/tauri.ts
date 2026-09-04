@@ -561,6 +561,62 @@ export async function fetchRunningGamesCdp(port?: number): Promise<CdpRunningGam
 
 export type DiscordChannelArg = 'auto' | 'stable' | 'ptb' | 'canary'
 export type DiscordChannelResult = 'stable' | 'ptb' | 'canary'
+export type ProviderId = 'discord.official' | 'vencord.vesktop' | (string & {})
+export type SessionOwnership = 'managed' | 'externalAttached' | 'ambiguousExternal' | 'unknown'
+export type DiscoverySource = 'user' | 'runningProcess' | 'osMetadata' | 'standardPath'
+export type ValidationState = 'valid' | 'missing' | 'invalid'
+export type CdpEndpointState = 'unreachable' | 'occupied' | 'nonDiscordCdp' | 'discordReady'
+
+export type ClientSelection =
+  | { kind: 'auto' }
+  | { kind: 'provider'; providerId: ProviderId; variantId?: string | null }
+  | { kind: 'installation'; installationId: string }
+
+export type ClientLaunchTarget =
+  | { kind: 'executable'; path: string; workingDir: string; prefixArgs: string[] }
+  | { kind: 'macBundle'; bundlePath: string; executablePath: string }
+  | { kind: 'flatpak'; appId: string; command?: string | null }
+
+export interface ClientInstallation {
+  id: string
+  providerId: ProviderId
+  variantId: string | null
+  displayName: string
+  source: DiscoverySource
+  launchTarget: ClientLaunchTarget
+  capabilities: { cdp: boolean; localToken: boolean; restoreNormal: boolean }
+  validation: ValidationState
+}
+
+export interface ClientProcess {
+  providerId: ProviderId
+  installationId: string
+  variantId: string | null
+  executablePath: string | null
+  running: boolean
+}
+
+export interface DesktopClientState {
+  installations: ClientInstallation[]
+  processes: ClientProcess[]
+  endpoint: {
+    port: number
+    status: CdpEndpointState
+    owner: CdpPortOwner
+    ownerProviderId: ProviderId | null
+    targetTitle: string | null
+  }
+  selection: ClientSelection
+  discoveryIssues: Array<{ providerId: ProviderId | null; code: string; message: string }>
+  port: number
+  revision: number
+}
+
+export interface DesktopClientCommandError {
+  code: string
+  params: Record<string, unknown>
+  message: string
+}
 
 export interface DesktopClientInventory {
   officialInstalled: boolean
@@ -583,6 +639,10 @@ export interface DiscordCdpLaunchResult {
   channel: DiscordChannelResult
   port: number
   cdp_connected: boolean
+  providerId: ProviderId
+  installationId: string | null
+  variantId: string | null
+  ownership: SessionOwnership
 }
 
 export async function isDiscordRunning(channel?: DiscordChannelArg): Promise<boolean> {
@@ -591,6 +651,26 @@ export async function isDiscordRunning(channel?: DiscordChannelArg): Promise<boo
 
 export async function listDesktopClients(port?: number): Promise<DesktopClientInventory> {
   return await invoke('list_desktop_clients', { port })
+}
+
+export async function getDesktopClientState(port?: number): Promise<DesktopClientState> {
+  return await invoke('get_desktop_client_state', { port })
+}
+
+export async function addDesktopClientInstallation(providerId: ProviderId, path: string): Promise<DesktopClientState> {
+  return await invoke('add_desktop_client_installation', { providerId, path })
+}
+
+export async function removeDesktopClientInstallation(installationId: string, port?: number): Promise<DesktopClientState> {
+  return await invoke('remove_desktop_client_installation', { installationId, port })
+}
+
+export async function setDesktopClientSelection(selection: ClientSelection, port?: number): Promise<DesktopClientState> {
+  return await invoke('set_desktop_client_selection', { selection, port })
+}
+
+export async function launchDesktopClientCdp(port?: number, selection?: ClientSelection, restartExisting = false): Promise<DiscordCdpLaunchResult> {
+  return await invoke('launch_desktop_client_cdp', { port, selection, restartExisting })
 }
 
 export async function launchDiscordCdp(
@@ -609,8 +689,13 @@ export async function restartDiscordCdp(
   return await invoke('restart_discord_cdp', { port, channel, client })
 }
 
-export async function createDiscordCdpLauncherShortcut(port?: number, channel?: DiscordChannelArg): Promise<string> {
-  return await invoke('create_discord_cdp_launcher_shortcut', { port, channel })
+export async function createDiscordCdpLauncherShortcut(
+  port?: number,
+  channel?: DiscordChannelArg,
+  client?: DesktopClientArg,
+  installationPath?: string,
+): Promise<string> {
+  return await invoke('create_discord_cdp_launcher_shortcut', { port, channel, client, installationPath })
 }
 
 export async function createDiscordDebugShortcut(port?: number): Promise<string> {
@@ -727,8 +812,29 @@ export interface RunningDiscordCdpSession {
   port: number
 }
 
+export interface RunningDesktopCdpSession {
+  providerId: ProviderId
+  installationId: string | null
+  variantId: string | null
+  port: number
+  ownership: SessionOwnership
+  executablePath: string | null
+}
+
 export async function listRunningDiscordCdpSessions(): Promise<RunningDiscordCdpSession[]> {
   return await invoke('list_running_discord_cdp_sessions')
+}
+
+export async function listRunningDesktopCdpSessions(): Promise<RunningDesktopCdpSession[]> {
+  return await invoke('list_running_desktop_cdp_sessions')
+}
+
+export async function restoreDesktopClientSession(
+  installationId: string,
+  port: number,
+  confirmExternal = false,
+): Promise<void> {
+  return await invoke('restore_desktop_client_session', { installationId, port, confirmExternal })
 }
 
 export async function startDiscordNormalRestoreHelper(): Promise<void> {

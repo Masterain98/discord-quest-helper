@@ -1,5 +1,7 @@
 # Discord CDP launch core migration
 
+> Multi-client follow-up: see [desktop-client-provider-migration.md](desktop-client-provider-migration.md). The four-field Tauri DTO and official-channel-only session model described below are the historical baseline; current launch results also expose provider/installation/variant/ownership and the new atomic state API.
+
 This document records the behavior and artifact baseline for the migration from
 two copied Discord launch implementations to the shared
 `discord-cdp-launch-core` crate.

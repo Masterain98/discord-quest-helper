@@ -3,6 +3,132 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 pub const DEFAULT_CDP_PORT: u16 = 9223;
+pub const OFFICIAL_DISCORD_PROVIDER_ID: &str = "discord.official";
+pub const VESKTOP_PROVIDER_ID: &str = "vencord.vesktop";
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
+pub struct ProviderId(pub String);
+
+impl ProviderId {
+    pub fn official_discord() -> Self {
+        Self(OFFICIAL_DISCORD_PROVIDER_ID.to_string())
+    }
+
+    pub fn vesktop() -> Self {
+        Self(VESKTOP_PROVIDER_ID.to_string())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
+pub struct VariantId(pub String);
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
+pub struct InstallationId(pub String);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
+pub enum DiscoverySource {
+    User,
+    RunningProcess,
+    OsMetadata,
+    StandardPath,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
+pub enum ValidationState {
+    Valid,
+    Missing,
+    Invalid,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
+pub struct ClientCapabilities {
+    pub cdp: bool,
+    pub local_token: bool,
+    pub restore_normal: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(tag = "kind", rename_all = "camelCase"))]
+pub enum LaunchTarget {
+    Executable {
+        path: PathBuf,
+        #[cfg_attr(feature = "serde", serde(rename = "workingDir"))]
+        working_dir: PathBuf,
+        #[cfg_attr(feature = "serde", serde(default, rename = "prefixArgs"))]
+        prefix_args: Vec<String>,
+    },
+    MacBundle {
+        #[cfg_attr(feature = "serde", serde(rename = "bundlePath"))]
+        bundle_path: PathBuf,
+        #[cfg_attr(feature = "serde", serde(rename = "executablePath"))]
+        executable_path: PathBuf,
+    },
+    Flatpak {
+        #[cfg_attr(feature = "serde", serde(rename = "appId"))]
+        app_id: String,
+        command: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
+pub struct ClientInstallation {
+    pub id: InstallationId,
+    pub provider_id: ProviderId,
+    pub variant_id: Option<VariantId>,
+    pub display_name: String,
+    pub source: DiscoverySource,
+    pub launch_target: LaunchTarget,
+    pub capabilities: ClientCapabilities,
+    pub validation: ValidationState,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(tag = "kind", rename_all = "camelCase"))]
+pub enum LaunchSelector {
+    #[default]
+    Auto,
+    Provider {
+        #[cfg_attr(feature = "serde", serde(rename = "providerId"))]
+        provider_id: ProviderId,
+        #[cfg_attr(feature = "serde", serde(rename = "variantId"))]
+        variant_id: Option<VariantId>,
+    },
+    Installation {
+        #[cfg_attr(feature = "serde", serde(rename = "installationId"))]
+        installation_id: InstallationId,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
+pub enum SessionOwnership {
+    Managed,
+    ExternalAttached,
+    AmbiguousExternal,
+    #[default]
+    Unknown,
+}
 
 /// Which desktop client Helper should extract from or attach to.
 ///
@@ -102,6 +228,9 @@ pub struct LaunchOptions {
     pub port: u16,
     pub channel: Option<DiscordChannel>,
     pub client: DesktopClientPreference,
+    /// Exact provider installation selected by the caller. Legacy callers can
+    /// leave this empty and continue using `client` + `channel`.
+    pub installation: Option<ClientInstallation>,
     pub restart_existing: bool,
     pub wait_for_cdp: bool,
     pub shutdown_timeout: Duration,
@@ -115,6 +244,7 @@ impl Default for LaunchOptions {
             port: DEFAULT_CDP_PORT,
             channel: None,
             client: DesktopClientPreference::Auto,
+            installation: None,
             restart_existing: false,
             wait_for_cdp: true,
             shutdown_timeout: Duration::from_secs(8),
@@ -138,6 +268,22 @@ pub struct LaunchResult {
     pub port: u16,
     pub pid: Option<u32>,
     pub cdp_connected: bool,
+    pub provider_id: ProviderId,
+    pub installation_id: Option<InstallationId>,
+    pub variant_id: Option<VariantId>,
+    pub ownership: SessionOwnership,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
+pub struct DesktopCdpSession {
+    pub provider_id: ProviderId,
+    pub installation_id: Option<InstallationId>,
+    pub variant_id: Option<VariantId>,
+    pub port: u16,
+    pub ownership: SessionOwnership,
+    pub executable_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

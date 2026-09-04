@@ -29,6 +29,7 @@
     "cdp_login_detail_vesktop": "使用 Vesktop 当前登录的账号。Vesktop 需要在 CDP 启用模式下运行。",
     "cdp_choose_title": "选择要启动的客户端",
     "cdp_choose_desc": "当前没有客户端在 CDP 模式下运行。请选择要启动的已安装客户端。",
+    "cdp_remember_choice": "记住我的选项",
     "cdp_client_stable": "Discord",
     "cdp_client_ptb": "Discord PTB",
     "cdp_client_canary": "Discord Canary",
@@ -478,6 +479,25 @@
     "activity_cdp_required": "Activity 任务需要 CDP 模式",
     "stream_quest_title": "直播任务",
     "stream_quest_desc": "直播任务需要你在 Discord 中手动直播游戏。请在语音频道中开始直播，然后使用游戏模拟器模拟运行游戏。"
+  },
+  "desktop_clients": {
+    "ask_each_time": "每次询问我",
+    "ask_each_time_desc": "每次 CDP 不可用时，询问要启动哪个已安装的客户端。",
+    "auto_desc": "自动附加到已就绪的 Discord CDP 端点，或选择首个可用的受支持客户端。",
+    "status_launchable": "可启动",
+    "status_running": "正在运行",
+    "status_missing": "路径失效",
+    "status_invalid": "无效安装",
+    "browse_title": "选择桌面客户端可执行文件",
+    "add_vesktop": "添加 Vesktop 安装",
+    "relocate": "重新定位安装",
+    "remove": "移除安装",
+    "owner_conflict_title": "此 CDP 端口已由另一个桌面客户端占用",
+    "owner_conflict_desc": "可使用当前已连接客户端、切换到所选客户端，或取消后更换端口。",
+    "use_current": "使用当前客户端",
+    "switch_selected": "切换到所选客户端",
+    "restore_managed_and_close": "仅恢复由本应用启动的客户端并关闭",
+    "restore_all_and_close": "确认外部客户端、全部恢复并关闭"
   },
   "exit_cdp": {
     "title": "Discord 仍在 CDP 模式下运行",

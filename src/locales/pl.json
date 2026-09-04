@@ -55,6 +55,7 @@
     "cdp_login_detail_vesktop": "Use the account currently signed in to Vesktop. Vesktop must be running with CDP enabled.",
     "cdp_choose_title": "Choose a Discord client",
     "cdp_choose_desc": "No client is running with CDP enabled. Choose which installed client to start.",
+    "cdp_remember_choice": "Remember my choice",
     "cdp_client_stable": "Discord",
     "cdp_client_ptb": "Discord PTB",
     "cdp_client_canary": "Discord Canary",
@@ -476,6 +477,25 @@
     "activity_cdp_required": "Zadania Activity wymagają trybu CDP.",
     "stream_quest_title": "Zadanie strumieniowe",
     "stream_quest_desc": "Zadania strumieniowe wymagają ręcznego przesyłania strumieniowego gry na Discord. Rozpocznij transmisję na kanale głosowym, a następnie użyj symulatora gry, aby zasymulować grę."
+  },
+  "desktop_clients": {
+    "ask_each_time": "Ask me every time",
+    "ask_each_time_desc": "Ask which installed client to start whenever CDP is unavailable.",
+    "auto_desc": "Let Helper attach to an existing Discord-ready endpoint or choose the first available supported client.",
+    "status_launchable": "Available",
+    "status_running": "Running",
+    "status_missing": "Path missing",
+    "status_invalid": "Invalid",
+    "browse_title": "Choose a desktop client executable",
+    "add_vesktop": "Add Vesktop installation",
+    "relocate": "Relocate installation",
+    "remove": "Remove installation",
+    "owner_conflict_title": "Another desktop client owns this CDP port",
+    "owner_conflict_desc": "Use the client already connected to this port, switch to the selected client, or cancel and choose another port.",
+    "use_current": "Use current client",
+    "switch_selected": "Switch to selected client",
+    "restore_managed_and_close": "Restore Helper-started clients and close",
+    "restore_all_and_close": "Confirm external clients, restore all, and close"
   },
   "exit_cdp": {
     "title": "Discord nadal działa w trybie CDP",

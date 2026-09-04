@@ -77,7 +77,6 @@ export function canBeginLogin(activeMethod: LoginMethod | null, storeLoading: bo
 export function usesVesktopForCdpLogin(inventory: DesktopClientInventory | null): boolean {
   if (!inventory) return false
   if (inventory.cdpOwner === 'vesktop') return true
-  if (inventory.vesktopRunning && !inventory.officialRunning) return true
   return inventory.vesktopInstalled && !inventory.officialInstalled
 }
 

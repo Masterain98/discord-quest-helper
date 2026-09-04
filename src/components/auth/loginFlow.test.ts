@@ -113,12 +113,13 @@ describe('CDP status and polling', () => {
 })
 
 describe('CDP login client copy', () => {
-  it('uses Discord copy unless Vesktop is the only available client', () => {
+  it('uses Discord copy unless Vesktop is connected or the only available client', () => {
     expect(usesVesktopForCdpLogin(null)).toBe(false)
     expect(usesVesktopForCdpLogin(inventory())).toBe(false)
     expect(usesVesktopForCdpLogin(inventory({ officialRunning: true, vesktopRunning: true }))).toBe(false)
     expect(usesVesktopForCdpLogin(inventory({ officialInstalled: false, stableInstalled: false }))).toBe(true)
-    expect(usesVesktopForCdpLogin(inventory({ vesktopRunning: true }))).toBe(true)
+    expect(usesVesktopForCdpLogin(inventory({ vesktopRunning: true }))).toBe(false)
+    expect(usesVesktopForCdpLogin(inventory({ officialInstalled: false, stableInstalled: false, vesktopRunning: true }))).toBe(true)
     expect(usesVesktopForCdpLogin(inventory({ cdpOwner: 'vesktop' }))).toBe(true)
   })
 })

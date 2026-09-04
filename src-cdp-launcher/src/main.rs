@@ -73,14 +73,40 @@ fn run(strings: &Strings) -> Result<i32, String> {
         return Ok(3);
     }
 
-    if cdp_launch::is_cdp_available(options.port) {
-        dialogs::show_info_dialog(strings.title, strings.cdp_already_running);
-
-        return Ok(0);
-    }
-
-    let running = cdp_launch::is_discord_running(options.channel)
-        .map_err(|error| runtime_error("Status check", &error))?;
+    let installation = options
+        .installation
+        .clone()
+        .map(|path| {
+            let provider = match options.client {
+                cdp_launch::DesktopClientPreference::Vesktop => cdp_launch::ProviderId::vesktop(),
+                cdp_launch::DesktopClientPreference::Official => {
+                    cdp_launch::ProviderId::official_discord()
+                }
+                cdp_launch::DesktopClientPreference::Auto => {
+                    return Err(
+                        "--installation requires --client official or --client vesktop".to_string(),
+                    );
+                }
+            };
+            cdp_launch::custom_executable_installation(&provider, path)
+                .map_err(|error| error.to_string())
+        })
+        .transpose()?;
+    let running = if let Some(installation) = &installation {
+        match &installation.launch_target {
+            cdp_launch::LaunchTarget::Executable { path, .. }
+            | cdp_launch::LaunchTarget::MacBundle {
+                executable_path: path,
+                ..
+            } => cdp_launch::is_installation_running(path),
+            cdp_launch::LaunchTarget::Flatpak { .. } => false,
+        }
+    } else if options.client == cdp_launch::DesktopClientPreference::Vesktop {
+        cdp_launch::is_vesktop_running().map_err(|error| runtime_error("Status check", &error))?
+    } else {
+        cdp_launch::is_discord_running(options.channel)
+            .map_err(|error| runtime_error("Status check", &error))?
+    };
     if running && !options.restart {
         let want_restart = {
             #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
@@ -105,6 +131,8 @@ fn run(strings: &Strings) -> Result<i32, String> {
     let request = cdp_launch::LaunchOptions {
         port: options.port,
         channel: options.channel,
+        client: options.client,
+        installation,
         restart_existing: options.restart,
         ..Default::default()
     };

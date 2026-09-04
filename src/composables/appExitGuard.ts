@@ -1,5 +1,8 @@
 export interface RunningCdpSession {
-  channel: 'stable' | 'ptb' | 'canary'
+  channel?: 'stable' | 'ptb' | 'canary'
+  providerId?: string
+  installationId?: string | null
+  ownership?: 'managed' | 'externalAttached' | 'ambiguousExternal' | 'unknown'
   port: number
 }
 
@@ -11,11 +14,13 @@ export interface ExitGuardState {
   checking: boolean
   dialogOpen: boolean
   closing: boolean
+  sessions?: RunningCdpSession[]
 }
 
 export interface ExitGuardDependencies {
   listSessions(): Promise<RunningCdpSession[]>
   startRestoreHelper(): Promise<void>
+  restoreSession?(session: RunningCdpSession, confirmExternal: boolean): Promise<void>
   prepareExit(): Promise<void>
   exitApplication(): Promise<void>
   showError(message: string): Promise<void>
@@ -78,6 +83,7 @@ export function createAppExitGuard(dependencies: ExitGuardDependencies) {
     try {
       const sessions = await dependencies.listSessions()
       if (sessions.length > 0) {
+        state.sessions = sessions
         state.dialogOpen = true
         return
       }
@@ -101,7 +107,13 @@ export function createAppExitGuard(dependencies: ExitGuardDependencies) {
     state.checking = true
     publish()
     try {
-      await dependencies.startRestoreHelper()
+      if (dependencies.restoreSession && state.sessions?.length) {
+        for (const session of state.sessions) {
+          await dependencies.restoreSession(session, session.ownership !== 'managed')
+        }
+      } else {
+        await dependencies.startRestoreHelper()
+      }
     } catch (error) {
       dependencies.logError(error)
       try {
@@ -113,6 +125,25 @@ export function createAppExitGuard(dependencies: ExitGuardDependencies) {
     await closeApplication()
   }
 
+  async function restoreManagedAndClose() {
+    if (!dependencies.restoreSession || !state.sessions?.length) {
+      await restoreAndClose()
+      return
+    }
+    if (state.closing) return
+    state.checking = true
+    publish()
+    try {
+      for (const session of state.sessions.filter(item => item.ownership === 'managed')) {
+        await dependencies.restoreSession(session, false)
+      }
+    } catch (error) {
+      dependencies.logError(error)
+      await dependencies.showError(String(error)).catch(dependencies.logError)
+    }
+    await closeApplication()
+  }
+
   publish()
-  return { requestClose, closeOnly, restoreAndClose }
+  return { requestClose, closeOnly, restoreAndClose, restoreManagedAndClose }
 }

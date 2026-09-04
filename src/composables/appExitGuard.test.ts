@@ -68,6 +68,38 @@ describe('app exit guard', () => {
     expect(order).toEqual(['error', 'prepare', 'exit'])
   })
 
+  it('restores only managed sessions unless external recovery is explicitly chosen', async () => {
+    const restoreSession = vi.fn().mockResolvedValue(undefined)
+    const { guard } = harness({
+      listSessions: vi.fn().mockResolvedValue([
+        { providerId: 'discord.official', installationId: 'stable', ownership: 'managed', port: 9223 },
+        { providerId: 'vencord.vesktop', installationId: 'portable', ownership: 'externalAttached', port: 9223 },
+      ]),
+      restoreSession,
+    })
+    await guard.requestClose({ preventDefault: vi.fn() })
+    await guard.restoreManagedAndClose()
+    expect(restoreSession).toHaveBeenCalledOnce()
+    expect(restoreSession).toHaveBeenCalledWith(expect.objectContaining({ installationId: 'stable' }), false)
+  })
+
+  it('marks external session recovery as explicitly confirmed', async () => {
+    const restoreSession = vi.fn().mockResolvedValue(undefined)
+    const externalSession = {
+      providerId: 'vencord.vesktop',
+      installationId: 'portable',
+      ownership: 'externalAttached' as const,
+      port: 9223,
+    }
+    const { guard } = harness({
+      listSessions: vi.fn().mockResolvedValue([externalSession]),
+      restoreSession,
+    })
+    await guard.requestClose({ preventDefault: vi.fn() })
+    await guard.restoreAndClose()
+    expect(restoreSession).toHaveBeenCalledWith(externalSession, true)
+  })
+
   it('exits the application when exit cleanup does not settle', async () => {
     const { guard, dependencies } = harness({
       prepareExit: vi.fn(() => new Promise<void>(() => {})),

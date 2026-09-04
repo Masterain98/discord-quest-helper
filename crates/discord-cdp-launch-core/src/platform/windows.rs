@@ -96,24 +96,6 @@ pub(crate) fn is_vesktop_running() -> Result<bool, LaunchError> {
     Ok(stdout.contains("\"vesktop.exe\""))
 }
 
-pub(crate) fn terminate_vesktop() -> Result<(), LaunchError> {
-    let output = no_window_cmd("taskkill")
-        .args(["/IM", "vesktop.exe", "/T", "/F"])
-        .output()
-        .map_err(|source| LaunchError::ProcessInspection {
-            operation: "taskkill",
-            source,
-        })?;
-    if !output.status.success() {
-        let details = String::from_utf8_lossy(&output.stderr);
-        eprintln!(
-            "taskkill for vesktop.exe returned non-zero: {}",
-            details.trim()
-        );
-    }
-    Ok(())
-}
-
 pub(crate) fn spawn_vesktop(
     install: &VesktopInstall,
     mode: DiscordLaunchMode,

@@ -37,6 +37,15 @@ pub fn find_vesktop_install() -> Option<VesktopInstall> {
             roots.push(home.join(".local").join("bin"));
             roots.push(home.join(".local").join("share"));
         }
+        if let Some(path) = std::env::var_os("PATH") {
+            roots.extend(std::env::split_paths(&path));
+        }
+        if let Some(data_home) = std::env::var_os("XDG_DATA_HOME") {
+            roots.push(PathBuf::from(data_home).join("applications"));
+        }
+        if let Some(data_dirs) = std::env::var_os("XDG_DATA_DIRS") {
+            roots.extend(std::env::split_paths(&data_dirs).map(|root| root.join("applications")));
+        }
         discover_linux_vesktop_install_in(&roots)
     }
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
@@ -61,25 +70,6 @@ pub fn is_vesktop_running() -> Result<bool, LaunchError> {
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
     {
         Ok(false)
-    }
-}
-
-pub fn terminate_vesktop() -> Result<(), LaunchError> {
-    #[cfg(target_os = "windows")]
-    {
-        crate::platform::windows::terminate_vesktop()
-    }
-    #[cfg(target_os = "macos")]
-    {
-        crate::platform::macos::terminate_vesktop()
-    }
-    #[cfg(target_os = "linux")]
-    {
-        crate::platform::linux::terminate_vesktop()
-    }
-    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
-    {
-        Err(LaunchError::UnsupportedPlatform)
     }
 }
 
@@ -135,8 +125,8 @@ pub fn cdp_ready_matches_preference(
 ) -> bool {
     match preference {
         DesktopClientPreference::Auto => true,
-        DesktopClientPreference::Official => !matches!(owner, CdpPortOwner::Vesktop),
-        DesktopClientPreference::Vesktop => !matches!(owner, CdpPortOwner::Official),
+        DesktopClientPreference::Official => matches!(owner, CdpPortOwner::Official),
+        DesktopClientPreference::Vesktop => matches!(owner, CdpPortOwner::Vesktop),
     }
 }
 
@@ -360,9 +350,13 @@ mod tests {
             DesktopClientPreference::Auto,
             CdpPortOwner::Official
         ));
-        assert!(cdp_ready_matches_preference(
+        assert!(!cdp_ready_matches_preference(
             DesktopClientPreference::Official,
             CdpPortOwner::None
+        ));
+        assert!(!cdp_ready_matches_preference(
+            DesktopClientPreference::Official,
+            CdpPortOwner::Other
         ));
         assert!(!cdp_ready_matches_preference(
             DesktopClientPreference::Official,

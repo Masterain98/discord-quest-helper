@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { Check, Link2, Loader2, Play, Wifi, WifiOff } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { Badge } from '@/components/ui/badge'
@@ -8,19 +8,13 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useQuestsStore } from '@/stores/quests'
 import {
-  checkCdpStatus,
   createDiscordCdpLauncherShortcut,
   fetchSuperPropertiesCdp,
   getDebugInfo,
-  isDiscordRunning,
-  launchDiscordCdp,
-  listDesktopClients,
-  restartDiscordCdp,
-  type CdpStatus,
+  launchDesktopClientCdp,
   type DebugInfo,
-  type DesktopClientArg,
-  type DesktopClientInventory
 } from '@/api/tauri'
+import { useDesktopClientState } from '@/composables/desktopClientState'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -36,11 +30,17 @@ import SettingsSectionCard from './SettingsSectionCard.vue'
 import SettingsStatusPanel from './SettingsStatusPanel.vue'
 import { cn } from '@/lib/utils'
 import { settingToneClass, type SettingsTone } from './settingTones'
+import DesktopClientPicker from './DesktopClientPicker.vue'
 
 const { t } = useI18n()
 const questsStore = useQuestsStore()
+const clients = useDesktopClientState()
 
-const cdpStatus = ref<CdpStatus | null>(null)
+const cdpStatus = computed(() => ({
+  connected: clients.state.value?.endpoint.status === 'discordReady',
+  target_title: clients.state.value?.endpoint.targetTitle ?? null,
+  error: clients.error.value,
+}))
 const cdpChecking = ref(false)
 
 // Dynamic button label: show "Restart" when CDP is already connected
@@ -61,11 +61,6 @@ const discordWasRunning = ref(false)
 const discordWasConnected = ref(false)
 const debugInfo = ref<DebugInfo | null>(null)
 const debugInfoLoading = ref(false)
-const desktopClients = ref<DesktopClientInventory | null>(null)
-const desktopClientChoices: DesktopClientArg[] = ['auto', 'official', 'vesktop']
-const showClientPicker = computed(() => (
-  desktopClients.value?.officialInstalled === true && desktopClients.value?.vesktopInstalled === true
-))
 
 const cdpSectionTone = computed<SettingsTone>(() => cdpStatus.value?.connected ? 'success' : 'warning')
 const cdpStatusTone = computed<SettingsTone>(() => {
@@ -86,11 +81,8 @@ const debugInfoSourceTone = computed<SettingsTone>(() => {
 async function checkCdp() {
   cdpChecking.value = true
   try {
-    cdpStatus.value = await checkCdpStatus(questsStore.cdpPort)
-    questsStore.cdpAvailable = cdpStatus.value.connected
-  } catch (e) {
-    cdpStatus.value = { available: false, connected: false, target_title: null, error: String(e) }
-    questsStore.cdpAvailable = false
+    const snapshot = await clients.refresh(questsStore.cdpPort)
+    questsStore.cdpAvailable = snapshot?.endpoint.status === 'discordReady'
   } finally {
     cdpChecking.value = false
   }
@@ -130,7 +122,14 @@ async function createShortcut() {
   shortcutSuccess.value = false
   shortcutError.value = ''
   try {
-    await createDiscordCdpLauncherShortcut(questsStore.cdpPort, 'auto')
+    const provider = clients.selectedProviderId.value
+    const client = provider === 'vencord.vesktop' ? 'vesktop' : provider === 'discord.official' ? 'official' : 'auto'
+    await createDiscordCdpLauncherShortcut(
+      questsStore.cdpPort,
+      'auto',
+      client,
+      clients.installationPath(clients.selectedInstallation.value),
+    )
     shortcutSuccess.value = true
     setTimeout(() => { shortcutSuccess.value = false }, 3000)
   } catch (e) {
@@ -150,14 +149,16 @@ async function requestCdpAction() {
   resetLaunchMessage()
   cdpActionBusy.value = true
   try {
-    const inventory = await listDesktopClients(questsStore.cdpPort)
-    desktopClients.value = inventory
-    const running = questsStore.desktopClient === 'vesktop'
-      ? inventory.vesktopRunning
-      : await isDiscordRunning('auto')
+    const snapshot = await clients.refresh(questsStore.cdpPort)
+    if (!snapshot) throw new Error(clients.error.value ?? 'Desktop client state is unavailable')
+    const running = clients.selectedIsRunning.value
     discordWasRunning.value = running
-    discordWasConnected.value = !!cdpStatus.value?.connected
-    if (running) {
+    discordWasConnected.value = snapshot.endpoint.status === 'discordReady'
+    const selectedProvider = clients.selectedProviderId.value
+    const ownerConflict = snapshot.endpoint.status === 'discordReady'
+      && selectedProvider !== null
+      && snapshot.endpoint.ownerProviderId !== selectedProvider
+    if (running || ownerConflict || snapshot.endpoint.status === 'discordReady') {
       cdpDialogOpen.value = true
       return
     }
@@ -187,9 +188,13 @@ async function performLaunch(restart: boolean) {
   }
 
   try {
-    const result = restart
-      ? await restartDiscordCdp(questsStore.cdpPort, 'auto', questsStore.desktopClient)
-      : await launchDiscordCdp(questsStore.cdpPort, 'auto', questsStore.desktopClient)
+    const snapshot = await clients.refresh(questsStore.cdpPort)
+    if (!snapshot) throw new Error(clients.error.value ?? 'Desktop client state is unavailable')
+    const result = await launchDesktopClientCdp(
+      questsStore.cdpPort,
+      snapshot.selection,
+      restart,
+    )
     cdpLaunchSuccess.value = result.cdp_connected
       ? t('settings.cdp_launch_success')
       : t('settings.cdp_launch_started')
@@ -206,9 +211,11 @@ async function performLaunch(restart: boolean) {
 onMounted(() => {
   checkCdp()
   loadDebugInfo()
-  listDesktopClients(questsStore.cdpPort).then((inventory) => {
-    desktopClients.value = inventory
-  }).catch(() => {})
+  void clients.migrateLegacySelection(questsStore.cdpPort, questsStore.desktopClient)
+})
+
+watch(() => questsStore.cdpPort, () => {
+  void checkCdp()
 })
 </script>
 
@@ -264,22 +271,7 @@ onMounted(() => {
 
       <div class="space-y-3 rounded-lg border border-primary/20 bg-primary/5 p-4">
         <p class="text-sm font-semibold">{{ t('settings.integration_setup') }}</p>
-        <div v-if="showClientPicker" class="space-y-2">
-          <p class="text-sm font-medium">{{ t('settings.desktop_client') }}</p>
-          <p class="text-sm text-muted-foreground">{{ t('settings.desktop_client_desc') }}</p>
-          <div class="grid grid-cols-3 gap-2">
-            <Button
-              v-for="choice in desktopClientChoices"
-              :key="choice"
-              type="button"
-              size="sm"
-              :variant="questsStore.desktopClient === choice ? 'default' : 'outline'"
-              @click="questsStore.desktopClient = choice"
-            >
-              {{ t(`auth.client_${choice}`) }}
-            </Button>
-          </div>
-        </div>
+        <DesktopClientPicker @changed="checkCdp" />
         <p class="text-sm text-muted-foreground">{{ t('settings.cdp_launch_desc') }}</p>
         <div class="flex flex-wrap items-center gap-2">
           <Button

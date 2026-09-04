@@ -55,10 +55,11 @@ Complete Discord video, stream, and game quests automatically while you focus on
 ### Login
 
 1. Click **Auto Detect Token** for automatic extraction, or
-2. Click **Manual Input** to enter your token directly
+2. Use **CDP Login** with official Discord or Vesktop, or
+3. Click **Manual Input** to enter your token directly
 
 > [!NOTE]
-> **Auto Detect Token** requires the Discord desktop client to be running in the background.
+> Vesktop is supported through CDP only; it is not scanned as a local Token source. In Settings, you can select a default/custom installation or a portable `vesktop.exe`. Missing custom paths remain visible so they can be relocated.
 
 ### Complete Quests
 

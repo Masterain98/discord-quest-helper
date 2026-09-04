@@ -456,35 +456,6 @@ pub(crate) fn is_vesktop_running() -> Result<bool, LaunchError> {
     Ok(!running_vesktop_pids()?.is_empty())
 }
 
-pub(crate) fn terminate_vesktop() -> Result<(), LaunchError> {
-    let targets = running_vesktop_pids()?;
-    let mut first_error = None;
-    for pid in &targets {
-        match signal::kill(Pid::from_raw(*pid as i32), Signal::SIGTERM) {
-            Ok(()) | Err(nix::errno::Errno::ESRCH) => {}
-            Err(errno) => {
-                first_error.get_or_insert(LaunchError::ProcessTermination {
-                    process: pid.to_string(),
-                    details: errno.to_string(),
-                });
-            }
-        }
-    }
-    let deadline = Instant::now() + TERMINATE_GRACE;
-    while Instant::now() < deadline {
-        if targets.iter().all(|pid| !process_is_alive(*pid)) {
-            return first_error.map_or(Ok(()), Err);
-        }
-        std::thread::sleep(Duration::from_millis(100));
-    }
-    for pid in &targets {
-        if process_is_alive(*pid) && linux_process_looks_like_vesktop(&read_process_info(*pid)) {
-            let _ = signal::kill(Pid::from_raw(*pid as i32), Signal::SIGKILL);
-        }
-    }
-    first_error.map_or(Ok(()), Err)
-}
-
 pub(crate) fn spawn_vesktop(
     install: &VesktopInstall,
     mode: DiscordLaunchMode,

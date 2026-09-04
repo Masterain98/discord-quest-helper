@@ -14,6 +14,9 @@ pub enum LaunchError {
     InstallNotFound {
         channel: Option<DiscordChannel>,
     },
+    InvalidInstallation {
+        details: String,
+    },
     DiscordAlreadyRunning {
         channel: Option<DiscordChannel>,
     },
@@ -77,6 +80,9 @@ impl fmt::Display for LaunchError {
             ),
             Self::InstallNotFound { channel: None } => {
                 write!(formatter, "Could not find Discord installation.")
+            }
+            Self::InvalidInstallation { details } => {
+                write!(formatter, "Invalid desktop client installation: {details}")
             }
             Self::DiscordAlreadyRunning { channel } => {
                 let channel = channel.map_or_else(

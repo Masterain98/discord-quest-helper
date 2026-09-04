@@ -5,7 +5,6 @@ mod win32 {
     pub const MB_YESNO: u32 = 0x0000_0004;
     pub const MB_ICONQUESTION: u32 = 0x0000_0020;
     pub const MB_ICONERROR: u32 = 0x0000_0010;
-    pub const MB_ICONINFORMATION: u32 = 0x0000_0040;
     pub const IDYES: i32 = 6;
 
     #[link(name = "user32")]
@@ -86,20 +85,6 @@ pub(crate) fn system_ui_language() -> u16 {
 }
 
 #[cfg(target_os = "windows")]
-pub(crate) fn show_info_dialog(title: &str, message: &str) {
-    let title = to_wide(title);
-    let message = to_wide(message);
-    unsafe {
-        win32::MessageBoxW(
-            core::ptr::null_mut(),
-            message.as_ptr(),
-            title.as_ptr(),
-            win32::MB_OK | win32::MB_ICONINFORMATION,
-        );
-    }
-}
-
-#[cfg(target_os = "windows")]
 pub(crate) fn show_error_dialog(title: &str, message: &str) {
     let title = to_wide(title);
     let message = to_wide(message);
@@ -148,11 +133,6 @@ pub(crate) fn show_error_dialog(title: &str, message: &str) {
         return;
     }
     show_info_dialog(title, message);
-}
-
-#[cfg(target_os = "macos")]
-pub(crate) fn show_info_dialog(title: &str, message: &str) {
-    show_macos_dialog(title, message, false);
 }
 
 #[cfg(target_os = "macos")]

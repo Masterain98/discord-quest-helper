@@ -151,29 +151,6 @@ pub(crate) fn is_vesktop_running() -> Result<bool, LaunchError> {
     Ok(false)
 }
 
-pub(crate) fn terminate_vesktop() -> Result<(), LaunchError> {
-    let _ = Command::new("/usr/bin/osascript")
-        .args(["-e", "tell application \"Vesktop\" to quit"])
-        .output();
-    std::thread::sleep(Duration::from_secs(3));
-    for name in ["Vesktop", "vesktop"] {
-        let output = Command::new("/usr/bin/pkill")
-            .args(["-x", name])
-            .output()
-            .map_err(|source| LaunchError::ProcessInspection {
-                operation: "pkill",
-                source,
-            })?;
-        if !output.status.success() && output.status.code() != Some(1) {
-            return Err(LaunchError::ProcessTermination {
-                process: name.to_string(),
-                details: String::from_utf8_lossy(&output.stderr).trim().to_string(),
-            });
-        }
-    }
-    Ok(())
-}
-
 pub(crate) fn spawn_vesktop(
     install: &VesktopInstall,
     mode: DiscordLaunchMode,

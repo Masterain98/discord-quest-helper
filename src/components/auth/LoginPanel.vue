@@ -1,13 +1,16 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   AlertCircle,
+  AppWindow,
   Check,
   ChevronDown,
+  ChevronRight,
   HardDriveDownload,
   KeyRound,
   Loader2,
+  Monitor,
   RadioTower,
   RotateCcw,
 } from 'lucide-vue-next'
@@ -26,22 +29,19 @@ import {
 import { useAuthStore } from '@/stores/auth'
 import { useQuestsStore } from '@/stores/quests'
 import {
-  checkCdpStatus,
-  isDiscordRunning,
-  launchDiscordCdp,
-  listDesktopClients,
-  restartDiscordCdp,
+  launchDesktopClientCdp,
   type AuthProgress,
+  type ClientSelection,
   type CdpStatus,
   type DesktopClientInventory,
+  type DesktopClientState,
   type ExtractedAccount,
 } from '@/api/tauri'
+import { useDesktopClientState } from '@/composables/desktopClientState'
 import {
   classifyCdpAvailability,
   canBeginLogin,
   installedCdpLaunchTargets,
-  isCdpLaunchTargetRunning,
-  launchArgsForCdpTarget,
   presentAuthProgress,
   shouldAskCdpLaunchTarget,
   shouldPollCdp,
@@ -57,6 +57,7 @@ const CDP_POLL_INTERVAL_MS = 5_000
 const { t } = useI18n()
 const authStore = useAuthStore()
 const questsStore = useQuestsStore()
+const clients = useDesktopClientState()
 
 const manualExpanded = ref(false)
 const manualTokenInput = ref('')
@@ -77,7 +78,9 @@ const cdpRestartDialogOpen = ref(false)
 const cdpChooseDialogOpen = ref(false)
 const cdpLaunchChoices = ref<CdpLaunchTarget[]>([])
 const selectedCdpTarget = ref<CdpLaunchTarget | null>(null)
+const rememberCdpChoice = ref(false)
 const desktopClients = ref<DesktopClientInventory | null>(null)
+const ownerConflict = ref(false)
 let stopCdpPolling: (() => void) | null = null
 let accountViewTransitionRevision = 0
 
@@ -107,7 +110,11 @@ const cdpStatusKey = computed(() => ({
   error: 'auth.cdp_status_error',
 })[cdpAvailability.value])
 const usingVesktopCdp = computed(() => (
-  selectedCdpTarget.value === 'vesktop' || usesVesktopForCdpLogin(desktopClients.value)
+  usesVesktopForCdpLogin(desktopClients.value)
+))
+const restartUsesVesktop = computed(() => (
+  selectedCdpTarget.value === 'vesktop'
+  || usingVesktopCdp.value
 ))
 const cdpLoginDetailKey = computed(() => (
   usingVesktopCdp.value ? 'auth.cdp_login_detail_vesktop' : 'auth.cdp_login_detail'
@@ -195,11 +202,8 @@ function finish() {
 }
 
 async function refreshDesktopClients() {
-  try {
-    desktopClients.value = await listDesktopClients(questsStore.cdpPort)
-  } catch (error) {
-    console.warn('Login page desktop client scan failed:', error)
-  }
+  const snapshot = await clients.refresh(questsStore.cdpPort)
+  if (snapshot) desktopClients.value = inventoryFromState(snapshot)
 }
 
 async function refreshCdpStatus(): Promise<CdpStatus | null> {
@@ -207,7 +211,16 @@ async function refreshCdpStatus(): Promise<CdpStatus | null> {
   cdpChecking.value = true
   cdpProbeFailed.value = false
   try {
-    const status = await checkCdpStatus(questsStore.cdpPort)
+    const snapshot = await clients.refresh(questsStore.cdpPort)
+    if (!snapshot) throw new Error(clients.error.value ?? 'Desktop client state is unavailable')
+    desktopClients.value = inventoryFromState(snapshot)
+    const ready = snapshot.endpoint.status === 'discordReady'
+    const status: CdpStatus = {
+      available: ready,
+      connected: ready,
+      target_title: snapshot.endpoint.targetTitle,
+      error: ready ? null : snapshot.endpoint.status,
+    }
     cdpStatus.value = status
     questsStore.cdpAvailable = status.connected
     return status
@@ -220,6 +233,69 @@ async function refreshCdpStatus(): Promise<CdpStatus | null> {
   } finally {
     cdpChecking.value = false
   }
+}
+
+function inventoryFromState(snapshot: DesktopClientState): DesktopClientInventory {
+  const installed = (providerId: string, variantId?: string) => snapshot.installations.some(item => (
+    item.providerId === providerId
+    && item.validation === 'valid'
+    && (!variantId || item.variantId === variantId)
+  ))
+  const running = (providerId: string, variantId?: string) => snapshot.processes.some(item => (
+    item.providerId === providerId && (!variantId || item.variantId === variantId)
+  ))
+  return {
+    officialInstalled: installed('discord.official'),
+    vesktopInstalled: installed('vencord.vesktop'),
+    officialRunning: running('discord.official'),
+    vesktopRunning: running('vencord.vesktop'),
+    cdpOwner: snapshot.endpoint.owner,
+    stableInstalled: installed('discord.official', 'stable'),
+    ptbInstalled: installed('discord.official', 'ptb'),
+    canaryInstalled: installed('discord.official', 'canary'),
+    stableRunning: running('discord.official', 'stable'),
+    ptbRunning: running('discord.official', 'ptb'),
+    canaryRunning: running('discord.official', 'canary'),
+  }
+}
+
+function selectionForTarget(target: CdpLaunchTarget | null): ClientSelection {
+  if (target === 'vesktop') return { kind: 'provider', providerId: 'vencord.vesktop', variantId: null }
+  if (target === 'stable' || target === 'ptb' || target === 'canary') {
+    return { kind: 'provider', providerId: 'discord.official', variantId: target }
+  }
+  return clients.state.value?.selection ?? { kind: 'auto' }
+}
+
+function selectionIsRunning(snapshot: DesktopClientState, selection: ClientSelection): boolean {
+  if (selection.kind === 'installation') {
+    return snapshot.processes.some(process => process.installationId === selection.installationId)
+  }
+  if (selection.kind === 'provider') {
+    return snapshot.processes.some(process => (
+      process.providerId === selection.providerId
+      && (!selection.variantId || process.variantId === selection.variantId)
+    ))
+  }
+  return snapshot.processes.length > 0
+}
+
+function selectionProvider(snapshot: DesktopClientState, selection: ClientSelection): string | null {
+  if (selection.kind === 'provider') return selection.providerId
+  if (selection.kind === 'installation') {
+    return snapshot.installations.find(item => item.id === selection.installationId)?.providerId ?? null
+  }
+  return null
+}
+
+function syncLegacyDesktopClientPreference(selection: ClientSelection) {
+  if (selection.kind !== 'provider') {
+    questsStore.desktopClient = 'auto'
+    return
+  }
+  questsStore.desktopClient = selection.providerId === 'vencord.vesktop'
+    ? 'vesktop'
+    : selection.providerId === 'discord.official' ? 'official' : 'auto'
 }
 
 async function handleAutoDetect() {
@@ -307,33 +383,37 @@ function requestCdpRestart(target: CdpLaunchTarget | null) {
 
 async function launchOrRestartSelectedTarget(target: CdpLaunchTarget | null) {
   selectedCdpTarget.value = target
-  if (isCdpLaunchTargetRunning(desktopClients.value, target)) {
+  const snapshot = await clients.refresh(questsStore.cdpPort)
+  if (!snapshot) throw new Error(clients.error.value ?? 'Desktop client state is unavailable')
+  const selection = selectionForTarget(target)
+  if (selectionIsRunning(snapshot, selection)) {
     requestCdpRestart(target)
     return
   }
 
-  const { channel, client } = launchArgsForCdpTarget(target)
   setProgress(
     'cdp',
     'running',
     target === 'vesktop' ? 'auth.progress.launching_vesktop' : 'auth.progress.launching_discord',
   )
   try {
-    await launchDiscordCdp(questsStore.cdpPort, channel, client)
+    await launchDesktopClientCdp(questsStore.cdpPort, selection, false)
     await refreshCdpStatus()
   } catch (launchError) {
-    const retryStatus = await refreshCdpStatus()
-    await refreshDesktopClients()
-    if (!retryStatus?.available) {
-      const running = isCdpLaunchTargetRunning(desktopClients.value, target)
-        || desktopClients.value?.officialRunning === true
-        || desktopClients.value?.vesktopRunning === true
-        || await isDiscordRunning('auto')
-      if (running) {
+    const latest = await clients.refresh(questsStore.cdpPort)
+    if (!latest) throw launchError
+    if (latest.endpoint.status !== 'discordReady') {
+      if (selectionIsRunning(latest, selection)) {
         requestCdpRestart(target)
         return
       }
       throw launchError
+    }
+    const provider = selectionProvider(latest, selection)
+    if (provider && latest.endpoint.ownerProviderId !== provider) {
+      ownerConflict.value = true
+      requestCdpRestart(target)
+      return
     }
   }
   await finishCdpLogin()
@@ -344,15 +424,28 @@ async function handleCdpLogin() {
   setProgress('cdp', 'running', 'auth.progress.checking_cdp')
   try {
     const status = await refreshCdpStatus()
-    await refreshDesktopClients()
-    if (status?.available) {
+    const snapshot = clients.state.value
+    if (status?.connected && snapshot) {
+      const provider = selectionProvider(snapshot, snapshot.selection)
+      if (provider && snapshot.endpoint.ownerProviderId !== provider) {
+        ownerConflict.value = true
+        selectedCdpTarget.value = null
+        setProgress('cdp', 'waiting', 'auth.progress.choose_client')
+        cdpRestartDialogOpen.value = true
+        return
+      }
       await finishCdpLogin()
+      return
+    }
+    if (snapshot?.selection.kind !== 'auto') {
+      await launchOrRestartSelectedTarget(null)
       return
     }
     const targets = installedCdpLaunchTargets(desktopClients.value)
     if (shouldAskCdpLaunchTarget(false, targets)) {
       cdpLaunchChoices.value = targets
       selectedCdpTarget.value = null
+      rememberCdpChoice.value = false
       setProgress('cdp', 'waiting', 'auth.progress.choose_client')
       cdpChooseDialogOpen.value = true
       return
@@ -370,6 +463,7 @@ async function handleCdpLogin() {
 }
 
 async function selectCdpLaunchTarget(target: CdpLaunchTarget) {
+  const shouldRemember = rememberCdpChoice.value
   setProgress(
     'cdp',
     'running',
@@ -378,6 +472,10 @@ async function selectCdpLaunchTarget(target: CdpLaunchTarget) {
   cdpChooseDialogOpen.value = false
   if (!begin('cdp')) return
   try {
+    const selected = selectionForTarget(target)
+    const persisted = shouldRemember ? selected : { kind: 'auto' as const }
+    await clients.select(persisted, questsStore.cdpPort)
+    syncLegacyDesktopClientPreference(persisted)
     await launchOrRestartSelectedTarget(target)
   } catch (error) {
     authStore.error = errorDetail(error)
@@ -391,7 +489,6 @@ async function selectCdpLaunchTarget(target: CdpLaunchTarget) {
 async function confirmCdpRestart() {
   cdpRestartDialogOpen.value = false
   if (!begin('cdp')) return
-  const { channel, client } = launchArgsForCdpTarget(selectedCdpTarget.value)
   setProgress(
     'cdp',
     'running',
@@ -400,7 +497,14 @@ async function confirmCdpRestart() {
       : 'auth.progress.restarting_discord',
   )
   try {
-    await restartDiscordCdp(questsStore.cdpPort, channel, client)
+    const snapshot = await clients.refresh(questsStore.cdpPort)
+    if (!snapshot) throw new Error(clients.error.value ?? 'Desktop client state is unavailable')
+    await launchDesktopClientCdp(
+      questsStore.cdpPort,
+      selectionForTarget(selectedCdpTarget.value),
+      true,
+    )
+    ownerConflict.value = false
     await refreshCdpStatus()
     await finishCdpLogin()
   } catch (error) {
@@ -409,6 +513,21 @@ async function confirmCdpRestart() {
   } finally {
     finish()
     if (!authStore.user) void refreshCdpStatus()
+  }
+}
+
+async function useCurrentCdpOwner() {
+  const snapshot = await clients.refresh(questsStore.cdpPort)
+  const providerId = snapshot?.endpoint.ownerProviderId
+  if (!snapshot || !providerId) return
+  await clients.select({ kind: 'provider', providerId, variantId: null }, questsStore.cdpPort)
+  ownerConflict.value = false
+  cdpRestartDialogOpen.value = false
+  if (!begin('cdp')) return
+  try {
+    await finishCdpLogin()
+  } finally {
+    finish()
   }
 }
 
@@ -422,6 +541,10 @@ function handleRestartDialogOpenChange(open: boolean) {
 
 function handleChooseDialogOpenChange(open: boolean) {
   cdpChooseDialogOpen.value = open
+  if (open) {
+    rememberCdpChoice.value = false
+    void refreshDesktopClients()
+  }
   if (!open && progress.value?.key === 'auth.progress.choose_client') {
     setProgress('cdp', 'neutral', 'auth.progress.launch_cancelled')
     void refreshCdpStatus()
@@ -445,6 +568,7 @@ function handleVisibilityChange() {
 onMounted(() => {
   pollCdpIfNeeded()
   void refreshDesktopClients()
+  void clients.migrateLegacySelection(questsStore.cdpPort, questsStore.desktopClient)
   stopCdpPolling = startCdpPolling(pollCdpIfNeeded, CDP_POLL_INTERVAL_MS)
   document.addEventListener('visibilitychange', handleVisibilityChange)
 })
@@ -454,6 +578,10 @@ onUnmounted(() => {
   document.documentElement.classList.remove('account-view-transition')
   stopCdpPolling?.()
   document.removeEventListener('visibilitychange', handleVisibilityChange)
+})
+
+watch(() => questsStore.cdpPort, () => {
+  void refreshCdpStatus()
 })
 </script>
 
@@ -657,25 +785,75 @@ onUnmounted(() => {
     </div>
 
     <AlertDialog :open="cdpChooseDialogOpen" @update:open="handleChooseDialogOpenChange">
-      <AlertDialogContent class="max-w-[520px]">
-        <AlertDialogHeader>
-          <AlertDialogTitle>{{ t('auth.cdp_choose_title') }}</AlertDialogTitle>
-          <AlertDialogDescription>{{ t('auth.cdp_choose_desc') }}</AlertDialogDescription>
-        </AlertDialogHeader>
-        <div class="grid gap-2">
-          <Button
-            v-for="target in cdpLaunchChoices"
-            :key="target"
-            type="button"
-            variant="outline"
-            class="h-auto justify-start px-4 py-3 text-left"
-            @click="selectCdpLaunchTarget(target)"
-          >
-            {{ t(`auth.cdp_client_${target}`) }}
-          </Button>
+      <AlertDialogContent class="client-picker-dialog max-w-[560px] gap-0 overflow-hidden border-border/70 bg-background/95 p-0 shadow-[0_24px_80px_-32px_hsl(var(--primary)/0.45)] backdrop-blur-xl">
+        <div class="border-b border-border/60 bg-primary/[0.045]">
+          <AlertDialogHeader class="px-6 pb-6 pt-6 sm:px-8 sm:pb-7 sm:pt-8">
+            <div class="flex items-start justify-between gap-4">
+              <div class="flex min-w-0 items-start gap-3.5">
+                <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-[0_10px_24px_-12px_hsl(var(--primary))]">
+                  <RadioTower class="h-5 w-5" :stroke-width="1.8" />
+                </div>
+                <div class="min-w-0">
+                  <AlertDialogTitle class="text-xl font-semibold tracking-[-0.02em] sm:text-[1.35rem]">
+                    {{ t('auth.cdp_choose_title') }}
+                  </AlertDialogTitle>
+                  <AlertDialogDescription class="mt-2 max-w-[38rem] text-sm leading-6 text-muted-foreground sm:text-[0.95rem]">
+                    {{ t('auth.cdp_choose_desc') }}
+                  </AlertDialogDescription>
+                </div>
+              </div>
+              <span class="hidden shrink-0 items-center gap-2 rounded-full border border-border/70 bg-background/70 px-2.5 py-1.5 text-[11px] font-semibold tracking-[0.04em] text-muted-foreground sm:inline-flex">
+                <span class="h-1.5 w-1.5 rounded-full bg-muted-foreground/60" aria-hidden="true" />
+                {{ t('settings.cdp_disconnected_short') }}
+              </span>
+            </div>
+          </AlertDialogHeader>
         </div>
-        <AlertDialogFooter>
-          <AlertDialogCancel>{{ t('dialog.cancel') }}</AlertDialogCancel>
+
+        <div class="space-y-4 px-6 py-5 sm:px-8 sm:py-6">
+          <label class="group flex cursor-pointer items-center gap-3 rounded-xl border border-border/70 bg-card/60 px-3.5 py-3 transition-colors duration-200 hover:border-primary/35 hover:bg-primary/[0.035]">
+            <input
+              v-model="rememberCdpChoice"
+              type="checkbox"
+              class="peer sr-only"
+            />
+            <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-[6px] border border-muted-foreground/35 bg-background text-transparent transition-all duration-200 peer-checked:border-primary peer-checked:bg-primary peer-checked:text-primary-foreground peer-focus-visible:ring-2 peer-focus-visible:ring-primary/40 peer-focus-visible:ring-offset-2">
+              <Check class="h-3.5 w-3.5" :stroke-width="3" aria-hidden="true" />
+            </span>
+            <span class="text-sm font-medium text-foreground">{{ t('auth.cdp_remember_choice') }}</span>
+          </label>
+
+          <div class="grid gap-2.5">
+            <Button
+              v-for="target in cdpLaunchChoices"
+              :key="target"
+              type="button"
+              variant="outline"
+              class="group flex h-auto min-h-[72px] w-full items-center justify-between rounded-xl border-border/70 bg-card/70 px-4 py-3.5 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/45 hover:bg-primary/[0.045] hover:shadow-[0_12px_28px_-20px_hsl(var(--primary)/0.7)] active:translate-y-0 focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2"
+              @click="selectCdpLaunchTarget(target)"
+            >
+              <span class="flex min-w-0 items-center gap-3.5">
+                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary transition-colors duration-200 group-hover:bg-primary group-hover:text-primary-foreground">
+                  <component
+                    :is="target === 'vesktop' ? AppWindow : Monitor"
+                    class="h-[18px] w-[18px]"
+                    :stroke-width="1.9"
+                    aria-hidden="true"
+                  />
+                </span>
+                <span class="min-w-0 truncate text-[15px] font-semibold tracking-[-0.01em] text-foreground">
+                  {{ t(`auth.cdp_client_${target}`) }}
+                </span>
+              </span>
+              <ChevronRight class="h-4 w-4 shrink-0 text-muted-foreground/60 transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-primary" aria-hidden="true" />
+            </Button>
+          </div>
+        </div>
+
+        <AlertDialogFooter class="border-t border-border/60 bg-muted/20 px-6 py-4 sm:px-8">
+          <AlertDialogCancel class="mt-0 rounded-lg border-transparent bg-transparent px-3 text-muted-foreground hover:bg-background hover:text-foreground sm:mt-0">
+            {{ t('dialog.cancel') }}
+          </AlertDialogCancel>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
@@ -684,20 +862,27 @@ onUnmounted(() => {
       <AlertDialogContent class="max-w-[520px]">
         <AlertDialogHeader>
           <AlertDialogTitle>{{
-            usingVesktopCdp
+            ownerConflict
+              ? t('desktop_clients.owner_conflict_title')
+              : restartUsesVesktop
               ? t('settings.cdp_dialog_title_disconnected_vesktop')
               : t('settings.cdp_dialog_title_disconnected')
           }}</AlertDialogTitle>
           <AlertDialogDescription>{{
-            usingVesktopCdp
+            ownerConflict
+              ? t('desktop_clients.owner_conflict_desc')
+              : restartUsesVesktop
               ? t('settings.cdp_dialog_desc_disconnected_vesktop')
               : t('settings.cdp_dialog_desc_disconnected')
           }}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>{{ t('dialog.cancel') }}</AlertDialogCancel>
+          <Button v-if="ownerConflict" variant="outline" @click="useCurrentCdpOwner">
+            {{ t('desktop_clients.use_current') }}
+          </Button>
           <AlertDialogAction @click="confirmCdpRestart">
-            {{ t('settings.cdp_dialog_confirm') }}
+            {{ ownerConflict ? t('desktop_clients.switch_selected') : t('settings.cdp_dialog_confirm') }}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
