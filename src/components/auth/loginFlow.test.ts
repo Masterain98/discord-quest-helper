@@ -1,8 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { AuthProgress, CdpStatus, DesktopClientInventory, DesktopClientState } from '@/api/tauri'
+import type {
+  AuthProgress,
+  CdpStatus,
+  DesktopClientInventory,
+  DesktopClientState,
+  RunningDesktopCdpSession,
+} from '@/api/tauri'
 import {
   canBeginLogin,
   classifyCdpAvailability,
+  findCurrentCdpOwnerSession,
   hasUnchanneledOfficialMacInstallation,
   installedCdpLaunchTargets,
   presentAuthProgress,
@@ -253,6 +260,29 @@ describe('CDP launch target selection', () => {
       kind: 'installation',
       installationId: installation.id,
     })
+  })
+
+  it('does not choose an owner when multiple sessions claim the same port', () => {
+    const sessions = [
+      {
+        providerId: 'discord.official',
+        installationId: 'discord.official:stable',
+        variantId: 'stable',
+        port: 9223,
+        ownership: 'externalAttached',
+        executablePath: '/Applications/Discord.app/Contents/MacOS/Discord',
+      },
+      {
+        providerId: 'discord.official',
+        installationId: 'discord.official:ptb',
+        variantId: 'ptb',
+        port: 9223,
+        ownership: 'externalAttached',
+        executablePath: '/Applications/Discord PTB.app/Contents/MacOS/Discord PTB',
+      },
+    ] as RunningDesktopCdpSession[]
+
+    expect(findCurrentCdpOwnerSession(sessions, 9223, 'discord.official')).toBeNull()
   })
 
   it('asks only when CDP is down and more than one client is installed', () => {

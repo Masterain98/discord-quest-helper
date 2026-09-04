@@ -5,6 +5,7 @@ import type {
   ClientSelection,
   DesktopClientInventory,
   DesktopClientState,
+  ProviderId,
   RunningDesktopCdpSession,
 } from '@/api/tauri'
 
@@ -148,6 +149,17 @@ export function selectionForCurrentCdpOwner(
     providerId: ownerSession.providerId,
     variantId: ownerSession.variantId,
   }
+}
+
+export function findCurrentCdpOwnerSession(
+  sessions: RunningDesktopCdpSession[],
+  port: number,
+  providerId: ProviderId,
+): RunningDesktopCdpSession | null {
+  const matches = sessions.filter(session => (
+    session.port === port && session.providerId === providerId
+  ))
+  return matches.length === 1 ? matches[0] : null
 }
 
 export function shouldAskCdpLaunchTarget(

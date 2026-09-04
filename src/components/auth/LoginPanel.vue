@@ -47,6 +47,7 @@ import {
   shouldAskCdpLaunchTarget,
   shouldPollCdp,
   selectionForCdpLaunchTarget,
+  findCurrentCdpOwnerSession,
   selectionForCurrentCdpOwner,
   startCdpPolling,
   usesVesktopForCdpLogin,
@@ -520,9 +521,11 @@ async function useCurrentCdpOwner() {
     const snapshot = await clients.refresh(questsStore.cdpPort)
     const providerId = snapshot?.endpoint.ownerProviderId
     if (!snapshot || !providerId) return
-    const ownerSession = (await listRunningDesktopCdpSessions()).find(session => (
-      session.port === questsStore.cdpPort && session.providerId === providerId
-    ))
+    const ownerSession = findCurrentCdpOwnerSession(
+      await listRunningDesktopCdpSessions(),
+      questsStore.cdpPort,
+      providerId,
+    )
     if (!ownerSession) throw new Error('The current CDP owner could not be mapped to one exact installation.')
     const selection = selectionForCurrentCdpOwner(snapshot, ownerSession)
     await clients.select(selection, questsStore.cdpPort)

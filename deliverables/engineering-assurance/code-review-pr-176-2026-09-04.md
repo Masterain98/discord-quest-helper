@@ -93,10 +93,10 @@ Sourcery 没有产生代码反馈，只报告 diff 超过审查限制。CodeRabb
 
 ### 第二次推送后新增反馈
 
-11. `3936545675`：仅从状态快照中按 provider 取第一条运行进程，无法保证它就是当前 CDP 端口的 owner。现改用已有的运行 CDP session 列表按端口和 provider 精确匹配，再保存对应 installation；若 session 没有可用 installation 才保留 provider + variant 回退。
+11. `3936545675`：仅从状态快照中按 provider 取第一条运行进程，无法保证它就是当前 CDP 端口的 owner。现改用已有的运行 CDP session 列表按端口和 provider 匹配，并要求候选恰好唯一，再保存对应 installation；无匹配或多匹配时进入错误状态，不武断固化客户端，单个 session 没有可用 installation 时才保留 provider + variant 回退。
 12. `3936545679`：仅凭 `variantId === stable` 会把用户添加的 Stable executable 误当作系统标准 Stable，导致自定义 bundle 回退被跳过。现要求标准 Stable 的来源不是 `user`，并新增用户 Stable 与自定义 bundle 并存的回归测试。
 
-本轮第二次跟进验证：`loginFlow.test.ts` 14/14；前端全量 8 files / 55 tests passed；`vue-tsc`、`i18n:check` 和生产 build 均通过（build 仅保留既有 chunk 体积提示），`git diff --check` 通过。
+本轮第二次跟进验证：`loginFlow.test.ts` 15/15；前端全量 8 files / 55 tests passed；`vue-tsc`、`i18n:check` 和生产 build 均通过（build 仅保留既有 chunk 体积提示），`git diff --check` 通过。随后又增加了多 session 同端口时拒绝任意选择的防御性回归测试，定向测试仍为 15/15。
 
 ## Disclaimer
 
