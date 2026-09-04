@@ -4,6 +4,9 @@ pub const RUNTIME_MAIN_NAME: &str = "meridian";
 pub const RUNTIME_BRIDGE_NAME: &str = "waybridge";
 pub const RUNTIME_NAMESPACE: &str = "blueorbit";
 pub const RUNTIME_RUNNER_BUILD_NAME: &str = "stagecraft";
+/// Apple signing is intentionally disabled for every repository build.
+#[cfg(target_os = "macos")]
+pub const MACOS_SIGNING_ENABLED: bool = false;
 
 pub const PRODUCT_TOKENS: &[&str] = &[
     "discord-quest-helper",

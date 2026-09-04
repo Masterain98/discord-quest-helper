@@ -10,7 +10,8 @@ mode="$1"
 kind="$3"
 target="$4"
 manifest="$5"
-expected="meridian"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+expected="$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).identity.mainBinary' "$script_dir/runtime-identity-tokens.json")"
 if [[ "$mode" != "x11" && "$mode" != "wayland" ]]; then
   echo "Mode must be x11 or wayland." >&2
   exit 2
@@ -217,13 +218,13 @@ else
     kill -0 "$runtime_pid" 2>/dev/null || exit 1
     sleep 0.1
   done
-  grep -q 'set_app_id.*"meridian"' "$smoke_root/protocol.log" || {
-    echo "Wayland protocol log did not set app_id to meridian." >&2
+  grep -q "set_app_id.*\"$expected\"" "$smoke_root/protocol.log" || {
+    echo "Wayland protocol log did not set app_id to $expected." >&2
     tail -100 "$smoke_root/protocol.log" >&2
     exit 1
   }
   app_id_lines="$(grep 'set_app_id' "$smoke_root/protocol.log" || true)"
-  if grep -vq '"meridian"' <<< "$app_id_lines"; then
+  if grep -vq "\"$expected\"" <<< "$app_id_lines"; then
     echo "Wayland protocol log contains an unexpected app_id." >&2
     printf '%s\n' "$app_id_lines" >&2
     exit 1

@@ -1,5 +1,5 @@
 import { execFileSync } from 'child_process';
-import { copyFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
+import { copyFileSync, writeFileSync, mkdirSync, existsSync, readFileSync } from 'fs';
 import { join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
@@ -10,6 +10,12 @@ const __dirname = dirname(__filename);
 const rootDir = resolve(__dirname, '..');
 const tauriDataDir = join(rootDir, 'src-tauri', 'data');
 const manifestPath = join(rootDir, 'Cargo.toml');
+const runtimePolicy = JSON.parse(readFileSync(join(rootDir, 'scripts', 'runtime-identity-tokens.json'), 'utf8'));
+if (runtimePolicy.policies.macosSigningEnabled !== false) {
+    throw new Error('macOS signing policy must remain disabled.');
+}
+const macosSigningEnabled = false;
+const runnerBuildName = runtimePolicy.identity.runnerBuildBinary;
 
 function rustHostTriple() {
     const output = execFileSync('rustc', ['-vV'], { encoding: 'utf8' });
@@ -22,7 +28,7 @@ function rustHostTriple() {
 
 const targetTriple = process.env.CARGO_BUILD_TARGET || process.env.TAURI_TARGET_TRIPLE || rustHostTriple();
 const ext = targetTriple.includes('windows') ? '.exe' : '';
-const exeName = `stagecraft${ext}`;
+const exeName = `${runnerBuildName}${ext}`;
 const metadata = JSON.parse(execFileSync(
     'cargo',
     [
@@ -59,9 +65,11 @@ try {
 
     console.log(`📦 Copying ${exeName} to src-tauri/data/...`);
     copyFileSync(sourceExe, destExe);
-    if (targetTriple.includes('apple-darwin')) {
+    if (targetTriple.includes('apple-darwin') && macosSigningEnabled) {
         execFileSync('/usr/bin/codesign', ['--force', '--sign', '-', destExe], { stdio: 'inherit' });
         execFileSync('/usr/bin/codesign', ['--verify', '--strict', '--verbose=2', destExe], { stdio: 'inherit' });
+    } else if (targetTriple.includes('apple-darwin')) {
+        console.log('macOS signing is disabled by repository policy.');
     }
     console.log('✨ Runner copied successfully.');
 

@@ -113,7 +113,13 @@ export const useAuthStore = defineStore('auth', () => {
       // token. Authenticated backend commands use the client in AppState.
       token.value = null
 
-      // CDP is available by definition here (we just used it); refresh state.
+      // CDP is available by definition here (we just used it). Keep the login
+      // method and quest execution method aligned so the first quest does not
+      // fall back to a previously saved simulation preference.
+      questsStore.cdpAvailable = true
+      questsStore.gameQuestMode = 'cdp'
+
+      // Refresh the connection state and the rest of the post-login data.
       bootstrapAfterLogin(questsStore, 'CDP init after CDP login failed:')
 
       return true

@@ -34,7 +34,9 @@ fn main() {
 }
 
 fn run(strings: &Strings) -> Result<i32, String> {
-    apply_runtime_process_name()?;
+    if let Err(error) = apply_runtime_process_name() {
+        eprintln!("Runtime process identity warning: {error}");
+    }
     let mut options = parse_args(std::env::args().skip(1).collect())?;
     if options.help {
         println!("{}", help_text());
@@ -43,7 +45,7 @@ fn run(strings: &Strings) -> Result<i32, String> {
 
     if options.restore_normal_all {
         let result = cdp_launch::restore_all_discord_to_normal()
-            .map_err(|error| runtime_error("Restore", &error))?;
+            .map_err(|error| runtime_error(strings.restore_action, &error))?;
         if result.failures.is_empty() {
             return Ok(0);
         }
@@ -55,7 +57,7 @@ fn run(strings: &Strings) -> Result<i32, String> {
                 .collect::<Vec<_>>()
                 .join("\n")
         } else {
-            "Please fully quit Discord and try again.".to_string()
+            strings.restore_retry.to_string()
         };
         dialogs::show_error_dialog(
             strings.title,
@@ -71,6 +73,12 @@ fn run(strings: &Strings) -> Result<i32, String> {
         }
         eprintln!("CDP is not available on port {}", options.port);
         return Ok(3);
+    }
+
+    if cdp_launch::is_cdp_available(options.port) {
+        dialogs::show_info_dialog(strings.title, strings.cdp_already_running);
+
+        return Ok(0);
     }
 
     let installation = options
@@ -102,10 +110,11 @@ fn run(strings: &Strings) -> Result<i32, String> {
             cdp_launch::LaunchTarget::Flatpak { .. } => false,
         }
     } else if options.client == cdp_launch::DesktopClientPreference::Vesktop {
-        cdp_launch::is_vesktop_running().map_err(|error| runtime_error("Status check", &error))?
+        cdp_launch::is_vesktop_running()
+            .map_err(|error| runtime_error(strings.status_action, &error))?
     } else {
         cdp_launch::is_discord_running(options.channel)
-            .map_err(|error| runtime_error("Status check", &error))?
+            .map_err(|error| runtime_error(strings.status_action, &error))?
     };
     if running && !options.restart {
         let want_restart = {
@@ -116,9 +125,7 @@ fn run(strings: &Strings) -> Result<i32, String> {
 
             #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
             {
-                eprintln!(
-                    "Discord is already running without CDP. Re-run with --restart to close it and relaunch with CDP."
-                );
+                eprintln!("{}", strings.restart_instruction);
                 false
             }
         };
@@ -141,12 +148,14 @@ fn run(strings: &Strings) -> Result<i32, String> {
     } else {
         cdp_launch::launch_discord_with_cdp(request)
     }
-    .map_err(|error| runtime_error("Launch", &error))?;
+    .map_err(|error| runtime_error(strings.launch_action, &error))?;
 
     println!(
-        "Launched Discord {} with CDP on port {}.",
-        result.channel.display_name(),
-        result.port
+        "{}",
+        strings
+            .launch_success
+            .replace("{channel}", result.channel.display_name())
+            .replace("{port}", &result.port.to_string())
     );
     Ok(0)
 }

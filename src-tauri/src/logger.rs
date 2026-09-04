@@ -307,10 +307,19 @@ fn get_os_info() -> String {
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
         // Get Linux distribution info if available
-        if let Ok(output) = std::process::Command::new("/usr/bin/uname")
+        let output = std::process::Command::new("/usr/bin/uname")
             .args(["-sr"])
             .output()
-        {
+            .ok()
+            .filter(|output| output.status.success())
+            .or_else(|| {
+                std::process::Command::new("uname")
+                    .args(["-sr"])
+                    .output()
+                    .ok()
+                    .filter(|output| output.status.success())
+            });
+        if let Some(output) = output {
             let version = String::from_utf8_lossy(&output.stdout);
             let version = version.trim();
             if !version.is_empty() {

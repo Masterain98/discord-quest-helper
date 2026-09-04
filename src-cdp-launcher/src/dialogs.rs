@@ -98,6 +98,20 @@ pub(crate) fn show_error_dialog(title: &str, message: &str) {
     }
 }
 
+#[cfg(target_os = "windows")]
+pub(crate) fn show_info_dialog(title: &str, message: &str) {
+    let title = to_wide(title);
+    let message = to_wide(message);
+    unsafe {
+        win32::MessageBoxW(
+            core::ptr::null_mut(),
+            message.as_ptr(),
+            title.as_ptr(),
+            win32::MB_OK,
+        );
+    }
+}
+
 #[cfg(target_os = "linux")]
 pub(crate) fn show_info_dialog(title: &str, message: &str) {
     let result = zenity_dialog("--info", title, message).status();
@@ -122,6 +136,11 @@ pub(crate) fn show_info_dialog(title: &str, message: &str) {
 #[cfg(target_os = "macos")]
 pub(crate) fn show_error_dialog(title: &str, message: &str) {
     show_macos_dialog(title, message, true);
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn show_info_dialog(title: &str, message: &str) {
+    show_macos_dialog(title, message, false);
 }
 
 #[cfg(target_os = "linux")]

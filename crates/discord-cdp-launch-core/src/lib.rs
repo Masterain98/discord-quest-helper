@@ -10,8 +10,10 @@ mod supervisor;
 mod vesktop;
 
 pub use cdp::{
-    is_discord_auxiliary_page, is_discord_auxiliary_window, is_discord_target, pick_discord_target,
-    probe_cdp, CdpProbe, StdCdpProbe,
+    is_discord_auxiliary_page, is_discord_auxiliary_window, is_discord_target,
+    is_transient_cdp_io_error, list_cdp_targets, list_cdp_targets_with_timeouts,
+    parse_cdp_targets_http_response, pick_discord_target, probe_cdp, CdpListError, CdpProbe,
+    StdCdpProbe,
 };
 pub use channel::{parse_discord_channel, DiscordChannel};
 pub use error::LaunchError;

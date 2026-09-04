@@ -211,8 +211,11 @@ fn helper_audit() -> (HelperAudit, usize, String) {
             && version_ok
     });
     #[cfg(target_os = "macos")]
-    let signature_ok =
-        installed.then(|| crate::runtime_bridge::verify_bundled_for_execution(&path).is_ok());
+    let signature_ok = if super::model::MACOS_SIGNING_ENABLED {
+        installed.then(|| crate::runtime_bridge::verify_bundled_for_execution(&path).is_ok())
+    } else {
+        None
+    };
     #[cfg(not(target_os = "macos"))]
     let signature_ok = None;
     let legacy_helper_count = legacy_helper_path().is_some_and(|path| path.is_file()) as usize;
@@ -366,6 +369,24 @@ fn plist_value(info_plist: &Path, key: &str) -> Option<String> {
 fn platform_details() -> Value {
     let bundle = macos_bundle();
     let info = bundle.as_ref().map(|path| path.join("Contents/Info.plist"));
+    if !super::model::MACOS_SIGNING_ENABLED {
+        return json!({
+            "bundlePath": bundle.as_deref().map(redacted_path),
+            "cfBundleExecutable": info.as_deref().and_then(|path| plist_value(path, "CFBundleExecutable")),
+            "cfBundleDisplayName": info.as_deref().and_then(|path| plist_value(path, "CFBundleDisplayName")),
+            "cfBundleIdentifier": info.as_deref().and_then(|path| plist_value(path, "CFBundleIdentifier")),
+            "codeSigningAuthority": Value::Null,
+            "codeSigningTeamIdentifier": Value::Null,
+            "hardenedRuntime": false,
+            "notarizationStaplerOk": Value::Null,
+            "notarizationObservationStatus": "disabled",
+            "signingStatus": "disabled",
+            "nestedHelperSignatureOk": Value::Null,
+            "nestedHelperTeamIdentifier": Value::Null,
+            "nestedHelperHardenedRuntime": Value::Null,
+            "nestedHelperIdentityMatchesMain": Value::Null,
+        });
+    }
     let main_code_identity = bundle
         .as_deref()
         .and_then(|path| super::macos::read_code_identity(path).ok());
@@ -409,6 +430,7 @@ fn platform_details() -> Value {
         "hardenedRuntime": hardened_runtime,
         "notarizationStaplerOk": Value::Null,
         "notarizationObservationStatus": "disabled",
+        "signingStatus": "enabled",
         "nestedHelperSignatureOk": nested_helper_signature_ok,
         "nestedHelperTeamIdentifier": nested_helper_identity.as_ref().and_then(|identity| identity.team_identifier.clone()),
         "nestedHelperHardenedRuntime": nested_helper_identity.as_ref().map(|identity| identity.hardened_runtime),
@@ -566,22 +588,25 @@ fn baseline_comparison(
                     differences.push(format!("{label} differs from release baseline"));
                 }
             }
-            if details.get("hardenedRuntime").and_then(Value::as_bool) != Some(true) {
-                differences.push("macOS hardened runtime is missing".into());
-            }
-            if details
-                .get("nestedHelperSignatureOk")
-                .and_then(Value::as_bool)
-                != Some(true)
-            {
-                differences.push("nested helper signature is invalid".into());
-            }
-            if details
-                .get("nestedHelperIdentityMatchesMain")
-                .and_then(Value::as_bool)
-                != Some(true)
-            {
-                differences.push("nested helper signing identity differs from the main app".into());
+            if super::model::MACOS_SIGNING_ENABLED {
+                if details.get("hardenedRuntime").and_then(Value::as_bool) != Some(true) {
+                    differences.push("macOS hardened runtime is missing".into());
+                }
+                if details
+                    .get("nestedHelperSignatureOk")
+                    .and_then(Value::as_bool)
+                    != Some(true)
+                {
+                    differences.push("nested helper signature is invalid".into());
+                }
+                if details
+                    .get("nestedHelperIdentityMatchesMain")
+                    .and_then(Value::as_bool)
+                    != Some(true)
+                {
+                    differences
+                        .push("nested helper signing identity differs from the main app".into());
+                }
             }
         }
     }

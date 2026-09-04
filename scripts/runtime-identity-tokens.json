@@ -1,5 +1,8 @@
 {
   "schemaVersion": 2,
+  "policies": {
+    "macosSigningEnabled": false
+  },
   "identity": {
     "publicName": "Discord Quest Helper",
     "publicBinary": "discord-quest-helper",

@@ -10,9 +10,14 @@ app="$(cd "$1" && pwd -P)"
 manifest="$2"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 policy="$script_dir/runtime-identity-tokens.json"
-IFS=$'\t' read -r expected_name expected_bundle expected_display < <(
-  node -e 'const p=JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).identity; console.log([p.mainBinary, p.bundleIdentifier, p.publicName].join("\t"))' "$policy"
+IFS=$'\t' read -r expected_name expected_bundle expected_display signing_enabled < <(
+  node -e 'const p=JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); console.log([p.identity.mainBinary, p.identity.bundleIdentifier, p.identity.publicName, p.policies.macosSigningEnabled].join("\t"))' "$policy"
 )
+if [[ "$signing_enabled" != "false" ]]; then
+  echo "macOS signing policy must remain disabled." >&2
+  exit 1
+fi
+signing_enabled=false
 info="$app/Contents/Info.plist"
 executable_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$info")"
 bundle_identifier="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$info")"
@@ -101,7 +106,7 @@ verify_process_path() {
   local command_path=""
   command_path="$(process_path_for_pid "$pid")"
   [[ "$command_path" == "$binary" ]] || {
-    echo "macOS process is not running from the signed bundle: $command_path" >&2
+    echo "macOS process is not running from the application bundle: $command_path" >&2
     exit 1
   }
 }
@@ -177,8 +182,14 @@ done < <(pgrep -x "$executable_name" 2>/dev/null || true)
   exit 1
 }
 
-codesign --verify --deep --strict --verbose=4 "$app"
-printf '{\n  "platform": "macos",\n  "bundleDirectoryName": "%s",\n  "bundleIdentifier": "%s",\n  "bundleExecutable": "%s",\n  "directLaunch": {\n    "pid": %s,\n    "processPath": "${APP}/Contents/MacOS/%s"\n  },\n  "launchServicesLaunch": {\n    "method": "open -n",\n    "pid": %s,\n    "displayName": "%s",\n    "processPath": "${APP}/Contents/MacOS/%s"\n  },\n  "temporaryCopy": false,\n  "mainProcessCount": %s,\n  "strictSignature": true\n}\n' \
+signing_status="disabled"
+strict_signature="null"
+if [[ "$signing_enabled" == "true" ]]; then
+  codesign --verify --deep --strict --verbose=4 "$app"
+  signing_status="enabled"
+  strict_signature="true"
+fi
+printf '{\n  "platform": "macos",\n  "bundleDirectoryName": "%s",\n  "bundleIdentifier": "%s",\n  "bundleExecutable": "%s",\n  "directLaunch": {\n    "pid": %s,\n    "processPath": "${APP}/Contents/MacOS/%s"\n  },\n  "launchServicesLaunch": {\n    "method": "open -n",\n    "pid": %s,\n    "displayName": "%s",\n    "processPath": "${APP}/Contents/MacOS/%s"\n  },\n  "temporaryCopy": false,\n  "mainProcessCount": %s,\n  "signingStatus": "%s",\n  "strictSignature": %s\n}\n' \
   "$(basename "$app")" "$bundle_identifier" "$executable_name" "$direct_pid" \
   "$expected_name" "$launch_services_pid" "$expected_display" "$expected_name" \
-  "$process_count" > "$manifest"
+  "$process_count" "$signing_status" "$strict_signature" > "$manifest"

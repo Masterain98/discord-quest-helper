@@ -8,7 +8,9 @@ import { fileURLToPath } from 'node:url';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const TOKEN_FILE = join(SCRIPT_DIR, 'runtime-identity-tokens.json');
-const TOKENS = JSON.parse(readFileSync(TOKEN_FILE, 'utf8')).tokens;
+const POLICY = JSON.parse(readFileSync(TOKEN_FILE, 'utf8'));
+const TOKENS = POLICY.tokens;
+const MACOS_SIGNING_ENABLED = false;
 
 function usage() {
   return `Usage: scripts/audit-runtime-identity.sh [options]
@@ -224,10 +226,21 @@ function macBundleAudit(app) {
 
   const executableName = plistValue(app, 'CFBundleExecutable');
   const executablePath = executableName ? join(app, 'Contents', 'MacOS', executableName) : null;
-  const display = run('codesign', ['-dvvv', app]);
-  const verify = run('codesign', ['--verify', '--deep', '--strict', '--verbose=4', app]);
-  const assess = run('spctl', ['--assess', '--type', 'execute', '--verbose=4', app]);
   const nested = run('find', [join(app, 'Contents'), '-type', 'f', '-perm', '+111']);
+  let signing = { status: 'disabled' };
+  if (MACOS_SIGNING_ENABLED) {
+    const display = run('codesign', ['-dvvv', app]);
+    const verify = run('codesign', ['--verify', '--deep', '--strict', '--verbose=4', app]);
+    const assess = run('spctl', ['--assess', '--type', 'execute', '--verbose=4', app]);
+    signing = {
+      status: 'enabled',
+      display: display.status === 'available'
+        ? { status: 'available', containsProductToken: containsProductToken(display.value) }
+        : { status: 'unavailable', reason: display.reason },
+      strictVerification: { status: verify.status, reason: redactPath(verify.reason) || null },
+      gatekeeperAssessment: { status: assess.status, reason: redactPath(assess.reason) || null },
+    };
+  }
 
   return {
     status: 'available',
@@ -239,13 +252,7 @@ function macBundleAudit(app) {
       CFBundleIdentifier: inspected(plistValue(app, 'CFBundleIdentifier'), 'package'),
     },
     executablePath: inspected(executablePath),
-    signing: {
-      display: display.status === 'available'
-        ? { status: 'available', containsProductToken: containsProductToken(display.value) }
-        : { status: 'unavailable', reason: display.reason },
-      strictVerification: { status: verify.status, reason: redactPath(verify.reason) || null },
-      gatekeeperAssessment: { status: assess.status, reason: redactPath(assess.reason) || null },
-    },
+    signing,
     nestedExecutables: nested.status === 'available'
       ? nested.value.split(/\r?\n/).filter(Boolean).map((path) => inspected(path))
       : [],
