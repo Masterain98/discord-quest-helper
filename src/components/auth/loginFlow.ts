@@ -5,7 +5,7 @@ import type {
   ClientSelection,
   DesktopClientInventory,
   DesktopClientState,
-  ProviderId,
+  RunningDesktopCdpSession,
 } from '@/api/tauri'
 
 export type { CdpLaunchTarget }
@@ -114,6 +114,7 @@ export function selectionForCdpLaunchTarget(
       installation.providerId === 'discord.official'
       && installation.validation === 'valid'
       && installation.variantId === 'stable'
+      && installation.source !== 'user'
     ))
     if (!hasStandardStable) {
       const customOfficial = snapshot?.installations.find(installation => (
@@ -134,15 +135,19 @@ export function selectionForCdpLaunchTarget(
 
 export function selectionForCurrentCdpOwner(
   snapshot: DesktopClientState,
-  providerId: ProviderId,
+  ownerSession: Pick<RunningDesktopCdpSession, 'providerId' | 'installationId' | 'variantId'>,
 ): ClientSelection {
-  const process = snapshot.processes.find(candidate => (
-    candidate.providerId === providerId && candidate.running
-  ))
-  if (process && snapshot.installations.some(installation => installation.id === process.installationId)) {
-    return { kind: 'installation', installationId: process.installationId }
+  if (
+    ownerSession.installationId
+    && snapshot.installations.some(installation => installation.id === ownerSession.installationId)
+  ) {
+    return { kind: 'installation', installationId: ownerSession.installationId }
   }
-  return { kind: 'provider', providerId, variantId: process?.variantId ?? null }
+  return {
+    kind: 'provider',
+    providerId: ownerSession.providerId,
+    variantId: ownerSession.variantId,
+  }
 }
 
 export function shouldAskCdpLaunchTarget(

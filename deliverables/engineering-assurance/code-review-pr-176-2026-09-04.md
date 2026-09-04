@@ -71,7 +71,7 @@ Sourcery 没有产生代码反馈，只报告 diff 超过审查限制。CodeRabb
 
 ## 本轮最新评论复核（2026-09-04）
 
-重新读取 PR #176 的 GitHub inline comments、issue comments 和 reviews：当前共 39 条 inline comments、6 条 review、5 条 issue comments。上一轮新增的 8 条可操作反馈全部来自 CodeRabbit；本轮推送后又收到 2 条 Greptile 行内反馈，没有新的人工业务评论。逐条核对当前实现后，结论是上一轮 8/8 及本轮 2/2 均真实有效，均已跟进：
+重新读取 PR #176 的 GitHub inline comments、issue comments 和 reviews：当前共 41 条 inline comments、7 条 review、5 条 issue comments。上一轮新增的 8 条可操作反馈全部来自 CodeRabbit；后续两次推送后分别收到 2 条 Greptile 行内反馈，没有新的人工业务评论。逐条核对当前实现后，结论是上一轮 8/8、第二轮 2/2 及本轮 2/2 均真实有效，均已跟进：
 
 1. `processes.rs`：缓存 `classify_known_discord_process` 结果，避免 Windows 路径规范化重复执行。
 2. `provider.rs`：将 AppImage 前缀规则改为 provider 专属；官方 Discord 不再误接收 Vesktop AppImage，并新增回归测试。
@@ -90,6 +90,13 @@ Sourcery 没有产生代码反馈，只报告 diff 超过审查限制。CodeRabb
 10. `3936438516`：标准 Stable 与无 variant 的自定义 macOS bundle 并存时，Stable 目标原本无条件选择自定义 bundle。现改为优先有效的标准 Stable，仅在没有标准 Stable 时才使用自定义 bundle 回退，并新增并存场景回归测试。
 
 本轮跟进验证：`loginFlow.test.ts` 13/13；前端全量 8 files / 54 tests passed；`vue-tsc --noEmit`、`i18n:check` 和生产 build 均通过（build 仅保留既有 chunk 体积提示），`git diff --check` 通过。
+
+### 第二次推送后新增反馈
+
+11. `3936545675`：仅从状态快照中按 provider 取第一条运行进程，无法保证它就是当前 CDP 端口的 owner。现改用已有的运行 CDP session 列表按端口和 provider 精确匹配，再保存对应 installation；若 session 没有可用 installation 才保留 provider + variant 回退。
+12. `3936545679`：仅凭 `variantId === stable` 会把用户添加的 Stable executable 误当作系统标准 Stable，导致自定义 bundle 回退被跳过。现要求标准 Stable 的来源不是 `user`，并新增用户 Stable 与自定义 bundle 并存的回归测试。
+
+本轮第二次跟进验证：`loginFlow.test.ts` 14/14；前端全量 8 files / 55 tests passed；`vue-tsc`、`i18n:check` 和生产 build 均通过（build 仅保留既有 chunk 体积提示），`git diff --check` 通过。
 
 ## Disclaimer
 

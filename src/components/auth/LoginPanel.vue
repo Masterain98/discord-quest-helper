@@ -29,6 +29,7 @@ import {
 import { useAuthStore } from '@/stores/auth'
 import { useQuestsStore } from '@/stores/quests'
 import {
+  listRunningDesktopCdpSessions,
   launchDesktopClientCdp,
   type AuthProgress,
   type ClientSelection,
@@ -515,17 +516,24 @@ async function confirmCdpRestart() {
 }
 
 async function useCurrentCdpOwner() {
-  const snapshot = await clients.refresh(questsStore.cdpPort)
-  const providerId = snapshot?.endpoint.ownerProviderId
-  if (!snapshot || !providerId) return
-  const selection = selectionForCurrentCdpOwner(snapshot, providerId)
-  await clients.select(selection, questsStore.cdpPort)
-  syncLegacyDesktopClientPreference(selection)
-  ownerConflict.value = false
-  cdpRestartDialogOpen.value = false
-  if (!begin('cdp')) return
   try {
+    const snapshot = await clients.refresh(questsStore.cdpPort)
+    const providerId = snapshot?.endpoint.ownerProviderId
+    if (!snapshot || !providerId) return
+    const ownerSession = (await listRunningDesktopCdpSessions()).find(session => (
+      session.port === questsStore.cdpPort && session.providerId === providerId
+    ))
+    if (!ownerSession) throw new Error('The current CDP owner could not be mapped to one exact installation.')
+    const selection = selectionForCurrentCdpOwner(snapshot, ownerSession)
+    await clients.select(selection, questsStore.cdpPort)
+    syncLegacyDesktopClientPreference(selection)
+    ownerConflict.value = false
+    cdpRestartDialogOpen.value = false
+    if (!begin('cdp')) return
     await finishCdpLogin()
+  } catch (error) {
+    authStore.error = errorDetail(error)
+    setProgress('cdp', 'error', 'auth.progress.failed', undefined, authStore.error)
   } finally {
     finish()
   }

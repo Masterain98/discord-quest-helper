@@ -11,6 +11,7 @@ import {
   createDiscordCdpLauncherShortcut,
   fetchSuperPropertiesCdp,
   getDebugInfo,
+  listRunningDesktopCdpSessions,
   launchDesktopClientCdp,
   type DebugInfo,
 } from '@/api/tauri'
@@ -187,7 +188,11 @@ async function useCurrentCdpOwner() {
     const snapshot = await clients.refresh(questsStore.cdpPort)
     const providerId = snapshot?.endpoint.ownerProviderId
     if (!snapshot || !providerId) return
-    const selection = selectionForCurrentCdpOwner(snapshot, providerId)
+    const ownerSession = (await listRunningDesktopCdpSessions()).find(session => (
+      session.port === questsStore.cdpPort && session.providerId === providerId
+    ))
+    if (!ownerSession) throw new Error('The current CDP owner could not be mapped to one exact installation.')
+    const selection = selectionForCurrentCdpOwner(snapshot, ownerSession)
     const next = await clients.select(selection, questsStore.cdpPort)
     questsStore.desktopClient = desktopClientArgForProvider(providerId)
     ownerConflict.value = false

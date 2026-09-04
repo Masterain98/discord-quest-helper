@@ -203,6 +203,33 @@ describe('CDP launch target selection', () => {
     })
   })
 
+  it('ignores user-added Stable executables when choosing the custom bundle fallback', () => {
+    const snapshot = {
+      installations: [
+        {
+          id: 'discord.official:user-stable',
+          providerId: 'discord.official',
+          variantId: 'stable',
+          source: 'user',
+          validation: 'valid',
+        },
+        {
+          id: 'discord.official:custom-mac',
+          providerId: 'discord.official',
+          variantId: null,
+          launchTarget: { kind: 'macBundle' },
+          source: 'user',
+          validation: 'valid',
+        },
+      ],
+    } as DesktopClientState
+
+    expect(selectionForCdpLaunchTarget(snapshot, 'stable')).toEqual({
+      kind: 'installation',
+      installationId: 'discord.official:custom-mac',
+    })
+  })
+
   it('preserves the exact installation for the current CDP owner', () => {
     const installation = {
       id: 'discord.official:custom-ptb',
@@ -218,7 +245,11 @@ describe('CDP launch target selection', () => {
       }],
     } as DesktopClientState
 
-    expect(selectionForCurrentCdpOwner(snapshot, 'discord.official')).toEqual({
+    expect(selectionForCurrentCdpOwner(snapshot, {
+      providerId: 'discord.official',
+      installationId: installation.id,
+      variantId: 'ptb',
+    })).toEqual({
       kind: 'installation',
       installationId: installation.id,
     })
