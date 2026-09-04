@@ -5,6 +5,7 @@
 //! must not change the shared `DiscordInstall` model here.
 
 use crate::launcher::build_launch_args;
+use crate::vesktop::{is_vesktop_process_name, VesktopInstall};
 use crate::{
     DiscordChannel, DiscordInstall, DiscordLaunchMode, LaunchError, LinuxDesktopProxySettings,
 };
@@ -409,6 +410,67 @@ pub(crate) fn spawn(install: &DiscordInstall, mode: DiscordLaunchMode) -> Result
             // Keep a reaper alive after this short-lived launch operation
             // returns. Dropping Child leaks a zombie into the long-lived Tauri
             // parent, and kill(pid, 0) would then mistake it for Discord.
+            std::thread::spawn(move || {
+                let _ = child.wait();
+            });
+            pid
+        })
+        .map_err(|source| LaunchError::SpawnFailed {
+            path: install.executable_path.clone(),
+            source,
+        })
+}
+
+fn linux_process_looks_like_vesktop(process: &LinuxProcessInfo) -> bool {
+    if process
+        .executable
+        .as_deref()
+        .and_then(Path::file_name)
+        .and_then(OsStr::to_str)
+        .is_some_and(is_vesktop_process_name)
+    {
+        return true;
+    }
+    if process
+        .cmdline
+        .first()
+        .map(Path::new)
+        .and_then(Path::file_name)
+        .and_then(OsStr::to_str)
+        .is_some_and(is_vesktop_process_name)
+    {
+        return true;
+    }
+    process.comm.as_deref().is_some_and(is_vesktop_process_name)
+}
+
+fn running_vesktop_pids() -> Result<Vec<u32>, LaunchError> {
+    Ok(enumerate_processes()?
+        .into_iter()
+        .filter(linux_process_looks_like_vesktop)
+        .map(|process| process.pid)
+        .collect())
+}
+
+pub(crate) fn is_vesktop_running() -> Result<bool, LaunchError> {
+    Ok(!running_vesktop_pids()?.is_empty())
+}
+
+pub(crate) fn spawn_vesktop(
+    install: &VesktopInstall,
+    mode: DiscordLaunchMode,
+) -> Result<u32, LaunchError> {
+    let mut command = Command::new(&install.executable_path);
+    apply_desktop_proxy_if_missing(&mut command);
+    command
+        .current_dir(&install.working_dir)
+        .args(build_launch_args(mode))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    command
+        .spawn()
+        .map(|mut child| {
+            let pid = child.id();
             std::thread::spawn(move || {
                 let _ = child.wait();
             });

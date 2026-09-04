@@ -41,8 +41,25 @@
       "launching_discord": "Запуск Discord с включённым CDP...",
       "restart_required": "Discord уже запущен. Его необходимо перезапустить с включённым CDP.",
       "restarting_discord": "Перезапуск Discord с включённым CDP...",
-      "restart_cancelled": "Перезапуск Discord отменён. Вход не выполнен."
-    }
+      "restart_cancelled": "Перезапуск Discord отменён. Вход не выполнен.",
+      "launching_vesktop": "Запуск Vesktop с включённым CDP...",
+      "restart_required_vesktop": "Vesktop уже запущен и должен быть перезапущен с включённым CDP.",
+      "restarting_vesktop": "Перезапуск Vesktop с включённым CDP...",
+      "choose_client": "Выберите клиент Discord для запуска с CDP...",
+      "launch_cancelled": "Запуск клиента отменён. Ни один аккаунт не был подключён."
+    },
+    "cdp_login_action_vesktop": "Войти через Vesktop",
+    "client_auto": "Автоматически",
+    "client_official": "Discord",
+    "client_vesktop": "Vesktop",
+    "cdp_login_detail_vesktop": "Использовать аккаунт, в который вы вошли в Vesktop. Vesktop должен быть запущен с включённым CDP.",
+    "cdp_choose_title": "Выберите клиент Discord",
+    "cdp_choose_desc": "Нет клиента, запущенного с включённым CDP. Выберите установленный клиент для запуска.",
+    "cdp_remember_choice": "Запомнить мой выбор",
+    "cdp_client_stable": "Discord",
+    "cdp_client_ptb": "Discord PTB",
+    "cdp_client_canary": "Discord Canary",
+    "cdp_client_vesktop": "Vesktop"
   },
   "nav": {
     "home": "Главная",
@@ -94,13 +111,9 @@
     "include_expired": "Включить просроченные квесты",
     "include_expired_desc": "Показывать просроченные записи для проверки и восстановления.",
     "current_orbs": "Текущие Orbs",
-
     "nitro_next_orbs_title": "Ежемесячные Orbs Nitro — обратный отсчёт до следующего получения",
-
     "nitro_next_orbs_days": "Следующий эирдроп Orbs через {days} дн",
-
     "nitro_next_orbs_hours": "Следующий эирдроп Orbs через {hours} ч",
-
     "nitro_next_orbs_minutes": "Следующий эирдроп Orbs через {minutes} мин",
     "claim_reward": "Получить награду",
     "claim_navigated": "Discord перенаправлен на страницу квеста. Получите награду в Discord.",
@@ -290,7 +303,11 @@
     "debug_already_unlocked": "Режим разработчика включён",
     "disable_developer_mode": "Отключить режим разработчика",
     "disable_debug_confirm_title": "Отключить режим разработчика?",
-    "disable_debug_confirm_desc": "Вкладка Debug и инструменты разработчика будут скрыты. Вы можете повторно включить, нажав на номер версии 7 раз."
+    "disable_debug_confirm_desc": "Вкладка Debug и инструменты разработчика будут скрыты. Вы можете повторно включить, нажав на номер версии 7 раз.",
+    "cdp_dialog_title_disconnected_vesktop": "Перезапустить Vesktop для включения CDP?",
+    "cdp_dialog_desc_disconnected_vesktop": "Vesktop запущен, но не подключён к CDP. Необходимо перезапустить Vesktop с включённым отладочным портом CDP.",
+    "desktop_client": "Настольный клиент",
+    "desktop_client_desc": "Если установлены Discord и Vesktop, этот выбор влияет только на вход через CDP. Локальное извлечение токенов всегда использует официальный клиент Discord."
   },
   "version": {
     "update_available": "Доступна новая версия!",
@@ -460,6 +477,26 @@
     "activity_cdp_required": "Для Activity квестов требуется режим CDP",
     "stream_quest_title": "Стрим-квест",
     "stream_quest_desc": "Стрим-квесты требуют ручной трансляции игры в Discord. Начните трансляцию в голосовом канале, затем используйте симулятор игр."
+  },
+  "desktop_clients": {
+    "ask_each_time": "Спрашивать каждый раз",
+    "ask_each_time_desc": "Каждый раз спрашивать, какой установленный клиент запустить, если CDP недоступен.",
+    "auto_desc": "Helper подключается к существующей конечной точке Discord, готовой для CDP, или выбирает первый доступный поддерживаемый клиент.",
+    "status_launchable": "Доступен",
+    "status_running": "Запущен",
+    "status_missing": "Путь отсутствует",
+    "status_invalid": "Недействителен",
+    "browse_title": "Выберите исполняемый файл настольного клиента",
+    "add_vesktop": "Добавить установку Vesktop",
+    "relocate": "Переназначить установку",
+    "remove": "Удалить установку",
+    "owner_conflict_title": "Другой настольный клиент использует этот порт CDP",
+    "owner_conflict_desc": "Используйте уже подключённый клиент, переключитесь на выбранный или отмените и выберите другой порт.",
+    "use_current": "Использовать текущий клиент",
+    "switch_selected": "Переключиться на выбранный клиент",
+    "restore_managed_and_close": "Восстановить запущенные Helper клиенты и закрыть",
+    "restore_all_and_close": "Подтвердить внешние клиенты, восстановить все и закрыть",
+    "cdp_owner": "Владелец CDP"
   },
   "exit_cdp": {
     "title": "Discord всё ещё работает в режиме CDP",

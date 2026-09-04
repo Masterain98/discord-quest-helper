@@ -41,8 +41,25 @@
       "launching_discord": "กำลังเริ่ม Discord พร้อมเปิดใช้ CDP...",
       "restart_required": "Discord กำลังทำงานอยู่และต้องเริ่มใหม่พร้อมเปิดใช้ CDP",
       "restarting_discord": "กำลังเริ่ม Discord ใหม่พร้อมเปิดใช้ CDP...",
-      "restart_cancelled": "ยกเลิกการเริ่ม Discord ใหม่แล้ว ยังไม่มีบัญชีเข้าสู่ระบบ"
-    }
+      "restart_cancelled": "ยกเลิกการเริ่ม Discord ใหม่แล้ว ยังไม่มีบัญชีเข้าสู่ระบบ",
+      "launching_vesktop": "กำลังเริ่ม Vesktop โดยเปิดใช้ CDP...",
+      "restart_required_vesktop": "Vesktop กำลังทำงานอยู่และต้องเริ่มใหม่โดยเปิดใช้ CDP",
+      "restarting_vesktop": "กำลังเริ่ม Vesktop ใหม่โดยเปิดใช้ CDP...",
+      "choose_client": "เลือกไคลเอนต์ Discord ที่จะเริ่มด้วย CDP...",
+      "launch_cancelled": "ยกเลิกการเริ่มไคลเอนต์แล้ว ไม่มีบัญชีใดเข้าสู่ระบบ"
+    },
+    "cdp_login_action_vesktop": "เข้าสู่ระบบด้วย Vesktop",
+    "client_auto": "อัตโนมัติ",
+    "client_official": "Discord",
+    "client_vesktop": "Vesktop",
+    "cdp_login_detail_vesktop": "ใช้บัญชีที่ลงชื่อเข้าใช้ใน Vesktop อยู่ในขณะนี้ Vesktop ต้องทำงานโดยเปิดใช้ CDP",
+    "cdp_choose_title": "เลือกไคลเอนต์ Discord",
+    "cdp_choose_desc": "ไม่มีไคลเอนต์ที่ทำงานโดยเปิดใช้ CDP เลือกไคลเอนต์ที่ติดตั้งไว้เพื่อเริ่มใช้งาน",
+    "cdp_remember_choice": "จดจำตัวเลือกของฉัน",
+    "cdp_client_stable": "Discord",
+    "cdp_client_ptb": "Discord PTB",
+    "cdp_client_canary": "Discord Canary",
+    "cdp_client_vesktop": "Vesktop"
   },
   "nav": {
     "home": "หน้าแรก",
@@ -94,13 +111,9 @@
     "include_expired": "รวมภารกิจที่หมดอายุ",
     "include_expired_desc": "แสดงรายการที่หมดอายุสำหรับการตรวจสอบและการกู้คืน",
     "current_orbs": "ปัจจุบัน Orbs",
-
     "nitro_next_orbs_title": "Orbs รายเดือนของ Nitro — นับถอยหลังการรับครั้งถัดไป",
-
     "nitro_next_orbs_days": "Airdrop Orbs ครั้งต่อไปในอีก {days} วัน",
-
     "nitro_next_orbs_hours": "Airdrop Orbs ครั้งต่อไปในอีก {hours} ชั่วโมง",
-
     "nitro_next_orbs_minutes": "Airdrop Orbs ครั้งต่อไปในอีก {minutes} นาที",
     "claim_reward": "รับรางวัล",
     "claim_navigated": "Discord ถูกเปลี่ยนเส้นทางไปยังหน้าภารกิจ กรุณารับรางวัลของคุณที่นั่น",
@@ -290,7 +303,11 @@
     "debug_already_unlocked": "เปิดใช้งานโหมดนักพัฒนาซอฟต์แวร์แล้ว",
     "disable_developer_mode": "ปิดการใช้งานโหมดนักพัฒนาซอฟต์แวร์",
     "disable_debug_confirm_title": "ปิดการใช้งานโหมดนักพัฒนาซอฟต์แวร์?",
-    "disable_debug_confirm_desc": "แท็บแก้ไขข้อบกพร่องและเครื่องมือสำหรับนักพัฒนาจะถูกซ่อนไว้ คุณสามารถเปิดใช้งานได้อีกครั้งโดยแตะหมายเลขเวอร์ชัน 7 ครั้ง"
+    "disable_debug_confirm_desc": "แท็บแก้ไขข้อบกพร่องและเครื่องมือสำหรับนักพัฒนาจะถูกซ่อนไว้ คุณสามารถเปิดใช้งานได้อีกครั้งโดยแตะหมายเลขเวอร์ชัน 7 ครั้ง",
+    "cdp_dialog_title_disconnected_vesktop": "เริ่ม Vesktop ใหม่เพื่อเปิดใช้ CDP หรือไม่",
+    "cdp_dialog_desc_disconnected_vesktop": "Vesktop กำลังทำงานแต่ไม่ได้เชื่อมต่อกับ CDP เราจำเป็นต้องเริ่ม Vesktop ใหม่โดยเปิดใช้พอร์ตดีบัก CDP",
+    "desktop_client": "ไคลเอนต์เดสก์ท็อป",
+    "desktop_client_desc": "เมื่อติดตั้งทั้ง Discord และ Vesktop ตัวเลือกนี้มีผลเฉพาะการเข้าสู่ระบบ CDP การดึงโทเค็นในเครื่องจะใช้ไคลเอนต์ Discord อย่างเป็นทางการเสมอ"
   },
   "version": {
     "update_available": "มีเวอร์ชันใหม่แล้ว!",
@@ -460,6 +477,26 @@
     "activity_cdp_required": "ภารกิจ Activity ต้องใช้โหมด CDP",
     "stream_quest_title": "สตรีมภารกิจ",
     "stream_quest_desc": "ภารกิจการสตรีมต้องการให้คุณสตรีมเกมบน Discord ด้วยตนเอง เริ่มสตรีมในช่องเสียง จากนั้นใช้ Game Simulator เพื่อจำลองเกม"
+  },
+  "desktop_clients": {
+    "ask_each_time": "ถามฉันทุกครั้ง",
+    "ask_each_time_desc": "ถามว่าจะเริ่มไคลเอนต์ที่ติดตั้งใดทุกครั้งที่ CDP ไม่พร้อมใช้งาน",
+    "auto_desc": "Helper จะเชื่อมต่อกับปลายทาง Discord ที่พร้อมใช้ CDP หรือเลือกไคลเอนต์ที่รองรับรายการแรกที่พร้อมใช้งาน",
+    "status_launchable": "พร้อมใช้งาน",
+    "status_running": "กำลังทำงาน",
+    "status_missing": "ไม่พบเส้นทาง",
+    "status_invalid": "ไม่ถูกต้อง",
+    "browse_title": "เลือกไฟล์ปฏิบัติการของไคลเอนต์เดสก์ท็อป",
+    "add_vesktop": "เพิ่มการติดตั้ง Vesktop",
+    "relocate": "ระบุตำแหน่งการติดตั้งใหม่",
+    "remove": "ลบการติดตั้ง",
+    "owner_conflict_title": "ไคลเอนต์เดสก์ท็อปรายอื่นเป็นเจ้าของพอร์ต CDP นี้",
+    "owner_conflict_desc": "ใช้ไคลเอนต์ที่เชื่อมต่ออยู่ สลับไปยังไคลเอนต์ที่เลือก หรือยกเลิกแล้วเลือกพอร์ตอื่น",
+    "use_current": "ใช้ไคลเอนต์ปัจจุบัน",
+    "switch_selected": "สลับไปยังไคลเอนต์ที่เลือก",
+    "restore_managed_and_close": "กู้คืนไคลเอนต์ที่ Helper เริ่มไว้แล้วปิด",
+    "restore_all_and_close": "ยืนยันไคลเอนต์ภายนอก กู้คืนทั้งหมด แล้วปิด",
+    "cdp_owner": "เจ้าของ CDP"
   },
   "exit_cdp": {
     "title": "Discord ยังคงทำงานในโหมด CDP",

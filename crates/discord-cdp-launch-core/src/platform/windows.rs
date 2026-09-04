@@ -1,4 +1,5 @@
 use crate::launcher::build_launch_args;
+use crate::vesktop::VesktopInstall;
 use crate::{DiscordChannel, DiscordInstall, DiscordLaunchMode, LaunchError};
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -33,22 +34,7 @@ pub fn discover_windows_installs_in(base: &Path) -> Vec<DiscordInstall> {
 }
 
 pub(crate) fn is_running(channel: Option<DiscordChannel>) -> Result<bool, LaunchError> {
-    let output = no_window_cmd("tasklist")
-        .args(["/FO", "CSV", "/NH"])
-        .output()
-        .map_err(|source| LaunchError::ProcessInspection {
-            operation: "tasklist",
-            source,
-        })?;
-    if !output.status.success() {
-        return Err(LaunchError::ProcessInspection {
-            operation: "tasklist",
-            source: std::io::Error::other(
-                String::from_utf8_lossy(&output.stderr).trim().to_string(),
-            ),
-        });
-    }
-    let stdout = String::from_utf8_lossy(&output.stdout).to_ascii_lowercase();
+    let stdout = tasklist_output()?;
     Ok(process_names_for(channel)
         .iter()
         .any(|name| stdout.contains(&format!("\"{}\"", name.to_ascii_lowercase()))))
@@ -72,9 +58,47 @@ pub(crate) fn terminate(channel: Option<DiscordChannel>) -> Result<(), LaunchErr
 }
 
 pub(crate) fn spawn(install: &DiscordInstall, mode: DiscordLaunchMode) -> Result<u32, LaunchError> {
-    let mut command = Command::new(&install.executable_path);
+    spawn_path(&install.executable_path, &install.working_dir, mode)
+}
+
+pub(crate) fn is_vesktop_running() -> Result<bool, LaunchError> {
+    Ok(tasklist_output()?.contains("\"vesktop.exe\""))
+}
+
+fn tasklist_output() -> Result<String, LaunchError> {
+    let output = no_window_cmd("tasklist")
+        .args(["/FO", "CSV", "/NH"])
+        .output()
+        .map_err(|source| LaunchError::ProcessInspection {
+            operation: "tasklist",
+            source,
+        })?;
+    if !output.status.success() {
+        return Err(LaunchError::ProcessInspection {
+            operation: "tasklist",
+            source: std::io::Error::other(
+                String::from_utf8_lossy(&output.stderr).trim().to_string(),
+            ),
+        });
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_ascii_lowercase())
+}
+
+pub(crate) fn spawn_vesktop(
+    install: &VesktopInstall,
+    mode: DiscordLaunchMode,
+) -> Result<u32, LaunchError> {
+    spawn_path(&install.executable_path, &install.working_dir, mode)
+}
+
+fn spawn_path(
+    executable_path: &Path,
+    working_dir: &Path,
+    mode: DiscordLaunchMode,
+) -> Result<u32, LaunchError> {
+    let mut command = Command::new(executable_path);
     command
-        .current_dir(&install.working_dir)
+        .current_dir(working_dir)
         .args(build_launch_args(mode))
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -82,7 +106,7 @@ pub(crate) fn spawn(install: &DiscordInstall, mode: DiscordLaunchMode) -> Result
         .spawn()
         .map(|child| child.id())
         .map_err(|source| LaunchError::SpawnFailed {
-            path: install.executable_path.clone(),
+            path: executable_path.to_path_buf(),
             source,
         })
 }

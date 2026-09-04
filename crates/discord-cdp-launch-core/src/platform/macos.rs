@@ -1,4 +1,5 @@
 use crate::launcher::build_launch_args;
+use crate::vesktop::VesktopInstall;
 use crate::{DiscordChannel, DiscordInstall, DiscordLaunchMode, LaunchError};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -132,4 +133,45 @@ fn process_name(channel: DiscordChannel) -> &'static str {
         DiscordChannel::Ptb => "Discord PTB",
         DiscordChannel::Canary => "Discord Canary",
     }
+}
+
+pub(crate) fn is_vesktop_running() -> Result<bool, LaunchError> {
+    for name in ["Vesktop", "vesktop"] {
+        let status = Command::new("/usr/bin/pgrep")
+            .args(["-x", name])
+            .status()
+            .map_err(|source| LaunchError::ProcessInspection {
+                operation: "pgrep",
+                source,
+            })?;
+        if status.success() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+pub(crate) fn spawn_vesktop(
+    install: &VesktopInstall,
+    mode: DiscordLaunchMode,
+) -> Result<u32, LaunchError> {
+    let mut command = Command::new(&install.executable_path);
+    command
+        .current_dir(&install.working_dir)
+        .args(build_launch_args(mode))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    command
+        .spawn()
+        .map(|mut child| {
+            let pid = child.id();
+            std::thread::spawn(move || {
+                let _ = child.wait();
+            });
+            pid
+        })
+        .map_err(|source| LaunchError::SpawnFailed {
+            path: install.executable_path.clone(),
+            source,
+        })
 }

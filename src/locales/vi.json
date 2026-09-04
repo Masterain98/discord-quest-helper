@@ -41,8 +41,25 @@
       "launching_discord": "Đang khởi động Discord với CDP được bật...",
       "restart_required": "Discord đang chạy và phải được khởi động lại với CDP được bật.",
       "restarting_discord": "Đang khởi động lại Discord với CDP được bật...",
-      "restart_cancelled": "Đã hủy khởi động lại Discord. Chưa đăng nhập tài khoản nào."
-    }
+      "restart_cancelled": "Đã hủy khởi động lại Discord. Chưa đăng nhập tài khoản nào.",
+      "launching_vesktop": "Đang khởi chạy Vesktop với CDP được bật...",
+      "restart_required_vesktop": "Vesktop đang chạy và cần được khởi động lại với CDP được bật.",
+      "restarting_vesktop": "Đang khởi động lại Vesktop với CDP được bật...",
+      "choose_client": "Chọn ứng dụng Discord sẽ khởi chạy với CDP...",
+      "launch_cancelled": "Đã hủy khởi chạy ứng dụng. Chưa đăng nhập tài khoản nào."
+    },
+    "cdp_login_action_vesktop": "Đăng nhập bằng Vesktop",
+    "client_auto": "Tự động",
+    "client_official": "Discord",
+    "client_vesktop": "Vesktop",
+    "cdp_login_detail_vesktop": "Sử dụng tài khoản hiện đang đăng nhập trong Vesktop. Vesktop phải đang chạy với CDP được bật.",
+    "cdp_choose_title": "Chọn ứng dụng Discord",
+    "cdp_choose_desc": "Không có ứng dụng nào đang chạy với CDP được bật. Hãy chọn ứng dụng đã cài đặt để khởi chạy.",
+    "cdp_remember_choice": "Ghi nhớ lựa chọn của tôi",
+    "cdp_client_stable": "Discord",
+    "cdp_client_ptb": "Discord PTB",
+    "cdp_client_canary": "Discord Canary",
+    "cdp_client_vesktop": "Vesktop"
   },
   "nav": {
     "home": "Trang chủ",
@@ -94,13 +111,9 @@
     "include_expired": "Bao gồm các nhiệm vụ đã hết hạn",
     "include_expired_desc": "Hiển thị các mục đã hết hạn để kiểm tra và phục hồi.",
     "current_orbs": "Hiện tại Orbs",
-
     "nitro_next_orbs_title": "Orbs Nitro hàng tháng — đếm ngược đến lần nhận tiếp theo",
-
     "nitro_next_orbs_days": "Airdrop Orbs tiếp theo sau {days} ngày",
-
     "nitro_next_orbs_hours": "Airdrop Orbs tiếp theo sau {hours} giờ",
-
     "nitro_next_orbs_minutes": "Airdrop Orbs tiếp theo sau {minutes} phút",
     "claim_reward": "Yêu cầu phần thưởng",
     "claim_navigated": "Discord đã được chuyển hướng đến trang nhiệm vụ. Hãy nhận phần thưởng của bạn ở đó.",
@@ -290,7 +303,11 @@
     "debug_already_unlocked": "Đã bật chế độ nhà phát triển",
     "disable_developer_mode": "Tắt Chế độ nhà phát triển",
     "disable_debug_confirm_title": "Tắt Chế độ nhà phát triển?",
-    "disable_debug_confirm_desc": "Tab Gỡ lỗi và công cụ dành cho nhà phát triển sẽ bị ẩn. Bạn có thể kích hoạt lại nó bằng cách nhấn vào số phiên bản 7 lần."
+    "disable_debug_confirm_desc": "Tab Gỡ lỗi và công cụ dành cho nhà phát triển sẽ bị ẩn. Bạn có thể kích hoạt lại nó bằng cách nhấn vào số phiên bản 7 lần.",
+    "cdp_dialog_title_disconnected_vesktop": "Khởi động lại Vesktop để bật CDP?",
+    "cdp_dialog_desc_disconnected_vesktop": "Vesktop đang chạy nhưng chưa kết nối với CDP. Cần khởi động lại Vesktop với cổng gỡ lỗi CDP được bật.",
+    "desktop_client": "Ứng dụng máy tính",
+    "desktop_client_desc": "Khi Discord và Vesktop cùng được cài đặt, lựa chọn này chỉ ảnh hưởng đến đăng nhập CDP. Việc trích xuất token cục bộ luôn dùng ứng dụng Discord chính thức."
   },
   "version": {
     "update_available": "Đã có phiên bản mới!",
@@ -460,6 +477,26 @@
     "activity_cdp_required": "Nhiệm vụ Activity yêu cầu chế độ CDP",
     "stream_quest_title": "Nhiệm vụ truyền phát",
     "stream_quest_desc": "Nhiệm vụ phát trực tuyến yêu cầu bạn phát trực tuyến trò chơi trên Discord theo cách thủ công. Bắt đầu phát trực tiếp bằng kênh thoại, sau đó sử dụng Trình mô phỏng trò chơi để mô phỏng trò chơi."
+  },
+  "desktop_clients": {
+    "ask_each_time": "Luôn hỏi tôi",
+    "ask_each_time_desc": "Hỏi ứng dụng đã cài đặt nào cần khởi chạy mỗi khi CDP không khả dụng.",
+    "auto_desc": "Helper sẽ kết nối với endpoint Discord đã sẵn sàng cho CDP hoặc chọn ứng dụng được hỗ trợ đầu tiên hiện có.",
+    "status_launchable": "Có thể dùng",
+    "status_running": "Đang chạy",
+    "status_missing": "Thiếu đường dẫn",
+    "status_invalid": "Không hợp lệ",
+    "browse_title": "Chọn tệp thực thi của ứng dụng máy tính",
+    "add_vesktop": "Thêm bản cài đặt Vesktop",
+    "relocate": "Định vị lại bản cài đặt",
+    "remove": "Xóa bản cài đặt",
+    "owner_conflict_title": "Ứng dụng máy tính khác đang sở hữu cổng CDP này",
+    "owner_conflict_desc": "Dùng ứng dụng đang kết nối, chuyển sang ứng dụng đã chọn hoặc hủy và chọn cổng khác.",
+    "use_current": "Dùng ứng dụng hiện tại",
+    "switch_selected": "Chuyển sang ứng dụng đã chọn",
+    "restore_managed_and_close": "Khôi phục các ứng dụng do Helper khởi chạy và đóng",
+    "restore_all_and_close": "Xác nhận ứng dụng bên ngoài, khôi phục tất cả và đóng",
+    "cdp_owner": "Chủ sở hữu CDP"
   },
   "exit_cdp": {
     "title": "Discord vẫn đang chạy ở chế độ CDP",

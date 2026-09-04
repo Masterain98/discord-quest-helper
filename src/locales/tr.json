@@ -41,8 +41,25 @@
       "launching_discord": "Discord, CDP etkin olarak başlatılıyor...",
       "restart_required": "Discord zaten çalışıyor ve CDP etkin olarak yeniden başlatılmalıdır.",
       "restarting_discord": "Discord, CDP etkin olarak yeniden başlatılıyor...",
-      "restart_cancelled": "Discord'u yeniden başlatma iptal edildi. Hiçbir hesapta oturum açılmadı."
-    }
+      "restart_cancelled": "Discord'u yeniden başlatma iptal edildi. Hiçbir hesapta oturum açılmadı.",
+      "launching_vesktop": "Vesktop CDP etkin olarak başlatılıyor...",
+      "restart_required_vesktop": "Vesktop zaten çalışıyor ve CDP etkinleştirilerek yeniden başlatılmalı.",
+      "restarting_vesktop": "Vesktop CDP etkin olarak yeniden başlatılıyor...",
+      "choose_client": "CDP ile başlatılacak Discord istemcisini seçin...",
+      "launch_cancelled": "İstemci başlatma iptal edildi. Hiçbir hesapla giriş yapılmadı."
+    },
+    "cdp_login_action_vesktop": "Vesktop ile Giriş Yap",
+    "client_auto": "Otomatik",
+    "client_official": "Discord",
+    "client_vesktop": "Vesktop",
+    "cdp_login_detail_vesktop": "Vesktop'ta şu anda oturum açmış olan hesabı kullanın. Vesktop CDP etkin olarak çalışıyor olmalıdır.",
+    "cdp_choose_title": "Discord istemcisi seçin",
+    "cdp_choose_desc": "CDP etkin olarak çalışan bir istemci yok. Başlatılacak yüklü istemciyi seçin.",
+    "cdp_remember_choice": "Seçimimi hatırla",
+    "cdp_client_stable": "Discord",
+    "cdp_client_ptb": "Discord PTB",
+    "cdp_client_canary": "Discord Canary",
+    "cdp_client_vesktop": "Vesktop"
   },
   "nav": {
     "home": "Ana sayfa",
@@ -94,13 +111,9 @@
     "include_expired": "Süresi dolmuş görevleri dahil et",
     "include_expired_desc": "İnceleme ve kurtarma için süresi dolmuş girişleri gösterin.",
     "current_orbs": "Mevcut Orbs",
-
     "nitro_next_orbs_title": "Aylık Nitro Orbs — bir sonraki alma geri sayımı",
-
     "nitro_next_orbs_days": "Sonraki Orbs airdropu: {days} gün",
-
     "nitro_next_orbs_hours": "Sonraki Orbs airdropu: {hours} saat",
-
     "nitro_next_orbs_minutes": "Sonraki Orbs airdropu: {minutes} dakika",
     "claim_reward": "Ödül Talebi",
     "claim_navigated": "Discord görev sayfasına yönlendirildi. Lütfen ödülünüzü orada isteyin.",
@@ -290,7 +303,11 @@
     "debug_already_unlocked": "Geliştirici modu etkin",
     "disable_developer_mode": "Geliştirici Modunu Devre Dışı Bırak",
     "disable_debug_confirm_title": "Geliştirici Modu devre dışı bırakılsın mı?",
-    "disable_debug_confirm_desc": "Hata Ayıklama sekmesi ve geliştirici araçları gizlenecektir. Sürüm numarasına 7 kez dokunarak yeniden etkinleştirebilirsiniz."
+    "disable_debug_confirm_desc": "Hata Ayıklama sekmesi ve geliştirici araçları gizlenecektir. Sürüm numarasına 7 kez dokunarak yeniden etkinleştirebilirsiniz.",
+    "cdp_dialog_title_disconnected_vesktop": "CDP'yi etkinleştirmek için Vesktop yeniden başlatılsın mı?",
+    "cdp_dialog_desc_disconnected_vesktop": "Vesktop çalışıyor ancak CDP'ye bağlı değil. Vesktop'u CDP hata ayıklama bağlantı noktası etkin olarak yeniden başlatmamız gerekiyor.",
+    "desktop_client": "Masaüstü istemcisi",
+    "desktop_client_desc": "Discord ve Vesktop birlikte yüklüyse bu seçim yalnızca CDP ile giriş yapmayı etkiler. Yerel token çıkarma her zaman resmi Discord istemcisini kullanır."
   },
   "version": {
     "update_available": "Yeni bir sürüm mevcut!",
@@ -460,6 +477,26 @@
     "activity_cdp_required": "Activity görevleri CDP modunu gerektirir",
     "stream_quest_title": "Akış görevi",
     "stream_quest_desc": "Yayın görevleri, oyunu Discord üzerinde manuel olarak yayınlamanızı gerektirir. Bir ses kanalında bir yayın başlatın, ardından oyunu simüle etmek için Oyun Simülatörünü kullanın."
+  },
+  "desktop_clients": {
+    "ask_each_time": "Her seferinde sor",
+    "ask_each_time_desc": "CDP kullanılamadığında hangi yüklü istemcinin başlatılacağını her seferinde sor.",
+    "auto_desc": "Helper mevcut ve Discord CDP'ye hazır uç noktaya bağlanır veya kullanılabilir ilk desteklenen istemciyi seçer.",
+    "status_launchable": "Kullanılabilir",
+    "status_running": "Çalışıyor",
+    "status_missing": "Yol eksik",
+    "status_invalid": "Geçersiz",
+    "browse_title": "Masaüstü istemcisinin çalıştırılabilir dosyasını seçin",
+    "add_vesktop": "Vesktop kurulumu ekle",
+    "relocate": "Kurulumu yeniden konumlandır",
+    "remove": "Kurulumu kaldır",
+    "owner_conflict_title": "Bu CDP bağlantı noktası başka bir masaüstü istemcisine ait",
+    "owner_conflict_desc": "Bağlı olan istemciyi kullanın, seçili istemciye geçin veya iptal edip başka bir bağlantı noktası seçin.",
+    "use_current": "Mevcut istemciyi kullan",
+    "switch_selected": "Seçili istemciye geç",
+    "restore_managed_and_close": "Helper tarafından başlatılan istemcileri geri yükle ve kapat",
+    "restore_all_and_close": "Harici istemcileri onayla, tümünü geri yükle ve kapat",
+    "cdp_owner": "CDP sahibi"
   },
   "exit_cdp": {
     "title": "Discord hâlâ CDP modunda çalışıyor",

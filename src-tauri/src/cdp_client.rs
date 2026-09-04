@@ -2087,6 +2087,53 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    #[ignore = "requires a live Discord or Vesktop CDP session on the default debugging port"]
+    async fn live_cdp_session_validates_without_leaking_token() {
+        let session = capture_discord_auth_via_cdp(DEFAULT_CDP_PORT, Duration::from_secs(20))
+            .await
+            .expect("CDP session should be capturable");
+        assert!(
+            session.authorization.len() > 20,
+            "captured authorization should look like a session token"
+        );
+
+        let debug = format!("{session:?}");
+        assert!(debug.contains("[redacted]"));
+        assert!(!debug.contains(session.authorization.as_str()));
+
+        let client = crate::discord_api::DiscordApiClient::new(session.authorization.to_string())
+            .expect("API client should accept the captured authorization");
+        let user = client
+            .get_current_user()
+            .await
+            .expect("captured session should validate against /users/@me");
+        println!(
+            "live cdp login ok usernameLen={} idLen={}",
+            user.username.len(),
+            user.id.len()
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "hits Discord API with a synthetic invalid token"]
+    async fn live_invalid_token_is_rejected_by_discord_api() {
+        let client = crate::discord_api::DiscordApiClient::new(
+            "invalid-vesktop-e2e-token-not-a-real-session".to_string(),
+        )
+        .expect("client construction does not validate the token");
+        let error = client
+            .get_current_user()
+            .await
+            .expect_err("Discord must reject an invalid token");
+        let message = error.to_string();
+        assert!(
+            !message.contains("invalid-vesktop-e2e-token-not-a-real-session"),
+            "API errors must not echo the supplied token"
+        );
+        println!("invalid token rejected without leaking the secret");
+    }
+
     #[test]
     fn windows_cdp_resets_are_retryable_parse_and_4xx_are_not() {
         let reset = CdpListError::ConnectionFailed {
