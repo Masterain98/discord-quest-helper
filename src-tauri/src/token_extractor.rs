@@ -340,6 +340,7 @@ fn yes_no(value: bool) -> &'static str {
     }
 }
 
+#[cfg(target_os = "windows")]
 fn strip_dpapi_prefix(data: &[u8]) -> Result<&[u8]> {
     data.strip_prefix(b"DPAPI")
         .context("Encrypted key is missing the DPAPI prefix")
@@ -1270,6 +1271,7 @@ mod tests {
         assert_eq!(payloads, vec![payload.to_vec()]);
     }
 
+    #[cfg(target_os = "windows")]
     #[test]
     fn rejects_short_or_unprefixed_dpapi_keys_without_panicking() {
         assert!(strip_dpapi_prefix(b"DP").is_err());

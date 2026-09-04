@@ -3,7 +3,7 @@ use discord_cdp_launch_core::{
     CdpProbeStatus, StdCdpProbe,
 };
 use std::io::{Read, Write};
-use std::net::{Shutdown, TcpListener};
+use std::net::TcpListener;
 use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
@@ -17,41 +17,27 @@ fn serialize_socket_test() -> MutexGuard<'static, ()> {
 
 fn serve_once(response: Option<&'static str>, delay: Duration) -> u16 {
     let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-    listener.set_nonblocking(true).unwrap();
     let port = listener.local_addr().unwrap().port();
     std::thread::spawn(move || {
-        let deadline = Instant::now() + Duration::from_millis(1500);
-        let mut delayed = false;
-        while Instant::now() < deadline {
-            match listener.accept() {
-                Ok((mut stream, _)) => {
-                    let _ = stream.set_nonblocking(false);
-                    let _ = stream.set_nodelay(true);
-                    let _ = stream.set_read_timeout(Some(Duration::from_millis(50)));
-                    let mut request = [0_u8; 1024];
-                    let _ = stream.read(&mut request);
-                    if !delay.is_zero() && !delayed {
-                        std::thread::sleep(delay);
-                        delayed = true;
-                    }
-                    if let Some(response) = response {
-                        let _ = stream.write_all(response.as_bytes());
-                        let _ = stream.flush();
-                        let _ = stream.shutdown(Shutdown::Write);
-                    }
-                    // Keep the socket open long enough for the client to finish
-                    // reading the Content-Length body. Dropping it immediately
-                    // after a write can make Windows report a reset socket.
-                    std::thread::spawn(move || {
-                        std::thread::sleep(Duration::from_millis(400));
-                        drop(stream);
-                    });
-                }
-                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                    std::thread::sleep(Duration::from_millis(2));
-                }
-                Err(_) => break,
+        if let Ok((mut stream, _)) = listener.accept() {
+            let _ = stream.set_nodelay(true);
+            let _ = stream.set_read_timeout(Some(Duration::from_millis(50)));
+            let mut request = [0_u8; 1024];
+            let _ = stream.read(&mut request);
+            if !delay.is_zero() {
+                std::thread::sleep(delay);
             }
+            if let Some(response) = response {
+                let _ = stream.write_all(response.as_bytes());
+                let _ = stream.flush();
+            }
+            // Keep the socket open long enough for the client to finish
+            // reading the Content-Length body. Dropping it immediately
+            // after a write can make Windows report a reset socket.
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(400));
+                drop(stream);
+            });
         }
     });
     port
@@ -101,12 +87,9 @@ fn list_cdp_targets_returns_full_fixture_including_workers() {
     assert_eq!(parsed[1].target_type, "worker");
 
     let port = serve_once(Some(leaked_response(raw)), Duration::ZERO);
-    let listed = list_cdp_targets_with_timeouts(
-        port,
-        Duration::from_millis(500),
-        Duration::from_millis(300),
-    )
-    .unwrap();
+    let listed =
+        list_cdp_targets_with_timeouts(port, Duration::from_secs(1), Duration::from_secs(2))
+            .unwrap();
     assert_eq!(listed.len(), 2);
     assert_eq!(listed[0].id, "1");
     assert_eq!(listed[1].id, "2");
@@ -119,12 +102,9 @@ fn list_cdp_targets_rejects_http_400() {
         Some(leaked_response(response("400 Bad Request", "[]"))),
         Duration::ZERO,
     );
-    let error = list_cdp_targets_with_timeouts(
-        port,
-        Duration::from_millis(500),
-        Duration::from_millis(300),
-    )
-    .unwrap_err();
+    let error =
+        list_cdp_targets_with_timeouts(port, Duration::from_secs(1), Duration::from_secs(2))
+            .unwrap_err();
     assert!(matches!(
         error,
         CdpListError::HttpStatus { status: 400, .. }

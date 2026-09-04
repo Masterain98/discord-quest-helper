@@ -61,6 +61,12 @@ Sourcery 没有产生代码反馈，只报告 diff 超过审查限制。CodeRabb
 - `cargo fmt --all -- --check`：通过
 - `git diff --check`：通过
 
+### 推送后的 CI 复核
+
+- 首轮远端 CI 的 Windows 与 Ubuntu 前置步骤通过；macOS/Linux 的 clippy 暴露了一个本机 Windows 不可见的条件编译问题：DPAPI 前缀校验 helper 在非 Windows 目标上未被使用。
+- 已将该 helper 及其测试限定为 Windows，并将 CDP socket 测试服务改为阻塞式单次 accept、延长非功能性读取超时，同时移除不必要的半关闭，避免完整 Content-Length 响应在高并发 runner 上出现误报 `IncompleteResponse`。
+- 本机重复运行 `cdp_probe` 5 次（每次 12 tests）全部通过，workspace clippy 也通过；修复已作为后续提交推送，等待下一轮三平台 CI。
+
 ## Disclaimer
 
 进程树终止部分受到 `sysinfo` 跨平台模型限制：当前实现把身份验证延迟到每个 kill 前，并覆盖 root 与 descendant，但没有声称可以消除操作系统层面的“校验后、终止前”PID 复用竞态。若未来需要硬性保证，应为 Linux pidfd、Windows process handle 和 macOS 对应进程句柄分别增加平台级实现与集成测试。
