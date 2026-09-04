@@ -497,7 +497,8 @@
     "use_current": "Use current client",
     "switch_selected": "Switch to selected client",
     "restore_managed_and_close": "Restore Helper-started clients and close",
-    "restore_all_and_close": "Confirm external clients, restore all, and close"
+    "restore_all_and_close": "Confirm external clients, restore all, and close",
+    "cdp_owner": "CDP owner"
   },
   "exit_cdp": {
     "title": "Discord is still running in CDP mode",

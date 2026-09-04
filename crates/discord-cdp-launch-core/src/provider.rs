@@ -168,13 +168,17 @@ pub fn custom_executable_installation(
         });
     }
     let display_name = provider.display_name().to_string();
+    let variant_id = (provider_id == &ProviderId::official_discord())
+        .then(|| official_channel_for_target(&target))
+        .flatten()
+        .map(|channel| VariantId(channel.as_str().to_string()));
     Ok(ClientInstallation {
         id: installation_id(
             provider_id,
             target_path(&target).unwrap_or_else(|| Path::new("")),
         ),
         provider_id: provider_id.clone(),
-        variant_id: None,
+        variant_id,
         display_name,
         source: DiscoverySource::User,
         launch_target: target,
@@ -309,6 +313,20 @@ pub fn installation_as_official(install: &ClientInstallation) -> Option<DiscordI
             working_dir: executable_path.parent()?.to_path_buf(),
         }),
         LaunchTarget::Flatpak { .. } => None,
+    }
+}
+
+fn official_channel_for_target(target: &LaunchTarget) -> Option<crate::DiscordChannel> {
+    let path = target_path(target)?;
+    let name = path.file_name()?.to_string_lossy().to_ascii_lowercase();
+    if name.contains("canary") {
+        Some(crate::DiscordChannel::Canary)
+    } else if name.contains("ptb") {
+        Some(crate::DiscordChannel::Ptb)
+    } else if name == "discord" || name == "discord.exe" {
+        Some(crate::DiscordChannel::Stable)
+    } else {
+        None
     }
 }
 
@@ -513,15 +531,40 @@ fn linux_desktop_entry_vesktop_installs() -> Vec<VesktopInstall> {
 
 #[cfg(target_os = "linux")]
 fn desktop_exec_command(exec: &str) -> Option<String> {
-    let exec = exec.trim();
-    if let Some(quoted) = exec.strip_prefix('"') {
-        return quoted
-            .split_once('"')
-            .map(|(command, _)| command.replace("\\ ", " "));
+    parse_desktop_exec_arguments(exec).into_iter().next()
+}
+
+#[cfg(target_os = "linux")]
+pub fn parse_desktop_exec_arguments(exec: &str) -> Vec<String> {
+    let mut arguments = Vec::new();
+    let mut current = String::new();
+    let mut quoted = false;
+    let mut escaped = false;
+
+    for character in exec.trim().chars() {
+        if escaped {
+            current.push(character);
+            escaped = false;
+            continue;
+        }
+        match character {
+            '\\' => escaped = true,
+            '"' => quoted = !quoted,
+            character if character.is_whitespace() && !quoted => {
+                if !current.is_empty() {
+                    arguments.push(std::mem::take(&mut current));
+                }
+            }
+            character => current.push(character),
+        }
     }
-    exec.split_whitespace()
-        .next()
-        .map(|command| command.replace("\\ ", " "))
+    if escaped {
+        current.push('\\');
+    }
+    if !current.is_empty() {
+        arguments.push(current);
+    }
+    arguments
 }
 
 fn normalized_path_key(path: &Path) -> String {
@@ -569,6 +612,11 @@ mod tests {
             "vesktop"
         });
         std::fs::write(&executable, []).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
 
         let install = custom_executable_installation(&ProviderId::vesktop(), executable.clone())
             .expect("portable Vesktop should validate");
@@ -596,6 +644,46 @@ mod tests {
             custom_executable_installation(&ProviderId::vesktop(), executable),
             Err(LaunchError::InvalidInstallation { .. })
         ));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn parses_quoted_and_escaped_desktop_exec_paths() {
+        assert_eq!(
+            parse_desktop_exec_arguments(
+                "\"/opt/Vesktop Portable/vesktop\" --remote-debugging-port=9223"
+            ),
+            vec![
+                "/opt/Vesktop Portable/vesktop",
+                "--remote-debugging-port=9223"
+            ]
+        );
+        assert_eq!(
+            parse_desktop_exec_arguments("/opt/Vesktop\\ Portable/vesktop --flag"),
+            vec!["/opt/Vesktop Portable/vesktop", "--flag"]
+        );
+    }
+
+    #[test]
+    fn custom_official_installation_keeps_its_channel_variant() {
+        let root = std::env::temp_dir().join(format!("dqh-discord-variant-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let executable = root.join(if cfg!(target_os = "windows") {
+            "DiscordPTB.exe"
+        } else {
+            "discord-ptb"
+        });
+        std::fs::write(&executable, []).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+
+        let install = custom_executable_installation(&ProviderId::official_discord(), executable)
+            .expect("official PTB executable should validate");
+        assert_eq!(install.variant_id, Some(VariantId("ptb".into())));
         std::fs::remove_dir_all(root).unwrap();
     }
 }

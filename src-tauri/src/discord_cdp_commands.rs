@@ -406,6 +406,7 @@ pub(crate) async fn add_desktop_client_installation(
     app: tauri::AppHandle,
     provider_id: String,
     path: String,
+    port: Option<u16>,
 ) -> Result<DesktopClientStateDto, DesktopClientCommandError> {
     let provider_id = cdp_launch::ProviderId(provider_id);
     let mut installation =
@@ -428,7 +429,7 @@ pub(crate) async fn add_desktop_client_installation(
         installation_id: installation.id,
     };
     save_config(&app, &config)?;
-    get_desktop_client_state(app, None).await
+    get_desktop_client_state(app, port).await
 }
 
 #[tauri::command]
@@ -463,13 +464,23 @@ pub(crate) async fn set_desktop_client_selection(
             .iter()
             .any(|install| &install.id == installation_id)
         {
-            let discovered = build_desktop_client_state(
-                config.clone(),
-                port.unwrap_or(cdp_launch::DEFAULT_CDP_PORT),
-            )
-            .installations
-            .into_iter()
-            .find(|install| &install.id == installation_id)
+            let scan_port = port.unwrap_or(cdp_launch::DEFAULT_CDP_PORT);
+            let requested_id = installation_id.clone();
+            let scan_config = config.clone();
+            let discovered = tauri::async_runtime::spawn_blocking(move || {
+                build_desktop_client_state(scan_config, scan_port)
+                    .installations
+                    .into_iter()
+                    .find(|install| install.id == requested_id)
+            })
+            .await
+            .map_err(|error| {
+                DesktopClientCommandError::new(
+                    "scan_failed",
+                    serde_json::json!({}),
+                    format!("Desktop client scan task failed: {error}"),
+                )
+            })?
             .ok_or_else(|| {
                 DesktopClientCommandError::new(
                     "installation_missing",
@@ -693,13 +704,13 @@ fn build_desktop_client_state(config: DesktopClientsConfig, port: u16) -> Deskto
     let processes = installations
         .iter()
         .filter_map(|install| {
-            let executable_path = installation_executable_path(install)?;
-            let running = cdp_launch::is_installation_running(executable_path);
+            let running = cdp_launch::is_client_installation_running(install).unwrap_or(false);
             running.then(|| ClientProcessDto {
                 provider_id: install.provider_id.clone(),
                 installation_id: install.id.clone(),
                 variant_id: install.variant_id.clone(),
-                executable_path: Some(executable_path.to_string_lossy().into_owned()),
+                executable_path: installation_executable_path(install)
+                    .map(|path| path.to_string_lossy().into_owned()),
                 running,
             })
         })
@@ -1058,10 +1069,14 @@ fn windows_registry_vesktop_installations() -> Vec<cdp_launch::ClientInstallatio
                 let location = entry.get_string("InstallLocation").unwrap_or_default();
                 let icon = entry.get_string("DisplayIcon").unwrap_or_default();
                 let icon = icon.trim_matches('"').split(',').next().unwrap_or("");
-                for candidate in [
-                    PathBuf::from(location).join("vesktop.exe"),
-                    PathBuf::from(icon),
-                ] {
+                let mut candidates = Vec::new();
+                if !location.trim().is_empty() {
+                    candidates.push(PathBuf::from(location).join("vesktop.exe"));
+                }
+                if !icon.trim().is_empty() {
+                    candidates.push(PathBuf::from(icon));
+                }
+                for candidate in candidates {
                     let Ok(mut install) = cdp_launch::custom_executable_installation(
                         &cdp_launch::ProviderId::vesktop(),
                         candidate,

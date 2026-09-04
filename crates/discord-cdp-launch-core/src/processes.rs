@@ -3,7 +3,7 @@ use crate::{
     CdpProbe, CdpProbeStatus, DiscordChannel, DiscordInstall, DiscordLaunchMode, LaunchError,
     RestoreFailure, RestoreResult, RunningCdpSession, StdCdpProbe, SystemPlatform,
 };
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -37,6 +37,7 @@ pub fn list_running_desktop_cdp_sessions() -> Result<Vec<crate::DesktopCdpSessio
     let probe = StdCdpProbe::default();
     let mut sessions = Vec::new();
     let mut seen = HashSet::new();
+    let mut port_readiness = HashMap::new();
     for process in &snapshots {
         let provider_id = if crate::is_vesktop_process_name(&process.name.to_string_lossy()) {
             crate::ProviderId::vesktop()
@@ -80,7 +81,10 @@ pub fn list_running_desktop_cdp_sessions() -> Result<Vec<crate::DesktopCdpSessio
             .iter()
             .filter_map(|argument| parse_cdp_port(argument))
         {
-            if !matches!(probe.probe(port), CdpProbeStatus::DiscordReady { .. }) {
+            let ready = *port_readiness.entry(port).or_insert_with(|| {
+                matches!(probe.probe(port), CdpProbeStatus::DiscordReady { .. })
+            });
+            if !ready {
                 continue;
             }
             let key = (
@@ -152,14 +156,17 @@ pub fn restore_desktop_client_to_normal(
         }
     })?;
     terminate_installation_process_tree(executable)?;
+    let mut system = System::new();
     let started = Instant::now();
     while started.elapsed() < SHUTDOWN_TIMEOUT {
-        if !is_installation_running(executable) {
+        refresh_processes(&mut system);
+        if !is_installation_running_in_system(&system, executable) {
             break;
         }
         std::thread::sleep(POLL_INTERVAL);
     }
-    if is_installation_running(executable) {
+    refresh_processes(&mut system);
+    if is_installation_running_in_system(&system, executable) {
         return Err(LaunchError::ShutdownTimeout {
             timeout: SHUTDOWN_TIMEOUT,
         });
@@ -361,14 +368,7 @@ fn wait_for_running_state<P: PlatformBackend>(
 
 fn process_snapshots() -> Vec<ProcessSnapshot> {
     let mut system = System::new();
-    system.refresh_processes_specifics(
-        ProcessesToUpdate::All,
-        true,
-        ProcessRefreshKind::nothing()
-            .with_cmd(UpdateKind::OnlyIfNotSet)
-            .with_exe(UpdateKind::OnlyIfNotSet)
-            .without_tasks(),
-    );
+    refresh_processes(&mut system);
     system
         .processes()
         .values()
@@ -378,6 +378,25 @@ fn process_snapshots() -> Vec<ProcessSnapshot> {
             command_line: process.cmd().to_vec(),
         })
         .collect()
+}
+
+fn refresh_processes(system: &mut System) {
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::All,
+        true,
+        ProcessRefreshKind::nothing()
+            .with_cmd(UpdateKind::OnlyIfNotSet)
+            .with_exe(UpdateKind::Always)
+            .without_tasks(),
+    );
+}
+
+fn is_installation_running_in_system(system: &System, executable_path: &Path) -> bool {
+    system.processes().values().any(|process| {
+        process
+            .exe()
+            .is_some_and(|path| paths_refer_to_same_executable(path, executable_path))
+    })
 }
 
 pub fn running_vesktop_installs() -> Vec<crate::VesktopInstall> {
@@ -400,9 +419,26 @@ pub fn is_installation_running(executable_path: &Path) -> bool {
     })
 }
 
-/// Terminates only the process trees whose root executable matches the exact
-/// selected installation. This protects a second portable/custom installation
-/// of the same provider from a broad process-name kill.
+pub fn is_client_installation_running(
+    installation: &crate::ClientInstallation,
+) -> Result<bool, LaunchError> {
+    match &installation.launch_target {
+        crate::LaunchTarget::Executable { path, .. }
+        | crate::LaunchTarget::MacBundle {
+            executable_path: path,
+            ..
+        } => Ok(is_installation_running(path)),
+        crate::LaunchTarget::Flatpak { app_id, command } => {
+            crate::launcher::flatpak_is_running(app_id, command.as_deref())
+        }
+    }
+}
+
+/// Terminates only the process tree whose root executable matches the exact
+/// selected installation. Every target is revalidated by PID, start time, and
+/// executable immediately before termination. `sysinfo` does not expose stable
+/// cross-platform process handles, so this narrows PID-reuse risk without
+/// claiming an OS-level race-free guarantee.
 pub fn terminate_installation_process_tree(executable_path: &Path) -> Result<(), LaunchError> {
     let mut system = System::new();
     system.refresh_processes_specifics(
@@ -442,23 +478,36 @@ pub fn terminate_installation_process_tree(executable_path: &Path) -> Result<(),
         }
     }
 
-    // Descendants first; roots are revalidated by executable and start time so
-    // a recycled PID can never redirect termination to an unrelated process.
+    let target_identities: HashMap<_, _> = targets
+        .iter()
+        .filter_map(|pid| {
+            system.process(*pid).map(|process| {
+                (
+                    *pid,
+                    (process.start_time(), process.exe().map(Path::to_path_buf)),
+                )
+            })
+        })
+        .collect();
+
+    // Descendants first. Refreshing the process table before every kill keeps
+    // the identity check as close as possible to the operation itself.
     let root_pids: HashSet<_> = roots.iter().map(|(pid, _)| *pid).collect();
     let mut ordered: Vec<_> = targets.into_iter().collect();
     ordered.sort_by_key(|pid| root_pids.contains(pid));
+    let mut current = System::new();
     for pid in ordered {
-        let Some(process) = system.process(pid) else {
+        let Some((expected_start, expected_executable)) = target_identities.get(&pid) else {
             continue;
         };
-        if let Some((_, expected_start)) = roots.iter().find(|(root, _)| *root == pid) {
-            if process.start_time() != *expected_start
-                || !process
-                    .exe()
-                    .is_some_and(|path| paths_refer_to_same_executable(path, executable_path))
-            {
-                continue;
-            }
+        refresh_processes(&mut current);
+        let Some(process) = current.process(pid) else {
+            continue;
+        };
+        if process.start_time() != *expected_start
+            || process.exe().map(Path::to_path_buf) != *expected_executable
+        {
+            continue;
         }
         if !process.kill() {
             return Err(LaunchError::ProcessTermination {

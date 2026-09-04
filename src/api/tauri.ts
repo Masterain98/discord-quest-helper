@@ -657,8 +657,8 @@ export async function getDesktopClientState(port?: number): Promise<DesktopClien
   return await invoke('get_desktop_client_state', { port })
 }
 
-export async function addDesktopClientInstallation(providerId: ProviderId, path: string): Promise<DesktopClientState> {
-  return await invoke('add_desktop_client_installation', { providerId, path })
+export async function addDesktopClientInstallation(providerId: ProviderId, path: string, port?: number): Promise<DesktopClientState> {
+  return await invoke('add_desktop_client_installation', { providerId, path, port })
 }
 
 export async function removeDesktopClientInstallation(installationId: string, port?: number): Promise<DesktopClientState> {

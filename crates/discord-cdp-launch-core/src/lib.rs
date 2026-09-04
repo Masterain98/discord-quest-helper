@@ -31,11 +31,13 @@ pub use model::{
 };
 pub use platform::SystemPlatform;
 pub use processes::{
-    inspect_cdp_port_owner, is_installation_running, list_running_desktop_cdp_sessions,
-    list_running_discord_cdp_sessions, restore_all_discord_to_normal,
-    restore_desktop_client_to_normal, running_vesktop_installs,
+    inspect_cdp_port_owner, is_client_installation_running, is_installation_running,
+    list_running_desktop_cdp_sessions, list_running_discord_cdp_sessions,
+    restore_all_discord_to_normal, restore_desktop_client_to_normal, running_vesktop_installs,
     terminate_installation_process_tree,
 };
+#[cfg(target_os = "linux")]
+pub use provider::parse_desktop_exec_arguments;
 pub use provider::{
     custom_executable_installation, discover_client_installations, installation_as_official,
     installation_as_vesktop, provider_registry, refresh_installation_validation,

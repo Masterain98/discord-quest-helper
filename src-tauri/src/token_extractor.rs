@@ -280,7 +280,7 @@ fn try_extract_from_profile(profile: &ChromiumProfile) -> Result<Vec<String>> {
     let encrypted_key_bytes = BASE64
         .decode(encrypted_key)
         .context("Could not decode encrypted_key")?;
-    let encrypted_key_bytes = &encrypted_key_bytes[5..];
+    let encrypted_key_bytes = strip_dpapi_prefix(&encrypted_key_bytes)?;
     let master_key = decrypt_with_dpapi(encrypted_key_bytes)?;
 
     if !leveldb_available {
@@ -338,6 +338,11 @@ fn yes_no(value: bool) -> &'static str {
     } else {
         "no"
     }
+}
+
+fn strip_dpapi_prefix(data: &[u8]) -> Result<&[u8]> {
+    data.strip_prefix(b"DPAPI")
+        .context("Encrypted key is missing the DPAPI prefix")
 }
 
 #[cfg(target_os = "windows")]
@@ -1263,6 +1268,13 @@ mod tests {
         let payloads = find_encrypted_token_payloads(data.as_bytes());
 
         assert_eq!(payloads, vec![payload.to_vec()]);
+    }
+
+    #[test]
+    fn rejects_short_or_unprefixed_dpapi_keys_without_panicking() {
+        assert!(strip_dpapi_prefix(b"DP").is_err());
+        assert!(strip_dpapi_prefix(b"OTHER").is_err());
+        assert_eq!(strip_dpapi_prefix(b"DPAPIencrypted").unwrap(), b"encrypted");
     }
 
     #[test]

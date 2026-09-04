@@ -21,28 +21,15 @@ function errorMessage(value: unknown): string {
   return value instanceof Error ? value.message : String(value)
 }
 
-async function refresh(port: number): Promise<DesktopClientState | null> {
+async function apply(
+  operation: () => Promise<DesktopClientState>,
+  port: number,
+): Promise<DesktopClientState> {
   const request = ++latestRequest
   loading.value = true
   error.value = null
   try {
-    const snapshot = await getDesktopClientState(port)
-    if (request === latestRequest && snapshot.port === port) state.value = snapshot
-    return request === latestRequest ? snapshot : state.value
-  } catch (cause) {
-    if (request === latestRequest) error.value = errorMessage(cause)
-    return null
-  } finally {
-    if (request === latestRequest) loading.value = false
-  }
-}
-
-async function select(selection: ClientSelection, port: number): Promise<DesktopClientState> {
-  const request = ++latestRequest
-  loading.value = true
-  error.value = null
-  try {
-    const snapshot = await setDesktopClientSelection(selection, port)
+    const snapshot = await operation()
     if (request === latestRequest && snapshot.port === port) state.value = snapshot
     return snapshot
   } catch (cause) {
@@ -53,25 +40,42 @@ async function select(selection: ClientSelection, port: number): Promise<Desktop
   }
 }
 
+async function refresh(port: number): Promise<DesktopClientState | null> {
+  try {
+    return await apply(() => getDesktopClientState(port), port)
+  } catch {
+    return null
+  }
+}
+
+async function select(selection: ClientSelection, port: number): Promise<DesktopClientState> {
+  return apply(() => setDesktopClientSelection(selection, port), port)
+}
+
 async function addInstallation(providerId: ProviderId, path: string, port: number) {
-  const snapshot = await addDesktopClientInstallation(providerId, path)
-  if (snapshot.port === port || snapshot.port === 9223) state.value = snapshot
-  if (snapshot.port !== port) await refresh(port)
+  return apply(() => addDesktopClientInstallation(providerId, path, port), port)
 }
 
 async function removeInstallation(installationId: string, port: number) {
-  state.value = await removeDesktopClientInstallation(installationId, port)
+  return apply(() => removeDesktopClientInstallation(installationId, port), port)
 }
 
 async function migrateLegacySelection(port: number, legacy: DesktopClientArg) {
   const marker = 'questHelper_desktopClientMigratedV1'
   if (localStorage.getItem(marker) === 'true') return
   const snapshot = state.value ?? await refresh(port)
-  if (snapshot?.selection.kind === 'auto' && legacy !== 'auto') {
+  if (!snapshot) return
+  if (snapshot.selection.kind === 'auto' && legacy !== 'auto') {
     const providerId: ProviderId = legacy === 'vesktop' ? 'vencord.vesktop' : 'discord.official'
     await select({ kind: 'provider', providerId, variantId: null }, port)
   }
   localStorage.setItem(marker, 'true')
+}
+
+export function desktopClientArgForProvider(providerId: ProviderId): DesktopClientArg {
+  if (providerId === 'vencord.vesktop') return 'vesktop'
+  if (providerId === 'discord.official') return 'official'
+  return 'auto'
 }
 
 function installationPath(installation: ClientInstallation | null | undefined): string | undefined {

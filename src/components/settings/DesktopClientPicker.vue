@@ -5,7 +5,7 @@ import { FolderOpen, Loader2, RefreshCw, Trash2 } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { Button } from '@/components/ui/button'
 import { useQuestsStore } from '@/stores/quests'
-import { useDesktopClientState } from '@/composables/desktopClientState'
+import { desktopClientArgForProvider, useDesktopClientState } from '@/composables/desktopClientState'
 import type { ClientInstallation, ClientSelection, ProviderId } from '@/api/tauri'
 
 const emit = defineEmits<{ changed: [] }>()
@@ -44,35 +44,49 @@ function statusFor(installation: ClientInstallation): string {
 }
 
 async function choose(selection: ClientSelection) {
-  await clients.select(selection, questsStore.cdpPort)
-  syncLegacyPreference()
-  emit('changed')
+  try {
+    await clients.select(selection, questsStore.cdpPort)
+    syncLegacyPreference()
+    emit('changed')
+  } catch {
+    // The composable keeps the localized backend error in its reactive state.
+  }
 }
 
 function syncLegacyPreference() {
   const provider = clients.selectedProviderId.value
-  questsStore.desktopClient = provider === 'vencord.vesktop'
-    ? 'vesktop'
-    : provider === 'discord.official' ? 'official' : 'auto'
+  questsStore.desktopClient = provider
+    ? desktopClientArgForProvider(provider)
+    : 'auto'
 }
 
 async function browse(providerId: ProviderId = 'vencord.vesktop') {
-  const path = await open({
-    multiple: false,
-    directory: false,
-    title: t('desktop_clients.browse_title'),
-    filters: [{ name: 'Desktop client', extensions: ['exe', 'AppImage', 'app'] }],
-  })
-  if (typeof path !== 'string') return
-  await clients.addInstallation(providerId, path, questsStore.cdpPort)
-  syncLegacyPreference()
-  emit('changed')
+  try {
+    const path = await open({
+      multiple: false,
+      directory: false,
+      title: t('desktop_clients.browse_title'),
+      ...(/linux/i.test(navigator.userAgent)
+        ? {}
+        : { filters: [{ name: 'Desktop client', extensions: ['exe', 'AppImage', 'app'] }] }),
+    })
+    if (typeof path !== 'string') return
+    await clients.addInstallation(providerId, path, questsStore.cdpPort)
+    syncLegacyPreference()
+    emit('changed')
+  } catch {
+    // The composable keeps the localized backend error in its reactive state.
+  }
 }
 
 async function remove(installation: ClientInstallation) {
-  await clients.removeInstallation(installation.id, questsStore.cdpPort)
-  syncLegacyPreference()
-  emit('changed')
+  try {
+    await clients.removeInstallation(installation.id, questsStore.cdpPort)
+    syncLegacyPreference()
+    emit('changed')
+  } catch {
+    // The composable keeps the localized backend error in its reactive state.
+  }
 }
 
 function handleRadioKey(event: KeyboardEvent) {
@@ -146,7 +160,7 @@ onMounted(async () => {
           <span class="flex flex-wrap items-center gap-2">
             <span class="text-sm font-semibold">{{ installation.displayName }}</span>
             <span class="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">{{ statusFor(installation) }}</span>
-            <span v-if="snapshot?.endpoint.ownerProviderId === installation.providerId" class="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[11px] text-emerald-700 dark:text-emerald-300">CDP owner</span>
+            <span v-if="snapshot?.endpoint.ownerProviderId === installation.providerId" class="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[11px] text-emerald-700 dark:text-emerald-300">{{ t('desktop_clients.cdp_owner') }}</span>
           </span>
           <span class="mt-1 block truncate text-xs text-muted-foreground" :title="pathFor(installation)">{{ pathFor(installation) }}</span>
         </button>

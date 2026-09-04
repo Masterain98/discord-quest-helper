@@ -37,7 +37,7 @@ import {
   type DesktopClientState,
   type ExtractedAccount,
 } from '@/api/tauri'
-import { useDesktopClientState } from '@/composables/desktopClientState'
+import { desktopClientArgForProvider, useDesktopClientState } from '@/composables/desktopClientState'
 import {
   classifyCdpAvailability,
   canBeginLogin,
@@ -293,9 +293,7 @@ function syncLegacyDesktopClientPreference(selection: ClientSelection) {
     questsStore.desktopClient = 'auto'
     return
   }
-  questsStore.desktopClient = selection.providerId === 'vencord.vesktop'
-    ? 'vesktop'
-    : selection.providerId === 'discord.official' ? 'official' : 'auto'
+  questsStore.desktopClient = desktopClientArgForProvider(selection.providerId)
 }
 
 async function handleAutoDetect() {
@@ -520,7 +518,9 @@ async function useCurrentCdpOwner() {
   const snapshot = await clients.refresh(questsStore.cdpPort)
   const providerId = snapshot?.endpoint.ownerProviderId
   if (!snapshot || !providerId) return
-  await clients.select({ kind: 'provider', providerId, variantId: null }, questsStore.cdpPort)
+  const selection = { kind: 'provider' as const, providerId, variantId: null }
+  await clients.select(selection, questsStore.cdpPort)
+  syncLegacyDesktopClientPreference(selection)
   ownerConflict.value = false
   cdpRestartDialogOpen.value = false
   if (!begin('cdp')) return

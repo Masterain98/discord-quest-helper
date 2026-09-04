@@ -34,22 +34,7 @@ pub fn discover_windows_installs_in(base: &Path) -> Vec<DiscordInstall> {
 }
 
 pub(crate) fn is_running(channel: Option<DiscordChannel>) -> Result<bool, LaunchError> {
-    let output = no_window_cmd("tasklist")
-        .args(["/FO", "CSV", "/NH"])
-        .output()
-        .map_err(|source| LaunchError::ProcessInspection {
-            operation: "tasklist",
-            source,
-        })?;
-    if !output.status.success() {
-        return Err(LaunchError::ProcessInspection {
-            operation: "tasklist",
-            source: std::io::Error::other(
-                String::from_utf8_lossy(&output.stderr).trim().to_string(),
-            ),
-        });
-    }
-    let stdout = String::from_utf8_lossy(&output.stdout).to_ascii_lowercase();
+    let stdout = tasklist_output()?;
     Ok(process_names_for(channel)
         .iter()
         .any(|name| stdout.contains(&format!("\"{}\"", name.to_ascii_lowercase()))))
@@ -77,6 +62,10 @@ pub(crate) fn spawn(install: &DiscordInstall, mode: DiscordLaunchMode) -> Result
 }
 
 pub(crate) fn is_vesktop_running() -> Result<bool, LaunchError> {
+    Ok(tasklist_output()?.contains("\"vesktop.exe\""))
+}
+
+fn tasklist_output() -> Result<String, LaunchError> {
     let output = no_window_cmd("tasklist")
         .args(["/FO", "CSV", "/NH"])
         .output()
@@ -92,8 +81,7 @@ pub(crate) fn is_vesktop_running() -> Result<bool, LaunchError> {
             ),
         });
     }
-    let stdout = String::from_utf8_lossy(&output.stdout).to_ascii_lowercase();
-    Ok(stdout.contains("\"vesktop.exe\""))
+    Ok(String::from_utf8_lossy(&output.stdout).to_ascii_lowercase())
 }
 
 pub(crate) fn spawn_vesktop(

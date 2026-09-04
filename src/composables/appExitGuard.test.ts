@@ -100,6 +100,26 @@ describe('app exit guard', () => {
     expect(restoreSession).toHaveBeenCalledWith(externalSession, true)
   })
 
+  it('attempts every session and keeps the dialog open when restoration fails', async () => {
+    const sessions = [
+      { providerId: 'discord.official', installationId: 'stable', ownership: 'managed' as const, port: 9223 },
+      { providerId: 'vencord.vesktop', installationId: 'portable', ownership: 'managed' as const, port: 9444 },
+    ]
+    const restoreSession = vi.fn()
+      .mockRejectedValueOnce(new Error('stable restore failed'))
+      .mockResolvedValueOnce(undefined)
+    const { guard, dependencies, states } = harness({
+      listSessions: vi.fn().mockResolvedValue(sessions),
+      restoreSession,
+    })
+    await guard.requestClose({ preventDefault: vi.fn() })
+    await guard.restoreAndClose()
+    expect(restoreSession).toHaveBeenCalledTimes(2)
+    expect(dependencies.exitApplication).not.toHaveBeenCalled()
+    expect(dependencies.showError).toHaveBeenCalledWith('Error: stable restore failed')
+    expect(states[states.length - 1]?.dialogOpen).toBe(true)
+  })
+
   it('exits the application when exit cleanup does not settle', async () => {
     const { guard, dependencies } = harness({
       prepareExit: vi.fn(() => new Promise<void>(() => {})),

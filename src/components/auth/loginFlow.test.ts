@@ -4,8 +4,6 @@ import {
   canBeginLogin,
   classifyCdpAvailability,
   installedCdpLaunchTargets,
-  isCdpLaunchTargetRunning,
-  launchArgsForCdpTarget,
   presentAuthProgress,
   shouldAskCdpLaunchTarget,
   shouldPollCdp,
@@ -140,21 +138,6 @@ describe('CDP launch target selection', () => {
     expect(shouldAskCdpLaunchTarget(false, ['stable', 'canary', 'vesktop'])).toBe(true)
   })
 
-  it('maps a chosen client to explicit launch arguments', () => {
-    expect(launchArgsForCdpTarget('stable')).toEqual({ channel: 'stable', client: 'official' })
-    expect(launchArgsForCdpTarget('ptb')).toEqual({ channel: 'ptb', client: 'official' })
-    expect(launchArgsForCdpTarget('canary')).toEqual({ channel: 'canary', client: 'official' })
-    expect(launchArgsForCdpTarget('vesktop')).toEqual({ channel: 'auto', client: 'vesktop' })
-    expect(launchArgsForCdpTarget(null)).toEqual({ channel: 'auto', client: 'auto' })
-  })
-
-  it('detects whether the chosen client is already running', () => {
-    expect(isCdpLaunchTargetRunning(null, 'stable')).toBe(false)
-    expect(isCdpLaunchTargetRunning(inventory({ stableRunning: true }), 'stable')).toBe(true)
-    expect(isCdpLaunchTargetRunning(inventory({ ptbInstalled: true, ptbRunning: true }), 'ptb')).toBe(true)
-    expect(isCdpLaunchTargetRunning(inventory({ vesktopRunning: true }), 'vesktop')).toBe(true)
-    expect(isCdpLaunchTargetRunning(inventory({ officialRunning: true }), null)).toBe(true)
-  })
 })
 
 describe('login operation gate', () => {

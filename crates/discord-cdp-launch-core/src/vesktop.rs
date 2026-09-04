@@ -168,6 +168,11 @@ pub fn vesktop_install_from_executable(executable_path: PathBuf) -> Option<Veskt
     if !executable_path.is_file() {
         return None;
     }
+    #[cfg(unix)]
+    if std::os::unix::fs::MetadataExt::mode(&std::fs::metadata(&executable_path).ok()?) & 0o111 == 0
+    {
+        return None;
+    }
     let working_dir = executable_path.parent()?.to_path_buf();
     Some(VesktopInstall {
         executable_path,

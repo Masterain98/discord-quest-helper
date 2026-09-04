@@ -106,10 +106,16 @@ export function createAppExitGuard(dependencies: ExitGuardDependencies) {
     if (state.closing) return
     state.checking = true
     publish()
+    const restoreFailures: string[] = []
     try {
       if (dependencies.restoreSession && state.sessions?.length) {
         for (const session of state.sessions) {
-          await dependencies.restoreSession(session, session.ownership !== 'managed')
+          try {
+            await dependencies.restoreSession(session, session.ownership !== 'managed')
+          } catch (error) {
+            dependencies.logError(error)
+            restoreFailures.push(String(error))
+          }
         }
       } else {
         await dependencies.startRestoreHelper()
@@ -122,6 +128,16 @@ export function createAppExitGuard(dependencies: ExitGuardDependencies) {
         dependencies.logError(dialogError)
       }
     }
+    if (restoreFailures.length > 0) {
+      try {
+        await dependencies.showError(restoreFailures.join('\n'))
+      } catch (dialogError) {
+        dependencies.logError(dialogError)
+      }
+      state.checking = false
+      publish()
+      return
+    }
     await closeApplication()
   }
 
@@ -133,13 +149,25 @@ export function createAppExitGuard(dependencies: ExitGuardDependencies) {
     if (state.closing) return
     state.checking = true
     publish()
+    const restoreFailures: string[] = []
     try {
       for (const session of state.sessions.filter(item => item.ownership === 'managed')) {
-        await dependencies.restoreSession(session, false)
+        try {
+          await dependencies.restoreSession(session, false)
+        } catch (error) {
+          dependencies.logError(error)
+          restoreFailures.push(String(error))
+        }
       }
     } catch (error) {
       dependencies.logError(error)
       await dependencies.showError(String(error)).catch(dependencies.logError)
+    }
+    if (restoreFailures.length > 0) {
+      await dependencies.showError(restoreFailures.join('\n')).catch(dependencies.logError)
+      state.checking = false
+      publish()
+      return
     }
     await closeApplication()
   }

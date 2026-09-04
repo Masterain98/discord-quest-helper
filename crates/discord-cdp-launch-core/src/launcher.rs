@@ -73,7 +73,10 @@ pub fn launch_discord_with_cdp(options: LaunchOptions) -> Result<LaunchResult, L
         }
     }
     if should_launch_vesktop(&options)? {
-        let selected_installation = options.installation.clone();
+        let selected_installation = options
+            .installation
+            .clone()
+            .or_else(discovered_vesktop_installation);
         if selected_installation.as_ref().is_some_and(|installation| {
             matches!(
                 &installation.launch_target,
@@ -113,6 +116,7 @@ fn launch_flatpak_with_cdp<C: CdpProbe>(
             details: "The selected target is not a Flatpak application.".into(),
         });
     };
+    validated_flatpak_command(command.as_deref())?;
     if options.port == 0 {
         return Err(LaunchError::InvalidPort(options.port));
     }
@@ -223,7 +227,7 @@ fn flatpak_result(
 
 #[cfg(target_os = "linux")]
 pub(crate) fn flatpak_is_running(app_id: &str, command: Option<&str>) -> Result<bool, LaunchError> {
-    let command = command.unwrap_or("flatpak");
+    let command = validated_flatpak_command(command)?;
     let output = std::process::Command::new(command)
         .args(["ps", "--columns=application"])
         .output()
@@ -247,7 +251,7 @@ pub(crate) fn flatpak_is_running(
 
 #[cfg(target_os = "linux")]
 pub(crate) fn flatpak_kill(app_id: &str, command: Option<&str>) -> Result<(), LaunchError> {
-    let command = command.unwrap_or("flatpak");
+    let command = validated_flatpak_command(command)?;
     let output = std::process::Command::new(command)
         .args(["kill", app_id])
         .output()
@@ -276,7 +280,7 @@ pub(crate) fn flatpak_spawn(
     command: Option<&str>,
     port: Option<u16>,
 ) -> Result<u32, LaunchError> {
-    let command = command.unwrap_or("flatpak");
+    let command = validated_flatpak_command(command)?;
     let mut process = std::process::Command::new(command);
     process.args(["run", app_id]);
     if let Some(port) = port {
@@ -286,7 +290,7 @@ pub(crate) fn flatpak_spawn(
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn()
-        .map(|child| child.id())
+        .map(reap_spawned_child)
         .map_err(|source| LaunchError::SpawnFailed {
             path: std::path::PathBuf::from(command),
             source,
@@ -310,14 +314,45 @@ fn should_launch_vesktop(options: &LaunchOptions) -> Result<bool, LaunchError> {
     let vesktop_running = is_vesktop_running()?;
     let official_install_found =
         select_preferred_install(&SystemPlatform.find_installs()?, options.channel).is_ok();
+    let vesktop_install_found = discovered_vesktop_installation().is_some();
     Ok(vesktop_launch_plan(
         options.channel,
         options.client,
         official_running,
         vesktop_running,
         official_install_found,
-        find_vesktop_install().is_some(),
+        vesktop_install_found,
     ) == VesktopLaunchPlan::LaunchVesktop)
+}
+
+fn discovered_vesktop_installation() -> Option<crate::ClientInstallation> {
+    crate::discover_client_installations()
+        .0
+        .into_iter()
+        .find(|installation| {
+            installation.provider_id == ProviderId::vesktop()
+                && installation.validation == crate::ValidationState::Valid
+        })
+}
+
+fn validated_flatpak_command(command: Option<&str>) -> Result<&str, LaunchError> {
+    let command = command.unwrap_or("flatpak");
+    if command == "flatpak" {
+        Ok(command)
+    } else {
+        Err(LaunchError::InvalidInstallation {
+            details: "Flatpak launch targets must use the flatpak command.".into(),
+        })
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn reap_spawned_child(mut child: std::process::Child) -> u32 {
+    let pid = child.id();
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+    pid
 }
 
 fn launch_vesktop_with_cdp<C: CdpProbe>(
@@ -467,7 +502,11 @@ where
 
     match cdp.probe(options.port) {
         CdpProbeStatus::DiscordReady { .. } => {
-            return already_available_result(&options, platform.find_installs()?);
+            return already_available_result(
+                &options,
+                platform.find_installs()?,
+                Some(crate::inspect_cdp_port_owner(options.port)),
+            );
         }
         CdpProbeStatus::PortOccupied => {
             return Err(LaunchError::PortOccupied { port: options.port });
@@ -489,7 +528,7 @@ where
     let running = platform.is_running(selected_channel)?;
     if running && !options.restart_existing {
         return Err(LaunchError::DiscordAlreadyRunning {
-            channel: options.channel,
+            channel: selected_channel,
         });
     }
     if running {
@@ -500,7 +539,11 @@ where
     match cdp.probe(options.port) {
         CdpProbeStatus::Unreachable => {}
         CdpProbeStatus::DiscordReady { .. } => {
-            return already_available_result(&options, platform.find_installs()?);
+            return already_available_result(
+                &options,
+                platform.find_installs()?,
+                Some(crate::inspect_cdp_port_owner(options.port)),
+            );
         }
         CdpProbeStatus::PortOccupied => {
             return Err(LaunchError::PortOccupied { port: options.port });
@@ -547,15 +590,26 @@ fn _assert_backend_object_safe(_backend: &dyn PlatformBackend) {}
 fn already_available_result(
     options: &LaunchOptions,
     installs: Vec<DiscordInstall>,
+    owner: Option<crate::CdpPortOwner>,
 ) -> Result<LaunchResult, LaunchError> {
-    if let Ok(install) = select_preferred_install(&installs, options.channel) {
-        return Ok(result_for(
-            &install,
-            options,
-            LaunchOutcome::AlreadyAvailable,
-            None,
-            true,
-        ));
+    let provider_id = match owner.unwrap_or(crate::CdpPortOwner::None) {
+        crate::CdpPortOwner::Vesktop => ProviderId::vesktop(),
+        crate::CdpPortOwner::Official => ProviderId::official_discord(),
+        crate::CdpPortOwner::None | crate::CdpPortOwner::Other => match options.client {
+            crate::DesktopClientPreference::Vesktop => ProviderId::vesktop(),
+            _ => ProviderId::official_discord(),
+        },
+    };
+    if provider_id == ProviderId::official_discord() {
+        if let Ok(install) = select_preferred_install(&installs, options.channel) {
+            return Ok(result_for(
+                &install,
+                options,
+                LaunchOutcome::AlreadyAvailable,
+                None,
+                true,
+            ));
+        }
     }
 
     // CDP is authoritative: a working Discord CDP target may come from a
@@ -568,10 +622,7 @@ fn already_available_result(
         port: options.port,
         pid: None,
         cdp_connected: true,
-        provider_id: match options.client {
-            crate::DesktopClientPreference::Vesktop => ProviderId::vesktop(),
-            _ => ProviderId::official_discord(),
-        },
+        provider_id,
         installation_id: options
             .installation
             .as_ref()
@@ -638,5 +689,33 @@ fn result_for(
         } else {
             SessionOwnership::ExternalAttached
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_custom_flatpak_commands() {
+        assert!(validated_flatpak_command(Some("flatpak")).is_ok());
+        assert!(validated_flatpak_command(None).is_ok());
+        assert!(matches!(
+            validated_flatpak_command(Some("/tmp/launcher")),
+            Err(LaunchError::InvalidInstallation { .. })
+        ));
+    }
+
+    #[test]
+    fn already_available_result_reports_the_observed_vesktop_owner() {
+        let options = LaunchOptions {
+            port: 9223,
+            ..Default::default()
+        };
+        let result =
+            already_available_result(&options, Vec::new(), Some(crate::CdpPortOwner::Vesktop))
+                .expect("a ready CDP endpoint should be attachable");
+        assert_eq!(result.provider_id, ProviderId::vesktop());
+        assert_eq!(result.ownership, SessionOwnership::ExternalAttached);
     }
 }

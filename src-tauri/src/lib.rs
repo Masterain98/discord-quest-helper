@@ -2602,7 +2602,7 @@ fn linux_cdp_launcher_options_from_desktop(
     let Some(exec) = contents.lines().find_map(|line| line.strip_prefix("Exec=")) else {
         return (port, channel, client, installation);
     };
-    let args: Vec<&str> = exec.split_whitespace().collect();
+    let args = discord_cdp_launch_core::parse_desktop_exec_arguments(exec);
 
     for pair in args.windows(2) {
         match pair[0] {
@@ -2625,9 +2625,7 @@ fn linux_cdp_launcher_options_from_desktop(
                     client = value;
                 }
             }
-            "--installation" => {
-                installation = Some(std::path::PathBuf::from(pair[1].trim_matches('"')))
-            }
+            "--installation" => installation = Some(std::path::PathBuf::from(&pair[1])),
             _ => {}
         }
     }
@@ -3230,7 +3228,7 @@ fn create_platform_cdp_launcher_shortcut(
 #[cfg(all(test, target_os = "linux"))]
 mod desktop_entry_tests {
     use super::{desktop_entry_exec_quote, linux_cdp_launcher_options_from_desktop};
-    use discord_cdp_launch_core::DiscordChannel;
+    use discord_cdp_launch_core::{DesktopClientPreference, DiscordChannel};
 
     #[test]
     fn quotes_plain_paths() {
@@ -3268,7 +3266,7 @@ Exec="/opt/Discord Quest Helper/discord-cdp-launcher" --port 9444 --channel cana
             (
                 9444,
                 Some(DiscordChannel::Canary),
-                super::discord_cdp_launch_core::DesktopClientPreference::Auto,
+                DesktopClientPreference::Auto,
                 None,
             )
         );
@@ -3282,8 +3280,23 @@ Exec="/opt/Discord Quest Helper/discord-cdp-launcher" --port 9444 --channel cana
             (
                 super::cdp_client::DEFAULT_CDP_PORT,
                 None,
-                super::discord_cdp_launch_core::DesktopClientPreference::Auto,
+                DesktopClientPreference::Auto,
                 None,
+            )
+        );
+    }
+
+    #[test]
+    fn preserves_quoted_installation_paths_with_spaces() {
+        let desktop = r#"Exec="/tmp/launcher" --provider vesktop --installation "/opt/Vesktop Portable/vesktop" --port 9555
+"#;
+        assert_eq!(
+            linux_cdp_launcher_options_from_desktop(desktop),
+            (
+                9555,
+                None,
+                DesktopClientPreference::Vesktop,
+                Some(std::path::PathBuf::from("/opt/Vesktop Portable/vesktop")),
             )
         );
     }

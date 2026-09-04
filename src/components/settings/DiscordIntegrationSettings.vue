@@ -14,7 +14,7 @@ import {
   launchDesktopClientCdp,
   type DebugInfo,
 } from '@/api/tauri'
-import { useDesktopClientState } from '@/composables/desktopClientState'
+import { desktopClientArgForProvider, useDesktopClientState } from '@/composables/desktopClientState'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -123,7 +123,7 @@ async function createShortcut() {
   shortcutError.value = ''
   try {
     const provider = clients.selectedProviderId.value
-    const client = provider === 'vencord.vesktop' ? 'vesktop' : provider === 'discord.official' ? 'official' : 'auto'
+    const client = provider ? desktopClientArgForProvider(provider) : 'auto'
     await createDiscordCdpLauncherShortcut(
       questsStore.cdpPort,
       'auto',

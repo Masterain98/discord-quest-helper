@@ -497,7 +497,8 @@
     "use_current": "使用当前客户端",
     "switch_selected": "切换到所选客户端",
     "restore_managed_and_close": "仅恢复由本应用启动的客户端并关闭",
-    "restore_all_and_close": "确认外部客户端、全部恢复并关闭"
+    "restore_all_and_close": "确认外部客户端、全部恢复并关闭",
+    "cdp_owner": "CDP 所有者"
   },
   "exit_cdp": {
     "title": "Discord 仍在 CDP 模式下运行",
