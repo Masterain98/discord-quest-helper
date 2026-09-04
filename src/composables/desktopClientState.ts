@@ -15,6 +15,7 @@ const state = ref<DesktopClientState | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
 let latestRequest = 0
+const inFlightRefreshes = new Map<number, Promise<DesktopClientState | null>>()
 
 function errorMessage(value: unknown): string {
   if (typeof value === 'object' && value && 'message' in value) return String(value.message)
@@ -41,11 +42,15 @@ async function apply(
 }
 
 async function refresh(port: number): Promise<DesktopClientState | null> {
-  try {
-    return await apply(() => getDesktopClientState(port), port)
-  } catch {
-    return null
-  }
+  const existing = inFlightRefreshes.get(port)
+  if (existing) return existing
+
+  const request = apply(() => getDesktopClientState(port), port).catch(() => null)
+  inFlightRefreshes.set(port, request)
+  void request.finally(() => {
+    if (inFlightRefreshes.get(port) === request) inFlightRefreshes.delete(port)
+  })
+  return request
 }
 
 async function select(selection: ClientSelection, port: number): Promise<DesktopClientState> {
@@ -63,8 +68,8 @@ async function removeInstallation(installationId: string, port: number) {
 async function migrateLegacySelection(port: number, legacy: DesktopClientArg) {
   const marker = 'questHelper_desktopClientMigratedV1'
   if (localStorage.getItem(marker) === 'true') return
-  const snapshot = state.value ?? await refresh(port)
-  if (!snapshot) return
+  const snapshot = state.value?.port === port ? state.value : await refresh(port)
+  if (!snapshot || snapshot.port !== port) return
   if (snapshot.selection.kind === 'auto' && legacy !== 'auto') {
     const providerId: ProviderId = legacy === 'vesktop' ? 'vencord.vesktop' : 'discord.official'
     await select({ kind: 'provider', providerId, variantId: null }, port)

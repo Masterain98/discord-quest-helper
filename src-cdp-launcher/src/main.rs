@@ -75,12 +75,6 @@ fn run(strings: &Strings) -> Result<i32, String> {
         return Ok(3);
     }
 
-    if cdp_launch::is_cdp_available(options.port) {
-        dialogs::show_info_dialog(strings.title, strings.cdp_already_running);
-
-        return Ok(0);
-    }
-
     let installation = options
         .installation
         .clone()

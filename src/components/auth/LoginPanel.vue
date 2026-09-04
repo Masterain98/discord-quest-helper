@@ -45,8 +45,10 @@ import {
   presentAuthProgress,
   shouldAskCdpLaunchTarget,
   shouldPollCdp,
+  selectionForCdpLaunchTarget,
   startCdpPolling,
   usesVesktopForCdpLogin,
+  hasUnchanneledOfficialMacInstallation,
   type CdpLaunchTarget,
   type LoginMethod,
   type LoginProgressState,
@@ -244,13 +246,14 @@ function inventoryFromState(snapshot: DesktopClientState): DesktopClientInventor
   const running = (providerId: string, variantId?: string) => snapshot.processes.some(item => (
     item.providerId === providerId && (!variantId || item.variantId === variantId)
   ))
+  const customOfficialMacInstalled = hasUnchanneledOfficialMacInstallation(snapshot.installations)
   return {
     officialInstalled: installed('discord.official'),
     vesktopInstalled: installed('vencord.vesktop'),
     officialRunning: running('discord.official'),
     vesktopRunning: running('vencord.vesktop'),
     cdpOwner: snapshot.endpoint.owner,
-    stableInstalled: installed('discord.official', 'stable'),
+    stableInstalled: installed('discord.official', 'stable') || customOfficialMacInstalled,
     ptbInstalled: installed('discord.official', 'ptb'),
     canaryInstalled: installed('discord.official', 'canary'),
     stableRunning: running('discord.official', 'stable'),
@@ -260,11 +263,7 @@ function inventoryFromState(snapshot: DesktopClientState): DesktopClientInventor
 }
 
 function selectionForTarget(target: CdpLaunchTarget | null): ClientSelection {
-  if (target === 'vesktop') return { kind: 'provider', providerId: 'vencord.vesktop', variantId: null }
-  if (target === 'stable' || target === 'ptb' || target === 'canary') {
-    return { kind: 'provider', providerId: 'discord.official', variantId: target }
-  }
-  return clients.state.value?.selection ?? { kind: 'auto' }
+  return selectionForCdpLaunchTarget(clients.state.value, target)
 }
 
 function selectionIsRunning(snapshot: DesktopClientState, selection: ClientSelection): boolean {

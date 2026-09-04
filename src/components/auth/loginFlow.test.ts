@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { AuthProgress, CdpStatus, DesktopClientInventory } from '@/api/tauri'
+import type { AuthProgress, CdpStatus, DesktopClientInventory, DesktopClientState } from '@/api/tauri'
 import {
   canBeginLogin,
   classifyCdpAvailability,
+  hasUnchanneledOfficialMacInstallation,
   installedCdpLaunchTargets,
   presentAuthProgress,
+  selectionForCdpLaunchTarget,
   shouldAskCdpLaunchTarget,
   shouldPollCdp,
   startCdpPolling,
@@ -130,6 +132,32 @@ describe('CDP launch target selection', () => {
       ptbInstalled: true,
       canaryInstalled: true,
     }))).toEqual(['stable', 'ptb', 'canary', 'vesktop'])
+  })
+
+  it('keeps a valid unchanneled custom macOS Discord installation launchable', () => {
+    const installation = {
+      id: 'discord.official:custom-mac',
+      providerId: 'discord.official',
+      variantId: null,
+      displayName: 'Discord (custom)',
+      source: 'user',
+      launchTarget: {
+        kind: 'macBundle',
+        bundlePath: '/Applications/My Discord.app',
+        executablePath: '/Applications/My Discord.app/Contents/MacOS/Discord',
+      },
+      capabilities: { cdp: true, localToken: true, restoreNormal: true },
+      validation: 'valid',
+    } as DesktopClientState['installations'][number]
+    const snapshot = {
+      installations: [installation],
+    } as DesktopClientState
+
+    expect(hasUnchanneledOfficialMacInstallation(snapshot.installations)).toBe(true)
+    expect(selectionForCdpLaunchTarget(snapshot, 'stable')).toEqual({
+      kind: 'installation',
+      installationId: installation.id,
+    })
   })
 
   it('asks only when CDP is down and more than one client is installed', () => {

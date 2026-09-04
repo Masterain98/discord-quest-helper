@@ -87,6 +87,7 @@ impl DesktopClientProvider for OfficialDiscordProvider {
                 "discord ptb",
                 "discord canary",
             ],
+            None,
         )
     }
 }
@@ -130,7 +131,7 @@ impl DesktopClientProvider for VesktopProvider {
     }
 
     fn validate_target(&self, target: &LaunchTarget) -> ValidationState {
-        validate_named_executable_target(target, &["vesktop", "vesktop.exe"])
+        validate_named_executable_target(target, &["vesktop", "vesktop.exe"], Some("vesktop"))
     }
 }
 
@@ -297,10 +298,12 @@ pub fn installation_as_official(install: &ClientInstallation) -> Option<DiscordI
     {
         return None;
     }
-    let channel = install
-        .variant_id
-        .as_ref()
-        .and_then(|variant| crate::parse_discord_channel(Some(&variant.0)).ok())??;
+    let channel = match install.variant_id.as_ref() {
+        Some(variant) => crate::parse_discord_channel(Some(&variant.0))
+            .ok()
+            .flatten()?,
+        None => official_channel_for_target(&install.launch_target)?,
+    };
     match &install.launch_target {
         LaunchTarget::Executable {
             path, working_dir, ..
@@ -321,7 +324,13 @@ pub fn installation_as_official(install: &ClientInstallation) -> Option<DiscordI
 }
 
 fn official_channel_for_target(target: &LaunchTarget) -> Option<crate::DiscordChannel> {
-    let path = target_path(target)?;
+    let path = match target {
+        LaunchTarget::Executable { path, .. } => path,
+        LaunchTarget::MacBundle {
+            executable_path, ..
+        } => executable_path,
+        LaunchTarget::Flatpak { .. } => return None,
+    };
     let name = path.file_name()?.to_string_lossy().to_ascii_lowercase();
     if name.contains("canary") {
         Some(crate::DiscordChannel::Canary)
@@ -357,7 +366,11 @@ fn validate_executable_target(target: &LaunchTarget) -> ValidationState {
     }
 }
 
-fn validate_named_executable_target(target: &LaunchTarget, names: &[&str]) -> ValidationState {
+fn validate_named_executable_target(
+    target: &LaunchTarget,
+    names: &[&str],
+    appimage_prefix: Option<&str>,
+) -> ValidationState {
     let state = validate_executable_target(target);
     if state != ValidationState::Valid {
         return state;
@@ -376,7 +389,8 @@ fn validate_named_executable_target(target: &LaunchTarget, names: &[&str]) -> Va
     let has_supported_name = names
         .iter()
         .any(|candidate| name.eq_ignore_ascii_case(candidate))
-        || lowered.starts_with("vesktop") && lowered.ends_with(".appimage");
+        || appimage_prefix
+            .is_some_and(|prefix| lowered.starts_with(prefix) && lowered.ends_with(".appimage"));
     if has_supported_name {
         ValidationState::Valid
     } else {
@@ -689,5 +703,55 @@ mod tests {
             .expect("official PTB executable should validate");
         assert_eq!(install.variant_id, Some(VariantId("ptb".into())));
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn appimage_name_rule_is_scoped_to_vesktop() {
+        let root = std::env::temp_dir().join(format!(
+            "dqh-appimage-provider-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let executable = root.join("Vesktop.AppImage");
+        std::fs::write(&executable, []).unwrap();
+
+        let vesktop = custom_executable_installation(&ProviderId::vesktop(), executable.clone())
+            .expect("Vesktop AppImage should validate");
+        assert_eq!(vesktop.validation, ValidationState::Valid);
+        assert!(matches!(
+            custom_executable_installation(&ProviderId::official_discord(), executable),
+            Err(LaunchError::InvalidInstallation { .. })
+        ));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn custom_official_installation_can_derive_a_channel_without_a_variant() {
+        let install = ClientInstallation {
+            id: InstallationId("discord.official:custom-mac-bundle".into()),
+            provider_id: ProviderId::official_discord(),
+            variant_id: None,
+            display_name: "Discord (custom)".into(),
+            source: DiscoverySource::User,
+            launch_target: LaunchTarget::MacBundle {
+                bundle_path: PathBuf::from("/Applications/My Discord.app"),
+                executable_path: PathBuf::from(
+                    "/Applications/My Discord.app/Contents/MacOS/Discord",
+                ),
+            },
+            capabilities: capabilities(&ProviderId::official_discord()),
+            validation: ValidationState::Valid,
+        };
+
+        let official = installation_as_official(&install).expect("custom bundle should convert");
+        assert_eq!(official.channel, crate::DiscordChannel::Stable);
+        assert_eq!(
+            official.executable_path,
+            PathBuf::from("/Applications/My Discord.app/Contents/MacOS/Discord")
+        );
     }
 }

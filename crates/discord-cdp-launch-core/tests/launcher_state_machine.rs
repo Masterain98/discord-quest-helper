@@ -140,6 +140,27 @@ fn already_available_without_a_discoverable_install_does_not_fail() {
 }
 
 #[test]
+fn restart_replaces_an_existing_cdp_session() {
+    let platform = FakePlatform::new(vec![install(DiscordChannel::Stable)], &[true, false]);
+    let probe = FakeProbe::new(vec![
+        CdpProbeStatus::DiscordReady {
+            target_title: Some("Discord".to_string()),
+        },
+        CdpProbeStatus::Unreachable,
+    ]);
+    let options = LaunchOptions {
+        restart_existing: true,
+        wait_for_cdp: false,
+        ..patient_options()
+    };
+
+    let result = launch_with_backends(options, &platform, &probe).unwrap();
+    assert_eq!(result.outcome, LaunchOutcome::Spawned);
+    assert_eq!(platform.terminate_count.load(Ordering::SeqCst), 1);
+    assert_eq!(platform.spawn_count.load(Ordering::SeqCst), 1);
+}
+
+#[test]
 fn running_without_restart_is_rejected() {
     let platform = FakePlatform::new(vec![install(DiscordChannel::Stable)], &[true]);
     let probe = FakeProbe::new(vec![CdpProbeStatus::Unreachable]);

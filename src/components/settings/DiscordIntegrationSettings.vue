@@ -59,6 +59,7 @@ const shortcutError = ref('')
 const cdpDialogOpen = ref(false)
 const discordWasRunning = ref(false)
 const discordWasConnected = ref(false)
+const ownerConflict = ref(false)
 const debugInfo = ref<DebugInfo | null>(null)
 const debugInfoLoading = ref(false)
 
@@ -155,10 +156,10 @@ async function requestCdpAction() {
     discordWasRunning.value = running
     discordWasConnected.value = snapshot.endpoint.status === 'discordReady'
     const selectedProvider = clients.selectedProviderId.value
-    const ownerConflict = snapshot.endpoint.status === 'discordReady'
+    ownerConflict.value = snapshot.endpoint.status === 'discordReady'
       && selectedProvider !== null
       && snapshot.endpoint.ownerProviderId !== selectedProvider
-    if (running || ownerConflict || snapshot.endpoint.status === 'discordReady') {
+    if (running || snapshot.endpoint.status === 'discordReady') {
       cdpDialogOpen.value = true
       return
     }
@@ -175,6 +176,30 @@ async function confirmCdpAction() {
   if (cdpActionBusy.value) return
   cdpDialogOpen.value = false
   await performLaunch(true)
+}
+
+async function useCurrentCdpOwner() {
+  if (cdpActionBusy.value) return
+  cdpActionBusy.value = true
+  resetLaunchMessage()
+  try {
+    const snapshot = await clients.refresh(questsStore.cdpPort)
+    const providerId = snapshot?.endpoint.ownerProviderId
+    if (!snapshot || !providerId) return
+    const selection = { kind: 'provider' as const, providerId, variantId: null }
+    const next = await clients.select(selection, questsStore.cdpPort)
+    questsStore.desktopClient = desktopClientArgForProvider(providerId)
+    ownerConflict.value = false
+    cdpDialogOpen.value = false
+    if (next.endpoint.status === 'discordReady') {
+      questsStore.cdpAvailable = true
+    }
+  } catch (e) {
+    cdpLaunchError.value = String(e)
+    setTimeout(() => { cdpLaunchError.value = '' }, 8000)
+  } finally {
+    cdpActionBusy.value = false
+  }
 }
 
 async function performLaunch(restart: boolean) {
@@ -224,16 +249,19 @@ watch(() => questsStore.cdpPort, () => {
     <AlertDialogContent class="max-w-[520px]">
       <AlertDialogHeader>
         <AlertDialogTitle>
-          {{ discordWasConnected ? t('settings.cdp_dialog_title_connected') : t('settings.cdp_dialog_title_disconnected') }}
+          {{ ownerConflict ? t('desktop_clients.owner_conflict_title') : discordWasConnected ? t('settings.cdp_dialog_title_connected') : t('settings.cdp_dialog_title_disconnected') }}
         </AlertDialogTitle>
         <AlertDialogDescription>
-          {{ discordWasConnected ? t('settings.cdp_dialog_desc_connected') : t('settings.cdp_dialog_desc_disconnected') }}
+          {{ ownerConflict ? t('desktop_clients.owner_conflict_desc') : discordWasConnected ? t('settings.cdp_dialog_desc_connected') : t('settings.cdp_dialog_desc_disconnected') }}
         </AlertDialogDescription>
       </AlertDialogHeader>
       <AlertDialogFooter>
         <AlertDialogCancel>{{ t('dialog.cancel') }}</AlertDialogCancel>
+        <Button v-if="ownerConflict" variant="outline" :disabled="cdpActionBusy" @click="useCurrentCdpOwner">
+          {{ t('desktop_clients.use_current') }}
+        </Button>
         <AlertDialogAction :disabled="cdpActionBusy" @click="confirmCdpAction">
-          {{ t('settings.cdp_dialog_confirm') }}
+          {{ ownerConflict ? t('desktop_clients.switch_selected') : t('settings.cdp_dialog_confirm') }}
         </AlertDialogAction>
       </AlertDialogFooter>
     </AlertDialogContent>

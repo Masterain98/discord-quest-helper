@@ -39,15 +39,16 @@ pub fn list_running_desktop_cdp_sessions() -> Result<Vec<crate::DesktopCdpSessio
     let mut seen = HashSet::new();
     let mut port_readiness = HashMap::new();
     for process in &snapshots {
+        let known_channel = classify_known_discord_process(process, &official_installs);
         let provider_id = if crate::is_vesktop_process_name(&process.name.to_string_lossy()) {
             crate::ProviderId::vesktop()
-        } else if classify_known_discord_process(process, &official_installs).is_some() {
+        } else if known_channel.is_some() {
             crate::ProviderId::official_discord()
         } else {
             continue;
         };
-        let variant_id = classify_known_discord_process(process, &official_installs)
-            .map(|channel| crate::VariantId(channel.as_str().to_string()));
+        let variant_id =
+            known_channel.map(|channel| crate::VariantId(channel.as_str().to_string()));
         let matching_install = process
             .executable_path
             .as_deref()

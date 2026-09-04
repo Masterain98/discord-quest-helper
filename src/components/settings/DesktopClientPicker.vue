@@ -6,7 +6,7 @@ import { useI18n } from 'vue-i18n'
 import { Button } from '@/components/ui/button'
 import { useQuestsStore } from '@/stores/quests'
 import { desktopClientArgForProvider, useDesktopClientState } from '@/composables/desktopClientState'
-import type { ClientInstallation, ClientSelection, ProviderId } from '@/api/tauri'
+import type { ClientInstallation, ClientSelection, DesktopClientState, ProviderId } from '@/api/tauri'
 
 const emit = defineEmits<{ changed: [] }>()
 const { t } = useI18n()
@@ -45,16 +45,26 @@ function statusFor(installation: ClientInstallation): string {
 
 async function choose(selection: ClientSelection) {
   try {
-    await clients.select(selection, questsStore.cdpPort)
-    syncLegacyPreference()
+    const next = await clients.select(selection, questsStore.cdpPort)
+    syncLegacyPreference(next)
     emit('changed')
   } catch {
     // The composable keeps the localized backend error in its reactive state.
   }
 }
 
-function syncLegacyPreference() {
-  const provider = clients.selectedProviderId.value
+function providerForSelection(snapshot: DesktopClientState): ProviderId | null {
+  const selection = snapshot.selection
+  if (selection.kind === 'provider') return selection.providerId
+  if (selection.kind === 'installation') {
+    return snapshot.installations.find(item => item.id === selection.installationId)?.providerId ?? null
+  }
+  return null
+}
+
+function syncLegacyPreference(snapshot: DesktopClientState | null | undefined = clients.state.value) {
+  if (!snapshot || snapshot.port !== questsStore.cdpPort) return
+  const provider = providerForSelection(snapshot)
   questsStore.desktopClient = provider
     ? desktopClientArgForProvider(provider)
     : 'auto'
@@ -71,8 +81,8 @@ async function browse(providerId: ProviderId = 'vencord.vesktop') {
         : { filters: [{ name: 'Desktop client', extensions: ['exe', 'AppImage', 'app'] }] }),
     })
     if (typeof path !== 'string') return
-    await clients.addInstallation(providerId, path, questsStore.cdpPort)
-    syncLegacyPreference()
+    const next = await clients.addInstallation(providerId, path, questsStore.cdpPort)
+    syncLegacyPreference(next)
     emit('changed')
   } catch {
     // The composable keeps the localized backend error in its reactive state.
@@ -81,8 +91,8 @@ async function browse(providerId: ProviderId = 'vencord.vesktop') {
 
 async function remove(installation: ClientInstallation) {
   try {
-    await clients.removeInstallation(installation.id, questsStore.cdpPort)
-    syncLegacyPreference()
+    const next = await clients.removeInstallation(installation.id, questsStore.cdpPort)
+    syncLegacyPreference(next)
     emit('changed')
   } catch {
     // The composable keeps the localized backend error in its reactive state.
@@ -101,9 +111,9 @@ function handleRadioKey(event: KeyboardEvent) {
 }
 
 onMounted(async () => {
-  await clients.refresh(questsStore.cdpPort)
+  const refreshed = await clients.refresh(questsStore.cdpPort)
   await clients.migrateLegacySelection(questsStore.cdpPort, questsStore.desktopClient)
-  syncLegacyPreference()
+  syncLegacyPreference(refreshed?.port === questsStore.cdpPort ? clients.state.value : undefined)
 })
 </script>
 

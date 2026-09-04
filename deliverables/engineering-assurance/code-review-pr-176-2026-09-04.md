@@ -2,7 +2,7 @@
 
 ## TL;DR
 
-PR #176 的 29 条行内代码反馈均能在当前代码中找到事实依据；其中 17 条属于高优先级正确性、安全或生命周期问题，另外的反馈主要涉及路径解析、性能、可维护性和本地化。已在当前 `dev/vestop` 工作区处理全部可在本次范围内合理修复的反馈，并修复 Ubuntu CI 的真实编译失败。
+上一轮 PR #176 的 29 条行内代码反馈均能在当前代码中找到事实依据；其中 17 条属于高优先级正确性、安全或生命周期问题，另外的反馈主要涉及路径解析、性能、可维护性和本地化。已在当前 `dev/vestop` 工作区处理全部可在本次范围内合理修复的反馈，并修复 Ubuntu CI 的真实编译失败。
 
 Sourcery 没有产生代码反馈，只报告 diff 超过审查限制。CodeRabbit 的 macOS “越界改动”告警与 PR 相对 `develop` 的实际差异不符，因此未回退 develop 上已有的运行时身份/发布改进。docstring 覆盖率提示不是 CI 门禁，也没有为了百分比添加无意义注释。
 
@@ -68,6 +68,21 @@ Sourcery 没有产生代码反馈，只报告 diff 超过审查限制。CodeRabb
 - 本机重复运行 `cdp_probe` 5 次（每次 12 tests）全部通过，workspace clippy 也通过；修复已作为后续提交推送，等待下一轮三平台 CI。
 - 第二轮远端 run 的 macOS clippy 已通过，但暴露出两项平台测试问题：Windows 专属 Vesktop discovery 测试未加平台条件，以及官方 PTB 自定义安装测试使用了 macOS 不接受的 Linux 风格 executable 名称。已分别增加 Windows `cfg`、补齐 macOS/Linux 官方渠道名称（含 `.app` 稳定 bundle 识别），并在本机 workspace 测试与 clippy 中验证通过；该修复等待下一轮 CI。
 - 第三轮远端 run 的 Windows 全部检查以及 macOS clippy/Rust tests 已通过；Ubuntu clippy 编译暴露 Linux-only desktop-entry 测试把 `String` 直接与 `&str` 匹配/传参。已改用 `as_str()`，这是条件编译分支在 Windows 本机构建中无法发现的跨平台类型问题。
+
+## 本轮最新评论复核（2026-09-04）
+
+重新读取 PR #176 的 GitHub inline comments、issue comments 和 reviews：当前共 37 条 inline comments、5 条 review、5 条 issue comments。新增的 8 条可操作反馈全部来自 CodeRabbit；没有新的人工业务评论。逐条核对当前实现后，结论是 8/8 真实有效，均已跟进：
+
+1. `processes.rs`：缓存 `classify_known_discord_process` 结果，避免 Windows 路径规范化重复执行。
+2. `provider.rs`：将 AppImage 前缀规则改为 provider 专属；官方 Discord 不再误接收 Vesktop AppImage，并新增回归测试。
+3. `discord_cdp_commands.rs`：进程扫描是 best-effort，不再因单次漏报删除托管会话日志；日志仅在显式恢复成功后移除。
+4. `loginFlow.ts` / `LoginPanel.vue` / `provider.rs`：识别无 variant 的有效自定义 macOS Discord bundle，从内部 executable 推导 Stable，并以 installation selection 启动；新增 null-variant 回归测试。
+5. `desktopClientState.ts` / `LoginPanel.vue`：按 CDP 端口合并并发刷新，避免首次挂载重复扫描，同时保留迁移流程。
+6. `DiscordIntegrationSettings.vue`：CDP owner 与当前选择冲突时显示专用文案，允许附着当前客户端或切换到所选客户端。
+7. `desktopClientState.ts` / `DesktopClientPicker.vue`：迁移和 legacy 同步只接受匹配当前端口的成功 snapshot，避免旧端口或失败刷新覆盖偏好。
+8. `src-cdp-launcher/src/main.rs` / `launcher.rs`：移除已有 CDP 时的无条件成功短路，并让 restart 路径继续进行 owner 校验、客户端选择和重启流程。
+
+本轮新增回归验证：前端 `loginFlow.test.ts` 11/11；核心 crate 47 passed、5 ignored；CDP probe 12/12；launcher state machine 14/14；workspace Rust tests 135 passed、6 ignored；前端全量 8 files / 52 tests passed；`vue-tsc`、i18n check、build、`cargo fmt --check` 和 `git diff --check` 均通过。真实本机 CDP/Discord 测试继续保持 ignored，不让 CI 依赖本机会话。
 
 ## Disclaimer
 

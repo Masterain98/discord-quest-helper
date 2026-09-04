@@ -122,13 +122,15 @@ fn launch_flatpak_with_cdp<C: CdpProbe>(
     }
     match cdp.probe(options.port) {
         CdpProbeStatus::DiscordReady { .. } => {
-            return Ok(flatpak_result(
-                installation,
-                &options,
-                LaunchOutcome::AlreadyAvailable,
-                None,
-                true,
-            ));
+            if !options.restart_existing {
+                return Ok(flatpak_result(
+                    installation,
+                    &options,
+                    LaunchOutcome::AlreadyAvailable,
+                    None,
+                    true,
+                ));
+            }
         }
         CdpProbeStatus::PortOccupied => {
             return Err(LaunchError::PortOccupied { port: options.port })
@@ -367,14 +369,16 @@ fn launch_vesktop_with_cdp<C: CdpProbe>(
 
     match cdp.probe(options.port) {
         CdpProbeStatus::DiscordReady { .. } => {
-            return Ok(vesktop_result(
-                &install,
-                &options,
-                selected_installation,
-                LaunchOutcome::AlreadyAvailable,
-                None,
-                true,
-            ));
+            if !options.restart_existing {
+                return Ok(vesktop_result(
+                    &install,
+                    &options,
+                    selected_installation,
+                    LaunchOutcome::AlreadyAvailable,
+                    None,
+                    true,
+                ));
+            }
         }
         CdpProbeStatus::PortOccupied => {
             return Err(LaunchError::PortOccupied { port: options.port });
@@ -502,11 +506,13 @@ where
 
     match cdp.probe(options.port) {
         CdpProbeStatus::DiscordReady { .. } => {
-            return already_available_result(
-                &options,
-                platform.find_installs()?,
-                Some(crate::inspect_cdp_port_owner(options.port)),
-            );
+            if !options.restart_existing {
+                return already_available_result(
+                    &options,
+                    platform.find_installs()?,
+                    Some(crate::inspect_cdp_port_owner(options.port)),
+                );
+            }
         }
         CdpProbeStatus::PortOccupied => {
             return Err(LaunchError::PortOccupied { port: options.port });

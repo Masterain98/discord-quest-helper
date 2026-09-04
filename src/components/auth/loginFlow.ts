@@ -2,7 +2,9 @@ import type {
   AuthProgress,
   CdpLaunchTarget,
   CdpStatus,
+  ClientSelection,
   DesktopClientInventory,
+  DesktopClientState,
 } from '@/api/tauri'
 
 export type { CdpLaunchTarget }
@@ -88,6 +90,38 @@ export function installedCdpLaunchTargets(
   if (inventory.canaryInstalled) targets.push('canary')
   if (inventory.vesktopInstalled) targets.push('vesktop')
   return targets
+}
+
+export function hasUnchanneledOfficialMacInstallation(
+  installations: DesktopClientState['installations'],
+): boolean {
+  return installations.some(installation => (
+    installation.providerId === 'discord.official'
+    && installation.validation === 'valid'
+    && installation.variantId === null
+    && installation.launchTarget.kind === 'macBundle'
+  ))
+}
+
+export function selectionForCdpLaunchTarget(
+  snapshot: DesktopClientState | null,
+  target: CdpLaunchTarget | null,
+): ClientSelection {
+  if (target === 'vesktop') return { kind: 'provider', providerId: 'vencord.vesktop', variantId: null }
+  if (target === 'stable') {
+    const customOfficial = snapshot?.installations.find(installation => (
+      installation.providerId === 'discord.official'
+      && installation.validation === 'valid'
+      && installation.variantId === null
+      && installation.launchTarget.kind === 'macBundle'
+    ))
+    if (customOfficial) return { kind: 'installation', installationId: customOfficial.id }
+    return { kind: 'provider', providerId: 'discord.official', variantId: target }
+  }
+  if (target === 'ptb' || target === 'canary') {
+    return { kind: 'provider', providerId: 'discord.official', variantId: target }
+  }
+  return snapshot?.selection ?? { kind: 'auto' }
 }
 
 export function shouldAskCdpLaunchTarget(

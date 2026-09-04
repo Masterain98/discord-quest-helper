@@ -210,15 +210,9 @@ pub(crate) async fn list_running_desktop_cdp_sessions(
             session.ownership = cdp_launch::SessionOwnership::Managed;
         }
     }
-    let live: Vec<_> = journal
-        .into_iter()
-        .filter(|managed| {
-            sessions
-                .iter()
-                .any(|session| session_key_matches(managed, session))
-        })
-        .collect();
-    save_session_journal(&app, &live)?;
+    // A process scan is best-effort: a transient miss must not turn a session
+    // launched by Helper into an external session on the next scan. Journal
+    // entries are removed after an explicit restore instead.
     Ok(sessions)
 }
 
