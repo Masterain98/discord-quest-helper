@@ -400,6 +400,7 @@ mod tests {
         ))
     }
 
+    #[cfg(target_os = "windows")]
     #[test]
     fn windows_discovery_requires_a_real_executable() {
         let root = unique_temp_root("win");

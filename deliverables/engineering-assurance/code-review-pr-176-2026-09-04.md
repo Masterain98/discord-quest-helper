@@ -66,6 +66,7 @@ Sourcery 没有产生代码反馈，只报告 diff 超过审查限制。CodeRabb
 - 首轮远端 CI 的 Windows 与 Ubuntu 前置步骤通过；macOS/Linux 的 clippy 暴露了一个本机 Windows 不可见的条件编译问题：DPAPI 前缀校验 helper 在非 Windows 目标上未被使用。
 - 已将该 helper 及其测试限定为 Windows，并将 CDP socket 测试服务改为阻塞式单次 accept、延长非功能性读取超时，同时移除不必要的半关闭，避免完整 Content-Length 响应在高并发 runner 上出现误报 `IncompleteResponse`。
 - 本机重复运行 `cdp_probe` 5 次（每次 12 tests）全部通过，workspace clippy 也通过；修复已作为后续提交推送，等待下一轮三平台 CI。
+- 第二轮远端 run 的 macOS clippy 已通过，但暴露出两项平台测试问题：Windows 专属 Vesktop discovery 测试未加平台条件，以及官方 PTB 自定义安装测试使用了 macOS 不接受的 Linux 风格 executable 名称。已分别增加 Windows `cfg`、补齐 macOS/Linux 官方渠道名称（含 `.app` 稳定 bundle 识别），并在本机 workspace 测试与 clippy 中验证通过；该修复等待下一轮 CI。
 
 ## Disclaimer
 

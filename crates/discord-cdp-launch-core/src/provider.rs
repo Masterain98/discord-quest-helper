@@ -80,8 +80,12 @@ impl DesktopClientProvider for OfficialDiscordProvider {
                 "discord.exe",
                 "discordptb",
                 "discordptb.exe",
+                "discord-ptb",
                 "discordcanary",
                 "discordcanary.exe",
+                "discord-canary",
+                "discord ptb",
+                "discord canary",
             ],
         )
     }
@@ -323,7 +327,7 @@ fn official_channel_for_target(target: &LaunchTarget) -> Option<crate::DiscordCh
         Some(crate::DiscordChannel::Canary)
     } else if name.contains("ptb") {
         Some(crate::DiscordChannel::Ptb)
-    } else if name == "discord" || name == "discord.exe" {
+    } else if matches!(name.as_str(), "discord" | "discord.exe" | "discord.app") {
         Some(crate::DiscordChannel::Stable)
     } else {
         None
