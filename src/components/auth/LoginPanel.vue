@@ -46,6 +46,7 @@ import {
   shouldAskCdpLaunchTarget,
   shouldPollCdp,
   selectionForCdpLaunchTarget,
+  selectionForCurrentCdpOwner,
   startCdpPolling,
   usesVesktopForCdpLogin,
   hasUnchanneledOfficialMacInstallation,
@@ -517,7 +518,7 @@ async function useCurrentCdpOwner() {
   const snapshot = await clients.refresh(questsStore.cdpPort)
   const providerId = snapshot?.endpoint.ownerProviderId
   if (!snapshot || !providerId) return
-  const selection = { kind: 'provider' as const, providerId, variantId: null }
+  const selection = selectionForCurrentCdpOwner(snapshot, providerId)
   await clients.select(selection, questsStore.cdpPort)
   syncLegacyDesktopClientPreference(selection)
   ownerConflict.value = false

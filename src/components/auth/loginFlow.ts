@@ -5,6 +5,7 @@ import type {
   ClientSelection,
   DesktopClientInventory,
   DesktopClientState,
+  ProviderId,
 } from '@/api/tauri'
 
 export type { CdpLaunchTarget }
@@ -109,19 +110,39 @@ export function selectionForCdpLaunchTarget(
 ): ClientSelection {
   if (target === 'vesktop') return { kind: 'provider', providerId: 'vencord.vesktop', variantId: null }
   if (target === 'stable') {
-    const customOfficial = snapshot?.installations.find(installation => (
+    const hasStandardStable = snapshot?.installations.some(installation => (
       installation.providerId === 'discord.official'
       && installation.validation === 'valid'
-      && installation.variantId === null
-      && installation.launchTarget.kind === 'macBundle'
+      && installation.variantId === 'stable'
     ))
-    if (customOfficial) return { kind: 'installation', installationId: customOfficial.id }
+    if (!hasStandardStable) {
+      const customOfficial = snapshot?.installations.find(installation => (
+        installation.providerId === 'discord.official'
+        && installation.validation === 'valid'
+        && installation.variantId === null
+        && installation.launchTarget.kind === 'macBundle'
+      ))
+      if (customOfficial) return { kind: 'installation', installationId: customOfficial.id }
+    }
     return { kind: 'provider', providerId: 'discord.official', variantId: target }
   }
   if (target === 'ptb' || target === 'canary') {
     return { kind: 'provider', providerId: 'discord.official', variantId: target }
   }
   return snapshot?.selection ?? { kind: 'auto' }
+}
+
+export function selectionForCurrentCdpOwner(
+  snapshot: DesktopClientState,
+  providerId: ProviderId,
+): ClientSelection {
+  const process = snapshot.processes.find(candidate => (
+    candidate.providerId === providerId && candidate.running
+  ))
+  if (process && snapshot.installations.some(installation => installation.id === process.installationId)) {
+    return { kind: 'installation', installationId: process.installationId }
+  }
+  return { kind: 'provider', providerId, variantId: process?.variantId ?? null }
 }
 
 export function shouldAskCdpLaunchTarget(

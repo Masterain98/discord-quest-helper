@@ -71,7 +71,7 @@ Sourcery 没有产生代码反馈，只报告 diff 超过审查限制。CodeRabb
 
 ## 本轮最新评论复核（2026-09-04）
 
-重新读取 PR #176 的 GitHub inline comments、issue comments 和 reviews：当前共 37 条 inline comments、5 条 review、5 条 issue comments。新增的 8 条可操作反馈全部来自 CodeRabbit；没有新的人工业务评论。逐条核对当前实现后，结论是 8/8 真实有效，均已跟进：
+重新读取 PR #176 的 GitHub inline comments、issue comments 和 reviews：当前共 39 条 inline comments、6 条 review、5 条 issue comments。上一轮新增的 8 条可操作反馈全部来自 CodeRabbit；本轮推送后又收到 2 条 Greptile 行内反馈，没有新的人工业务评论。逐条核对当前实现后，结论是上一轮 8/8 及本轮 2/2 均真实有效，均已跟进：
 
 1. `processes.rs`：缓存 `classify_known_discord_process` 结果，避免 Windows 路径规范化重复执行。
 2. `provider.rs`：将 AppImage 前缀规则改为 provider 专属；官方 Discord 不再误接收 Vesktop AppImage，并新增回归测试。
@@ -83,6 +83,13 @@ Sourcery 没有产生代码反馈，只报告 diff 超过审查限制。CodeRabb
 8. `src-cdp-launcher/src/main.rs` / `launcher.rs`：移除已有 CDP 时的无条件成功短路，并让 restart 路径继续进行 owner 校验、客户端选择和重启流程。
 
 本轮新增回归验证：前端 `loginFlow.test.ts` 11/11；核心 crate 47 passed、5 ignored；CDP probe 12/12；launcher state machine 14/14；workspace Rust tests 135 passed、6 ignored；前端全量 8 files / 52 tests passed；`vue-tsc`、i18n check、build、`cargo fmt --check` 和 `git diff --check` 均通过。真实本机 CDP/Discord 测试继续保持 ignored，不让 CI 依赖本机会话。
+
+### 推送后新增反馈
+
+9. `3936438524`：设置页“使用当前客户端”原本只保存 provider，无法保留 PTB、Canary 或自定义 installation 的精确身份。已提取共享的当前 owner selection 逻辑，优先保存运行进程对应的 `installationId`，缺少匹配 installation 时才回退到 provider + variant；登录页和设置页同时复用，避免两条入口行为不一致。
+10. `3936438516`：标准 Stable 与无 variant 的自定义 macOS bundle 并存时，Stable 目标原本无条件选择自定义 bundle。现改为优先有效的标准 Stable，仅在没有标准 Stable 时才使用自定义 bundle 回退，并新增并存场景回归测试。
+
+本轮跟进验证：`loginFlow.test.ts` 13/13；前端全量 8 files / 54 tests passed；`vue-tsc --noEmit`、`i18n:check` 和生产 build 均通过（build 仅保留既有 chunk 体积提示），`git diff --check` 通过。
 
 ## Disclaimer
 

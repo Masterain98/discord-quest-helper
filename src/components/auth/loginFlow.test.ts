@@ -7,6 +7,7 @@ import {
   installedCdpLaunchTargets,
   presentAuthProgress,
   selectionForCdpLaunchTarget,
+  selectionForCurrentCdpOwner,
   shouldAskCdpLaunchTarget,
   shouldPollCdp,
   startCdpPolling,
@@ -155,6 +156,69 @@ describe('CDP launch target selection', () => {
 
     expect(hasUnchanneledOfficialMacInstallation(snapshot.installations)).toBe(true)
     expect(selectionForCdpLaunchTarget(snapshot, 'stable')).toEqual({
+      kind: 'installation',
+      installationId: installation.id,
+    })
+  })
+
+  it('prefers the standard Stable installation when it coexists with a custom bundle', () => {
+    const snapshot = {
+      installations: [
+        {
+          id: 'discord.official:stable',
+          providerId: 'discord.official',
+          variantId: 'stable',
+          displayName: 'Discord',
+          source: 'standardPath',
+          launchTarget: {
+            kind: 'executable',
+            path: '/Applications/Discord.app/Contents/MacOS/Discord',
+            workingDir: '/Applications/Discord.app/Contents/MacOS',
+            prefixArgs: [],
+          },
+          capabilities: { cdp: true, localToken: true, restoreNormal: true },
+          validation: 'valid',
+        },
+        {
+          id: 'discord.official:custom-mac',
+          providerId: 'discord.official',
+          variantId: null,
+          displayName: 'Discord (custom)',
+          source: 'user',
+          launchTarget: {
+            kind: 'macBundle',
+            bundlePath: '/Applications/My Discord.app',
+            executablePath: '/Applications/My Discord.app/Contents/MacOS/Discord',
+          },
+          capabilities: { cdp: true, localToken: true, restoreNormal: true },
+          validation: 'valid',
+        },
+      ],
+    } as DesktopClientState
+
+    expect(selectionForCdpLaunchTarget(snapshot, 'stable')).toEqual({
+      kind: 'provider',
+      providerId: 'discord.official',
+      variantId: 'stable',
+    })
+  })
+
+  it('preserves the exact installation for the current CDP owner', () => {
+    const installation = {
+      id: 'discord.official:custom-ptb',
+    } as DesktopClientState['installations'][number]
+    const snapshot = {
+      installations: [installation],
+      processes: [{
+        providerId: 'discord.official',
+        installationId: installation.id,
+        variantId: 'ptb',
+        executablePath: '/Applications/Discord PTB.app/Contents/MacOS/Discord PTB',
+        running: true,
+      }],
+    } as DesktopClientState
+
+    expect(selectionForCurrentCdpOwner(snapshot, 'discord.official')).toEqual({
       kind: 'installation',
       installationId: installation.id,
     })

@@ -31,6 +31,7 @@ import SettingsStatusPanel from './SettingsStatusPanel.vue'
 import { cn } from '@/lib/utils'
 import { settingToneClass, type SettingsTone } from './settingTones'
 import DesktopClientPicker from './DesktopClientPicker.vue'
+import { selectionForCurrentCdpOwner } from '@/components/auth/loginFlow'
 
 const { t } = useI18n()
 const questsStore = useQuestsStore()
@@ -186,7 +187,7 @@ async function useCurrentCdpOwner() {
     const snapshot = await clients.refresh(questsStore.cdpPort)
     const providerId = snapshot?.endpoint.ownerProviderId
     if (!snapshot || !providerId) return
-    const selection = { kind: 'provider' as const, providerId, variantId: null }
+    const selection = selectionForCurrentCdpOwner(snapshot, providerId)
     const next = await clients.select(selection, questsStore.cdpPort)
     questsStore.desktopClient = desktopClientArgForProvider(providerId)
     ownerConflict.value = false
