@@ -2605,7 +2605,7 @@ fn linux_cdp_launcher_options_from_desktop(
     let args = discord_cdp_launch_core::parse_desktop_exec_arguments(exec);
 
     for pair in args.windows(2) {
-        match pair[0] {
+        match pair[0].as_str() {
             "--port" => {
                 if let Ok(value) = pair[1].parse::<u16>() {
                     if value != 0 {
@@ -2614,13 +2614,15 @@ fn linux_cdp_launcher_options_from_desktop(
                 }
             }
             "--channel" => {
-                if let Ok(value) = discord_cdp_launch_core::parse_discord_channel(Some(pair[1])) {
+                if let Ok(value) =
+                    discord_cdp_launch_core::parse_discord_channel(Some(pair[1].as_str()))
+                {
                     channel = value;
                 }
             }
             "--client" | "--provider" => {
                 if let Ok(value) =
-                    discord_cdp_launch_core::parse_desktop_client_preference(Some(pair[1]))
+                    discord_cdp_launch_core::parse_desktop_client_preference(Some(pair[1].as_str()))
                 {
                     client = value;
                 }
