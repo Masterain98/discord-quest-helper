@@ -68,6 +68,58 @@ describe('app exit guard', () => {
     expect(order).toEqual(['error', 'prepare', 'exit'])
   })
 
+  it('restores only managed sessions unless external recovery is explicitly chosen', async () => {
+    const restoreSession = vi.fn().mockResolvedValue(undefined)
+    const { guard } = harness({
+      listSessions: vi.fn().mockResolvedValue([
+        { providerId: 'discord.official', installationId: 'stable', ownership: 'managed', port: 9223 },
+        { providerId: 'vencord.vesktop', installationId: 'portable', ownership: 'externalAttached', port: 9223 },
+      ]),
+      restoreSession,
+    })
+    await guard.requestClose({ preventDefault: vi.fn() })
+    await guard.restoreManagedAndClose()
+    expect(restoreSession).toHaveBeenCalledOnce()
+    expect(restoreSession).toHaveBeenCalledWith(expect.objectContaining({ installationId: 'stable' }), false)
+  })
+
+  it('marks external session recovery as explicitly confirmed', async () => {
+    const restoreSession = vi.fn().mockResolvedValue(undefined)
+    const externalSession = {
+      providerId: 'vencord.vesktop',
+      installationId: 'portable',
+      ownership: 'externalAttached' as const,
+      port: 9223,
+    }
+    const { guard } = harness({
+      listSessions: vi.fn().mockResolvedValue([externalSession]),
+      restoreSession,
+    })
+    await guard.requestClose({ preventDefault: vi.fn() })
+    await guard.restoreAndClose()
+    expect(restoreSession).toHaveBeenCalledWith(externalSession, true)
+  })
+
+  it('attempts every session and keeps the dialog open when restoration fails', async () => {
+    const sessions = [
+      { providerId: 'discord.official', installationId: 'stable', ownership: 'managed' as const, port: 9223 },
+      { providerId: 'vencord.vesktop', installationId: 'portable', ownership: 'managed' as const, port: 9444 },
+    ]
+    const restoreSession = vi.fn()
+      .mockRejectedValueOnce(new Error('stable restore failed'))
+      .mockResolvedValueOnce(undefined)
+    const { guard, dependencies, states } = harness({
+      listSessions: vi.fn().mockResolvedValue(sessions),
+      restoreSession,
+    })
+    await guard.requestClose({ preventDefault: vi.fn() })
+    await guard.restoreAndClose()
+    expect(restoreSession).toHaveBeenCalledTimes(2)
+    expect(dependencies.exitApplication).not.toHaveBeenCalled()
+    expect(dependencies.showError).toHaveBeenCalledWith('Error: stable restore failed')
+    expect(states[states.length - 1]?.dialogOpen).toBe(true)
+  })
+
   it('exits the application when exit cleanup does not settle', async () => {
     const { guard, dependencies } = harness({
       prepareExit: vi.fn(() => new Promise<void>(() => {})),

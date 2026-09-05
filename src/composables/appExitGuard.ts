@@ -1,5 +1,8 @@
 export interface RunningCdpSession {
-  channel: 'stable' | 'ptb' | 'canary'
+  channel?: 'stable' | 'ptb' | 'canary'
+  providerId?: string
+  installationId?: string | null
+  ownership?: 'managed' | 'externalAttached' | 'ambiguousExternal' | 'unknown'
   port: number
 }
 
@@ -11,11 +14,13 @@ export interface ExitGuardState {
   checking: boolean
   dialogOpen: boolean
   closing: boolean
+  sessions?: RunningCdpSession[]
 }
 
 export interface ExitGuardDependencies {
   listSessions(): Promise<RunningCdpSession[]>
   startRestoreHelper(): Promise<void>
+  restoreSession?(session: RunningCdpSession, confirmExternal: boolean): Promise<void>
   prepareExit(): Promise<void>
   exitApplication(): Promise<void>
   showError(message: string): Promise<void>
@@ -78,6 +83,7 @@ export function createAppExitGuard(dependencies: ExitGuardDependencies) {
     try {
       const sessions = await dependencies.listSessions()
       if (sessions.length > 0) {
+        state.sessions = sessions
         state.dialogOpen = true
         return
       }
@@ -100,8 +106,20 @@ export function createAppExitGuard(dependencies: ExitGuardDependencies) {
     if (state.closing) return
     state.checking = true
     publish()
+    const restoreFailures: string[] = []
     try {
-      await dependencies.startRestoreHelper()
+      if (dependencies.restoreSession && state.sessions?.length) {
+        for (const session of state.sessions) {
+          try {
+            await dependencies.restoreSession(session, session.ownership !== 'managed')
+          } catch (error) {
+            dependencies.logError(error)
+            restoreFailures.push(String(error))
+          }
+        }
+      } else {
+        await dependencies.startRestoreHelper()
+      }
     } catch (error) {
       dependencies.logError(error)
       try {
@@ -110,9 +128,50 @@ export function createAppExitGuard(dependencies: ExitGuardDependencies) {
         dependencies.logError(dialogError)
       }
     }
+    if (restoreFailures.length > 0) {
+      try {
+        await dependencies.showError(restoreFailures.join('\n'))
+      } catch (dialogError) {
+        dependencies.logError(dialogError)
+      }
+      state.checking = false
+      publish()
+      return
+    }
+    await closeApplication()
+  }
+
+  async function restoreManagedAndClose() {
+    if (!dependencies.restoreSession || !state.sessions?.length) {
+      await restoreAndClose()
+      return
+    }
+    if (state.closing) return
+    state.checking = true
+    publish()
+    const restoreFailures: string[] = []
+    try {
+      for (const session of state.sessions.filter(item => item.ownership === 'managed')) {
+        try {
+          await dependencies.restoreSession(session, false)
+        } catch (error) {
+          dependencies.logError(error)
+          restoreFailures.push(String(error))
+        }
+      }
+    } catch (error) {
+      dependencies.logError(error)
+      await dependencies.showError(String(error)).catch(dependencies.logError)
+    }
+    if (restoreFailures.length > 0) {
+      await dependencies.showError(restoreFailures.join('\n')).catch(dependencies.logError)
+      state.checking = false
+      publish()
+      return
+    }
     await closeApplication()
   }
 
   publish()
-  return { requestClose, closeOnly, restoreAndClose }
+  return { requestClose, closeOnly, restoreAndClose, restoreManagedAndClose }
 }

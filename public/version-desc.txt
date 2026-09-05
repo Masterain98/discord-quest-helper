@@ -1,29 +1,12 @@
 ## ✨ What's Changed
 
-1. Redesigned the quest dashboard to make daily quest management faster and clearer.
-    - Unified navigation across the login and main app with a compact, responsive header.
-    - Replaced redundant status and recommendation panels with clearer quest filters, icons, and live counts.
-    - Put search, advanced filters, refresh, and batch actions in one place, with direct actions for accepting quests and completing all, video, or game quests.
-    - Moved Orbs and Nitro status beside the dashboard title, with a compact next-claim countdown and smoother balance refresh feedback.
-    - Improved the layout for both desktop and smaller app windows.
-2. Refined the overall visual experience.
-    - Theme changes now ripple from the toggle location, respect reduced-motion preferences, and fall back smoothly when the browser does not support view transitions.
-    - Made manual token login easier to read and use with improved spacing, sizing, and visual hierarchy.
-    - Updated the dashboard copy and refreshed translations across all supported languages.
-3. Made game simulation safer and more reliable on macOS and Linux.
-    - Simulated games now track the exact process they launch and verify its executable before stopping it, avoiding interference with unrelated processes.
-    - Improved cleanup when games are stopped or the app closes, including reliable process reaping and protection against recycled process IDs.
-    - Improved runtime and window identity handling for native Discord detection, including packaged Linux and Wayland environments.
-4. Strengthened CDP runtime installation and launcher reliability across Windows, macOS, and Linux.
-    - Improved bundled runtime discovery for installed apps and desktop packages, while preventing empty or invalid placeholders from being executed.
-    - Runtime bridge updates are now versioned, hash-verified, launch-tested, and switched atomically so failed updates preserve the working version.
-    - Legacy helper files are cleaned up only after a successful migration, and platform-specific shortcuts and app layouts are handled more consistently.
-    - Improved launcher errors and reduced unnecessary console noise during normal use.
-5. Added better diagnostics for troubleshooting.
-    - The Debug page now reports runtime identity, bridge status, integrity checks, platform details, and differences from the release baseline.
-    - Added local-only JSON copy/export for diagnostics and clearer visibility into the embedded simulated-game runtime.
-6. Improved release quality across supported desktop platforms.
-7. Bumped default client config:
-    - client version to `1.0.9255`
-    - default client build number to `602393`
-    - native build number to `89332`
+1. Added support for selecting Discord or Vesktop as the CDP client, with automatic detection and custom installation support.
+2. Fixed the Nitro Orbs countdown. It now uses Discord's server-provided reward time, so it is accurate across timezones and month lengths.
+3. Improved CDP login and quest startup reliability by retrying transient connection failures and preventing stale quest modes from being used after login.
+4. Fixed dashboard quest tabs being truncated in narrower windows.
+5. Bumped dependencies to the latest patched versions.
+6. Bumped default client config:
+    - client version to `1.0.9256`
+    - Electron version to `42.9.0`
+    - default client build number to `607562`
+    - native build number to `89799`

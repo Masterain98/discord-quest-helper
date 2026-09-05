@@ -4,7 +4,9 @@
 //! After starting Discord with the --remote-debugging-port parameter, it can communicate with the client via WebSocket.
 
 use anyhow::{Context, Result};
-use discord_cdp_launch_core::{is_discord_target, pick_discord_target, CdpTarget};
+use discord_cdp_launch_core::{
+    is_discord_target, list_cdp_targets, pick_discord_target, CdpListError, CdpTarget,
+};
 use futures_util::{future::join_all, SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -193,28 +195,64 @@ pub async fn check_cdp_available(port: u16) -> CdpStatus {
     }
 }
 
-/// Get CDP target list
+const CDP_TARGET_LIST_ATTEMPTS: u32 = 5;
+const CDP_TARGET_LIST_BASE_DELAY_MS: u64 = 100;
+const CDP_TARGET_LIST_MAX_DELAY_MS: u64 = 400;
+
+/// Wait until the loopback CDP HTTP endpoint answers `/json`.
+///
+/// Uses the same proxy-free listing path as the Discord launcher. Transient
+/// Windows RSTs (10054) and refused connections (10061) are retried.
+pub async fn wait_for_cdp_targets(port: u16) -> Result<Vec<CdpTarget>> {
+    get_cdp_targets(port).await
+}
+
+pub fn error_is_cdp_endpoint_failure(error: &anyhow::Error) -> bool {
+    error.chain().any(|source| {
+        source.downcast_ref::<CdpListError>().is_some()
+            || source.to_string().contains("CDP endpoint reset")
+            || source.to_string().contains("CDP endpoint unreachable")
+            || source
+                .to_string()
+                .contains("Failed to connect to CDP endpoint")
+    })
+}
+
+#[cfg(test)]
+fn is_transient_cdp_endpoint_error(error: &CdpListError) -> bool {
+    error.is_transient()
+}
+
+fn cdp_target_list_retry_delay_ms(attempt: u32) -> u64 {
+    (CDP_TARGET_LIST_BASE_DELAY_MS.saturating_mul(1 << attempt)).min(CDP_TARGET_LIST_MAX_DELAY_MS)
+}
+
+/// Get CDP target list via raw HTTP/1.1 to 127.0.0.1 — never a system proxy.
 async fn get_cdp_targets(port: u16) -> Result<Vec<CdpTarget>> {
-    let client = reqwest::Client::builder()
-        .connect_timeout(Duration::from_secs(2))
-        .timeout(Duration::from_secs(3))
-        .build()?;
+    let mut last_error = None;
 
-    let url = format!("http://127.0.0.1:{}/json", port);
-    let response = client
-        .get(&url)
-        .send()
-        .await
-        .context("Failed to connect to CDP endpoint")?
-        .error_for_status()
-        .context("CDP endpoint returned non-success status")?;
+    for attempt in 0..CDP_TARGET_LIST_ATTEMPTS {
+        let listed = tokio::task::spawn_blocking(move || list_cdp_targets(port))
+            .await
+            .context("CDP target listing task failed")?;
 
-    let targets: Vec<CdpTarget> = response
-        .json()
-        .await
-        .context("Failed to parse CDP targets")?;
+        match listed {
+            Ok(targets) => return Ok(targets),
+            Err(error) if error.is_transient() && attempt + 1 < CDP_TARGET_LIST_ATTEMPTS => {
+                last_error = Some(error);
+                tokio::time::sleep(Duration::from_millis(cdp_target_list_retry_delay_ms(
+                    attempt,
+                )))
+                .await;
+            }
+            Err(error) => {
+                return Err(error).context("CDP endpoint reset / unreachable");
+            }
+        }
+    }
 
-    Ok(targets)
+    Err(last_error.expect("transient CDP listing exhausted retries"))
+        .context("CDP endpoint reset / unreachable")
 }
 
 fn select_discord_targets(targets: &[CdpTarget]) -> Vec<&CdpTarget> {
@@ -2047,5 +2085,91 @@ mod tests {
             .to_string();
             assert!(extract_auth_from_runtime_response(&response).is_none());
         }
+    }
+
+    #[tokio::test]
+    #[ignore = "requires a live Discord or Vesktop CDP session on the default debugging port"]
+    async fn live_cdp_session_validates_without_leaking_token() {
+        let session = capture_discord_auth_via_cdp(DEFAULT_CDP_PORT, Duration::from_secs(20))
+            .await
+            .expect("CDP session should be capturable");
+        assert!(
+            session.authorization.len() > 20,
+            "captured authorization should look like a session token"
+        );
+
+        let debug = format!("{session:?}");
+        assert!(debug.contains("[redacted]"));
+        assert!(!debug.contains(session.authorization.as_str()));
+
+        let client = crate::discord_api::DiscordApiClient::new(session.authorization.to_string())
+            .expect("API client should accept the captured authorization");
+        let user = client
+            .get_current_user()
+            .await
+            .expect("captured session should validate against /users/@me");
+        println!(
+            "live cdp login ok usernameLen={} idLen={}",
+            user.username.len(),
+            user.id.len()
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "hits Discord API with a synthetic invalid token"]
+    async fn live_invalid_token_is_rejected_by_discord_api() {
+        let client = crate::discord_api::DiscordApiClient::new(
+            "invalid-vesktop-e2e-token-not-a-real-session".to_string(),
+        )
+        .expect("client construction does not validate the token");
+        let error = client
+            .get_current_user()
+            .await
+            .expect_err("Discord must reject an invalid token");
+        let message = error.to_string();
+        assert!(
+            !message.contains("invalid-vesktop-e2e-token-not-a-real-session"),
+            "API errors must not echo the supplied token"
+        );
+        println!("invalid token rejected without leaking the secret");
+    }
+
+    #[test]
+    fn windows_cdp_resets_are_retryable_parse_and_4xx_are_not() {
+        let reset = CdpListError::ConnectionFailed {
+            port: 9223,
+            source: std::io::Error::from_raw_os_error(10054),
+        };
+        let refused = CdpListError::ConnectionFailed {
+            port: 9223,
+            source: std::io::Error::from_raw_os_error(10061),
+        };
+        let http_400 = CdpListError::HttpStatus {
+            port: 9223,
+            status: 400,
+        };
+        let invalid = CdpListError::InvalidResponse {
+            port: 9223,
+            details: "not json".to_string(),
+        };
+
+        assert!(is_transient_cdp_endpoint_error(&reset));
+        assert!(is_transient_cdp_endpoint_error(&refused));
+        assert!(!is_transient_cdp_endpoint_error(&http_400));
+        assert!(!is_transient_cdp_endpoint_error(&invalid));
+
+        let wrapped = anyhow::Error::new(reset).context("CDP endpoint reset / unreachable");
+        assert!(error_is_cdp_endpoint_failure(&wrapped));
+        assert!(!error_is_cdp_endpoint_failure(&anyhow::anyhow!(
+            "CDP module initialization failed: webpack missing"
+        )));
+    }
+
+    #[test]
+    fn cdp_target_list_retry_delay_stays_within_100_to_400ms() {
+        assert_eq!(cdp_target_list_retry_delay_ms(0), 100);
+        assert_eq!(cdp_target_list_retry_delay_ms(1), 200);
+        assert_eq!(cdp_target_list_retry_delay_ms(2), 400);
+        assert_eq!(cdp_target_list_retry_delay_ms(3), 400);
     }
 }

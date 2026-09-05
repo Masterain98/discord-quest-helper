@@ -3,7 +3,7 @@ use crate::{
     CdpProbe, CdpProbeStatus, DiscordChannel, DiscordInstall, DiscordLaunchMode, LaunchError,
     RestoreFailure, RestoreResult, RunningCdpSession, StdCdpProbe, SystemPlatform,
 };
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -28,6 +28,169 @@ pub fn list_running_discord_cdp_sessions() -> Result<Vec<RunningCdpSession>, Lau
         &installs,
         &StdCdpProbe::default(),
     ))
+}
+
+pub fn list_running_desktop_cdp_sessions() -> Result<Vec<crate::DesktopCdpSession>, LaunchError> {
+    let official_installs = SystemPlatform.find_installs()?;
+    let (installations, _) = crate::discover_client_installations();
+    let snapshots = process_snapshots();
+    let probe = StdCdpProbe::default();
+    let mut sessions = Vec::new();
+    let mut seen = HashSet::new();
+    let mut port_readiness = HashMap::new();
+    for process in &snapshots {
+        let known_channel = classify_known_discord_process(process, &official_installs);
+        let provider_id = if crate::is_vesktop_process_name(&process.name.to_string_lossy()) {
+            crate::ProviderId::vesktop()
+        } else if known_channel.is_some() {
+            crate::ProviderId::official_discord()
+        } else {
+            continue;
+        };
+        let variant_id =
+            known_channel.map(|channel| crate::VariantId(channel.as_str().to_string()));
+        let matching_install = process
+            .executable_path
+            .as_deref()
+            .and_then(|path| {
+                installations.iter().find(|install| {
+                    install.provider_id == provider_id
+                        && installation_executable_path(install).is_some_and(|candidate| {
+                            paths_refer_to_same_executable(path, candidate)
+                        })
+                })
+            })
+            .or_else(|| {
+                let flatpak_path = process
+                    .executable_path
+                    .as_deref()
+                    .is_some_and(|path| path.starts_with("/app"));
+                flatpak_path
+                    .then(|| {
+                        installations.iter().find(|install| {
+                            install.provider_id == provider_id
+                                && matches!(
+                                    &install.launch_target,
+                                    crate::LaunchTarget::Flatpak { .. }
+                                )
+                        })
+                    })
+                    .flatten()
+            });
+        for port in process
+            .command_line
+            .iter()
+            .filter_map(|argument| parse_cdp_port(argument))
+        {
+            let ready = *port_readiness.entry(port).or_insert_with(|| {
+                matches!(probe.probe(port), CdpProbeStatus::DiscordReady { .. })
+            });
+            if !ready {
+                continue;
+            }
+            let key = (
+                provider_id.clone(),
+                matching_install.map(|install| install.id.clone()),
+                port,
+            );
+            if !seen.insert(key) {
+                continue;
+            }
+            sessions.push(crate::DesktopCdpSession {
+                provider_id: provider_id.clone(),
+                installation_id: matching_install.map(|install| install.id.clone()),
+                variant_id: matching_install
+                    .and_then(|install| install.variant_id.clone())
+                    .or_else(|| variant_id.clone()),
+                port,
+                ownership: crate::SessionOwnership::ExternalAttached,
+                executable_path: process.executable_path.clone(),
+            });
+        }
+    }
+    sessions.sort_by(|left, right| {
+        left.provider_id
+            .as_str()
+            .cmp(right.provider_id.as_str())
+            .then(left.port.cmp(&right.port))
+    });
+    Ok(sessions)
+}
+
+pub fn restore_desktop_client_to_normal(
+    installation: &crate::ClientInstallation,
+    port: u16,
+) -> Result<(), LaunchError> {
+    if let crate::LaunchTarget::Flatpak { app_id, command } = &installation.launch_target {
+        if crate::launcher::flatpak_is_running(app_id, command.as_deref())? {
+            crate::launcher::flatpak_kill(app_id, command.as_deref())?;
+        }
+        let started = Instant::now();
+        while started.elapsed() < SHUTDOWN_TIMEOUT {
+            if !crate::launcher::flatpak_is_running(app_id, command.as_deref())? {
+                break;
+            }
+            std::thread::sleep(POLL_INTERVAL);
+        }
+        if crate::launcher::flatpak_is_running(app_id, command.as_deref())? {
+            return Err(LaunchError::ShutdownTimeout {
+                timeout: SHUTDOWN_TIMEOUT,
+            });
+        }
+        if matches!(
+            StdCdpProbe::default().probe(port),
+            CdpProbeStatus::DiscordReady { .. }
+        ) {
+            return Err(LaunchError::ProcessTermination {
+                process: installation.display_name.clone(),
+                details: format!(
+                    "CDP endpoint on port {port} remained active after Flatpak shutdown"
+                ),
+            });
+        }
+        crate::launcher::flatpak_spawn(app_id, command.as_deref(), None)?;
+        return Ok(());
+    }
+    let executable = installation_executable_path(installation).ok_or_else(|| {
+        LaunchError::InvalidInstallation {
+            details: "This launch target cannot yet be restored by executable path.".into(),
+        }
+    })?;
+    terminate_installation_process_tree(executable)?;
+    let mut system = System::new();
+    let started = Instant::now();
+    while started.elapsed() < SHUTDOWN_TIMEOUT {
+        refresh_processes(&mut system);
+        if !is_installation_running_in_system(&system, executable) {
+            break;
+        }
+        std::thread::sleep(POLL_INTERVAL);
+    }
+    refresh_processes(&mut system);
+    if is_installation_running_in_system(&system, executable) {
+        return Err(LaunchError::ShutdownTimeout {
+            timeout: SHUTDOWN_TIMEOUT,
+        });
+    }
+    if matches!(
+        StdCdpProbe::default().probe(port),
+        CdpProbeStatus::DiscordReady { .. }
+    ) {
+        return Err(LaunchError::ProcessTermination {
+            process: installation.display_name.clone(),
+            details: format!("CDP endpoint on port {port} remained active after shutdown"),
+        });
+    }
+    if let Some(official) = crate::installation_as_official(installation) {
+        SystemPlatform.spawn(&official, DiscordLaunchMode::Normal)?;
+    } else if let Some(vesktop) = crate::installation_as_vesktop(installation) {
+        crate::vesktop::spawn_vesktop(&vesktop, DiscordLaunchMode::Normal)?;
+    } else {
+        return Err(LaunchError::InvalidInstallation {
+            details: "The provider does not expose a normal-mode launch target.".into(),
+        });
+    }
+    Ok(())
 }
 
 pub fn restore_all_discord_to_normal() -> Result<RestoreResult, LaunchError> {
@@ -206,14 +369,7 @@ fn wait_for_running_state<P: PlatformBackend>(
 
 fn process_snapshots() -> Vec<ProcessSnapshot> {
     let mut system = System::new();
-    system.refresh_processes_specifics(
-        ProcessesToUpdate::All,
-        true,
-        ProcessRefreshKind::nothing()
-            .with_cmd(UpdateKind::OnlyIfNotSet)
-            .with_exe(UpdateKind::OnlyIfNotSet)
-            .without_tasks(),
-    );
+    refresh_processes(&mut system);
     system
         .processes()
         .values()
@@ -223,6 +379,148 @@ fn process_snapshots() -> Vec<ProcessSnapshot> {
             command_line: process.cmd().to_vec(),
         })
         .collect()
+}
+
+fn refresh_processes(system: &mut System) {
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::All,
+        true,
+        ProcessRefreshKind::nothing()
+            .with_cmd(UpdateKind::OnlyIfNotSet)
+            .with_exe(UpdateKind::Always)
+            .without_tasks(),
+    );
+}
+
+fn is_installation_running_in_system(system: &System, executable_path: &Path) -> bool {
+    system.processes().values().any(|process| {
+        process
+            .exe()
+            .is_some_and(|path| paths_refer_to_same_executable(path, executable_path))
+    })
+}
+
+pub fn running_vesktop_installs() -> Vec<crate::VesktopInstall> {
+    let mut seen = HashSet::new();
+    process_snapshots()
+        .into_iter()
+        .filter(|process| crate::is_vesktop_process_name(&process.name.to_string_lossy()))
+        .filter_map(|process| process.executable_path)
+        .filter_map(crate::vesktop::vesktop_install_from_executable)
+        .filter(|install| seen.insert(install.executable_path.clone()))
+        .collect()
+}
+
+pub fn is_installation_running(executable_path: &Path) -> bool {
+    process_snapshots().iter().any(|process| {
+        process
+            .executable_path
+            .as_deref()
+            .is_some_and(|path| paths_refer_to_same_executable(path, executable_path))
+    })
+}
+
+pub fn is_client_installation_running(
+    installation: &crate::ClientInstallation,
+) -> Result<bool, LaunchError> {
+    match &installation.launch_target {
+        crate::LaunchTarget::Executable { path, .. }
+        | crate::LaunchTarget::MacBundle {
+            executable_path: path,
+            ..
+        } => Ok(is_installation_running(path)),
+        crate::LaunchTarget::Flatpak { app_id, command } => {
+            crate::launcher::flatpak_is_running(app_id, command.as_deref())
+        }
+    }
+}
+
+/// Terminates only the process tree whose root executable matches the exact
+/// selected installation. Every target is revalidated by PID, start time, and
+/// executable immediately before termination. `sysinfo` does not expose stable
+/// cross-platform process handles, so this narrows PID-reuse risk without
+/// claiming an OS-level race-free guarantee.
+pub fn terminate_installation_process_tree(executable_path: &Path) -> Result<(), LaunchError> {
+    let mut system = System::new();
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::All,
+        true,
+        ProcessRefreshKind::nothing()
+            .with_exe(UpdateKind::OnlyIfNotSet)
+            .without_tasks(),
+    );
+    let roots: HashSet<_> = system
+        .processes()
+        .iter()
+        .filter_map(|(pid, process)| {
+            process
+                .exe()
+                .is_some_and(|path| paths_refer_to_same_executable(path, executable_path))
+                .then_some((*pid, process.start_time()))
+        })
+        .collect();
+    if roots.is_empty() {
+        return Ok(());
+    }
+
+    let mut targets: HashSet<_> = roots.iter().map(|(pid, _)| *pid).collect();
+    loop {
+        let previous_len = targets.len();
+        for (pid, process) in system.processes() {
+            if process
+                .parent()
+                .is_some_and(|parent| targets.contains(&parent))
+            {
+                targets.insert(*pid);
+            }
+        }
+        if targets.len() == previous_len {
+            break;
+        }
+    }
+
+    let target_identities: HashMap<_, _> = targets
+        .iter()
+        .filter_map(|pid| {
+            system.process(*pid).map(|process| {
+                (
+                    *pid,
+                    (process.start_time(), process.exe().map(Path::to_path_buf)),
+                )
+            })
+        })
+        .collect();
+
+    // Descendants first. Refreshing the process table before every kill keeps
+    // the identity check as close as possible to the operation itself.
+    let root_pids: HashSet<_> = roots.iter().map(|(pid, _)| *pid).collect();
+    let mut ordered: Vec<_> = targets.into_iter().collect();
+    ordered.sort_by_key(|pid| root_pids.contains(pid));
+    let mut current = System::new();
+    for pid in ordered {
+        let Some((expected_start, expected_executable)) = target_identities.get(&pid) else {
+            continue;
+        };
+        refresh_processes(&mut current);
+        let Some(process) = current.process(pid) else {
+            continue;
+        };
+        if process.start_time() != *expected_start
+            || process.exe().map(Path::to_path_buf) != *expected_executable
+        {
+            continue;
+        }
+        if !process.kill() {
+            return Err(LaunchError::ProcessTermination {
+                process: pid.to_string(),
+                details: format!(
+                    "the process for '{}' refused termination",
+                    executable_path.display()
+                ),
+            });
+        }
+    }
+    Ok(())
 }
 
 fn classify_known_discord_process(
@@ -266,6 +564,95 @@ fn paths_refer_to_same_executable(left: &Path, right: &Path) -> bool {
     #[cfg(not(target_os = "windows"))]
     {
         left == right
+    }
+}
+
+fn installation_executable_path(install: &crate::ClientInstallation) -> Option<&Path> {
+    match &install.launch_target {
+        crate::LaunchTarget::Executable { path, .. } => Some(path),
+        crate::LaunchTarget::MacBundle {
+            executable_path, ..
+        } => Some(executable_path),
+        crate::LaunchTarget::Flatpak { .. } => None,
+    }
+}
+
+pub fn inspect_cdp_port_owner(port: u16) -> crate::CdpPortOwner {
+    classify_cdp_port_owner(&process_snapshots(), port)
+}
+
+pub(crate) fn cdp_port_matches_installation(
+    port: u16,
+    installation: &crate::ClientInstallation,
+) -> bool {
+    cdp_port_matches_installation_in(&process_snapshots(), port, installation)
+}
+
+fn cdp_port_matches_installation_in(
+    processes: &[ProcessSnapshot],
+    port: u16,
+    installation: &crate::ClientInstallation,
+) -> bool {
+    processes.iter().any(|process| {
+        let uses_port = process
+            .command_line
+            .iter()
+            .any(|argument| parse_cdp_port(argument) == Some(port));
+        if !uses_port {
+            return false;
+        }
+        match &installation.launch_target {
+            crate::LaunchTarget::Executable { path, .. } => process
+                .executable_path
+                .as_deref()
+                .is_some_and(|running| paths_refer_to_same_executable(running, path)),
+            crate::LaunchTarget::MacBundle {
+                executable_path, ..
+            } => process
+                .executable_path
+                .as_deref()
+                .is_some_and(|running| paths_refer_to_same_executable(running, executable_path)),
+            crate::LaunchTarget::Flatpak { .. } => {
+                installation.provider_id == crate::ProviderId::vesktop()
+                    && process
+                        .executable_path
+                        .as_deref()
+                        .is_some_and(|path| path.starts_with("/app"))
+                    && crate::is_vesktop_process_name(&process.name.to_string_lossy())
+            }
+        }
+    })
+}
+
+pub(crate) fn classify_cdp_port_owner(
+    processes: &[ProcessSnapshot],
+    port: u16,
+) -> crate::CdpPortOwner {
+    let mut official = false;
+    let mut vesktop = false;
+    let mut other = false;
+    for process in processes {
+        if !process
+            .command_line
+            .iter()
+            .any(|argument| parse_cdp_port(argument) == Some(port))
+        {
+            continue;
+        }
+        let name = process.name.to_string_lossy();
+        if crate::is_vesktop_process_name(&name) {
+            vesktop = true;
+        } else if channel_from_process_name(&process.name).is_some() {
+            official = true;
+        } else {
+            other = true;
+        }
+    }
+    match (official, vesktop, other) {
+        (false, false, false) => crate::CdpPortOwner::None,
+        (true, false, _) => crate::CdpPortOwner::Official,
+        (false, true, _) => crate::CdpPortOwner::Vesktop,
+        _ => crate::CdpPortOwner::Other,
     }
 }
 
@@ -341,6 +728,71 @@ mod tests {
                 port: 9223
             }]
         );
+    }
+
+    #[test]
+    fn vesktop_is_not_classified_as_a_discord_release_channel() {
+        assert_eq!(channel_from_process_name(OsStr::new("vesktop.exe")), None);
+        assert_eq!(channel_from_process_name(OsStr::new("Vesktop")), None);
+        let installs = vec![install(DiscordChannel::Stable, "C:\\Discord\\Discord.exe")];
+        let vesktop = ProcessSnapshot {
+            name: "vesktop.exe".into(),
+            executable_path: Some("C:\\Users\\user\\AppData\\Local\\vesktop\\vesktop.exe".into()),
+            command_line: vec!["vesktop.exe".into(), "--remote-debugging-port=9223".into()],
+        };
+        assert!(classify_known_discord_process(&vesktop, &installs).is_none());
+        assert!(
+            sessions_from_processes(&[vesktop], &installs, &Probe(HashSet::from([9223])))
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn classifies_which_desktop_client_owns_a_cdp_port() {
+        let official = ProcessSnapshot {
+            name: "Discord.exe".into(),
+            executable_path: Some("C:\\Discord\\Discord.exe".into()),
+            command_line: vec!["Discord.exe".into(), "--remote-debugging-port=9223".into()],
+        };
+        let vesktop = ProcessSnapshot {
+            name: "vesktop.exe".into(),
+            executable_path: Some("C:\\vesktop\\vesktop.exe".into()),
+            command_line: vec!["vesktop.exe".into(), "--remote-debugging-port=9223".into()],
+        };
+        assert_eq!(
+            classify_cdp_port_owner(std::slice::from_ref(&official), 9223),
+            crate::CdpPortOwner::Official
+        );
+        assert_eq!(
+            classify_cdp_port_owner(std::slice::from_ref(&vesktop), 9223),
+            crate::CdpPortOwner::Vesktop
+        );
+        assert_eq!(
+            classify_cdp_port_owner(&[official, vesktop], 9223),
+            crate::CdpPortOwner::Other
+        );
+        assert_eq!(
+            classify_cdp_port_owner(&[], 9223),
+            crate::CdpPortOwner::None
+        );
+    }
+
+    #[test]
+    fn explicit_installation_owner_requires_the_exact_executable() {
+        let selected = crate::custom_executable_installation(
+            &crate::ProviderId::vesktop(),
+            PathBuf::from("C:\\Portable A\\vesktop.exe"),
+        )
+        .expect("named Vesktop executable is a valid locator");
+        let processes = vec![ProcessSnapshot {
+            name: OsString::from("vesktop.exe"),
+            executable_path: Some(PathBuf::from("C:\\Portable B\\vesktop.exe")),
+            command_line: vec![OsString::from("--remote-debugging-port=9223")],
+        }];
+
+        assert!(!cdp_port_matches_installation_in(
+            &processes, 9223, &selected
+        ));
     }
 
     #[test]

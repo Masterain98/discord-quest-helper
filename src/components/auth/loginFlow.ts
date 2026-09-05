@@ -1,4 +1,15 @@
-import type { AuthProgress, CdpStatus } from '@/api/tauri'
+import type {
+  AuthProgress,
+  CdpLaunchTarget,
+  CdpStatus,
+  ClientSelection,
+  DesktopClientInventory,
+  DesktopClientState,
+  ProviderId,
+  RunningDesktopCdpSession,
+} from '@/api/tauri'
+
+export type { CdpLaunchTarget }
 
 export type LoginMethod = 'local' | 'cdp' | 'manual'
 export type LoginProgressState = 'running' | 'waiting' | 'success' | 'error' | 'neutral'
@@ -63,6 +74,99 @@ export function shouldPollCdp(options: {
 
 export function canBeginLogin(activeMethod: LoginMethod | null, storeLoading: boolean): boolean {
   return activeMethod === null && !storeLoading
+}
+
+export function usesVesktopForCdpLogin(inventory: DesktopClientInventory | null): boolean {
+  if (!inventory) return false
+  if (inventory.cdpOwner === 'vesktop') return true
+  return inventory.vesktopInstalled && !inventory.officialInstalled
+}
+
+export function installedCdpLaunchTargets(
+  inventory: DesktopClientInventory | null,
+): CdpLaunchTarget[] {
+  if (!inventory) return []
+  const targets: CdpLaunchTarget[] = []
+  if (inventory.stableInstalled) targets.push('stable')
+  if (inventory.ptbInstalled) targets.push('ptb')
+  if (inventory.canaryInstalled) targets.push('canary')
+  if (inventory.vesktopInstalled) targets.push('vesktop')
+  return targets
+}
+
+export function hasUnchanneledOfficialMacInstallation(
+  installations: DesktopClientState['installations'],
+): boolean {
+  return installations.some(installation => (
+    installation.providerId === 'discord.official'
+    && installation.validation === 'valid'
+    && installation.variantId === null
+    && installation.launchTarget.kind === 'macBundle'
+  ))
+}
+
+export function selectionForCdpLaunchTarget(
+  snapshot: DesktopClientState | null,
+  target: CdpLaunchTarget | null,
+): ClientSelection {
+  if (target === 'vesktop') return { kind: 'provider', providerId: 'vencord.vesktop', variantId: null }
+  if (target === 'stable') {
+    const hasStandardStable = snapshot?.installations.some(installation => (
+      installation.providerId === 'discord.official'
+      && installation.validation === 'valid'
+      && installation.variantId === 'stable'
+      && installation.source !== 'user'
+    ))
+    if (!hasStandardStable) {
+      const customOfficial = snapshot?.installations.find(installation => (
+        installation.providerId === 'discord.official'
+        && installation.validation === 'valid'
+        && installation.variantId === null
+        && installation.launchTarget.kind === 'macBundle'
+      ))
+      if (customOfficial) return { kind: 'installation', installationId: customOfficial.id }
+    }
+    return { kind: 'provider', providerId: 'discord.official', variantId: target }
+  }
+  if (target === 'ptb' || target === 'canary') {
+    return { kind: 'provider', providerId: 'discord.official', variantId: target }
+  }
+  return snapshot?.selection ?? { kind: 'auto' }
+}
+
+export function selectionForCurrentCdpOwner(
+  snapshot: DesktopClientState,
+  ownerSession: Pick<RunningDesktopCdpSession, 'providerId' | 'installationId' | 'variantId'>,
+): ClientSelection {
+  if (
+    ownerSession.installationId
+    && snapshot.installations.some(installation => installation.id === ownerSession.installationId)
+  ) {
+    return { kind: 'installation', installationId: ownerSession.installationId }
+  }
+  return {
+    kind: 'provider',
+    providerId: ownerSession.providerId,
+    variantId: ownerSession.variantId,
+  }
+}
+
+export function findCurrentCdpOwnerSession(
+  sessions: RunningDesktopCdpSession[],
+  port: number,
+  providerId: ProviderId,
+): RunningDesktopCdpSession | null {
+  const matches = sessions.filter(session => (
+    session.port === port && session.providerId === providerId
+  ))
+  return matches.length === 1 ? matches[0] : null
+}
+
+export function shouldAskCdpLaunchTarget(
+  cdpAvailable: boolean,
+  targets: CdpLaunchTarget[],
+): boolean {
+  return !cdpAvailable && targets.length > 1
 }
 
 export function startCdpPolling(callback: () => void, intervalMs = 5_000): () => void {

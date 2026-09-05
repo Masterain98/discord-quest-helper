@@ -1,10 +1,11 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { DiscordUser, ExtractedAccount, BillingSubscription, AuthProgress, AuthProgressHandler } from '@/api/tauri'
-import { autoDetectToken, setToken, autoLoginViaCdp, autoFetchSuperProperties, getBillingSubscriptions } from '@/api/tauri'
+import type { DiscordUser, ExtractedAccount, ProgramReward, AuthProgress, AuthProgressHandler } from '@/api/tauri'
+import { autoDetectToken, setToken, autoLoginViaCdp, autoFetchSuperProperties, getProgramRewards } from '@/api/tauri'
 import { useQuestsStore } from './quests'
 import { useI18n } from 'vue-i18n'
 import { useNow } from '@vueuse/core'
+import { getNitroOrbsClaim } from '@/utils/nitroOrbsCountdown'
 
 export const useAuthStore = defineStore('auth', () => {
   const { t } = useI18n()
@@ -14,18 +15,20 @@ export const useAuthStore = defineStore('auth', () => {
   const error = ref<string | null>(null)
   const detectedAccounts = ref<ExtractedAccount[]>([])
 
-  // Billing subscriptions (used to derive Nitro monthly Orbs grant anchor)
-  const billingSubscriptions = ref<BillingSubscription[]>([])
-  const billingLoading = ref(false)
-  const billingError = ref<string | null>(null)
+  // Discord's Program Rewards endpoint owns the monthly Orbs schedule.
+  const nitroProgramReward = ref<ProgramReward | null>(null)
+  const programRewardLoading = ref(false)
+  const programRewardError = ref<string | null>(null)
+  const programRewardLoaded = ref(false)
   const currentTime = useNow({ interval: 60_000 })
-  let billingRequestRevision = 0
+  let programRewardRequestRevision = 0
 
-  function resetBillingState() {
-    billingRequestRevision += 1
-    billingSubscriptions.value = []
-    billingLoading.value = false
-    billingError.value = null
+  function resetProgramRewardState() {
+    programRewardRequestRevision += 1
+    nitroProgramReward.value = null
+    programRewardLoading.value = false
+    programRewardError.value = null
+    programRewardLoaded.value = false
   }
 
   async function tryAutoDetect(
@@ -63,7 +66,7 @@ export const useAuthStore = defineStore('auth', () => {
   async function loginWithToken(tokenValue: string, onProgress?: AuthProgressHandler) {
     loading.value = true
     error.value = null
-    resetBillingState()
+    resetProgramRewardState()
     try {
       user.value = await setToken(tokenValue, (progress) => {
         // The store still performs one final SuperProperties synchronization
@@ -105,7 +108,7 @@ export const useAuthStore = defineStore('auth', () => {
   async function loginViaCdp(onProgress?: AuthProgressHandler) {
     loading.value = true
     error.value = null
-    resetBillingState()
+    resetProgramRewardState()
     try {
       const questsStore = useQuestsStore()
       user.value = await autoLoginViaCdp(questsStore.cdpPort, onProgress)
@@ -113,7 +116,13 @@ export const useAuthStore = defineStore('auth', () => {
       // token. Authenticated backend commands use the client in AppState.
       token.value = null
 
-      // CDP is available by definition here (we just used it); refresh state.
+      // CDP is available by definition here (we just used it). Keep the login
+      // method and quest execution method aligned so the first quest does not
+      // fall back to a previously saved simulation preference.
+      questsStore.cdpAvailable = true
+      questsStore.gameQuestMode = 'cdp'
+
+      // Refresh the connection state and the rest of the post-login data.
       bootstrapAfterLogin(questsStore, 'CDP init after CDP login failed:')
 
       return true
@@ -145,14 +154,14 @@ export const useAuthStore = defineStore('auth', () => {
     questsStore.fetchOrbsBalance().catch(err => {
       console.warn('Background Orbs balance fetch failed:', err)
     })
-    fetchBillingSubscription().catch(err => {
-      console.warn('Background billing subscriptions fetch failed:', err)
+    fetchNitroProgramReward().catch(err => {
+      console.warn('Background Nitro program reward fetch failed:', err)
     })
   }
 
   async function logout() {
     // Invalidate account-scoped requests before awaiting quest shutdown.
-    resetBillingState()
+    resetProgramRewardState()
 
     // Stop any in-progress quest before clearing state
     const questsStore = useQuestsStore()
@@ -171,93 +180,43 @@ export const useAuthStore = defineStore('auth', () => {
     questsStore.resetForLogout()
   }
 
-  async function fetchBillingSubscription(force = false) {
-    if (billingLoading.value) return
-    if (!force && billingSubscriptions.value.length > 0) return
+  async function fetchNitroProgramReward(force = false) {
+    if (programRewardLoading.value) return
+    if (!force && programRewardLoaded.value) return
     // CDP auto-login is authenticated on the backend but exposes no frontend
     // token, so gate on the logged-in user rather than the raw token.
     if (!user.value) return
     const requestToken = token.value
-    const requestRevision = ++billingRequestRevision
-    billingLoading.value = true
-    billingError.value = null
+    const requestRevision = ++programRewardRequestRevision
+    programRewardLoading.value = true
+    programRewardError.value = null
     try {
-      const subscriptions = await getBillingSubscriptions()
-      if (requestRevision !== billingRequestRevision || token.value !== requestToken) return
-      billingSubscriptions.value = subscriptions
+      const rewards = await getProgramRewards()
+      if (requestRevision !== programRewardRequestRevision || token.value !== requestToken) return
+      nitroProgramReward.value = rewards.find(reward => {
+        const program = reward.reward_program
+        // Discord's official ProgramReward enum is NITRO=0, XBOX=1.
+        // Keep the string forms for keyed/legacy response normalization.
+        return program === 0 || program === '0' || String(program).toUpperCase() === 'NITRO'
+      }) ?? null
+      programRewardLoaded.value = true
     } catch (e) {
-      if (requestRevision !== billingRequestRevision || token.value !== requestToken) return
-      billingError.value = e as string
-      console.warn('Failed to fetch billing subscriptions:', e)
+      if (requestRevision !== programRewardRequestRevision || token.value !== requestToken) return
+      programRewardError.value = e as string
+      console.warn('Failed to fetch Nitro program reward:', e)
     } finally {
-      if (requestRevision === billingRequestRevision && token.value === requestToken) {
-        billingLoading.value = false
+      if (requestRevision === programRewardRequestRevision && token.value === requestToken) {
+        programRewardLoading.value = false
       }
     }
   }
 
-  // The Nitro subscription (monthly Orbs are a Nitro perk). Only positively
-  // identified Nitro/Premium plans can provide the monthly grant anchor.
-  const nitroSubscription = computed<BillingSubscription | null>(() => {
-    const subs = billingSubscriptions.value
-    if (!subs.length) return null
-    const nitro = subs.find(s =>
-      (s.payment_gateway_plan_id && /premium|nitro/i.test(s.payment_gateway_plan_id)) ||
-      (s.items && s.items.some(it => /premium|nitro/i.test(it.plan_id)))
-    )
-    return nitro ?? null
-  })
-
-  // Days until the next monthly Orbs grant.
-  // Discord grants monthly Nitro Orbs on the subscription anniversary day
-  // (current_period_start day-of-month), so we compute the next occurrence of
-  // that day relative to now.
-  // Days / hours / minutes until the next monthly Orbs grant.
-  // Discord grants monthly Nitro Orbs on the subscription anniversary day
-  // (current_period_start day-of-month). Below 48h we switch to hours, and
-  // below 12h we switch to minutes for a finer-grained countdown.
+  // Discord supplies the authoritative absolute timestamp, so no local or
+  // UTC calendar arithmetic is needed here.
   const nextOrbsClaim = computed<
     { value: number; unit: 'days' | 'hours' | 'minutes' } | null
   >(() => {
-    const start = nitroSubscription.value?.current_period_start
-    if (!start) return null
-    const anchor = new Date(start)
-    if (isNaN(anchor.getTime())) return null
-    const anchorDay = anchor.getUTCDate()
-
-    const now = currentTime.value
-    const nowYear = now.getUTCFullYear()
-    const nowMonth = now.getUTCMonth()
-
-    // Find the first occurrence of anchorDay in a future month, clamping to the
-    // last day of the month when anchorDay exceeds that month's length (e.g. day
-    // 31 in February would otherwise roll over and break the search).
-    let candidate: Date | null = null
-    for (let offset = 0; offset < 12; offset++) {
-      const y = nowYear + Math.floor((nowMonth + offset) / 12)
-      const m = (nowMonth + offset) % 12
-      const lastDay = new Date(Date.UTC(y, m + 1, 0)).getUTCDate()
-      const day = Math.min(anchorDay, lastDay)
-      const c = new Date(Date.UTC(y, m, day))
-      if (c.getTime() > now.getTime()) {
-        candidate = c
-        break
-      }
-    }
-    if (!candidate) return null
-
-    const ms = candidate.getTime() - now.getTime()
-    const MINUTE = 1000 * 60
-    const HOUR = MINUTE * 60
-    const DAY = HOUR * 24
-
-    if (ms < 12 * HOUR) {
-      return { value: Math.max(1, Math.ceil(ms / MINUTE)), unit: 'minutes' }
-    }
-    if (ms < 48 * HOUR) {
-      return { value: Math.max(1, Math.ceil(ms / HOUR)), unit: 'hours' }
-    }
-    return { value: Math.max(1, Math.ceil(ms / DAY)), unit: 'days' }
+    return getNitroOrbsClaim(nitroProgramReward.value?.next_reward_date, currentTime.value)
   })
 
   // Localized Nitro membership status label + color class (null for non-members).
@@ -276,16 +235,15 @@ export const useAuthStore = defineStore('auth', () => {
     loading,
     error,
     detectedAccounts,
-    billingSubscriptions,
-    billingLoading,
-    billingError,
-    nitroSubscription,
+    nitroProgramReward,
+    programRewardLoading,
+    programRewardError,
     nextOrbsClaim,
     nitroStatus,
     tryAutoDetect,
     loginWithToken,
     loginViaCdp,
     logout,
-    fetchBillingSubscription
+    fetchNitroProgramReward
   }
 })

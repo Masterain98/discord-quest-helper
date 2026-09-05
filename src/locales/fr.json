@@ -41,8 +41,25 @@
       "launching_discord": "Démarrage de Discord avec CDP activé...",
       "restart_required": "Discord est déjà ouvert et doit être redémarré avec CDP activé.",
       "restarting_discord": "Redémarrage de Discord avec CDP activé...",
-      "restart_cancelled": "Le redémarrage de Discord a été annulé. Aucun compte n’a été connecté."
-    }
+      "restart_cancelled": "Le redémarrage de Discord a été annulé. Aucun compte n’a été connecté.",
+      "launching_vesktop": "Démarrage de Vesktop avec CDP activé...",
+      "restart_required_vesktop": "Vesktop est déjà en cours d'exécution et doit être redémarré avec CDP activé.",
+      "restarting_vesktop": "Redémarrage de Vesktop avec CDP activé...",
+      "choose_client": "Choisissez le client Discord à démarrer avec CDP...",
+      "launch_cancelled": "Le démarrage du client a été annulé. Aucun compte n'a été connecté."
+    },
+    "cdp_login_action_vesktop": "Se connecter avec Vesktop",
+    "client_auto": "Automatique",
+    "client_official": "Discord",
+    "client_vesktop": "Vesktop",
+    "cdp_login_detail_vesktop": "Utiliser le compte actuellement connecté à Vesktop. Vesktop doit être exécuté avec CDP activé.",
+    "cdp_choose_title": "Choisir un client Discord",
+    "cdp_choose_desc": "Aucun client n'est exécuté avec CDP activé. Choisissez le client installé à démarrer.",
+    "cdp_remember_choice": "Mémoriser mon choix",
+    "cdp_client_stable": "Discord",
+    "cdp_client_ptb": "Discord PTB",
+    "cdp_client_canary": "Discord Canary",
+    "cdp_client_vesktop": "Vesktop"
   },
   "nav": {
     "home": "Accueil",
@@ -94,13 +111,9 @@
     "include_expired": "Inclure les quêtes expirées",
     "include_expired_desc": "Afficher les entrées expirées pour inspection et récupération.",
     "current_orbs": "Orbs actuel",
-
     "nitro_next_orbs_title": "Orbs Nitro mensuelles — compte à rebours jusqu’à la prochaine réclamation",
-
     "nitro_next_orbs_days": "Prochain airdrop d’Orbs dans {days} jours",
-
     "nitro_next_orbs_hours": "Prochain airdrop d’Orbs dans {hours} heures",
-
     "nitro_next_orbs_minutes": "Prochain airdrop d’Orbs dans {minutes} minutes",
     "claim_reward": "Réclamez une récompense",
     "claim_navigated": "Discord a été redirigé vers la page de quête. Veuillez y réclamer votre récompense.",
@@ -290,7 +303,11 @@
     "debug_already_unlocked": "Mode développeur activé",
     "disable_developer_mode": "Désactiver le mode développeur",
     "disable_debug_confirm_title": "Désactiver le mode développeur ?",
-    "disable_debug_confirm_desc": "L'onglet Débogage et les outils de développement seront masqués. Vous pouvez le réactiver en appuyant 7 fois sur le numéro de version."
+    "disable_debug_confirm_desc": "L'onglet Débogage et les outils de développement seront masqués. Vous pouvez le réactiver en appuyant 7 fois sur le numéro de version.",
+    "cdp_dialog_title_disconnected_vesktop": "Redémarrer Vesktop pour activer CDP ?",
+    "cdp_dialog_desc_disconnected_vesktop": "Vesktop est en cours d'exécution mais n'est pas connecté à CDP. Vesktop doit être redémarré avec le port de débogage CDP activé.",
+    "desktop_client": "Client de bureau",
+    "desktop_client_desc": "Lorsque Discord et Vesktop sont installés, ce choix ne concerne que la connexion CDP. L'extraction locale des jetons utilise toujours le client Discord officiel."
   },
   "version": {
     "update_available": "Une nouvelle version est disponible !",
@@ -460,6 +477,26 @@
     "activity_cdp_required": "Les quêtes Activity nécessitent le mode CDP",
     "stream_quest_title": "Quête de flux",
     "stream_quest_desc": "Les quêtes de streaming nécessitent que vous diffusiez le jeu sur Discord manuellement. Démarrez un flux dans un canal vocal, puis utilisez Game Simulator pour simuler le jeu."
+  },
+  "desktop_clients": {
+    "ask_each_time": "Me demander à chaque fois",
+    "ask_each_time_desc": "Demander quel client installé démarrer chaque fois que CDP est indisponible.",
+    "auto_desc": "Helper se connecte à un endpoint Discord prêt pour CDP ou choisit le premier client compatible disponible.",
+    "status_launchable": "Disponible",
+    "status_running": "En cours",
+    "status_missing": "Chemin manquant",
+    "status_invalid": "Invalide",
+    "browse_title": "Choisir l'exécutable d'un client de bureau",
+    "add_vesktop": "Ajouter une installation Vesktop",
+    "relocate": "Relocaliser l'installation",
+    "remove": "Supprimer l'installation",
+    "owner_conflict_title": "Un autre client de bureau possède ce port CDP",
+    "owner_conflict_desc": "Utilisez le client déjà connecté, basculez vers le client sélectionné ou annulez pour choisir un autre port.",
+    "use_current": "Utiliser le client actuel",
+    "switch_selected": "Basculer vers le client sélectionné",
+    "restore_managed_and_close": "Restaurer les clients démarrés par Helper et fermer",
+    "restore_all_and_close": "Confirmer les clients externes, tout restaurer et fermer",
+    "cdp_owner": "Propriétaire CDP"
   },
   "exit_cdp": {
     "title": "Discord fonctionne toujours en mode CDP",

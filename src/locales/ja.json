@@ -41,8 +41,25 @@
       "launching_discord": "CDP を有効にして Discord を起動しています...",
       "restart_required": "Discord はすでに起動中です。CDP を有効にして再起動する必要があります。",
       "restarting_discord": "CDP を有効にして Discord を再起動しています...",
-      "restart_cancelled": "Discord の再起動をキャンセルしました。ログインしていません。"
-    }
+      "restart_cancelled": "Discord の再起動をキャンセルしました。ログインしていません。",
+      "launching_vesktop": "CDPを有効にしてVesktopを起動中...",
+      "restart_required_vesktop": "Vesktopはすでに実行中です。CDPを有効にして再起動する必要があります。",
+      "restarting_vesktop": "CDPを有効にしてVesktopを再起動中...",
+      "choose_client": "CDPで起動するDiscordクライアントを選択...",
+      "launch_cancelled": "クライアントの起動がキャンセルされました。アカウントにはログインしていません。"
+    },
+    "cdp_login_action_vesktop": "Vesktopでログイン",
+    "client_auto": "自動",
+    "client_official": "Discord",
+    "client_vesktop": "Vesktop",
+    "cdp_login_detail_vesktop": "現在Vesktopでログインしているアカウントを使用します。VesktopはCDPを有効にして起動している必要があります。",
+    "cdp_choose_title": "Discordクライアントを選択",
+    "cdp_choose_desc": "CDPを有効にして実行中のクライアントがありません。起動するインストール済みクライアントを選択してください。",
+    "cdp_remember_choice": "選択を記憶する",
+    "cdp_client_stable": "Discord",
+    "cdp_client_ptb": "Discord PTB",
+    "cdp_client_canary": "Discord Canary",
+    "cdp_client_vesktop": "Vesktop"
   },
   "nav": {
     "home": "ホーム",
@@ -94,13 +111,9 @@
     "include_expired": "期限切れのクエストを含める",
     "include_expired_desc": "検査と回復のために期限切れのエントリを表示します。",
     "current_orbs": "現在の Orbs",
-
     "nitro_next_orbs_title": "Nitro 月額 Orbs — 次回受取までのカウントダウン",
-
     "nitro_next_orbs_days": "次回の Orbs エアドロップまで {days} 日",
-
     "nitro_next_orbs_hours": "次回の Orbs エアドロップまで {hours} 時間",
-
     "nitro_next_orbs_minutes": "次回の Orbs エアドロップまで {minutes} 分",
     "claim_reward": "報酬を受け取る",
     "claim_navigated": "Discord をクエストページに移動しました。Discord で報酬を受け取ってください。",
@@ -290,7 +303,11 @@
     "debug_already_unlocked": "開発者モードが有効です",
     "disable_developer_mode": "開発者モードを無効にする",
     "disable_debug_confirm_title": "開発者モードを無効にしますか？",
-    "disable_debug_confirm_desc": "デバッグタブと開発者ツールが非表示になります。バージョン番号を7回タップすると再有効化できます。"
+    "disable_debug_confirm_desc": "デバッグタブと開発者ツールが非表示になります。バージョン番号を7回タップすると再有効化できます。",
+    "cdp_dialog_title_disconnected_vesktop": "CDPを有効にするためVesktopを再起動しますか？",
+    "cdp_dialog_desc_disconnected_vesktop": "Vesktopは実行中ですがCDPに接続されていません。CDPデバッグポートを有効にしてVesktopを再起動する必要があります。",
+    "desktop_client": "デスクトップクライアント",
+    "desktop_client_desc": "DiscordとVesktopの両方がインストールされている場合、この選択はCDPログインにのみ影響します。ローカルトークンの抽出には常に公式Discordクライアントを使用します。"
   },
   "version": {
     "update_available": "新しいバージョンが利用可能です！",
@@ -460,6 +477,26 @@
     "activity_cdp_required": "Activity クエストには CDP モードが必要です",
     "stream_quest_title": "配信クエスト",
     "stream_quest_desc": "配信クエストは Discord で手動でゲームを配信する必要があります。ボイスチャンネルで配信を開始し、ゲームシミュレーターでゲームをシミュレートしてください。"
+  },
+  "desktop_clients": {
+    "ask_each_time": "毎回確認する",
+    "ask_each_time_desc": "CDPが利用できないとき、起動するインストール済みクライアントを毎回確認します。",
+    "auto_desc": "Helperは既存のDiscord CDP対応エンドポイントに接続するか、利用可能な対応クライアントの先頭を選択します。",
+    "status_launchable": "利用可能",
+    "status_running": "実行中",
+    "status_missing": "パスがありません",
+    "status_invalid": "無効",
+    "browse_title": "デスクトップクライアントの実行ファイルを選択",
+    "add_vesktop": "Vesktopのインストールを追加",
+    "relocate": "インストール先を再指定",
+    "remove": "インストールを削除",
+    "owner_conflict_title": "別のデスクトップクライアントがこのCDPポートを使用中",
+    "owner_conflict_desc": "接続済みのクライアントを使うか、選択したクライアントに切り替えるか、キャンセルして別のポートを選択してください。",
+    "use_current": "現在のクライアントを使用",
+    "switch_selected": "選択したクライアントに切り替え",
+    "restore_managed_and_close": "Helperが起動したクライアントを復元して終了",
+    "restore_all_and_close": "外部クライアントを確認し、すべて復元して終了",
+    "cdp_owner": "CDP所有者"
   },
   "exit_cdp": {
     "title": "Discord は CDP モードで実行中です",

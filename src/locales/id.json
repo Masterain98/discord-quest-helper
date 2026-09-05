@@ -41,8 +41,25 @@
       "launching_discord": "Memulai Discord dengan CDP aktif...",
       "restart_required": "Discord sudah berjalan dan harus dimulai ulang dengan CDP aktif.",
       "restarting_discord": "Memulai ulang Discord dengan CDP aktif...",
-      "restart_cancelled": "Mulai ulang Discord dibatalkan. Tidak ada akun yang masuk."
-    }
+      "restart_cancelled": "Mulai ulang Discord dibatalkan. Tidak ada akun yang masuk.",
+      "launching_vesktop": "Memulai Vesktop dengan CDP diaktifkan...",
+      "restart_required_vesktop": "Vesktop sedang berjalan dan harus dimulai ulang dengan CDP diaktifkan.",
+      "restarting_vesktop": "Memulai ulang Vesktop dengan CDP diaktifkan...",
+      "choose_client": "Pilih klien Discord yang akan dijalankan dengan CDP...",
+      "launch_cancelled": "Peluncuran klien dibatalkan. Tidak ada akun yang masuk."
+    },
+    "cdp_login_action_vesktop": "Masuk dengan Vesktop",
+    "client_auto": "Otomatis",
+    "client_official": "Discord",
+    "client_vesktop": "Vesktop",
+    "cdp_login_detail_vesktop": "Gunakan akun yang sedang masuk di Vesktop. Vesktop harus berjalan dengan CDP diaktifkan.",
+    "cdp_choose_title": "Pilih klien Discord",
+    "cdp_choose_desc": "Tidak ada klien yang berjalan dengan CDP aktif. Pilih klien terpasang yang ingin dijalankan.",
+    "cdp_remember_choice": "Ingat pilihan saya",
+    "cdp_client_stable": "Discord",
+    "cdp_client_ptb": "Discord PTB",
+    "cdp_client_canary": "Discord Canary",
+    "cdp_client_vesktop": "Vesktop"
   },
   "nav": {
     "home": "Beranda",
@@ -94,13 +111,9 @@
     "include_expired": "Sertakan misi yang sudah kadaluwarsa",
     "include_expired_desc": "Tampilkan entri kedaluwarsa untuk pemeriksaan dan pemulihan.",
     "current_orbs": "Saat ini Orbs",
-
     "nitro_next_orbs_title": "Orbs Nitro bulanan — hitung mundur klaim berikutnya",
-
     "nitro_next_orbs_days": "Airdrop Orbs berikutnya dalam {days} hari",
-
     "nitro_next_orbs_hours": "Airdrop Orbs berikutnya dalam {hours} jam",
-
     "nitro_next_orbs_minutes": "Airdrop Orbs berikutnya dalam {minutes} menit",
     "claim_reward": "Klaim Hadiah",
     "claim_navigated": "Discord telah dialihkan ke halaman pencarian. Silakan klaim hadiah Anda di sana.",
@@ -290,7 +303,11 @@
     "debug_already_unlocked": "Mode pengembang diaktifkan",
     "disable_developer_mode": "Nonaktifkan Mode Pengembang",
     "disable_debug_confirm_title": "Nonaktifkan Mode Pengembang?",
-    "disable_debug_confirm_desc": "Tab Debug dan alat pengembang akan disembunyikan. Anda dapat mengaktifkannya kembali dengan mengetuk nomor versi sebanyak 7 kali."
+    "disable_debug_confirm_desc": "Tab Debug dan alat pengembang akan disembunyikan. Anda dapat mengaktifkannya kembali dengan mengetuk nomor versi sebanyak 7 kali.",
+    "cdp_dialog_title_disconnected_vesktop": "Mulai ulang Vesktop untuk mengaktifkan CDP?",
+    "cdp_dialog_desc_disconnected_vesktop": "Vesktop sedang berjalan tetapi belum terhubung ke CDP. Vesktop perlu dimulai ulang dengan port debug CDP diaktifkan.",
+    "desktop_client": "Klien desktop",
+    "desktop_client_desc": "Saat Discord dan Vesktop terpasang, pilihan ini hanya memengaruhi login CDP. Ekstraksi token lokal selalu menggunakan klien Discord resmi."
   },
   "version": {
     "update_available": "Versi baru telah tersedia!",
@@ -460,6 +477,26 @@
     "activity_cdp_required": "Quest Activity memerlukan mode CDP.",
     "stream_quest_title": "Aliran pencarian",
     "stream_quest_desc": "Quest streaming mengharuskan Anda melakukan streaming game pada Discord secara manual. Mulai streaming di saluran suara, lalu gunakan Game Simulator untuk menyimulasikan game."
+  },
+  "desktop_clients": {
+    "ask_each_time": "Tanya saya setiap kali",
+    "ask_each_time_desc": "Tanyakan klien terpasang mana yang harus dijalankan setiap kali CDP tidak tersedia.",
+    "auto_desc": "Helper akan terhubung ke endpoint Discord yang siap digunakan atau memilih klien kompatibel pertama yang tersedia.",
+    "status_launchable": "Tersedia",
+    "status_running": "Berjalan",
+    "status_missing": "Path tidak ditemukan",
+    "status_invalid": "Tidak valid",
+    "browse_title": "Pilih executable klien desktop",
+    "add_vesktop": "Tambahkan instalasi Vesktop",
+    "relocate": "Pindahkan instalasi",
+    "remove": "Hapus instalasi",
+    "owner_conflict_title": "Klien desktop lain memiliki port CDP ini",
+    "owner_conflict_desc": "Gunakan klien yang sudah terhubung, beralih ke klien yang dipilih, atau batalkan dan pilih port lain.",
+    "use_current": "Gunakan klien saat ini",
+    "switch_selected": "Beralih ke klien yang dipilih",
+    "restore_managed_and_close": "Pulihkan klien yang dimulai Helper lalu tutup",
+    "restore_all_and_close": "Konfirmasi klien eksternal, pulihkan semua, lalu tutup",
+    "cdp_owner": "Pemilik CDP"
   },
   "exit_cdp": {
     "title": "Discord masih berjalan dalam mode CDP",

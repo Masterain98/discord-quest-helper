@@ -442,6 +442,7 @@ impl DiscordApiClient {
         if path.starts_with("/api/v9/quests")
             || path == "/api/v9/users/@me/virtual-currency/balance"
             || path.starts_with("/api/v9/users/@me/billing/subscriptions")
+            || path == "/api/v9/users/@me/program-rewards"
         {
             Some(QUEST_HOME_REFERER)
         } else {
@@ -731,8 +732,8 @@ impl DiscordApiClient {
 
     /// Get the current user's billing subscriptions.
     ///
-    /// Used to derive Nitro membership period info (e.g. the monthly Orbs
-    /// grant anchor via `current_period_start`) for the UI.
+    /// Kept for callers that need billing-period information. Nitro Orbs
+    /// countdowns use the dedicated program-rewards endpoint below.
     pub async fn get_billing_subscriptions(&self) -> Result<serde_json::Value> {
         let url = format!(
             "{}/users/@me/billing/subscriptions?sync_level=2",
@@ -752,6 +753,25 @@ impl DiscordApiClient {
         }
 
         serde_json::from_str(&body).context("Failed to parse billing subscriptions")
+    }
+
+    /// Get Discord's server-calculated reward-program countdown state.
+    pub async fn get_program_rewards(&self) -> Result<serde_json::Value> {
+        let url = format!("{}/users/@me/program-rewards", DISCORD_API_BASE);
+
+        let response = self
+            .request(Method::GET, &url)
+            .send()
+            .await
+            .context("Request for program rewards failed")?;
+
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        if !status.is_success() {
+            anyhow::bail!("Failed to get program rewards: {} - {}", status, body);
+        }
+
+        serde_json::from_str(&body).context("Failed to parse program rewards")
     }
 
     pub async fn claim_quest_reward(
@@ -1376,6 +1396,12 @@ mod tests {
         assert_eq!(
             DiscordApiClient::quest_referer_for_url(
                 "https://discord.com/api/v9/users/@me/virtual-currency/balance"
+            ),
+            Some(QUEST_HOME_REFERER)
+        );
+        assert_eq!(
+            DiscordApiClient::quest_referer_for_url(
+                "https://discord.com/api/v9/users/@me/program-rewards"
             ),
             Some(QUEST_HOME_REFERER)
         );

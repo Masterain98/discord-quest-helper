@@ -1,9 +1,15 @@
-use discord_cdp_launch_core::{parse_discord_channel, DiscordChannel, DEFAULT_CDP_PORT};
+use discord_cdp_launch_core::{
+    parse_desktop_client_preference, parse_discord_channel, DesktopClientPreference,
+    DiscordChannel, DEFAULT_CDP_PORT,
+};
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CliOptions {
     pub port: u16,
     pub channel: Option<DiscordChannel>,
+    pub client: DesktopClientPreference,
+    pub installation: Option<PathBuf>,
     pub restart: bool,
     pub status: bool,
     pub restore_normal_all: bool,
@@ -15,6 +21,8 @@ impl Default for CliOptions {
         Self {
             port: DEFAULT_CDP_PORT,
             channel: None,
+            client: DesktopClientPreference::Auto,
+            installation: None,
             restart: false,
             status: false,
             restore_normal_all: false,
@@ -53,6 +61,26 @@ pub(crate) fn parse_args(args: Vec<String>) -> Result<CliOptions, String> {
                 options.channel =
                     parse_discord_channel(Some(value)).map_err(|error| error.to_string())?;
             }
+            "--client" | "--provider" => {
+                launch_option_seen = true;
+                index += 1;
+                let value = args
+                    .get(index)
+                    .ok_or_else(|| "--client requires a value".to_string())?;
+                options.client = parse_desktop_client_preference(Some(value))
+                    .map_err(|error| error.to_string())?;
+            }
+            "--installation" => {
+                launch_option_seen = true;
+                index += 1;
+                let value = args
+                    .get(index)
+                    .ok_or_else(|| "--installation requires a path".to_string())?;
+                if value.trim().is_empty() {
+                    return Err("--installation requires a non-empty path".to_string());
+                }
+                options.installation = Some(PathBuf::from(value));
+            }
             "--restart" => {
                 launch_option_seen = true;
                 options.restart = true;
@@ -78,6 +106,7 @@ pub(crate) fn help_text() -> &'static str {
     "Usage:
   waybridge --port 9223 --channel auto
   waybridge --port 9223 --channel stable
+  waybridge --port 9223 --client vesktop --installation /path/to/vesktop
   waybridge --port 9223 --restart
   waybridge --status --port 9223
   waybridge --restore-normal-all
@@ -86,6 +115,10 @@ Options:
   --port <port>                 CDP debugging port. Defaults to 9223.
   --channel <auto|stable|discord|ptb|discordptb|discord-ptb|canary|discordcanary|discord-canary>
                                 Discord channel to launch. Defaults to auto.
+  --client <auto|official|vesktop>
+  --provider <auto|official|vesktop>
+                                Desktop client provider (`--provider` is an alias).
+  --installation <path>         Exact executable for a custom or portable install.
   --restart                     Close the selected Discord client before launching.
   --status                      Check whether CDP is already available.
   --restore-normal-all          Restart every detected Discord CDP client in normal mode.
@@ -109,12 +142,21 @@ mod tests {
             "discord-ptb",
             "--restart",
             "--status",
+            "--client",
+            "vesktop",
+            "--installation",
+            "C:\\Portable Apps\\Vesktop\\vesktop.exe",
         ]))
         .unwrap();
         assert_eq!(parsed.port, 9444);
         assert_eq!(parsed.channel, Some(DiscordChannel::Ptb));
         assert!(parsed.restart);
         assert!(parsed.status);
+        assert_eq!(parsed.client, DesktopClientPreference::Vesktop);
+        assert_eq!(
+            parsed.installation,
+            Some(PathBuf::from("C:\\Portable Apps\\Vesktop\\vesktop.exe"))
+        );
     }
 
     #[test]

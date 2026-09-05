@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 import { message } from '@tauri-apps/plugin-dialog'
@@ -14,13 +14,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { createAppExitGuard, type ExitGuardState, type RunningCdpSession } from '@/composables/appExitGuard'
 import {
-  createAppExitGuard,
-  type ExitGuardState,
-  type RunningCdpSession,
-} from '@/composables/appExitGuard'
-import {
-  listRunningDiscordCdpSessions,
+  listRunningDesktopCdpSessions,
+  restoreDesktopClientSession,
   exitAppNow,
   prepareAppExit,
   startDiscordNormalRestoreHelper,
@@ -29,10 +26,15 @@ import {
 const { t } = useI18n()
 const appWindow = getCurrentWindow()
 const state = ref<ExitGuardState>({ checking: false, dialogOpen: false, closing: false })
+const hasExternalSessions = computed(() => state.value.sessions?.some(session => session.ownership !== 'managed') ?? false)
 let unlisten: UnlistenFn | undefined
 
 const guard = createAppExitGuard({
-  listSessions: () => listRunningDiscordCdpSessions() as Promise<RunningCdpSession[]>,
+  listSessions: () => listRunningDesktopCdpSessions() as Promise<RunningCdpSession[]>,
+  restoreSession: async (session, confirmExternal) => {
+    if (!session.installationId) throw new Error(`Could not identify the ${session.providerId ?? 'desktop client'} installation on port ${session.port}.`)
+    await restoreDesktopClientSession(session.installationId, session.port, confirmExternal)
+  },
   startRestoreHelper: startDiscordNormalRestoreHelper,
   prepareExit: prepareAppExit,
   exitApplication: exitAppNow,
@@ -64,9 +66,17 @@ onUnmounted(() => unlisten?.())
         <Button variant="outline" :disabled="state.checking || state.closing" @click="guard.closeOnly">
           {{ t('exit_cdp.close_only') }}
         </Button>
+        <Button
+          v-if="hasExternalSessions"
+          variant="outline"
+          :disabled="state.checking || state.closing"
+          @click="guard.restoreManagedAndClose"
+        >
+          {{ t('desktop_clients.restore_managed_and_close') }}
+        </Button>
         <Button :disabled="state.checking || state.closing" @click="guard.restoreAndClose">
           <LoaderCircle v-if="state.checking" class="mr-2 h-4 w-4 animate-spin" />
-          {{ t('exit_cdp.restore_and_close') }}
+          {{ hasExternalSessions ? t('desktop_clients.restore_all_and_close') : t('exit_cdp.restore_and_close') }}
         </Button>
       </AlertDialogFooter>
     </AlertDialogContent>

@@ -79,6 +79,7 @@ static APP_EXIT_CLEANUP: AppExitCleanupState = AppExitCleanupState::new();
 /// Global state: Discord API client
 struct AppState {
     client: Mutex<Option<DiscordApiClient>>,
+    authenticated_user: Mutex<Option<DiscordUser>>,
     quest_state: Mutex<Option<QuestState>>,
     manual_cdp_game: tokio::sync::Mutex<ManualCdpGameSessionState>,
     /// Serializes quest startup, manual CDP startup, and active-work teardown
@@ -594,6 +595,7 @@ async fn set_token(
 
     // Save client AFTER initializing SuperProperties to avoid race conditions
     // where other commands might use the client with stale properties
+    *state.authenticated_user.lock().unwrap() = Some(user.clone());
     *state.client.lock().unwrap() = Some(client);
 
     let _ = on_progress.send(AuthProgress::phase(AuthProgressPhase::Complete));
@@ -678,6 +680,7 @@ async fn auto_login_via_cdp(
 
     // 4. Save the client last (mirrors set_token) so no request runs with stale
     //    super properties.
+    *state.authenticated_user.lock().unwrap() = Some(user.clone());
     *state.client.lock().unwrap() = Some(client);
 
     log(
@@ -690,6 +693,57 @@ async fn auto_login_via_cdp(
     let _ = on_progress.send(AuthProgress::phase(AuthProgressPhase::Complete));
 
     Ok(user)
+}
+
+/// Refuse CDP mutations when Helper's authenticated account differs from the
+/// account currently open in the selected desktop client. Without this guard,
+/// injection can affect account B while progress polling still targets A.
+async fn ensure_cdp_account_consistency(
+    state: &State<'_, AppState>,
+    cdp_port: u16,
+) -> Result<(), String> {
+    let expected = state
+        .authenticated_user
+        .lock()
+        .map_err(|_| "Authenticated account state is unavailable".to_string())?
+        .clone()
+        .ok_or_else(|| "Not logged in".to_string())?;
+
+    let session = cdp_client::capture_discord_auth_via_cdp(
+        cdp_port,
+        std::time::Duration::from_secs(8),
+    )
+    .await
+    .map_err(|error| {
+        format!(
+            "Could not verify the account open in the desktop client on CDP port {cdp_port}: {error}"
+        )
+    })?;
+    let client = DiscordApiClient::new(session.authorization.to_string())
+        .map_err(|error| format!("Could not validate the desktop client account: {error}"))?;
+    let actual = client
+        .get_current_user()
+        .await
+        .map_err(|error| format!("Could not read the desktop client account: {error}"))?;
+    if actual.id == expected.id {
+        return Ok(());
+    }
+
+    let owner = match discord_cdp_launch_core::inspect_cdp_port_owner(cdp_port) {
+        discord_cdp_launch_core::CdpPortOwner::Official => "Discord",
+        discord_cdp_launch_core::CdpPortOwner::Vesktop => "Vesktop",
+        discord_cdp_launch_core::CdpPortOwner::None => "the selected desktop client",
+        discord_cdp_launch_core::CdpPortOwner::Other => "an unrecognized desktop client",
+    };
+    let expected_name = expected
+        .global_name
+        .as_deref()
+        .unwrap_or(&expected.username);
+    let actual_name = actual.global_name.as_deref().unwrap_or(&actual.username);
+    Err(format!(
+        "account_mismatch: Helper is signed in as {expected_name} ({}), but {owner} is signed in as {actual_name} ({}). Sign both into the same account before starting a CDP task.",
+        expected.id, actual.id
+    ))
 }
 
 /// Get quest list (via HTTP API /quests/@me endpoint)
@@ -933,9 +987,11 @@ async fn start_play_activity_quest(
     if transport == PlayActivityTransport::DirectApi && client.is_none() {
         return Err("Not logged in".to_string());
     }
-
     let _gate = state.activity_gate.lock().await;
     stop_active_work_internal(&state).await?;
+    if transport == PlayActivityTransport::Cdp {
+        ensure_cdp_account_consistency(&state, cdp_port).await?;
+    }
     let quest_id_for_state = quest_id.clone();
     let (cancel_tx, cancel_rx) = tokio::sync::mpsc::channel::<()>(1);
     let join = tokio::spawn(async move {
@@ -1000,6 +1056,7 @@ async fn start_cdp_quest(
 ) -> Result<(), String> {
     let _gate = state.activity_gate.lock().await;
     stop_active_work_internal(&state).await?;
+    ensure_cdp_account_consistency(&state, cdp_port).await?;
     let quest_id_for_state = quest_id.clone();
     let (cancel_tx, cancel_rx) = tokio::sync::mpsc::channel::<()>(1);
 
@@ -1258,6 +1315,8 @@ async fn start_manual_cdp_game_simulation(
             .unwrap_or_else(|| format!("Discord CDP is not connected on port {cdp_port}")));
     }
 
+    ensure_cdp_account_consistency(&state, cdp_port).await?;
+
     cdp_quest::start_manual_game_spoof(cdp_port, &app_id, &app_name)
         .await
         .map_err(|error| format!("Failed to start manual CDP game simulation: {error}"))?;
@@ -1404,6 +1463,22 @@ async fn get_billing_subscriptions(
         .get_billing_subscriptions()
         .await
         .map_err(|e| format!("Failed to get billing subscriptions: {}", e))
+}
+
+#[tauri::command]
+async fn get_program_rewards(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let client = {
+        let guard = state.client.lock().unwrap();
+        guard
+            .as_ref()
+            .ok_or_else(|| "Not logged in".to_string())?
+            .clone()
+    };
+
+    client
+        .get_program_rewards()
+        .await
+        .map_err(|e| format!("Failed to get program rewards: {}", e))
 }
 
 #[tauri::command]
@@ -1752,6 +1827,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState {
             client: Mutex::new(None),
+            authenticated_user: Mutex::new(None),
             quest_state: Mutex::new(None),
             manual_cdp_game: tokio::sync::Mutex::new(ManualCdpGameSessionState::default()),
             activity_gate: tokio::sync::Mutex::new(()),
@@ -1762,11 +1838,19 @@ pub fn run() {
             // refresh its binary, desktop entry, and icon on every dev start
             // so developers always test the current launcher build.
             #[cfg(all(debug_assertions, target_os = "linux"))]
-            if let Some((port, channel)) = linux_existing_cdp_launcher_options() {
+            if let Some((port, channel, client, installation)) =
+                linux_existing_cdp_launcher_options()
+            {
                 let app_handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
-                    match create_discord_cdp_launcher_shortcut_internal(&app_handle, port, channel)
-                        .await
+                    match create_discord_cdp_launcher_shortcut_internal(
+                        &app_handle,
+                        port,
+                        channel,
+                        client,
+                        installation,
+                    )
+                    .await
                     {
                         Ok(path) => {
                             println!("[cdp-launcher-dev] Refreshed existing Linux launcher: {path}")
@@ -1803,6 +1887,7 @@ pub fn run() {
             accept_quest,
             get_virtual_currency_balance,
             get_billing_subscriptions,
+            get_program_rewards,
             get_quest_decision_debug,
             get_quest_decisions_debug,
             claim_quest_reward,
@@ -1817,7 +1902,15 @@ pub fn run() {
             fetch_super_properties_cdp,
             fetch_running_games_cdp,
             discord_cdp_commands::is_discord_running,
+            discord_cdp_commands::get_desktop_client_state,
+            discord_cdp_commands::add_desktop_client_installation,
+            discord_cdp_commands::remove_desktop_client_installation,
+            discord_cdp_commands::set_desktop_client_selection,
+            discord_cdp_commands::launch_desktop_client_cdp,
+            discord_cdp_commands::list_desktop_clients,
             discord_cdp_commands::list_running_discord_cdp_sessions,
+            discord_cdp_commands::list_running_desktop_cdp_sessions,
+            discord_cdp_commands::restore_desktop_client_session,
             discord_cdp_commands::launch_discord_cdp,
             discord_cdp_commands::restart_discord_cdp,
             create_discord_cdp_launcher_shortcut,
@@ -2213,11 +2306,22 @@ async fn create_discord_cdp_launcher_shortcut(
     app_handle: tauri::AppHandle,
     port: Option<u16>,
     channel: Option<String>,
+    client: Option<String>,
+    installation_path: Option<String>,
 ) -> Result<String, String> {
     let channel = discord_cdp_launch_core::parse_discord_channel(channel.as_deref())
         .map_err(|error| error.to_string())?;
     let port = port.unwrap_or(cdp_client::DEFAULT_CDP_PORT);
-    create_discord_cdp_launcher_shortcut_internal(&app_handle, port, channel).await
+    let client = discord_cdp_launch_core::parse_desktop_client_preference(client.as_deref())
+        .map_err(|error| error.to_string())?;
+    create_discord_cdp_launcher_shortcut_internal(
+        &app_handle,
+        port,
+        channel,
+        client,
+        installation_path.map(std::path::PathBuf::from),
+    )
+    .await
 }
 
 /// Backward compatible command name. It now creates a long-lived CDP launcher shortcut.
@@ -2229,6 +2333,8 @@ async fn create_discord_debug_shortcut(
     create_discord_cdp_launcher_shortcut_internal(
         &app_handle,
         port.unwrap_or(cdp_client::DEFAULT_CDP_PORT),
+        None,
+        discord_cdp_launch_core::DesktopClientPreference::Auto,
         None,
     )
     .await
@@ -2482,8 +2588,12 @@ fn linux_cdp_launcher_desktop_path() -> Result<std::path::PathBuf, String> {
 }
 
 #[cfg(target_os = "linux")]
-fn linux_existing_cdp_launcher_options(
-) -> Option<(u16, Option<discord_cdp_launch_core::DiscordChannel>)> {
+fn linux_existing_cdp_launcher_options() -> Option<(
+    u16,
+    Option<discord_cdp_launch_core::DiscordChannel>,
+    discord_cdp_launch_core::DesktopClientPreference,
+    Option<std::path::PathBuf>,
+)> {
     let desktop_path = linux_cdp_launcher_desktop_path().ok()?;
     if !desktop_path.exists() {
         return None;
@@ -2496,16 +2606,23 @@ fn linux_existing_cdp_launcher_options(
 #[cfg(target_os = "linux")]
 fn linux_cdp_launcher_options_from_desktop(
     contents: &str,
-) -> (u16, Option<discord_cdp_launch_core::DiscordChannel>) {
+) -> (
+    u16,
+    Option<discord_cdp_launch_core::DiscordChannel>,
+    discord_cdp_launch_core::DesktopClientPreference,
+    Option<std::path::PathBuf>,
+) {
     let mut port = cdp_client::DEFAULT_CDP_PORT;
     let mut channel = None;
+    let mut client = discord_cdp_launch_core::DesktopClientPreference::Auto;
+    let mut installation = None;
     let Some(exec) = contents.lines().find_map(|line| line.strip_prefix("Exec=")) else {
-        return (port, channel);
+        return (port, channel, client, installation);
     };
-    let args: Vec<&str> = exec.split_whitespace().collect();
+    let args = discord_cdp_launch_core::parse_desktop_exec_arguments(exec);
 
     for pair in args.windows(2) {
-        match pair[0] {
+        match pair[0].as_str() {
             "--port" => {
                 if let Ok(value) = pair[1].parse::<u16>() {
                     if value != 0 {
@@ -2514,15 +2631,25 @@ fn linux_cdp_launcher_options_from_desktop(
                 }
             }
             "--channel" => {
-                if let Ok(value) = discord_cdp_launch_core::parse_discord_channel(Some(pair[1])) {
+                if let Ok(value) =
+                    discord_cdp_launch_core::parse_discord_channel(Some(pair[1].as_str()))
+                {
                     channel = value;
                 }
             }
+            "--client" | "--provider" => {
+                if let Ok(value) =
+                    discord_cdp_launch_core::parse_desktop_client_preference(Some(pair[1].as_str()))
+                {
+                    client = value;
+                }
+            }
+            "--installation" => installation = Some(std::path::PathBuf::from(&pair[1])),
             _ => {}
         }
     }
 
-    (port, channel)
+    (port, channel, client, installation)
 }
 
 fn find_bundled_cdp_launcher(app_handle: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
@@ -2762,24 +2889,65 @@ async fn create_discord_cdp_launcher_shortcut_internal(
     app_handle: &tauri::AppHandle,
     port: u16,
     channel: Option<discord_cdp_launch_core::DiscordChannel>,
+    client: discord_cdp_launch_core::DesktopClientPreference,
+    installation_path: Option<std::path::PathBuf>,
 ) -> Result<String, String> {
     let launcher_path = install_discord_cdp_launcher_internal(app_handle).await?;
-    create_platform_cdp_launcher_shortcut(&launcher_path, port, channel)
+    let arguments = cdp_launcher_shortcut_arguments(port, channel, client, installation_path)?;
+    create_platform_cdp_launcher_shortcut(&launcher_path, &arguments)
+}
+
+fn cdp_launcher_shortcut_arguments(
+    port: u16,
+    channel: Option<discord_cdp_launch_core::DiscordChannel>,
+    client: discord_cdp_launch_core::DesktopClientPreference,
+    installation_path: Option<std::path::PathBuf>,
+) -> Result<Vec<String>, String> {
+    if port == 0 {
+        return Err("CDP port must be between 1 and 65535.".to_string());
+    }
+    if installation_path.is_some()
+        && client == discord_cdp_launch_core::DesktopClientPreference::Auto
+    {
+        return Err("An exact installation requires an explicit desktop client.".to_string());
+    }
+    let mut arguments = vec![
+        "--port".to_string(),
+        port.to_string(),
+        "--channel".to_string(),
+        channel
+            .map(|value| value.as_str())
+            .unwrap_or("auto")
+            .to_string(),
+        "--client".to_string(),
+        client.as_str().to_string(),
+    ];
+    if let Some(path) = installation_path {
+        let path = path.to_string_lossy().into_owned();
+        if path.contains(char::is_control) || path.contains('"') {
+            return Err("Installation path contains unsupported characters.".to_string());
+        }
+        arguments.push("--installation".to_string());
+        arguments.push(path);
+    }
+    Ok(arguments)
 }
 
 #[cfg(target_os = "windows")]
 fn create_platform_cdp_launcher_shortcut(
     launcher_path: &std::path::Path,
-    port: u16,
-    channel: Option<discord_cdp_launch_core::DiscordChannel>,
+    arguments: &[String],
 ) -> Result<String, String> {
     use std::process::Command;
 
     let launcher_dir = launcher_path
         .parent()
         .ok_or_else(|| "Could not get launcher directory".to_string())?;
-    let channel_arg = channel.map(|c| c.as_str()).unwrap_or("auto");
-    let args = format!("--port {} --channel {}", port, channel_arg);
+    let args = arguments
+        .iter()
+        .map(|argument| windows_command_line_argument(argument))
+        .collect::<Vec<_>>()
+        .join(" ");
 
     let launcher_path_ps = ps_single_quote(&launcher_path.to_string_lossy());
     let launcher_dir_ps = ps_single_quote(&launcher_dir.to_string_lossy());
@@ -2822,6 +2990,45 @@ fn create_platform_cdp_launcher_shortcut(
 }
 
 #[cfg(any(target_os = "windows", test))]
+fn windows_command_line_argument(value: &str) -> String {
+    if !value.is_empty()
+        && value
+            .bytes()
+            .all(|byte| !byte.is_ascii_whitespace() && byte != b'"')
+    {
+        return value.to_string();
+    }
+
+    let mut quoted = String::with_capacity(value.len() + 2);
+    quoted.push('"');
+    let mut backslashes = 0;
+    for character in value.chars() {
+        match character {
+            '\\' => backslashes += 1,
+            '"' => {
+                for _ in 0..(backslashes * 2 + 1) {
+                    quoted.push('\\');
+                }
+                quoted.push('"');
+                backslashes = 0;
+            }
+            character => {
+                for _ in 0..backslashes {
+                    quoted.push('\\');
+                }
+                quoted.push(character);
+                backslashes = 0;
+            }
+        }
+    }
+    for _ in 0..(backslashes * 2) {
+        quoted.push('\\');
+    }
+    quoted.push('"');
+    quoted
+}
+
+#[cfg(any(target_os = "windows", test))]
 fn windows_cdp_shortcut_script(
     launcher_path_ps: &str,
     launcher_dir_ps: &str,
@@ -2857,20 +3064,18 @@ fn ps_single_quote(value: &str) -> String {
 #[cfg(target_os = "macos")]
 fn create_platform_cdp_launcher_shortcut(
     launcher_path: &std::path::Path,
-    port: u16,
-    channel: Option<discord_cdp_launch_core::DiscordChannel>,
+    arguments: &[String],
 ) -> Result<String, String> {
     let home = std::env::var_os("HOME").ok_or_else(|| "Could not get HOME".to_string())?;
     let desktop = std::path::PathBuf::from(home).join("Desktop");
-    create_macos_cdp_launcher_shortcut_at(&desktop, launcher_path, port, channel)
+    create_macos_cdp_launcher_shortcut_at(&desktop, launcher_path, arguments)
 }
 
 #[cfg(target_os = "macos")]
 fn create_macos_cdp_launcher_shortcut_at(
     desktop: &std::path::Path,
     launcher_path: &std::path::Path,
-    port: u16,
-    channel: Option<discord_cdp_launch_core::DiscordChannel>,
+    arguments: &[String],
 ) -> Result<String, String> {
     use std::os::unix::fs::PermissionsExt;
 
@@ -2878,18 +3083,21 @@ fn create_macos_cdp_launcher_shortcut_at(
         return Err("Could not get desktop path".to_string());
     }
     let script_path = desktop.join("Discord CDP Launcher.command");
-    let channel_arg = channel.map(|c| c.as_str()).unwrap_or("auto");
 
     // Use single quotes to prevent shell metacharacter expansion ($, `, \, ")
     fn shell_single_quote(value: &str) -> String {
         format!("'{}'", value.replace('\'', "'\\''"))
     }
 
+    let arguments = arguments
+        .iter()
+        .map(|argument| shell_single_quote(argument))
+        .collect::<Vec<_>>()
+        .join(" ");
     let script_content = format!(
-        "#!/bin/bash\n{} --port {} --channel {}\n",
+        "#!/bin/bash\n{} {}\n",
         shell_single_quote(&launcher_path.to_string_lossy()),
-        port,
-        channel_arg
+        arguments
     );
 
     std::fs::write(&script_path, &script_content)
@@ -2921,13 +3129,21 @@ mod macos_cdp_shortcut_tests {
         let created = create_macos_cdp_launcher_shortcut_at(
             &desktop,
             &launcher,
-            9444,
-            Some(DiscordChannel::Canary),
+            &[
+                "--port".into(),
+                "9444".into(),
+                "--channel".into(),
+                DiscordChannel::Canary.as_str().into(),
+                "--client".into(),
+                "vesktop".into(),
+            ],
         )
         .unwrap();
         let created = std::path::PathBuf::from(created);
         let contents = fs::read_to_string(&created).unwrap();
-        assert!(contents.contains("it'\\''works/waybridge' --port 9444 --channel canary"));
+        assert!(contents.contains(
+            "it'\\''works/waybridge' '--port' '9444' '--channel' 'canary' '--client' 'vesktop'"
+        ));
         assert_ne!(
             fs::metadata(&created).unwrap().permissions().mode() & 0o111,
             0
@@ -2939,15 +3155,10 @@ mod macos_cdp_shortcut_tests {
 #[cfg(target_os = "linux")]
 fn create_platform_cdp_launcher_shortcut(
     launcher_path: &std::path::Path,
-    port: u16,
-    channel: Option<discord_cdp_launch_core::DiscordChannel>,
+    arguments: &[String],
 ) -> Result<String, String> {
     use std::io::Write;
     use std::os::unix::fs::PermissionsExt;
-
-    if port == 0 {
-        return Err("CDP port must be between 1 and 65535.".to_string());
-    }
 
     let data_home = linux_xdg_data_home()?;
 
@@ -2972,8 +3183,6 @@ fn create_platform_cdp_launcher_shortcut(
 
     let desktop_path = linux_cdp_launcher_desktop_path()?;
 
-    // `channel` is a Rust enum, so `as_str()` is always a fixed, safe token.
-    let channel_arg = channel.map(|c| c.as_str()).unwrap_or("auto");
     let launcher_display = launcher_path.to_string_lossy();
     // A newline anywhere in the path would close the `Exec=`/`TryExec=` value
     // and let the rest be parsed as further Desktop Entry keys. Quoting cannot
@@ -2986,21 +3195,25 @@ fn create_platform_cdp_launcher_shortcut(
         );
     }
     let exec_program = desktop_entry_exec_quote(&launcher_display);
+    let exec_arguments = arguments
+        .iter()
+        .map(|argument| desktop_entry_exec_quote(argument))
+        .collect::<Vec<_>>()
+        .join(" ");
 
     let contents = format!(
         "[Desktop Entry]\n\
          Type=Application\n\
          Name=Discord CDP Launcher\n\
          Comment=Launch Discord with CDP enabled\n\
-         Exec={exec} --port {port} --channel {channel}\n\
+         Exec={exec} {arguments}\n\
          TryExec={tryexec}\n\
          Icon={icon}\n\
          Terminal=false\n\
          Categories=Utility;\n\
          StartupNotify=true\n",
         exec = exec_program,
-        port = port,
-        channel = channel_arg,
+        arguments = exec_arguments,
         tryexec = launcher_display,
         // Use the absolute path in the desktop entry. GNOME Shell can retain a
         // generic fallback cached before a newly installed themed icon exists;
@@ -3057,8 +3270,7 @@ fn desktop_entry_exec_quote(value: &str) -> String {
 #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
 fn create_platform_cdp_launcher_shortcut(
     _launcher_path: &std::path::Path,
-    _port: u16,
-    _channel: Option<discord_cdp_launch_core::DiscordChannel>,
+    _arguments: &[String],
 ) -> Result<String, String> {
     Err("Shortcut creation is only supported on Windows, macOS and Linux.".to_string())
 }
@@ -3066,7 +3278,7 @@ fn create_platform_cdp_launcher_shortcut(
 #[cfg(all(test, target_os = "linux"))]
 mod desktop_entry_tests {
     use super::{desktop_entry_exec_quote, linux_cdp_launcher_options_from_desktop};
-    use discord_cdp_launch_core::DiscordChannel;
+    use discord_cdp_launch_core::{DesktopClientPreference, DiscordChannel};
 
     #[test]
     fn quotes_plain_paths() {
@@ -3101,7 +3313,12 @@ Exec="/opt/Discord Quest Helper/discord-cdp-launcher" --port 9444 --channel cana
 "#;
         assert_eq!(
             linux_cdp_launcher_options_from_desktop(desktop),
-            (9444, Some(DiscordChannel::Canary))
+            (
+                9444,
+                Some(DiscordChannel::Canary),
+                DesktopClientPreference::Auto,
+                None,
+            )
         );
     }
 
@@ -3110,7 +3327,27 @@ Exec="/opt/Discord Quest Helper/discord-cdp-launcher" --port 9444 --channel cana
         let desktop = "Exec=/tmp/launcher --port 0 --channel unsupported\n";
         assert_eq!(
             linux_cdp_launcher_options_from_desktop(desktop),
-            (super::cdp_client::DEFAULT_CDP_PORT, None)
+            (
+                super::cdp_client::DEFAULT_CDP_PORT,
+                None,
+                DesktopClientPreference::Auto,
+                None,
+            )
+        );
+    }
+
+    #[test]
+    fn preserves_quoted_installation_paths_with_spaces() {
+        let desktop = r#"Exec="/tmp/launcher" --provider vesktop --installation "/opt/Vesktop Portable/vesktop" --port 9555
+"#;
+        assert_eq!(
+            linux_cdp_launcher_options_from_desktop(desktop),
+            (
+                9555,
+                None,
+                DesktopClientPreference::Vesktop,
+                Some(std::path::PathBuf::from("/opt/Vesktop Portable/vesktop")),
+            )
         );
     }
 }
@@ -3279,5 +3516,14 @@ mod windows_cdp_runtime_path_tests {
         assert!(script.contains("[Environment+SpecialFolder]::DesktopDirectory"));
         assert!(!script.contains("USERPROFILE"));
         assert!(script.contains("$Shortcut = $WshShell.CreateShortcut($ShortcutPath)"));
+    }
+
+    #[test]
+    fn windows_shortcut_quotes_spaced_paths_without_doubling_regular_backslashes() {
+        assert_eq!(
+            windows_command_line_argument(r"C:\Portable Apps\Vesktop\vesktop.exe"),
+            r#""C:\Portable Apps\Vesktop\vesktop.exe""#
+        );
+        assert_eq!(windows_command_line_argument("--client"), "--client");
     }
 }
