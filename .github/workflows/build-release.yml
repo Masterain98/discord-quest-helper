@@ -426,3 +426,89 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
+
+  reset-develop:
+    name: Reset develop after stable release
+    needs:
+      - release_policy
+      - build-tauri
+      - release
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      needs.release_policy.outputs.should_release == 'true' &&
+      needs.release_policy.outputs.prerelease == 'false' &&
+      needs.build-tauri.result == 'success' &&
+      needs.release.result == 'success'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: reset-develop
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    env:
+      GH_REPO: ${{ github.repository }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RELEASE_VERSION: ${{ needs.release_policy.outputs.version }}
+      RELEASE_SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Backup and rebuild develop
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          backup_tag="develop-before-${RELEASE_VERSION}"
+          main_sha="${RELEASE_SHA}"
+          backup_tag_needs_push=false
+          develop_sha="$(git ls-remote --heads origin develop | awk 'NR == 1 { print $1 }')"
+
+          if [[ -z "${develop_sha}" ]]; then
+            echo "::error::The develop branch does not exist; refusing to rebuild it without a backup."
+            exit 1
+          fi
+
+          existing_backup_sha="$(git rev-parse --verify --quiet "refs/tags/${backup_tag}^{commit}" || true)"
+          if [[ -n "${existing_backup_sha}" ]]; then
+            if [[ "${develop_sha}" == "${main_sha}" ]]; then
+              echo "::notice::develop already points to ${main_sha}; ${backup_tag} is already present."
+              exit 0
+            fi
+
+            if [[ "${existing_backup_sha}" != "${develop_sha}" ]]; then
+              echo "::error::Backup tag ${backup_tag} already points to ${existing_backup_sha}, but develop is now ${develop_sha}."
+              echo "::error::Refusing to overwrite an existing backup or reset a changed develop branch."
+              exit 1
+            fi
+
+            echo "Backup tag ${backup_tag} already points to the current develop commit."
+          else
+            git tag --annotate "${backup_tag}" "${develop_sha}" \
+              --message "Backup develop before stable release ${RELEASE_VERSION}"
+            backup_tag_needs_push=true
+          fi
+
+          if [[ "${develop_sha}" == "${main_sha}" ]]; then
+            echo "develop already points to the stable release commit ${main_sha}; nothing to reset."
+            exit 0
+          fi
+
+          # This is the safe equivalent of deleting and recreating develop:
+          # update the branch ref in one operation while refusing to overwrite
+          # a concurrent develop push. When the backup tag is new, --atomic
+          # keeps the tag and branch update together.
+          if [[ "${backup_tag_needs_push}" == "true" ]]; then
+            git push --atomic origin \
+              "refs/tags/${backup_tag}" \
+              "--force-with-lease=refs/heads/develop:${develop_sha}" \
+              "${main_sha}:refs/heads/develop"
+            echo "Created backup tag ${backup_tag} at ${develop_sha}."
+          else
+            git push origin \
+              "--force-with-lease=refs/heads/develop:${develop_sha}" \
+              "${main_sha}:refs/heads/develop"
+          fi
+          echo "Rebuilt develop at stable release commit ${main_sha}."
