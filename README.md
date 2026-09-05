@@ -34,11 +34,13 @@
 
 Download the latest build from [GitHub Releases](https://github.com/Masterain98/discord-quest-helper/releases/latest).
 
-| Platform | Release files | Instructions |
+| Platform | Release file | Instructions |
 | --- | --- | --- |
-| Windows x64 | `discord-quest-helper-Windows-x64-<version>-portable.zip` or `discord-quest-helper-Windows-x64-<version>-setup.msi` | Extract the portable ZIP and run `discord-quest-helper.exe`, or open the MSI installer. |
-| macOS Apple Silicon | `discord-quest-helper-MacOS-arm64-<version>.dmg` | Open the DMG and drag the app to Applications. If macOS blocks it, run the quarantine-removal command below. |
-| Linux x86_64 | `discord-quest-helper-Linux-x86_64-<version>.AppImage` or `discord-quest-helper-Linux-x86_64-<version>.deb` | Use the AppImage for a portable install, or install the Debian package with the command below. |
+| Windows x64 Installer | `discord-quest-helper-Windows-x64-<version>-setup.msi` | Open the MSI installer. |
+| Windows x64 Portable | `discord-quest-helper-Windows-x64-<version>-portable.zip` | Extract the ZIP and run `discord-quest-helper.exe`. |
+| macOS Apple Silicon Installer | `discord-quest-helper-MacOS-arm64-<version>.dmg` | Open the DMG and drag the app to Applications. If macOS blocks it, run the quarantine-removal command below. |
+| Linux x86_64 Installer | `discord-quest-helper-Linux-x86_64-<version>.deb` | Install the Debian package with the command below. |
+| Linux x86_64 Portable | `discord-quest-helper-Linux-x86_64-<version>.AppImage` | Make the AppImage executable and run it with the commands below. |
 
 On macOS, remove the quarantine attribute if needed:
 
@@ -46,17 +48,17 @@ On macOS, remove the quarantine attribute if needed:
 xattr -cr "/Applications/Discord Quest Helper.app"
 ```
 
-On Linux, run the AppImage like this:
+On Linux, install the Debian package like this:
+
+```bash
+sudo apt install ./discord-quest-helper-Linux-x86_64-<version>.deb
+```
+
+Or run the portable AppImage like this:
 
 ```bash
 chmod +x discord-quest-helper-Linux-x86_64-<version>.AppImage
 ./discord-quest-helper-Linux-x86_64-<version>.AppImage
-```
-
-Or install the Debian package:
-
-```bash
-sudo apt install ./discord-quest-helper-Linux-x86_64-<version>.deb
 ```
 
 > [!NOTE]
