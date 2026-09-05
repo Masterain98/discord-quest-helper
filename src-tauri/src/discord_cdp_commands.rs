@@ -203,11 +203,20 @@ pub(crate) async fn list_running_desktop_cdp_sessions(
             })?
             .map_err(DesktopClientCommandError::from)?;
     for session in &mut sessions {
-        if journal
-            .iter()
-            .any(|managed| session_key_matches(managed, session))
-        {
-            session.ownership = cdp_launch::SessionOwnership::Managed;
+        match find_managed_journal_session(&journal, session) {
+            Ok(Some(managed)) => {
+                session.ownership = cdp_launch::SessionOwnership::Managed;
+                if session.installation_id.is_none() {
+                    session.installation_id = managed.installation_id.clone();
+                }
+                if session.variant_id.is_none() {
+                    session.variant_id = managed.variant_id.clone();
+                }
+            }
+            Err(()) => {
+                session.ownership = cdp_launch::SessionOwnership::AmbiguousExternal;
+            }
+            Ok(None) => {}
         }
     }
     // A process scan is best-effort: a transient miss must not turn a session
@@ -225,16 +234,52 @@ pub(crate) async fn restore_desktop_client_session(
 ) -> Result<(), DesktopClientCommandError> {
     let installation_id = cdp_launch::InstallationId(installation_id);
     let journal = load_session_journal(&app)?;
-    let managed = journal.iter().any(|session| {
-        session.installation_id.as_ref() == Some(&installation_id) && session.port == port
-    });
-    if !managed && !confirm_external.unwrap_or(false) {
+    let managed_session = journal
+        .iter()
+        .find(|session| {
+            session.installation_id.as_ref() == Some(&installation_id) && session.port == port
+        })
+        .cloned();
+    if managed_session.is_none() && !confirm_external.unwrap_or(false) {
         return Err(DesktopClientCommandError::new(
             "external_confirmation_required",
             serde_json::json!({ "installationId": installation_id, "port": port }),
             "This CDP session was started outside Helper and requires explicit confirmation.",
         ));
     }
+    let live_session = if let Some(managed_session) = &managed_session {
+        let sessions =
+            tauri::async_runtime::spawn_blocking(cdp_launch::list_running_desktop_cdp_sessions)
+                .await
+                .map_err(|error| {
+                    DesktopClientCommandError::new(
+                        "scan_failed",
+                        serde_json::json!({ "port": port }),
+                        format!("Desktop client session scan failed: {error}"),
+                    )
+                })?
+                .map_err(DesktopClientCommandError::from)?;
+        let matches = find_live_sessions_for_managed(&sessions, managed_session);
+        match matches.as_slice() {
+            [session] => Some(session.clone()),
+            [] => {
+                return Err(DesktopClientCommandError::new(
+                    "process_ambiguous",
+                    serde_json::json!({ "port": port }),
+                    "The managed CDP session is no longer mapped to a running desktop client.",
+                ));
+            }
+            _ => {
+                return Err(DesktopClientCommandError::new(
+                    "process_ambiguous",
+                    serde_json::json!({ "port": port }),
+                    "The managed CDP session maps to multiple running desktop clients.",
+                ));
+            }
+        }
+    } else {
+        None
+    };
     let config = load_config(&app)?;
     let state =
         tauri::async_runtime::spawn_blocking(move || build_desktop_client_state(config, port))
@@ -257,6 +302,11 @@ pub(crate) async fn restore_desktop_client_session(
                 "The CDP session installation could not be located for restoration.",
             )
         })?;
+    let installation = live_session
+        .as_ref()
+        .and_then(|session| session.executable_path.as_ref())
+        .map(|path| installation_with_running_path(installation.clone(), path))
+        .unwrap_or(installation);
     tauri::async_runtime::spawn_blocking(move || {
         cdp_launch::restore_desktop_client_to_normal(&installation, port)
     })
@@ -537,9 +587,12 @@ fn resolve_conflicting_endpoint(
     config: &DesktopClientsConfig,
     port: u16,
 ) -> Result<(), DesktopClientCommandError> {
-    let (selected_provider, selected_installation_id) = match selector {
+    let (selected_provider, selected_installation_id, selected_variant_id) = match selector {
         cdp_launch::LaunchSelector::Auto => return Ok(()),
-        cdp_launch::LaunchSelector::Provider { provider_id, .. } => (provider_id.clone(), None),
+        cdp_launch::LaunchSelector::Provider {
+            provider_id,
+            variant_id,
+        } => (provider_id.clone(), None, variant_id.clone()),
         cdp_launch::LaunchSelector::Installation { installation_id } => (
             config
                 .installations
@@ -554,6 +607,7 @@ fn resolve_conflicting_endpoint(
                     )
                 })?,
             Some(installation_id.clone()),
+            None,
         ),
     };
     let owner_provider = match cdp_launch::inspect_cdp_port_owner(port) {
@@ -561,7 +615,10 @@ fn resolve_conflicting_endpoint(
         cdp_launch::CdpPortOwner::Vesktop => cdp_launch::ProviderId::vesktop(),
         _ => return Ok(()),
     };
-    if owner_provider == selected_provider && selected_installation_id.is_none() {
+    if owner_provider == selected_provider
+        && selected_installation_id.is_none()
+        && selected_variant_id.is_none()
+    {
         return Ok(());
     }
     let sessions =
@@ -577,7 +634,12 @@ fn resolve_conflicting_endpoint(
             )
         })?;
     if owner_provider == selected_provider
-        && owner_session.installation_id == selected_installation_id
+        && session_matches_selection(
+            &owner_session,
+            &selected_provider,
+            selected_installation_id.as_ref(),
+            selected_variant_id.as_ref(),
+        )
     {
         return Ok(());
     }
@@ -1031,6 +1093,94 @@ fn session_key_matches(
         && left.port == right.port
 }
 
+fn session_matches_selection(
+    session: &cdp_launch::DesktopCdpSession,
+    selected_provider: &cdp_launch::ProviderId,
+    selected_installation_id: Option<&cdp_launch::InstallationId>,
+    selected_variant_id: Option<&cdp_launch::VariantId>,
+) -> bool {
+    session.provider_id == *selected_provider
+        && selected_installation_id
+            .is_none_or(|installation_id| session.installation_id.as_ref() == Some(installation_id))
+        && selected_variant_id
+            .is_none_or(|variant_id| session.variant_id.as_ref() == Some(variant_id))
+}
+
+fn find_managed_journal_session<'a>(
+    journal: &'a [cdp_launch::DesktopCdpSession],
+    detected: &cdp_launch::DesktopCdpSession,
+) -> Result<Option<&'a cdp_launch::DesktopCdpSession>, ()> {
+    let exact: Vec<_> = journal
+        .iter()
+        .filter(|managed| session_key_matches(managed, detected))
+        .collect();
+    if !exact.is_empty() {
+        return (exact.len() == 1)
+            .then_some(exact.first().copied())
+            .ok_or(());
+    }
+    if detected.installation_id.is_some() {
+        return Ok(None);
+    }
+    let fallback: Vec<_> = journal
+        .iter()
+        .filter(|managed| {
+            managed.provider_id == detected.provider_id && managed.port == detected.port
+        })
+        .collect();
+    match fallback.as_slice() {
+        [managed] => Ok(Some(managed)),
+        [] => Ok(None),
+        _ => Err(()),
+    }
+}
+
+fn find_live_sessions_for_managed(
+    detected: &[cdp_launch::DesktopCdpSession],
+    managed: &cdp_launch::DesktopCdpSession,
+) -> Vec<cdp_launch::DesktopCdpSession> {
+    let exact: Vec<_> = detected
+        .iter()
+        .filter(|session| session_key_matches(managed, session))
+        .cloned()
+        .collect();
+    if !exact.is_empty() {
+        return exact;
+    }
+    detected
+        .iter()
+        .filter(|session| {
+            session.provider_id == managed.provider_id
+                && session.port == managed.port
+                && session.installation_id.is_none()
+        })
+        .cloned()
+        .collect()
+}
+
+fn installation_with_running_path(
+    mut installation: cdp_launch::ClientInstallation,
+    running_path: &Path,
+) -> cdp_launch::ClientInstallation {
+    match &mut installation.launch_target {
+        cdp_launch::LaunchTarget::Executable {
+            path, working_dir, ..
+        } => {
+            *path = running_path.to_path_buf();
+            if let Some(parent) = running_path.parent() {
+                *working_dir = parent.to_path_buf();
+            }
+        }
+        cdp_launch::LaunchTarget::MacBundle {
+            executable_path, ..
+        } => {
+            *executable_path = running_path.to_path_buf();
+        }
+        cdp_launch::LaunchTarget::Flatpak { .. } => {}
+    }
+    installation
+}
+
 #[cfg(windows)]
 fn windows_registry_vesktop_installations() -> Vec<cdp_launch::ClientInstallation> {
     let mut installs = Vec::new();
@@ -1093,8 +1243,9 @@ fn windows_registry_vesktop_installations() -> Vec<cdp_launch::ClientInstallatio
 mod tests {
     use super::*;
     use cdp_launch::{
-        DiscordChannel, InstallationId, LaunchOutcome, LaunchResult, LaunchSelector, ProviderId,
-        SessionOwnership, VariantId,
+        ClientCapabilities, ClientInstallation, DiscordChannel, DiscoverySource, InstallationId,
+        LaunchOutcome, LaunchResult, LaunchSelector, LaunchTarget, ProviderId, SessionOwnership,
+        ValidationState, VariantId,
     };
 
     #[test]
@@ -1172,5 +1323,91 @@ mod tests {
             serde_json::to_value(dto).unwrap(),
             serde_json::json!({ "channel": "ptb", "port": 9333 })
         );
+    }
+
+    #[test]
+    fn provider_variant_selection_distinguishes_official_channels() {
+        let session = cdp_launch::DesktopCdpSession {
+            provider_id: ProviderId::official_discord(),
+            installation_id: Some(InstallationId("discord.official:stable".into())),
+            variant_id: Some(VariantId("stable".into())),
+            port: 9223,
+            ownership: SessionOwnership::ExternalAttached,
+            executable_path: None,
+        };
+
+        assert!(session_matches_selection(
+            &session,
+            &ProviderId::official_discord(),
+            None,
+            Some(&VariantId("stable".into()))
+        ));
+        assert!(!session_matches_selection(
+            &session,
+            &ProviderId::official_discord(),
+            None,
+            Some(&VariantId("canary".into()))
+        ));
+    }
+
+    #[test]
+    fn managed_session_fallback_hydrates_an_unknown_installation() {
+        let managed = cdp_launch::DesktopCdpSession {
+            provider_id: ProviderId::vesktop(),
+            installation_id: Some(InstallationId("vencord.vesktop:portable".into())),
+            variant_id: None,
+            port: 9223,
+            ownership: SessionOwnership::Managed,
+            executable_path: Some(PathBuf::from("/old/vesktop")),
+        };
+        let detected = cdp_launch::DesktopCdpSession {
+            provider_id: ProviderId::vesktop(),
+            installation_id: None,
+            variant_id: None,
+            port: 9223,
+            ownership: SessionOwnership::ExternalAttached,
+            executable_path: Some(PathBuf::from("/moved/vesktop")),
+        };
+
+        let journal = [managed];
+        let match_result = find_managed_journal_session(&journal, &detected)
+            .unwrap()
+            .expect("the journal should identify the moved managed session");
+        assert_eq!(
+            match_result.installation_id,
+            Some(InstallationId("vencord.vesktop:portable".into()))
+        );
+    }
+
+    #[test]
+    fn restore_uses_the_current_running_executable_path() {
+        let installation = ClientInstallation {
+            id: InstallationId("vencord.vesktop:portable".into()),
+            provider_id: ProviderId::vesktop(),
+            variant_id: None,
+            display_name: "Vesktop".into(),
+            source: DiscoverySource::User,
+            launch_target: LaunchTarget::Executable {
+                path: PathBuf::from("/old/vesktop"),
+                working_dir: PathBuf::from("/old"),
+                prefix_args: Vec::new(),
+            },
+            capabilities: ClientCapabilities {
+                cdp: true,
+                local_token: false,
+                restore_normal: true,
+            },
+            validation: ValidationState::Missing,
+        };
+
+        let updated = installation_with_running_path(installation, Path::new("/moved/vesktop"));
+        let LaunchTarget::Executable {
+            path, working_dir, ..
+        } = updated.launch_target
+        else {
+            panic!("expected an executable launch target");
+        };
+        assert_eq!(path, PathBuf::from("/moved/vesktop"));
+        assert_eq!(working_dir, PathBuf::from("/moved"));
     }
 }

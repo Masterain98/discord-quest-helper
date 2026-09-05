@@ -2989,12 +2989,43 @@ fn create_platform_cdp_launcher_shortcut(
         .ok_or_else(|| "Desktop shortcut was created but its path was not returned.".to_string())
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", test))]
 fn windows_command_line_argument(value: &str) -> String {
-    if value.bytes().all(|byte| !byte.is_ascii_whitespace()) {
+    if !value.is_empty()
+        && value
+            .bytes()
+            .all(|byte| !byte.is_ascii_whitespace() && byte != b'"')
+    {
         return value.to_string();
     }
-    format!("\"{}\"", value.replace('\\', "\\\\"))
+
+    let mut quoted = String::with_capacity(value.len() + 2);
+    quoted.push('"');
+    let mut backslashes = 0;
+    for character in value.chars() {
+        match character {
+            '\\' => backslashes += 1,
+            '"' => {
+                for _ in 0..(backslashes * 2 + 1) {
+                    quoted.push('\\');
+                }
+                quoted.push('"');
+                backslashes = 0;
+            }
+            character => {
+                for _ in 0..backslashes {
+                    quoted.push('\\');
+                }
+                quoted.push(character);
+                backslashes = 0;
+            }
+        }
+    }
+    for _ in 0..(backslashes * 2) {
+        quoted.push('\\');
+    }
+    quoted.push('"');
+    quoted
 }
 
 #[cfg(any(target_os = "windows", test))]
@@ -3485,5 +3516,14 @@ mod windows_cdp_runtime_path_tests {
         assert!(script.contains("[Environment+SpecialFolder]::DesktopDirectory"));
         assert!(!script.contains("USERPROFILE"));
         assert!(script.contains("$Shortcut = $WshShell.CreateShortcut($ShortcutPath)"));
+    }
+
+    #[test]
+    fn windows_shortcut_quotes_spaced_paths_without_doubling_regular_backslashes() {
+        assert_eq!(
+            windows_command_line_argument(r"C:\Portable Apps\Vesktop\vesktop.exe"),
+            r#""C:\Portable Apps\Vesktop\vesktop.exe""#
+        );
+        assert_eq!(windows_command_line_argument("--client"), "--client");
     }
 }
