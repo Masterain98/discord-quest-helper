@@ -1,6 +1,10 @@
 <div align="center">
 
-<h1><img src="src-tauri/icons/icon.png" alt="Discord Quest Helper logo" width="48" height="48" align="middle" style="vertical-align: middle; margin-right: 10px;" /> Discord Quest Helper</h1>
+<h1>Discord Quest Helper</h1>
+
+<p align="center">
+  <img src="src-tauri/icons/icon.png" alt="Discord Quest Helper logo" width="150">
+</p>
 
 <p><strong>🎮 Automate your Discord Quests with one click</strong></p>
 
