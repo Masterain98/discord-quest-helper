@@ -466,6 +466,10 @@ jobs:
           backup_tag_needs_push=false
           develop_sha="$(git ls-remote --heads origin develop | awk 'NR == 1 { print $1 }')"
 
+          # Annotated tags need an identity even when the job only updates refs.
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
           if [[ -z "${develop_sha}" ]]; then
             echo "::error::The develop branch does not exist; refusing to rebuild it without a backup."
             exit 1
@@ -502,8 +506,8 @@ jobs:
           # keeps the tag and branch update together.
           if [[ "${backup_tag_needs_push}" == "true" ]]; then
             git push --atomic origin \
-              "refs/tags/${backup_tag}" \
               "--force-with-lease=refs/heads/develop:${develop_sha}" \
+              "refs/tags/${backup_tag}" \
               "${main_sha}:refs/heads/develop"
             echo "Created backup tag ${backup_tag} at ${develop_sha}."
           else
