@@ -1,6 +1,6 @@
 <div align="center">
 
-<h1><img src="src-tauri/icons/icon.png" alt="Discord Quest Helper logo" width="56" height="56" /> Discord Quest Helper</h1>
+<h1><img src="src-tauri/icons/icon.png" alt="Discord Quest Helper logo" width="48" height="48" align="middle" style="vertical-align: middle; margin-right: 10px;" /> Discord Quest Helper</h1>
 
 <p><strong>🎮 Automate your Discord Quests with one click</strong></p>
 
@@ -127,6 +127,8 @@ Discord Quest Helper
 
 The frontend communicates with the Rust backend through Tauri IPC. The backend owns Discord networking, local credential extraction, CDP sessions, quest execution, process cleanup, and platform-specific integration.
 
+Explore the codebase with [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Masterain98/discord-quest-helper)
+
 ## 🔒 Security
 
 - **Tokens are kept in memory by the helper** — The app does not intentionally persist your Discord token to disk.
@@ -134,9 +136,6 @@ The frontend communicates with the Rust backend through Tauri IPC. The backend o
 - **Platform-native credentials** — Windows DPAPI, macOS Keychain, and Linux Secret Service are used by the local extraction paths.
 - **HTTPS for Discord API requests** — Network requests use secure HTTPS connections.
 - **Sanitized diagnostics** — Logs and debug exports redact sensitive tokens and account data where applicable.
-
-> [!CAUTION]
-> Using automation tools may violate Discord's Terms of Service and may result in account suspension.
 
 ## 🤝 Contributing
 
