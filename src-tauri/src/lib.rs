@@ -1466,9 +1466,7 @@ async fn get_billing_subscriptions(
 }
 
 #[tauri::command]
-async fn get_program_rewards(
-    state: State<'_, AppState>,
-) -> Result<serde_json::Value, String> {
+async fn get_program_rewards(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
     let client = {
         let guard = state.client.lock().unwrap();
         guard
