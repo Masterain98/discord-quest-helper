@@ -93,15 +93,15 @@ chmod +x discord-quest-helper-Linux-x86_64-<version>.AppImage
 
 | Login | Home |
 |:-----:|:----:|
-| ![Login](https://discord-quest-helper.dal.ao/images/login.png) | ![Home](https://discord-quest-helper.dal.ao/images/home1.png) |
+| ![Login](https://github.com/user-attachments/assets/a67369e9-7bd5-46ca-afdc-f16e54f64824) | ![Home](https://github.com/user-attachments/assets/bde65569-c4e0-4d0e-971a-a28ab9f38468) |
 
 | Multi-Account | Game Simulator |
 |:-------------:|:--------------:|
-| ![Multi-Account](https://discord-quest-helper.dal.ao/images/multi-account.png) | ![Game Simulator](https://discord-quest-helper.dal.ao/images/game-simulator.png) |
+| ![Multi-Account](https://github.com/user-attachments/assets/0abcfd9e-5716-451a-ba5e-bac38b7324f5) | ![Game Simulator](https://github.com/user-attachments/assets/d1f9d481-39f6-4bef-8b4a-9bf90c9ad4e3) |
 
 | Quest Progress | Settings |
 |:--------------:|:--------:|
-| ![Quest Progress](https://discord-quest-helper.dal.ao/images/home2.png) | ![Settings](https://discord-quest-helper.dal.ao/images/settings.png) |
+| ![Quest Progress](https://github.com/user-attachments/assets/7a1d6c82-63a6-4595-a060-cefae05676e5) | ![Settings](https://github.com/user-attachments/assets/1261a2f5-8b99-4c55-ab7e-18e7b9617e8e) |
 
 ## 🏗️ Architecture
 
