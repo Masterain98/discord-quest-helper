@@ -1466,6 +1466,24 @@ async fn get_billing_subscriptions(
 }
 
 #[tauri::command]
+async fn get_program_rewards(
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let client = {
+        let guard = state.client.lock().unwrap();
+        guard
+            .as_ref()
+            .ok_or_else(|| "Not logged in".to_string())?
+            .clone()
+    };
+
+    client
+        .get_program_rewards()
+        .await
+        .map_err(|e| format!("Failed to get program rewards: {}", e))
+}
+
+#[tauri::command]
 async fn get_quest_decision_debug(
     placement: u64,
     state: State<'_, AppState>,
@@ -1871,6 +1889,7 @@ pub fn run() {
             accept_quest,
             get_virtual_currency_balance,
             get_billing_subscriptions,
+            get_program_rewards,
             get_quest_decision_debug,
             get_quest_decisions_debug,
             claim_quest_reward,

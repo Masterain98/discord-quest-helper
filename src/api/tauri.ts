@@ -23,6 +23,33 @@ export interface BillingSubscription {
   items?: Array<{ id: string; plan_id: string; quantity: number }>
 }
 
+/** Discord's server-provided countdown state for a reward program. */
+export interface ProgramReward {
+  reward_program?: number | string | null
+  next_reward_date?: string | null
+  program_current_state?: string | null
+  total_countdown_duration_ms?: number | null
+}
+
+export interface ProgramRewardsResponse {
+  rewards?: Record<string, ProgramReward> | ProgramReward[] | null
+}
+
+export function normalizeProgramRewards(
+  response: ProgramRewardsResponse | ProgramReward[] | null,
+): ProgramReward[] {
+  if (Array.isArray(response)) return response
+  if (Array.isArray(response?.rewards)) return response.rewards
+
+  return Object.entries(response?.rewards ?? {}).map(([key, reward]) => ({
+    ...reward,
+    // Discord currently returns the program name as the map key. Preserve an
+    // explicit field when present and normalize numeric keys for callers.
+    reward_program:
+      reward.reward_program ?? (Number.isNaN(Number(key)) ? key : Number(key)),
+  }))
+}
+
 export interface Quest {
   id: string
   traffic_metadata_raw?: string | null
@@ -212,6 +239,12 @@ export async function getVirtualCurrencyBalance(): Promise<number> {
 export async function getBillingSubscriptions(): Promise<BillingSubscription[]> {
   const response = await invoke<BillingSubscription[]>('get_billing_subscriptions')
   return response ?? []
+}
+
+/** Fetch Discord's authoritative reward-program countdown data. */
+export async function getProgramRewards(): Promise<ProgramReward[]> {
+  const response = await invoke<ProgramRewardsResponse | ProgramReward[] | null>('get_program_rewards')
+  return normalizeProgramRewards(response)
 }
 
 export async function getQuestDecisionDebug(placement: number): Promise<unknown> {

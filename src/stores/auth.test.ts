@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   autoLoginViaCdp: vi.fn(),
   setToken: vi.fn(),
   autoFetchSuperProperties: vi.fn(),
-  getBillingSubscriptions: vi.fn(),
+  getProgramRewards: vi.fn(),
   questsStore: {
     cdpPort: 9223,
     cdpAvailable: false,
@@ -25,7 +25,7 @@ vi.mock('@/api/tauri', () => ({
   autoLoginViaCdp: mocks.autoLoginViaCdp,
   setToken: mocks.setToken,
   autoFetchSuperProperties: mocks.autoFetchSuperProperties,
-  getBillingSubscriptions: mocks.getBillingSubscriptions,
+  getProgramRewards: mocks.getProgramRewards,
 }))
 
 vi.mock('./quests', () => ({
@@ -57,7 +57,7 @@ describe('auth login quest mode selection', () => {
     mocks.autoLoginViaCdp.mockResolvedValue(user)
     mocks.setToken.mockResolvedValue(user)
     mocks.autoFetchSuperProperties.mockResolvedValue(undefined)
-    mocks.getBillingSubscriptions.mockResolvedValue([])
+    mocks.getProgramRewards.mockResolvedValue([])
     mocks.questsStore.initCdpMode.mockResolvedValue(undefined)
     mocks.questsStore.getDetectableGames.mockResolvedValue(undefined)
     mocks.questsStore.fetchOrbsBalance.mockResolvedValue(undefined)
@@ -79,5 +79,21 @@ describe('auth login quest mode selection', () => {
     await expect(authStore.loginWithToken('token-value')).resolves.toBe(true)
 
     expect(mocks.questsStore.gameQuestMode).toBe('simulate')
+  })
+
+  it('uses Discord program reward timestamps for the Orbs countdown', async () => {
+    const authStore = useAuthStore()
+    authStore.user = user
+    mocks.getProgramRewards.mockResolvedValue([
+      {
+        // Discord's live enum is NITRO=0 (XBOX=1).
+        reward_program: 0,
+        next_reward_date: '2026-09-17T00:00:00.000Z',
+      },
+    ])
+
+    await authStore.fetchNitroProgramReward()
+
+    expect(authStore.nextOrbsClaim).toEqual({ value: 17, unit: 'days' })
   })
 })
