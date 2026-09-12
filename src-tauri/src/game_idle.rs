@@ -315,8 +315,13 @@ impl GameIdleManager {
         if shared.status.session_id != session_id {
             return Err("The game idle session has changed".to_string());
         }
-        if shared.status.phase == GameIdlePhase::Starting {
-            return Err("Wait until the next game has finished starting".to_string());
+        if shared.status.phase == GameIdlePhase::Starting
+            && shared
+                .upcoming
+                .front()
+                .is_some_and(|item| item.id == app_id && item.occurrence_id == occurrence_id)
+        {
+            return Err("The game currently being started cannot be removed".to_string());
         }
         if !shared.remove_upcoming_item(app_id, occurrence_id) {
             return Err("Only upcoming games can be removed".to_string());

@@ -36,6 +36,10 @@ let resizeObserver: ResizeObserver | null = null
 
 const active = computed(() => idle.isActive)
 const immersive = computed(() => active.value || idle.loading)
+const canEditQueue = computed(() => {
+  const phase = idle.status?.phase
+  return active.value && phase !== 'stopping' && phase !== 'error'
+})
 const games = computed(() => quests.detectableGames)
 const uniqueGameCount = computed(() => new Set(games.value.map(game => game.id)).size)
 const processCandidateCount = computed(() => {
@@ -293,9 +297,9 @@ onBeforeUnmount(() => {
               '--idle-offset': entry.offset,
               '--idle-distance': Math.abs(entry.offset),
             }"
-            :aria-label="entry.upcoming && idle.status.phase !== 'starting' ? t('game_idle.upcoming_item', { name: entry.item.name }) : entry.item.name"
-            @contextmenu.prevent.stop="entry.upcoming && idle.status.phase !== 'starting' && openContextMenu($event, entry.item)"
-            @keydown="entry.upcoming && idle.status.phase !== 'starting' && handleFutureKeydown($event, entry.item)"
+            :aria-label="entry.upcoming && canEditQueue ? t('game_idle.upcoming_item', { name: entry.item.name }) : entry.item.name"
+            @contextmenu.prevent.stop="entry.upcoming && canEditQueue && openContextMenu($event, entry.item)"
+            @keydown="entry.upcoming && canEditQueue && handleFutureKeydown($event, entry.item)"
           >
             <span class="idle-icon-frame">
               <img
