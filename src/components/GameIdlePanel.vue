@@ -69,14 +69,10 @@ const carouselItems = computed(() => {
   } else if (status.current) {
     items.push({ item: status.current, offset: 0, upcoming: false })
   }
-  const queuedCurrent = Boolean(
-    status.current &&
-    status.upcoming[0]?.occurrenceId === status.current.occurrenceId
-  )
   status.upcoming.forEach((item, index) => {
-    if (queuedCurrent && index === 0) return
+    if (currentIsQueued.value && index === 0) return
     if (item.id !== currentId || index > 0) {
-      items.push({ item, offset: queuedCurrent ? index : index + 1, upcoming: true })
+      items.push({ item, offset: currentIsQueued.value ? index : index + 1, upcoming: true })
     }
   })
   return items.filter(entry => Math.abs(entry.offset) <= maxVisibleDistance.value)
@@ -98,6 +94,11 @@ const sessionSeconds = computed(() => {
 
 const sessionDuration = computed(() => formatSimulationDuration(sessionSeconds.value))
 const configError = computed(() => idle.validateConfig())
+const currentIsQueued = computed(() => Boolean(
+  idle.status?.current &&
+  idle.status.upcoming[0]?.occurrenceId === idle.status.current.occurrenceId
+))
+const nextGameName = computed(() => idle.status?.upcoming[currentIsQueued.value ? 1 : 0]?.name || t('game_idle.preparing'))
 
 function formatCountdown(seconds: number) {
   const hours = Math.floor(seconds / 3600)
@@ -316,7 +317,7 @@ onBeforeUnmount(() => {
         <div class="idle-primary-readout">
           <span class="idle-readout-label">{{ idle.status.phase === 'resting' ? t('game_idle.resting_after') : idle.status.phase === 'starting' ? t('game_idle.starting') : t('game_idle.now_playing') }}</span>
           <strong>{{ idle.status.current?.name || idle.status.upcoming[0]?.name || t('game_idle.preparing') }}</strong>
-          <span class="idle-next">{{ t('game_idle.next') }} · {{ idle.status.upcoming[0]?.name || t('game_idle.preparing') }}</span>
+          <span class="idle-next">{{ t('game_idle.next') }} · {{ nextGameName }}</span>
         </div>
         <div class="idle-metric">
           <TimerReset class="h-4 w-4" />
@@ -343,6 +344,19 @@ onBeforeUnmount(() => {
           {{ idle.stopping ? t('game_idle.stopping') : t('game_idle.stop') }}
         </Button>
       </div>
+    </div>
+
+    <div v-else-if="immersive" class="idle-starting-surface">
+      <div class="idle-empty-icon"><Loader2 class="h-7 w-7 animate-spin" /></div>
+      <div class="idle-starting-copy">
+        <h4 class="font-medium">{{ t('game_idle.starting') }}</h4>
+        <p class="mt-1 text-sm text-muted-foreground">{{ t('game_idle.preparing') }}</p>
+      </div>
+      <Button variant="destructive" class="idle-stop-button h-11 min-w-32 gap-2" :disabled="idle.stopping" @click="stopIdle">
+        <Loader2 v-if="idle.stopping" class="h-4 w-4 animate-spin" />
+        <Square v-else class="h-4 w-4 fill-current" />
+        {{ idle.stopping ? t('game_idle.stopping') : t('game_idle.stop') }}
+      </Button>
     </div>
 
     <div v-else class="idle-empty">
@@ -467,10 +481,10 @@ onBeforeUnmount(() => {
 .idle-machine { border-radius: 1rem; background: hsl(var(--background) / .48); box-shadow: inset 0 0 0 1px hsl(var(--border) / .5); overflow: hidden; }
 .idle-stage { position: relative; height: clamp(14rem, 28vw, 18.5rem); isolation: isolate; overflow: hidden; -webkit-mask-image: linear-gradient(90deg, transparent, black 11%, black 89%, transparent); mask-image: linear-gradient(90deg, transparent, black 11%, black 89%, transparent); }
 .idle-stage::before { content: ''; position: absolute; inset: 20% 0 0; background: radial-gradient(ellipse at 50% 45%, hsl(var(--primary) / .13), transparent 36%); pointer-events: none; }
-.idle-pointer { position: absolute; z-index: 4; top: .85rem; left: 50%; display: flex; flex-direction: column; align-items: center; color: hsl(var(--primary)); transform: translateX(-50%); }
-.idle-pointer span { font-size: .65rem; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
+.idle-pointer { position: absolute; z-index: 4; top: clamp(2.1rem, 14%, 4.2rem); left: 50%; display: flex; flex-direction: column; align-items: center; color: hsl(var(--primary)); transform: translateX(-50%); }
+.idle-pointer span { font-size: clamp(.82rem, 1.4vw, 1.05rem); font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
 
-.idle-reel-item { --item-gap: clamp(5.4rem, 10vw, 8.3rem); position: absolute; z-index: calc(5 - var(--idle-distance)); top: 50%; left: 50%; display: grid; justify-items: center; gap: .55rem; width: clamp(5.3rem, 9vw, 7.5rem); color: hsl(var(--foreground)); opacity: calc(1 - var(--idle-distance) * .16); transform: translate3d(calc(-50% + var(--idle-offset) * var(--item-gap)), -43%, 0) scale(calc(1 - var(--idle-distance) * .1)); filter: saturate(calc(1 - var(--idle-distance) * .1)); transition: transform 440ms cubic-bezier(.22,1,.36,1), opacity 360ms ease, filter 360ms ease; }
+.idle-reel-item { --item-gap: clamp(9rem, 16vw, 13rem); position: absolute; z-index: calc(5 - var(--idle-distance)); top: 50%; left: 50%; display: grid; justify-items: center; gap: .55rem; width: clamp(5.3rem, 9vw, 7.5rem); color: hsl(var(--foreground)); opacity: calc(1 - var(--idle-distance) * .16); transform: translate3d(calc(-50% + var(--idle-offset) * var(--item-gap)), -43%, 0) scale(calc(1 - var(--idle-distance) * .1)); filter: saturate(calc(1 - var(--idle-distance) * .1)); transition: transform 440ms cubic-bezier(.22,1,.36,1), opacity 360ms ease, filter 360ms ease; }
 .idle-reel-item:focus-visible { outline: none; }
 .idle-reel-item:focus-visible .idle-icon-frame { box-shadow: 0 0 0 3px hsl(var(--ring)); }
 .idle-icon-frame { position: relative; display: grid; place-items: center; width: 100%; aspect-ratio: 1; border-radius: clamp(.8rem, 1.5vw, 1.3rem); overflow: hidden; background: linear-gradient(145deg, hsl(var(--secondary)), hsl(var(--muted))); box-shadow: inset 0 1px 0 hsl(var(--foreground) / .12), 0 20px 32px -24px hsl(var(--foreground) / .65); transition: box-shadow 220ms ease, transform 220ms ease; }
@@ -482,9 +496,9 @@ onBeforeUnmount(() => {
 .idle-reel-item.is-upcoming:hover .idle-icon-frame { transform: translateY(-3px); box-shadow: inset 0 1px 0 hsl(var(--foreground) / .14), 0 24px 36px -24px hsl(var(--primary)); }
 .idle-more { position: absolute; right: .2rem; top: -.1rem; opacity: 0; color: hsl(var(--muted-foreground)); transition: opacity 180ms ease; }
 .idle-reel-item.is-upcoming:hover .idle-more, .idle-reel-item.is-upcoming:focus-visible .idle-more { opacity: 1; }
-.idle-reel-enter-active, .idle-reel-leave-active { transition: opacity 260ms ease, transform 440ms cubic-bezier(.22,1,.36,1); }
+.idle-reel-enter-active, .idle-reel-leave-active { transition: opacity 260ms ease, transform 440ms cubic-bezier(.22,1,.36,1), filter 440ms cubic-bezier(.22,1,.36,1); }
 .idle-reel-enter-from { opacity: 0; transform: translate3d(calc(-50% + (var(--idle-offset) + 1) * var(--item-gap)), -43%, 0) scale(.65); }
-.idle-reel-leave-to { opacity: 0; transform: translate3d(calc(-50% + (var(--idle-offset) - 1) * var(--item-gap)), -43%, 0) scale(.65); }
+.idle-reel-leave-to { opacity: 0; filter: blur(4px); transform: translate3d(calc(-50% + var(--idle-offset) * var(--item-gap)), -43%, 0) scale(.3); }
 
 .idle-readout { display: grid; grid-template-columns: minmax(0, 1.5fr) repeat(2, minmax(10rem, .75fr)); border-top: 1px solid hsl(var(--border) / .55); background: hsl(var(--card) / .65); }
 .idle-primary-readout, .idle-metric { min-width: 0; padding: 1rem 1.2rem 1.15rem; }
@@ -499,6 +513,8 @@ onBeforeUnmount(() => {
 .idle-metric small { margin-top: .12rem; color: hsl(var(--muted-foreground)); font-size: .68rem; }
 .idle-empty { display: flex; min-height: 12rem; align-items: center; justify-content: center; gap: 1rem; border: 1px dashed hsl(var(--border)); border-radius: 1rem; background: hsl(var(--muted) / .18); }
 .idle-empty-icon { display: grid; place-items: center; width: 3.4rem; height: 3.4rem; border-radius: 1rem; background: hsl(var(--primary) / .11); color: hsl(var(--primary)); }
+.idle-starting-surface { display: flex; min-height: 12rem; align-items: center; justify-content: center; gap: 1rem; border-radius: 1rem; background: hsl(var(--card) / .52); }
+.idle-starting-copy { min-width: 0; }
 
 .idle-context-menu { position: fixed; z-index: 80; width: 14rem; overflow: hidden; border: 1px solid hsl(var(--border)); border-radius: .65rem; background: hsl(var(--popover)); color: hsl(var(--popover-foreground)); box-shadow: 0 18px 50px -20px hsl(var(--foreground) / .45); transform: translateY(3px); }
 .idle-context-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-bottom: 1px solid hsl(var(--border) / .65); padding: .65rem .75rem; color: hsl(var(--muted-foreground)); font-size: .7rem; }
@@ -519,6 +535,7 @@ onBeforeUnmount(() => {
 @media (max-width: 560px) {
   .idle-immersive-footer { align-items: stretch; flex-direction: column; }
   .idle-stop-button { width: 100%; }
+  .idle-starting-surface { align-items: stretch; flex-direction: column; padding: 2rem 1rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {
