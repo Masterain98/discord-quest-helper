@@ -40,6 +40,13 @@ const canEditQueue = computed(() => {
   const phase = idle.status?.phase
   return active.value && phase !== 'stopping' && phase !== 'error'
 })
+function canEditItem(item: GameIdleItem) {
+  const current = idle.status
+  if (!canEditQueue.value || !current) return false
+  // During a handoff the first upcoming item is the one being launched. It
+  // must remain in place until startup succeeds or fails.
+  return current.phase !== 'starting' || current.upcoming[0]?.occurrenceId !== item.occurrenceId
+}
 const games = computed(() => quests.detectableGames)
 const uniqueGameCount = computed(() => new Set(games.value.map(game => game.id)).size)
 const processCandidateCount = computed(() => {
@@ -297,9 +304,9 @@ onBeforeUnmount(() => {
               '--idle-offset': entry.offset,
               '--idle-distance': Math.abs(entry.offset),
             }"
-            :aria-label="entry.upcoming && canEditQueue ? t('game_idle.upcoming_item', { name: entry.item.name }) : entry.item.name"
-            @contextmenu.prevent.stop="entry.upcoming && canEditQueue && openContextMenu($event, entry.item)"
-            @keydown="entry.upcoming && canEditQueue && handleFutureKeydown($event, entry.item)"
+            :aria-label="entry.upcoming && canEditItem(entry.item) ? t('game_idle.upcoming_item', { name: entry.item.name }) : entry.item.name"
+            @contextmenu.prevent.stop="entry.upcoming && canEditItem(entry.item) && openContextMenu($event, entry.item)"
+            @keydown="entry.upcoming && canEditItem(entry.item) && handleFutureKeydown($event, entry.item)"
           >
             <span class="idle-icon-frame">
               <img
