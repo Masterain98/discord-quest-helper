@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import GameSelector from '@/components/GameSelector.vue'
 import GameIdlePanel from '@/components/GameIdlePanel.vue'
 import type { DetectableGame, ManualCdpGameSimulation } from '@/api/tauri'
@@ -50,6 +50,10 @@ const activeRpc = ref(false)
 const activeSimulationMode = ref<'process' | 'cdp' | null>(null)
 const activeCdpSession = ref<ManualCdpGameSimulation | null>(null)
 const historyFinalizationPending = ref(false)
+// A recovered pending segment may belong to a Game Idle session that was
+// stopped while this page was unmounted. Keep its retry surface distinct from
+// manual simulation state so an idle stop can clear only the recovered state.
+const historyFinalizationOwner = ref<'manual' | 'recovered' | null>(null)
 const cdpStarting = ref(false)
 const creating = ref(false)
 const error = ref<string | null>(null)
@@ -100,9 +104,26 @@ onMounted(async () => {
     // retryable. Restore a generic stop surface even after navigation.
     activeSimulationMode.value = 'process'
     historyFinalizationPending.value = true
+    historyFinalizationOwner.value = 'recovered'
     success.value = t('game_sim.stopped')
   }
 })
+
+watch(
+  () => idleStore.status?.phase,
+  phase => {
+    if (phase !== 'stopped' || historyFinalizationOwner.value !== 'recovered') return
+    // The recovered segment was owned by Game Idle. Once that session has
+    // successfully stopped, do not leave a page-local manual Stop state that
+    // would disable the simulator forever.
+    historyFinalizationPending.value = false
+    historyFinalizationOwner.value = null
+    activeSimulationMode.value = null
+    activeExecutable.value = null
+    activeRpc.value = false
+    activeCdpSession.value = null
+  }
+)
 
 const hasActiveSimulation = computed(() => activeSimulationMode.value !== null || idleStore.isActive)
 const simulatorBusy = computed(
@@ -275,6 +296,7 @@ async function rollbackManualSimulation(): Promise<void> {
 async function finishSimulationHistory(): Promise<void> {
   await stopGameSimulationUsage()
   historyFinalizationPending.value = false
+  historyFinalizationOwner.value = null
   activeSimulationMode.value = null
 }
 
@@ -390,6 +412,7 @@ async function handleStopGame() {
         await stopManualCdpGameSimulation()
         activeCdpSession.value = null
         historyFinalizationPending.value = true
+        historyFinalizationOwner.value = 'manual'
       }
       await finishSimulationHistory()
       success.value = t('game_sim.cdp_stopped')
@@ -412,7 +435,10 @@ async function handleStopGame() {
       await stopSimulatedGame(exeName)
       activeExecutable.value = null
     }
-    if (!activeExecutable.value && !activeRpc.value) historyFinalizationPending.value = true
+    if (!activeExecutable.value && !activeRpc.value) {
+      historyFinalizationPending.value = true
+      historyFinalizationOwner.value = 'manual'
+    }
     await finishSimulationHistory()
     success.value = t('game_sim.stopped')
   } catch (e) {
