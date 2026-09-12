@@ -38,6 +38,9 @@ struct ActiveUsage {
     app_name: String,
     path: PathBuf,
     checkpoint_at: Instant,
+    /// Frozen elapsed interval after native activity has stopped. A failed
+    /// final save can then be retried without counting the retry delay.
+    pending_finish_seconds: Option<u64>,
 }
 
 #[derive(Debug, Default)]
@@ -190,6 +193,7 @@ impl SimulationHistory {
                 app_name,
                 path: path.clone(),
                 checkpoint_at: Instant::now(),
+                pending_finish_seconds: None,
             });
             usage_id
         };
@@ -228,6 +232,11 @@ impl SimulationHistory {
             return Ok(None);
         };
         if active.id != usage_id {
+            return Ok(None);
+        }
+        if active.pending_finish_seconds.is_some() {
+            // Native activity has stopped and final persistence is waiting for
+            // an explicit retry. The frozen interval must not keep growing.
             return Ok(None);
         }
         let seconds = active.checkpoint_at.elapsed().as_secs();
@@ -292,7 +301,9 @@ impl SimulationHistory {
         let Some(active) = runtime.active.as_ref() else {
             return Ok(None);
         };
-        let seconds = active.checkpoint_at.elapsed().as_secs();
+        let seconds = active
+            .pending_finish_seconds
+            .unwrap_or_else(|| active.checkpoint_at.elapsed().as_secs());
         let (user_id, app_id) = (active.user_id.clone(), active.app_id.clone());
         let previous_entry = runtime
             .data
@@ -300,6 +311,9 @@ impl SimulationHistory {
             .get(&user_id)
             .and_then(|apps| apps.get(&app_id))
             .cloned();
+        if let Some(active) = runtime.active.as_mut() {
+            active.pending_finish_seconds = Some(seconds);
+        }
         let entry = Self::add_elapsed(&mut runtime, seconds);
         if let Err(error) = Self::save_locked(&runtime, path) {
             if let Some(apps) = runtime.data.accounts.get_mut(&user_id) {
@@ -404,6 +418,7 @@ mod tests {
                 app_name: "Game A".into(),
                 path: PathBuf::new(),
                 checkpoint_at: Instant::now(),
+                pending_finish_seconds: None,
             }),
             ..HistoryRuntime::default()
         };
@@ -415,6 +430,7 @@ mod tests {
             app_name: "Game A".into(),
             path: PathBuf::new(),
             checkpoint_at: Instant::now(),
+            pending_finish_seconds: None,
         });
         SimulationHistory::add_elapsed(&mut runtime, 30);
         assert_eq!(
@@ -442,6 +458,7 @@ mod tests {
                 app_name: "Game A".into(),
                 path: path.clone(),
                 checkpoint_at: Instant::now(),
+                pending_finish_seconds: None,
             });
             SimulationHistory::add_elapsed(&mut runtime, 125);
             // `runtime` is a MutexGuard here, not the struct itself, so this is
@@ -522,6 +539,7 @@ mod tests {
                 app_name: "Game A".into(),
                 path: path.clone(),
                 checkpoint_at: Instant::now() - std::time::Duration::from_secs(5),
+                pending_finish_seconds: None,
             });
         }
 
@@ -570,16 +588,18 @@ mod tests {
                 app_name: "Game A".into(),
                 path: path.clone(),
                 checkpoint_at: Instant::now() - std::time::Duration::from_secs(5),
+                pending_finish_seconds: None,
             });
         }
 
         assert!(history.finish::<tauri::Wry>(&path, None).await.is_err());
 
         let runtime = history.runtime.lock().await;
-        assert!(
-            runtime.active.is_some(),
-            "the final interval must remain retryable"
-        );
+        let active = runtime
+            .active
+            .as_ref()
+            .expect("the final interval must remain retryable");
+        assert_eq!(active.pending_finish_seconds, Some(5));
         assert!(
             runtime
                 .data

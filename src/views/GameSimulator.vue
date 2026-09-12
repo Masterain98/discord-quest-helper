@@ -48,6 +48,7 @@ const activeExecutable = ref<string | null>(null)
 const activeRpc = ref(false)
 const activeSimulationMode = ref<'process' | 'cdp' | null>(null)
 const activeCdpSession = ref<ManualCdpGameSimulation | null>(null)
+const historyFinalizationPending = ref(false)
 const cdpStarting = ref(false)
 const creating = ref(false)
 const error = ref<string | null>(null)
@@ -258,15 +259,12 @@ async function rollbackManualSimulation(): Promise<void> {
 
 /**
  * Close out the usage-history segment after a native stop has already landed.
- * A failure here is reported on its own — it must never re-activate the
- * simulator or block the next start.
+ * The caller retains a retryable Stop state until this succeeds.
  */
 async function finishSimulationHistory(): Promise<void> {
-  try {
-    await stopGameSimulationUsage()
-  } catch (e) {
-    error.value = t('game_sim.history_stop_failed', { error: errorMessage(e) })
-  }
+  await stopGameSimulationUsage()
+  historyFinalizationPending.value = false
+  activeSimulationMode.value = null
 }
 
 async function handleRunGame() {
@@ -377,19 +375,20 @@ async function handleStopGame() {
 
   try {
     if (simulationMode === 'cdp') {
-      await stopManualCdpGameSimulation()
-      // The native session is gone at this point: land local state before the
-      // history call so a tracking failure cannot leave `hasActiveSimulation`
-      // stuck on and block every future start.
-      activeCdpSession.value = null
-      activeSimulationMode.value = null
-      success.value = t('game_sim.cdp_stopped')
+      if (!historyFinalizationPending.value) {
+        await stopManualCdpGameSimulation()
+        activeCdpSession.value = null
+        historyFinalizationPending.value = true
+      }
       await finishSimulationHistory()
+      success.value = t('game_sim.cdp_stopped')
       return
     }
 
     const exeName = activeExecutable.value
-    if (!exeName && !activeRpc.value) throw new Error(t('game_sim.no_active_process'))
+    if (!exeName && !activeRpc.value && !historyFinalizationPending.value) {
+      throw new Error(t('game_sim.no_active_process'))
+    }
     // Disconnect the RPC client before clearing any state: if the disconnect
     // fails, the Stop button must stay available so the user can retry, and a
     // later retry skips the disconnect once activeRpc has been cleared.
@@ -402,12 +401,14 @@ async function handleStopGame() {
       await stopSimulatedGame(exeName)
       activeExecutable.value = null
     }
-    if (!activeExecutable.value && !activeRpc.value) activeSimulationMode.value = null
-    success.value = t('game_sim.stopped')
+    if (!activeExecutable.value && !activeRpc.value) historyFinalizationPending.value = true
     await finishSimulationHistory()
+    success.value = t('game_sim.stopped')
   } catch (e) {
     const detail = e instanceof Error ? e.message : String(e)
-    error.value = simulationMode === 'cdp'
+    error.value = historyFinalizationPending.value
+      ? t('game_sim.history_stop_failed', { error: detail })
+      : simulationMode === 'cdp'
       ? t('game_sim.cdp_cleanup_failed', { error: detail })
       : detail
   } finally {
