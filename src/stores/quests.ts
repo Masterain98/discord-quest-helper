@@ -334,7 +334,7 @@ export const useQuestsStore = defineStore('quests', () => {
     if (activityCheckpointMax.value < normalizedMin) {
       activityCheckpointMax.value = normalizedMin
     }
-  })
+  }, { flush: 'sync' })
 
   watch(activityCheckpointMax, (newMax) => {
     const normalizedMax = normalizeCheckpoint(newMax, 300, 60, 900)
@@ -347,7 +347,7 @@ export const useQuestsStore = defineStore('quests', () => {
     if (activityCheckpointMin.value > normalizedMax) {
       activityCheckpointMin.value = normalizedMax
     }
-  })
+  }, { flush: 'sync' })
 
   let progressUnlisten: (() => void) | null = null
   let completeUnlisten: (() => void) | null = null
