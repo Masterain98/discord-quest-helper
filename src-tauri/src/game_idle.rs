@@ -107,19 +107,14 @@ impl IdleShared {
     }
 
     fn refill_bag(&mut self) {
-        // Deliberately keep `removed_this_cycle`: reshuffling the bag only
-        // starts a new candidate order, it does not finish the cycle. A user
-        // removal must survive the refill, otherwise `fill_upcoming` can pull
-        // the removed app straight back into the visible queue. The exclusion
-        // is released in `mark_played` once the app is actually played.
+        // Exhausting the bag ends the current shuffle cycle, so a game the user
+        // removed may become eligible again in the next one. Keeping the
+        // exclusion across refills would strand it forever: an excluded game
+        // never enters `upcoming`, so it could never be played and never
+        // released.
+        self.removed_this_cycle.clear();
         self.bag = self.all.clone();
         shuffle(&mut self.bag);
-    }
-
-    /// Release the "removed by the user" exclusion once an application has
-    /// actually been played, so it becomes eligible again on a later cycle.
-    fn mark_played(&mut self, app_id: &str) {
-        self.removed_this_cycle.remove(app_id);
     }
 
     fn fill_upcoming(&mut self) {
@@ -874,6 +869,60 @@ mod tests {
 
         assert!(shared.remove_upcoming_item(&removed));
         assert!(shared.upcoming.iter().all(|item| item.id != removed));
+    }
+
+    #[test]
+    fn a_removed_item_is_released_once_the_shuffle_cycle_ends() {
+        // A pool larger than `UPCOMING_LENGTH + RECENT_LENGTH` keeps the queue
+        // free of duplicates and, importantly, leaves the bag non-empty after
+        // the removal, so the exclusion is not cleared by a mid-pass refill.
+        let all: Vec<_> = (0..(UPCOMING_LENGTH + RECENT_LENGTH + 2))
+            .map(|index| GameIdleItem {
+                id: index.to_string(),
+                name: index.to_string(),
+                icon: None,
+                type_name: None,
+                executable_name: Some(format!("{index}.exe")),
+            })
+            .collect();
+        let mut shared = IdleShared {
+            status: GameIdleStatus {
+                session_id: "session".into(),
+                mode: GameIdleMode::Process,
+                phase: GameIdlePhase::Starting,
+                play_minutes: 1,
+                rest_minutes: 0,
+                current: None,
+                recent: vec![],
+                upcoming: vec![],
+                phase_started_at: 0,
+                phase_ends_at: None,
+                accumulated_played_seconds: 0,
+                warning: None,
+            },
+            all,
+            bag: vec![],
+            removed_this_cycle: HashSet::new(),
+            upcoming: VecDeque::new(),
+            recent: VecDeque::new(),
+            running: None,
+        };
+        shared.refill_bag();
+        shared.fill_upcoming();
+        let removed = shared.upcoming.front().unwrap().id.clone();
+
+        assert!(shared.remove_upcoming_item(&removed));
+        assert!(shared.removed_this_cycle.contains(&removed));
+
+        // The exclusion is scoped to the current shuffle cycle. Holding it
+        // across bag refills would strand the game for the rest of the session:
+        // an excluded game can never enter `upcoming`, so it can neither be
+        // played nor released again.
+        shared.refill_bag();
+        assert!(
+            !shared.removed_this_cycle.contains(&removed),
+            "a new shuffle cycle must release the removal exclusion"
+        );
     }
 
     #[test]

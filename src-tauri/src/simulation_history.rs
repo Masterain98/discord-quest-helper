@@ -76,8 +76,30 @@ impl SimulationHistory {
         }
         let bytes = std::fs::read(path)
             .map_err(|error| format!("Failed to read game simulation history: {error}"))?;
-        runtime.data = serde_json::from_slice(&bytes)
-            .map_err(|error| format!("Failed to parse game simulation history: {error}"))?;
+        runtime.data = match serde_json::from_slice::<PersistedHistory>(&bytes) {
+            Ok(data) => data,
+            Err(error) => {
+                // A truncated or externally modified file must not brick usage
+                // tracking. Without this recovery the parse error would repeat
+                // on every `ensure_loaded`, so `begin` would fail forever and
+                // (now that history is mandatory) block every simulation until
+                // the file was deleted by hand. Preserve the unreadable bytes
+                // for diagnosis and start from an empty history.
+                let quarantine = path.with_extension("json.corrupt");
+                match std::fs::rename(path, &quarantine) {
+                    Ok(()) => eprintln!(
+                        "Game simulation history at {} is unreadable ({error}); moved it to {} and starting with an empty history",
+                        path.display(),
+                        quarantine.display()
+                    ),
+                    Err(rename_error) => eprintln!(
+                        "Game simulation history at {} is unreadable ({error}); could not quarantine it ({rename_error}); starting with an empty history",
+                        path.display()
+                    ),
+                }
+                PersistedHistory::default()
+            }
+        };
         runtime.data.version = HISTORY_VERSION;
         runtime.loaded = true;
         Ok(())
@@ -212,12 +234,37 @@ impl SimulationHistory {
                 updated_at: chrono::Utc::now().to_rfc3339(),
             }));
         }
+        // Snapshot the entry before mutating so a failed save can be reverted
+        // exactly. See the rollback below for why that matters.
+        let previous_entry = runtime
+            .data
+            .accounts
+            .get(&active.user_id)
+            .and_then(|apps| apps.get(&active.app_id))
+            .cloned();
+        let (user_id, app_id) = (active.user_id.clone(), active.app_id.clone());
+
         // Add the elapsed interval and persist it *before* advancing the
         // checkpoint marker. If persistence fails, `checkpoint_at` still points
         // at the start of the unsaved interval, so the same duration is retried
         // (or captured by `finish`) instead of being silently dropped.
         let entry = Self::add_elapsed(&mut runtime, seconds);
-        Self::save_locked(&runtime, path)?;
+        if let Err(error) = Self::save_locked(&runtime, path) {
+            // Revert the in-memory addition. `checkpoint_at` is deliberately not
+            // advanced, so `finish` will measure this same interval again;
+            // leaving the total inflated here would double-count it.
+            if let Some(apps) = runtime.data.accounts.get_mut(&user_id) {
+                match previous_entry {
+                    Some(previous) => {
+                        apps.insert(app_id, previous);
+                    }
+                    None => {
+                        apps.remove(&app_id);
+                    }
+                }
+            }
+            return Err(error);
+        }
         if let Some(active) = runtime.active.as_mut() {
             active.checkpoint_at = Instant::now();
         }
@@ -364,5 +411,84 @@ mod tests {
 
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(path.with_extension("json.tmp"));
+    }
+
+    #[tokio::test]
+    async fn corrupt_history_is_quarantined_and_replaced_with_an_empty_one() {
+        let path = std::env::temp_dir().join(format!(
+            "dqh-corrupt-history-{}.json",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::write(&path, b"{ this is not valid json").unwrap();
+
+        let history = SimulationHistory::default();
+        history
+            .ensure_loaded(&path)
+            .await
+            .expect("a corrupt file must not make history loading fail permanently");
+
+        {
+            let runtime = history.runtime.lock().await;
+            assert!(runtime.loaded);
+            assert_eq!(runtime.data.version, HISTORY_VERSION);
+            assert!(runtime.data.accounts.is_empty());
+        }
+
+        let quarantine = path.with_extension("json.corrupt");
+        assert!(
+            !path.exists() && quarantine.exists(),
+            "the unreadable file should be preserved under a .corrupt name"
+        );
+
+        let _ = std::fs::remove_file(&quarantine);
+    }
+
+    #[tokio::test]
+    async fn failed_checkpoint_reverts_the_unpersisted_interval() {
+        // A regular file used as a parent directory makes `create_dir_all`
+        // (and therefore `save_locked`) fail deterministically.
+        let blocker =
+            std::env::temp_dir().join(format!("dqh-ckpt-blocker-{}", uuid::Uuid::new_v4()));
+        std::fs::write(&blocker, b"not a directory").unwrap();
+        let path = blocker.join("history.json");
+
+        let history = SimulationHistory::default();
+        {
+            let mut runtime = history.runtime.lock().await;
+            runtime.active = Some(ActiveUsage {
+                id: 1,
+                user_id: "account-a".into(),
+                app_id: "app-a".into(),
+                app_name: "Game A".into(),
+                checkpoint_at: Instant::now() - std::time::Duration::from_secs(5),
+            });
+        }
+
+        assert!(
+            history.checkpoint(1, &path).await.is_err(),
+            "checkpoint must report the persistence failure"
+        );
+
+        let runtime = history.runtime.lock().await;
+        assert!(
+            runtime
+                .data
+                .accounts
+                .get("account-a")
+                .and_then(|apps| apps.get("app-a"))
+                .is_none(),
+            "a failed checkpoint must not leave the interval counted in memory"
+        );
+        let active = runtime
+            .active
+            .as_ref()
+            .expect("the active usage is still tracked");
+        assert!(
+            active.checkpoint_at.elapsed() >= std::time::Duration::from_secs(5),
+            "the checkpoint marker must not advance, so `finish` still captures the interval"
+        );
+        drop(runtime);
+
+        let _ = std::fs::remove_file(&blocker);
     }
 }

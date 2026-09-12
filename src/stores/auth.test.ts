@@ -36,6 +36,9 @@ vi.mock('@/api/tauri', () => ({
   removeGameIdleQueueItem: vi.fn(),
   startGameIdle: vi.fn(),
   stopGameIdle: vi.fn(),
+  // `gameIdle.stopForAccountChange` (invoked on login/logout) finishes the
+  // active usage segment, so the mock must expose it.
+  stopGameSimulationUsage: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('./quests', () => ({
