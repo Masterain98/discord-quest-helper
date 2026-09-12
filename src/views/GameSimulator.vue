@@ -69,7 +69,7 @@ function errorMessage(value: unknown): string {
 onMounted(async () => {
   await idleStore.initialize()
   await idleStore.refreshHistory().catch(() => undefined)
-  if (idleStore.isActive) mode.value = 'idle'
+  if (idleStore.isActive || idleStore.loading) mode.value = 'idle'
   const capabilities = store.initPlatformCapabilities()
   const cdpStatus = store.initCdpMode().catch(err => {
     console.warn('Failed to refresh CDP status for game simulator:', err)

@@ -294,7 +294,7 @@ onBeforeUnmount(() => {
               '--idle-distance': Math.abs(entry.offset),
             }"
             :aria-label="entry.upcoming && idle.status.phase !== 'starting' ? t('game_idle.upcoming_item', { name: entry.item.name }) : entry.item.name"
-            @contextmenu="entry.upcoming && idle.status.phase !== 'starting' && openContextMenu($event, entry.item)"
+            @contextmenu.prevent.stop="entry.upcoming && idle.status.phase !== 'starting' && openContextMenu($event, entry.item)"
             @keydown="entry.upcoming && idle.status.phase !== 'starting' && handleFutureKeydown($event, entry.item)"
           >
             <span class="idle-icon-frame">
