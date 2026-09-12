@@ -17,12 +17,21 @@
         "core:window:allow-toggle-maximize",
         "shell:allow-open",
         "fs:allow-exists",
-        "fs:allow-mkdir",
+        {
+            "identifier": "fs:allow-mkdir",
+            "allow": [
+                {
+                    "path": "$APPLOCALDATA/GameRuntime"
+                },
+                {
+                    "path": "$APPLOCALDATA/GameRuntime/**"
+                }
+            ]
+        },
         "fs:allow-write-text-file",
         "fs:scope-document-recursive",
         "fs:scope-desktop-recursive",
         "fs:scope-download-recursive",
-        "fs:scope-applocaldata-recursive",
         "dialog:allow-save",
         "dialog:allow-open"
     ]

@@ -106,6 +106,16 @@ async function openSimulationDirectory() {
   simulationDirectoryError.value = null
   try {
     const path = await questsStore.initSimulationPath()
+
+    // The static capability can create the default directory. Persisted custom
+    // directories may not retain the picker scope after restart, but they can
+    // still be opened when they already exist.
+    try {
+      await mkdir(path, { recursive: true })
+    } catch {
+      // Let the Rust command make the final existing-directory check.
+    }
+
     await invoke('open_in_explorer', { path })
   } catch {
     simulationDirectoryError.value = t('settings.simulation_directory_open_error')

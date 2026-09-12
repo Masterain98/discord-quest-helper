@@ -79,6 +79,7 @@ export const useQuestsStore = defineStore('quests', () => {
   // Single source of truth for every process-simulation entry point. The
   // asynchronous default is resolved lazily by initSimulationPath().
   const simulationPath = ref(localStorage.getItem(STORAGE_SIMULATION_PATH_KEY) ?? '')
+  let simulationPathRevision = 0
 
   const activeQuestId = ref<string | null>(null)
   const activeQuestType = ref<'video' | 'stream' | 'game' | 'activity' | null>(null)
@@ -216,11 +217,8 @@ export const useQuestsStore = defineStore('quests', () => {
   }
 
   async function initSimulationPath(): Promise<string> {
-    const configuredPath = simulationPath.value.trim()
-    if (configuredPath) {
-      if (configuredPath !== simulationPath.value) {
-        simulationPath.value = configuredPath
-      }
+    const configuredPath = simulationPath.value
+    if (configuredPath.trim()) {
       return configuredPath
     }
 
@@ -228,23 +226,31 @@ export const useQuestsStore = defineStore('quests', () => {
 
     // Do not overwrite a path selected while the asynchronous Tauri calls
     // above were in flight.
-    const latestConfiguredPath = simulationPath.value.trim()
-    if (latestConfiguredPath) return latestConfiguredPath
+    const latestConfiguredPath = simulationPath.value
+    if (latestConfiguredPath.trim()) return latestConfiguredPath
 
     simulationPath.value = defaultPath
     return defaultPath
   }
 
   function setSimulationPath(path: string): void {
-    const normalized = path.trim()
-    if (!normalized) {
+    if (!path.trim()) {
       throw new Error('Simulation path cannot be empty')
     }
-    simulationPath.value = normalized
+    simulationPathRevision += 1
+    simulationPath.value = path
   }
 
   async function resetSimulationPath(): Promise<string> {
+    const revisionBeforeReset = simulationPathRevision
     const defaultPath = await getDefaultSimulationPath()
+
+    // A later directory selection wins over this in-flight reset.
+    if (simulationPathRevision !== revisionBeforeReset && simulationPath.value.trim()) {
+      return simulationPath.value
+    }
+
+    simulationPathRevision += 1
     simulationPath.value = defaultPath
     return defaultPath
   }
@@ -305,9 +311,8 @@ export const useQuestsStore = defineStore('quests', () => {
   })
 
   watch(simulationPath, (path) => {
-    const normalized = path.trim()
-    if (normalized) {
-      localStorage.setItem(STORAGE_SIMULATION_PATH_KEY, normalized)
+    if (path.trim()) {
+      localStorage.setItem(STORAGE_SIMULATION_PATH_KEY, path)
     }
   }, { flush: 'sync' })
 
