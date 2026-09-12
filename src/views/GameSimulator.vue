@@ -69,7 +69,7 @@ function errorMessage(value: unknown): string {
 onMounted(async () => {
   await idleStore.initialize()
   await idleStore.refreshHistory().catch(() => undefined)
-  if (idleStore.isActive) mode.value = 'idle'
+  if (idleStore.isActive || idleStore.loading) mode.value = 'idle'
   const capabilities = store.initPlatformCapabilities()
   const cdpStatus = store.initCdpMode().catch(err => {
     console.warn('Failed to refresh CDP status for game simulator:', err)
@@ -455,8 +455,8 @@ async function handleStopGame() {
 </script>
 
 <template>
-  <div class="game-simulator-view fade-in space-y-6">
-    <div class="flex justify-between items-center flex-wrap gap-3">
+  <div class="game-simulator-view fade-in space-y-6" :class="mode === 'idle' && (idleStore.isActive || idleStore.loading) && 'is-idle-immersive'">
+    <div v-if="!(mode === 'idle' && (idleStore.isActive || idleStore.loading))" class="flex justify-between items-center flex-wrap gap-3">
       <h2 class="text-2xl font-bold tracking-tight">{{ t('game_sim.title') }}</h2>
       <!-- Mode toggle -->
       <div class="flex rounded-lg border p-1 gap-1 bg-muted/50">
@@ -719,4 +719,12 @@ async function handleStopGame() {
     </Dialog>
   </div>
 </template>
+
+<style scoped>
+.is-idle-immersive {
+  min-height: 100%;
+  width: 100%;
+  gap: 0;
+}
+</style>
 

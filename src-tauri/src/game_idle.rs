@@ -253,7 +253,13 @@ impl GameIdleManager {
         };
         shared_value.refill_bag();
         shared_value.fill_upcoming();
+        // Pick and expose the first queue entry before the worker begins its
+        // native launch. The UI can render the complete queue immediately,
+        // reducing perceived startup latency while the first game is prepared.
+        shared_value.status.current = shared_value.upcoming.front().cloned();
+        shared_value.refresh_status_lists();
         let initial = shared_value.status.clone();
+        emit_status(&app, &initial);
         let shared = Arc::new(tokio::sync::Mutex::new(shared_value));
         let (cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
         let task_shared = Arc::clone(&shared);
@@ -309,8 +315,13 @@ impl GameIdleManager {
         if shared.status.session_id != session_id {
             return Err("The game idle session has changed".to_string());
         }
-        if shared.status.phase == GameIdlePhase::Starting {
-            return Err("Wait until the next game has finished starting".to_string());
+        if shared.status.phase == GameIdlePhase::Starting
+            && shared
+                .upcoming
+                .front()
+                .is_some_and(|item| item.id == app_id && item.occurrence_id == occurrence_id)
+        {
+            return Err("The game currently being started cannot be removed".to_string());
         }
         if !shared.remove_upcoming_item(app_id, occurrence_id) {
             return Err("Only upcoming games can be removed".to_string());

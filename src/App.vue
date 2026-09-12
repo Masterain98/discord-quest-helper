@@ -7,6 +7,7 @@ import Debug from './views/Debug.vue'
 import TitleBar from './components/TitleBar.vue'
 import { Button } from '@/components/ui/button'
 import { useAuthStore } from '@/stores/auth'
+import { useGameIdleStore } from '@/stores/gameIdle'
 import { useVersionStore } from '@/stores/version'
 import { useI18n } from 'vue-i18n'
 import { Moon, Sun, Languages } from 'lucide-vue-next'
@@ -28,8 +29,10 @@ import {
 const { t, locale } = useI18n()
 const currentTab = ref<AppTab>('home')
 const authStore = useAuthStore()
+const gameIdleStore = useGameIdleStore()
 const authTransitioning = ref(false)
-const showStandardShell = computed(() => Boolean(authStore.user) || currentTab.value !== 'home')
+const immersiveGameIdle = computed(() => currentTab.value === 'game' && (gameIdleStore.isActive || gameIdleStore.loading))
+const showStandardShell = computed(() => (Boolean(authStore.user) || currentTab.value !== 'home') && !immersiveGameIdle.value)
 
 // Theme Logic
 const isDark = ref(true) // Default to dark
@@ -187,7 +190,7 @@ watch(
       <div
         :class="[
           'container mx-auto flex min-h-full flex-col',
-          showStandardShell ? 'p-6' : 'px-4 py-3 sm:px-6',
+          showStandardShell ? 'p-6' : immersiveGameIdle ? 'p-0' : 'px-4 py-3 sm:px-6',
         ]"
       >
         <Transition name="shell-reveal" appear>

@@ -29,6 +29,16 @@ function savedInteger(key: string, fallback: number, minimum: number): number {
   return Number.isSafeInteger(value) && value >= minimum ? value : fallback
 }
 
+function clearStoppedQueue(value: GameIdleStatus | null): GameIdleStatus | null {
+  if (!value || value.phase !== 'stopped') return value
+  return {
+    ...value,
+    current: null,
+    recent: [],
+    upcoming: [],
+  }
+}
+
 export function formatSimulationDuration(totalSeconds: number): { hours: number; minutes: number } {
   const totalMinutes = Math.floor(Math.max(0, totalSeconds) / 60)
   return {
@@ -47,6 +57,7 @@ export const useGameIdleStore = defineStore('gameIdle', () => {
   const history = ref<Record<string, GameSimulationHistoryEntry>>({})
   const loading = ref(false)
   const stopping = ref(false)
+  const stopRequested = ref(false)
   const error = ref<string | null>(null)
   let initialized = false
   let statusUnlisten: (() => void) | null = null
@@ -98,14 +109,14 @@ export const useGameIdleStore = defineStore('gameIdle', () => {
         getGameIdleStatus(),
         refreshHistory().catch(error => console.warn('Failed to load game history:', error)),
       ])
-      status.value = activeStatus
+      status.value = clearStoppedQueue(activeStatus)
       if (activeStatus && activeStatus.phase !== 'stopped') {
         playMinutes.value = activeStatus.playMinutes
         restMinutes.value = activeStatus.restMinutes
         mode.value = activeStatus.mode
       }
       statusUnlisten = await onGameIdleStatus(next => {
-        status.value = next
+        status.value = clearStoppedQueue(next)
       })
       historyUnlisten = await onGameSimulationHistoryUpdated(entry => {
         history.value = { ...history.value, [entry.appId]: entry }
@@ -124,6 +135,7 @@ export const useGameIdleStore = defineStore('gameIdle', () => {
     const validation = validateConfig()
     if (validation) throw new Error(validation)
     loading.value = true
+    stopRequested.value = false
     error.value = null
     try {
       const [games, simulationPath] = await Promise.all([
@@ -141,20 +153,31 @@ export const useGameIdleStore = defineStore('gameIdle', () => {
         },
         games
       )
+      // A stop click can arrive while candidates/path are still being loaded.
+      // The backend session is created by the time this resolves, so finish
+      // the requested stop immediately instead of leaving a detached worker.
+      if (stopRequested.value) await stop()
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : String(cause)
       throw cause
     } finally {
       loading.value = false
+      if (!isActive.value) stopRequested.value = false
     }
   }
 
   async function stop() {
     if (stopping.value) return
+    stopRequested.value = true
+    if (loading.value && !isActive.value) return
+    stopRequested.value = false
     stopping.value = true
     error.value = null
     try {
-      status.value = await stopGameIdle()
+      // A stopped session will be rebuilt from a fresh shuffle bag on the
+      // next start. Do not leave the old reel on screen as if it were still
+      // actionable; clear it before rendering the stopped state.
+      status.value = clearStoppedQueue(await stopGameIdle())
       await refreshHistory()
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : String(cause)
@@ -165,7 +188,20 @@ export const useGameIdleStore = defineStore('gameIdle', () => {
   }
 
   async function removeUpcoming(item: GameIdleItem) {
-    const sessionId = status.value?.sessionId
+    const current = status.value
+    if (!current) return
+    // After a session is stopped the backend manager is released, but the
+    // final queue remains useful as a preview for the next run. Allow it to be
+    // edited locally instead of sending a request to a manager that no longer
+    // exists; the next start will build a fresh queue from the candidates.
+    if (current.phase === 'stopped') {
+      status.value = {
+        ...current,
+        upcoming: current.upcoming.filter(entry => entry.occurrenceId !== item.occurrenceId),
+      }
+      return
+    }
+    const sessionId = current.sessionId
     if (!sessionId) return
     status.value = await removeGameIdleQueueItem(sessionId, item.id, item.occurrenceId)
   }
@@ -195,6 +231,7 @@ export const useGameIdleStore = defineStore('gameIdle', () => {
     history,
     loading,
     stopping,
+    stopRequested,
     error,
     isActive,
     sessionTotalSeconds,

@@ -35,6 +35,18 @@ let clockTimer: ReturnType<typeof setInterval> | null = null
 let resizeObserver: ResizeObserver | null = null
 
 const active = computed(() => idle.isActive)
+const immersive = computed(() => active.value || idle.loading)
+const canEditQueue = computed(() => {
+  const phase = idle.status?.phase
+  return active.value && phase !== 'stopping' && phase !== 'error'
+})
+function canEditItem(item: GameIdleItem) {
+  const current = idle.status
+  if (!canEditQueue.value || !current) return false
+  // During a handoff the first upcoming item is the one being launched. It
+  // must remain in place until startup succeeds or fails.
+  return current.phase !== 'starting' || current.upcoming[0]?.occurrenceId !== item.occurrenceId
+}
 const games = computed(() => quests.detectableGames)
 const uniqueGameCount = computed(() => new Set(games.value.map(game => game.id)).size)
 const processCandidateCount = computed(() => {
@@ -69,8 +81,9 @@ const carouselItems = computed(() => {
     items.push({ item: status.current, offset: 0, upcoming: false })
   }
   status.upcoming.forEach((item, index) => {
+    if (currentIsQueued.value && index === 0) return
     if (item.id !== currentId || index > 0) {
-      items.push({ item, offset: index + 1, upcoming: true })
+      items.push({ item, offset: currentIsQueued.value ? index : index + 1, upcoming: true })
     }
   })
   return items.filter(entry => Math.abs(entry.offset) <= maxVisibleDistance.value)
@@ -92,6 +105,11 @@ const sessionSeconds = computed(() => {
 
 const sessionDuration = computed(() => formatSimulationDuration(sessionSeconds.value))
 const configError = computed(() => idle.validateConfig())
+const currentIsQueued = computed(() => Boolean(
+  idle.status?.current &&
+  idle.status.upcoming[0]?.occurrenceId === idle.status.current.occurrenceId
+))
+const nextGameName = computed(() => idle.status?.upcoming[currentIsQueued.value ? 1 : 0]?.name || t('game_idle.preparing'))
 
 function formatCountdown(seconds: number) {
   const hours = Math.floor(seconds / 3600)
@@ -170,8 +188,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="idle-shell space-y-5" aria-labelledby="game-idle-heading">
-    <div class="idle-controls grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+  <section class="idle-shell space-y-5" :class="immersive && 'is-immersive'" aria-labelledby="game-idle-heading">
+    <div v-if="!immersive" class="idle-controls grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
       <div>
         <div class="flex items-center gap-2 text-primary">
           <RotateCcw class="h-4 w-4" />
@@ -257,7 +275,7 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <div class="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-muted-foreground">
+    <div v-if="!immersive" class="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-muted-foreground">
       <span>{{ t('game_idle.candidate_count', { count: candidateCount }) }}</span>
       <span v-if="!auth.user" class="text-amber-600 dark:text-amber-300">{{ t('game_idle.sign_in_required') }}</span>
       <span v-else-if="configError" class="text-destructive">{{ t(`game_idle.${configError}_error`) }}</span>
@@ -268,10 +286,10 @@ onBeforeUnmount(() => {
       {{ idle.error || idle.status?.warning }}
     </div>
 
-    <div v-if="idle.status?.current" class="idle-machine">
+    <div v-if="idle.status?.current || idle.status?.upcoming.length" class="idle-machine">
       <div ref="stage" class="idle-stage" :aria-label="t('game_idle.queue_label')">
         <div class="idle-pointer" aria-hidden="true">
-          <span>{{ idle.status.phase === 'resting' ? t('game_idle.resting') : t('game_idle.current') }}</span>
+          <span>{{ idle.status.phase === 'resting' ? t('game_idle.resting') : idle.status.phase === 'starting' ? t('game_idle.starting') : t('game_idle.current') }}</span>
           <ChevronDown class="h-6 w-6 fill-current" />
         </div>
 
@@ -286,9 +304,9 @@ onBeforeUnmount(() => {
               '--idle-offset': entry.offset,
               '--idle-distance': Math.abs(entry.offset),
             }"
-            :aria-label="entry.upcoming && idle.status.phase !== 'starting' ? t('game_idle.upcoming_item', { name: entry.item.name }) : entry.item.name"
-            @contextmenu="entry.upcoming && idle.status.phase !== 'starting' && openContextMenu($event, entry.item)"
-            @keydown="entry.upcoming && idle.status.phase !== 'starting' && handleFutureKeydown($event, entry.item)"
+            :aria-label="entry.upcoming && canEditItem(entry.item) ? t('game_idle.upcoming_item', { name: entry.item.name }) : entry.item.name"
+            @contextmenu.prevent.stop="entry.upcoming && canEditItem(entry.item) && openContextMenu($event, entry.item)"
+            @keydown="entry.upcoming && canEditItem(entry.item) && handleFutureKeydown($event, entry.item)"
           >
             <span class="idle-icon-frame">
               <img
@@ -308,9 +326,9 @@ onBeforeUnmount(() => {
 
       <div class="idle-readout">
         <div class="idle-primary-readout">
-          <span class="idle-readout-label">{{ idle.status.phase === 'resting' ? t('game_idle.resting_after') : t('game_idle.now_playing') }}</span>
-          <strong>{{ idle.status.current.name }}</strong>
-          <span class="idle-next">{{ t('game_idle.next') }} · {{ idle.status.upcoming[0]?.name || t('game_idle.preparing') }}</span>
+          <span class="idle-readout-label">{{ idle.status.phase === 'resting' ? t('game_idle.resting_after') : idle.status.phase === 'starting' ? t('game_idle.starting') : t('game_idle.now_playing') }}</span>
+          <strong>{{ idle.status.current?.name || idle.status.upcoming[0]?.name || t('game_idle.preparing') }}</strong>
+          <span class="idle-next">{{ t('game_idle.next') }} · {{ nextGameName }}</span>
         </div>
         <div class="idle-metric">
           <TimerReset class="h-4 w-4" />
@@ -325,6 +343,31 @@ onBeforeUnmount(() => {
           <small>{{ t('game_idle.active_time_only') }}</small>
         </div>
       </div>
+
+      <div v-if="active" class="idle-immersive-footer">
+        <div class="idle-immersive-status">
+          <span class="idle-live-dot" aria-hidden="true" />
+          <span>{{ idle.status?.phase === 'resting' ? t('game_idle.resting') : t('game_idle.now_playing') }}</span>
+        </div>
+        <Button variant="destructive" class="idle-stop-button h-11 min-w-36 gap-2" :disabled="idle.stopping" @click="stopIdle">
+          <Loader2 v-if="idle.stopping" class="h-4 w-4 animate-spin" />
+          <Square v-else class="h-4 w-4 fill-current" />
+          {{ idle.stopping ? t('game_idle.stopping') : t('game_idle.stop') }}
+        </Button>
+      </div>
+    </div>
+
+    <div v-else-if="immersive" class="idle-starting-surface">
+      <div class="idle-empty-icon"><Loader2 class="h-7 w-7 animate-spin" /></div>
+      <div class="idle-starting-copy">
+        <h4 class="font-medium">{{ t('game_idle.starting') }}</h4>
+        <p class="mt-1 text-sm text-muted-foreground">{{ t('game_idle.preparing') }}</p>
+      </div>
+      <Button variant="destructive" class="idle-stop-button h-11 min-w-32 gap-2" :disabled="idle.stopping" @click="stopIdle">
+        <Loader2 v-if="idle.stopping" class="h-4 w-4 animate-spin" />
+        <Square v-else class="h-4 w-4 fill-current" />
+        {{ idle.stopping ? t('game_idle.stopping') : t('game_idle.stop') }}
+      </Button>
     </div>
 
     <div v-else class="idle-empty">
@@ -333,8 +376,8 @@ onBeforeUnmount(() => {
         <RotateCcw v-else class="h-7 w-7" />
       </div>
       <div>
-        <h4 class="font-medium">{{ active ? t('game_idle.starting') : t('game_idle.ready_title') }}</h4>
-        <p class="mt-1 text-sm text-muted-foreground">{{ active ? t('game_idle.preparing') : t('game_idle.ready_description') }}</p>
+        <h4 class="font-medium">{{ immersive ? t('game_idle.starting') : t('game_idle.ready_title') }}</h4>
+        <p class="mt-1 text-sm text-muted-foreground">{{ immersive ? t('game_idle.preparing') : t('game_idle.ready_description') }}</p>
       </div>
     </div>
 
@@ -370,6 +413,73 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
+.idle-shell.is-immersive {
+  min-height: calc(100dvh - 2rem);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border: 0;
+  border-radius: 0;
+  padding: clamp(1rem, 4vw, 4rem);
+  background:
+    radial-gradient(circle at 50% 38%, hsl(var(--primary) / 0.15), transparent 30rem),
+    hsl(var(--background));
+  box-shadow: none;
+}
+
+.idle-shell.is-immersive .idle-machine {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: min(42rem, 76dvh);
+  background: hsl(var(--card) / 0.52);
+  box-shadow: inset 0 1px 0 hsl(var(--foreground) / 0.06), 0 32px 80px -56px hsl(var(--primary) / 0.9);
+}
+
+.idle-shell.is-immersive .idle-stage {
+  height: clamp(18rem, 48dvh, 32rem);
+}
+
+.idle-immersive-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-top: 1px solid hsl(var(--border) / 0.55);
+  padding: 1rem 1.25rem 1.15rem;
+}
+
+.idle-immersive-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.idle-live-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: hsl(var(--destructive));
+  box-shadow: 0 0 0 0.25rem hsl(var(--destructive) / 0.12);
+}
+
+.idle-stop-button {
+  transition: transform 280ms cubic-bezier(.32,.72,0,1), box-shadow 280ms cubic-bezier(.32,.72,0,1);
+}
+
+.idle-stop-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px -18px hsl(var(--destructive));
+}
+
+.idle-stop-button:active:not(:disabled) { transform: translateY(0) scale(.98); }
+
 .idle-controls { position: relative; z-index: 2; }
 .idle-mode-button { display: inline-flex; align-items: center; gap: .35rem; border-radius: .28rem; padding: 0 .7rem; font-size: .75rem; color: hsl(var(--muted-foreground)); transition: color 180ms ease, background 180ms ease, transform 120ms ease; }
 .idle-mode-button:hover:not(:disabled) { color: hsl(var(--foreground)); }
@@ -382,10 +492,10 @@ onBeforeUnmount(() => {
 .idle-machine { border-radius: 1rem; background: hsl(var(--background) / .48); box-shadow: inset 0 0 0 1px hsl(var(--border) / .5); overflow: hidden; }
 .idle-stage { position: relative; height: clamp(14rem, 28vw, 18.5rem); isolation: isolate; overflow: hidden; -webkit-mask-image: linear-gradient(90deg, transparent, black 11%, black 89%, transparent); mask-image: linear-gradient(90deg, transparent, black 11%, black 89%, transparent); }
 .idle-stage::before { content: ''; position: absolute; inset: 20% 0 0; background: radial-gradient(ellipse at 50% 45%, hsl(var(--primary) / .13), transparent 36%); pointer-events: none; }
-.idle-pointer { position: absolute; z-index: 4; top: .85rem; left: 50%; display: flex; flex-direction: column; align-items: center; color: hsl(var(--primary)); transform: translateX(-50%); }
-.idle-pointer span { font-size: .65rem; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
+.idle-pointer { position: absolute; z-index: 4; top: clamp(2.1rem, 14%, 4.2rem); left: 50%; display: flex; flex-direction: column; align-items: center; color: hsl(var(--primary)); transform: translateX(-50%); }
+.idle-pointer span { font-size: clamp(.82rem, 1.4vw, 1.05rem); font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
 
-.idle-reel-item { --item-gap: clamp(5.4rem, 10vw, 8.3rem); position: absolute; z-index: calc(5 - var(--idle-distance)); top: 50%; left: 50%; display: grid; justify-items: center; gap: .55rem; width: clamp(5.3rem, 9vw, 7.5rem); color: hsl(var(--foreground)); opacity: calc(1 - var(--idle-distance) * .16); transform: translate3d(calc(-50% + var(--idle-offset) * var(--item-gap)), -43%, 0) scale(calc(1 - var(--idle-distance) * .1)); filter: saturate(calc(1 - var(--idle-distance) * .1)); transition: transform 440ms cubic-bezier(.22,1,.36,1), opacity 360ms ease, filter 360ms ease; }
+.idle-reel-item { --item-gap: clamp(9rem, 16vw, 13rem); position: absolute; z-index: calc(5 - var(--idle-distance)); top: 50%; left: 50%; display: grid; justify-items: center; gap: .55rem; width: clamp(5.3rem, 9vw, 7.5rem); color: hsl(var(--foreground)); opacity: calc(1 - var(--idle-distance) * .16); transform: translate3d(calc(-50% + var(--idle-offset) * var(--item-gap)), -43%, 0) scale(calc(1 - var(--idle-distance) * .1)); filter: saturate(calc(1 - var(--idle-distance) * .1)); transition: transform 440ms cubic-bezier(.22,1,.36,1), opacity 360ms ease, filter 360ms ease; }
 .idle-reel-item:focus-visible { outline: none; }
 .idle-reel-item:focus-visible .idle-icon-frame { box-shadow: 0 0 0 3px hsl(var(--ring)); }
 .idle-icon-frame { position: relative; display: grid; place-items: center; width: 100%; aspect-ratio: 1; border-radius: clamp(.8rem, 1.5vw, 1.3rem); overflow: hidden; background: linear-gradient(145deg, hsl(var(--secondary)), hsl(var(--muted))); box-shadow: inset 0 1px 0 hsl(var(--foreground) / .12), 0 20px 32px -24px hsl(var(--foreground) / .65); transition: box-shadow 220ms ease, transform 220ms ease; }
@@ -393,13 +503,17 @@ onBeforeUnmount(() => {
 .idle-icon-fallback { position: absolute; width: 38%; height: 38%; color: hsl(var(--muted-foreground) / .58); }
 .idle-icon-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .72rem; font-weight: 600; }
 .idle-reel-item.is-current { z-index: 3; opacity: 1; filter: none; transform: translate3d(-50%, -40%, 0) scale(1.22); }
+/* The compact, non-immersive stopped preview has less vertical room than the
+   running reel. Lower its centered tile slightly so the pointer remains
+   visually attached without overlapping the icon. */
+.idle-shell:not(.is-immersive) .idle-reel-item.is-current { transform: translate3d(-50%, -27%, 0) scale(1.22); }
 .idle-reel-item.is-current .idle-icon-frame { box-shadow: 0 0 0 1px hsl(var(--primary) / .55), 0 25px 45px -26px hsl(var(--primary)); }
 .idle-reel-item.is-upcoming:hover .idle-icon-frame { transform: translateY(-3px); box-shadow: inset 0 1px 0 hsl(var(--foreground) / .14), 0 24px 36px -24px hsl(var(--primary)); }
 .idle-more { position: absolute; right: .2rem; top: -.1rem; opacity: 0; color: hsl(var(--muted-foreground)); transition: opacity 180ms ease; }
 .idle-reel-item.is-upcoming:hover .idle-more, .idle-reel-item.is-upcoming:focus-visible .idle-more { opacity: 1; }
-.idle-reel-enter-active, .idle-reel-leave-active { transition: opacity 260ms ease, transform 440ms cubic-bezier(.22,1,.36,1); }
+.idle-reel-enter-active, .idle-reel-leave-active { transition: opacity 260ms ease, transform 440ms cubic-bezier(.22,1,.36,1), filter 440ms cubic-bezier(.22,1,.36,1); }
 .idle-reel-enter-from { opacity: 0; transform: translate3d(calc(-50% + (var(--idle-offset) + 1) * var(--item-gap)), -43%, 0) scale(.65); }
-.idle-reel-leave-to { opacity: 0; transform: translate3d(calc(-50% + (var(--idle-offset) - 1) * var(--item-gap)), -43%, 0) scale(.65); }
+.idle-reel-leave-to { opacity: 0; filter: blur(4px); transform: translate3d(calc(-50% + var(--idle-offset) * var(--item-gap)), -43%, 0) scale(.3); }
 
 .idle-readout { display: grid; grid-template-columns: minmax(0, 1.5fr) repeat(2, minmax(10rem, .75fr)); border-top: 1px solid hsl(var(--border) / .55); background: hsl(var(--card) / .65); }
 .idle-primary-readout, .idle-metric { min-width: 0; padding: 1rem 1.2rem 1.15rem; }
@@ -414,6 +528,8 @@ onBeforeUnmount(() => {
 .idle-metric small { margin-top: .12rem; color: hsl(var(--muted-foreground)); font-size: .68rem; }
 .idle-empty { display: flex; min-height: 12rem; align-items: center; justify-content: center; gap: 1rem; border: 1px dashed hsl(var(--border)); border-radius: 1rem; background: hsl(var(--muted) / .18); }
 .idle-empty-icon { display: grid; place-items: center; width: 3.4rem; height: 3.4rem; border-radius: 1rem; background: hsl(var(--primary) / .11); color: hsl(var(--primary)); }
+.idle-starting-surface { display: flex; min-height: 12rem; align-items: center; justify-content: center; gap: 1rem; border-radius: 1rem; background: hsl(var(--card) / .52); }
+.idle-starting-copy { min-width: 0; }
 
 .idle-context-menu { position: fixed; z-index: 80; width: 14rem; overflow: hidden; border: 1px solid hsl(var(--border)); border-radius: .65rem; background: hsl(var(--popover)); color: hsl(var(--popover-foreground)); box-shadow: 0 18px 50px -20px hsl(var(--foreground) / .45); transform: translateY(3px); }
 .idle-context-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-bottom: 1px solid hsl(var(--border) / .65); padding: .65rem .75rem; color: hsl(var(--muted-foreground)); font-size: .7rem; }
@@ -426,6 +542,15 @@ onBeforeUnmount(() => {
   .idle-readout { grid-template-columns: 1fr 1fr; }
   .idle-primary-readout { grid-column: 1 / -1; border-bottom: 1px solid hsl(var(--border) / .55); }
   .idle-metric:first-of-type { border-left: 0; }
+
+  .idle-shell.is-immersive { min-height: calc(100dvh - 1rem); padding: 0.75rem; }
+  .idle-shell.is-immersive .idle-machine { min-height: min(38rem, 78dvh); }
+}
+
+@media (max-width: 560px) {
+  .idle-immersive-footer { align-items: stretch; flex-direction: column; }
+  .idle-stop-button { width: 100%; }
+  .idle-starting-surface { align-items: stretch; flex-direction: column; padding: 2rem 1rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {
