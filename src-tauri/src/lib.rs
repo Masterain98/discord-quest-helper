@@ -1640,11 +1640,27 @@ async fn disconnect_from_discord_rpc(app: tauri::AppHandle) -> Result<(), String
     Ok(())
 }
 
+fn validate_explorer_directory(path: &str) -> Result<std::path::PathBuf, String> {
+    let path = std::path::PathBuf::from(path);
+    if !path.is_absolute() {
+        return Err("The requested directory path must be absolute".to_string());
+    }
+    if !path.exists() {
+        return Err("The requested directory does not exist".to_string());
+    }
+    if !path.is_dir() {
+        return Err("The requested path is not a directory".to_string());
+    }
+    Ok(path)
+}
+
 #[tauri::command]
 async fn open_in_explorer(path: String) -> Result<(), String> {
+    let path = validate_explorer_directory(&path)?;
+
     #[cfg(target_os = "windows")]
     {
-        let mut path = path.replace("/", "\\");
+        let mut path = path.to_string_lossy().replace("/", "\\");
         // Explorer generally doesn't like the \\?\ prefix for opening folders
         if path.starts_with("\\\\?\\") {
             path = path[4..].to_string();
@@ -1657,7 +1673,7 @@ async fn open_in_explorer(path: String) -> Result<(), String> {
     }
     #[cfg(target_os = "macos")]
     {
-        println!("Opening Finder at: {}", path);
+        println!("Opening Finder at: {}", path.display());
         std::process::Command::new("/usr/bin/open")
             .arg(&path)
             .spawn()
@@ -1665,7 +1681,7 @@ async fn open_in_explorer(path: String) -> Result<(), String> {
     }
     #[cfg(target_os = "linux")]
     {
-        println!("Opening file manager at: {}", path);
+        println!("Opening file manager at: {}", path.display());
         std::process::Command::new("xdg-open")
             .arg(&path)
             .spawn()
@@ -1676,6 +1692,54 @@ async fn open_in_explorer(path: String) -> Result<(), String> {
         let _ = path; // Suppress unused variable warning on other platforms
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod explorer_directory_tests {
+    use super::validate_explorer_directory;
+    use std::fs;
+
+    fn unique_test_root() -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("dqh-open-directory-{}", uuid::Uuid::new_v4()))
+    }
+
+    #[test]
+    fn accepts_an_existing_absolute_directory() {
+        let root = unique_test_root();
+        fs::create_dir_all(&root).unwrap();
+
+        assert_eq!(
+            validate_explorer_directory(root.to_str().unwrap()).unwrap(),
+            root
+        );
+
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn rejects_relative_missing_and_file_paths() {
+        assert_eq!(
+            validate_explorer_directory("relative-directory").unwrap_err(),
+            "The requested directory path must be absolute"
+        );
+
+        let root = unique_test_root();
+        let missing = root.join("missing");
+        assert_eq!(
+            validate_explorer_directory(missing.to_str().unwrap()).unwrap_err(),
+            "The requested directory does not exist"
+        );
+
+        fs::create_dir_all(&root).unwrap();
+        let file = root.join("file.txt");
+        fs::write(&file, b"test").unwrap();
+        assert_eq!(
+            validate_explorer_directory(file.to_str().unwrap()).unwrap_err(),
+            "The requested path is not a directory"
+        );
+
+        fs::remove_dir_all(&root).unwrap();
+    }
 }
 
 /// Initialize the platform runtime identity before creating any window.
