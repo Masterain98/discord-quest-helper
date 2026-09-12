@@ -359,6 +359,9 @@
     "cdp_unavailable": "Discord CDP 未連線。請以 CDP 模式啟動 Discord 後再試。",
     "cdp_button_hint": "將所選遊戲注入 Discord，直到你手動停止。",
     "cdp_cleanup_failed": "CDP 清理失敗：{error}",
+    "history_start_failed": "無法開始模擬歷史記錄：{error}。模擬已回復。",
+    "history_stop_failed": "模擬已停止，但無法儲存其歷史記錄：{error}",
+    "history_rollback_failed": "無法完整回復模擬：{error}",
     "no_active_process": "找不到執行中的模擬程序。",
     "stop_game": "停止遊戲",
     "stopping": "停止中...",
@@ -484,6 +487,7 @@
   },
   "game_idle": {
     "nav": "遊戲掛機",
+    "navigation_locked": "掛機進行中，請先停止再離開此頁面。",
     "eyebrow": "Badge 挂机",
     "title": "让遊戲持續輪換",
     "description": "从 Discord 可偵測遊戲与 App 中自动轮换，并为每款遊戲使用固定模拟時長和可选休息时间。",

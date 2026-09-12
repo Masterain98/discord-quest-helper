@@ -60,17 +60,21 @@ const carouselItems = computed(() => {
   if (!status) return []
   const recent = status.recent.slice(-5)
   const currentId = status.current?.id
-  const items: Array<{ item: GameIdleItem; offset: number; upcoming: boolean }> = []
+  // `occurrence` disambiguates repeated applications. A small candidate pool
+  // can legitimately place the same app in `recent` more than once, and Vue's
+  // `TransitionGroup` needs a key that is unique per rendered entry — keying on
+  // the app id alone would collide and desync the reel transitions.
+  const items: Array<{ item: GameIdleItem; offset: number; upcoming: boolean; occurrence: number }> = []
   if (recent.length > 0) {
     recent.forEach((item, index) => {
-      items.push({ item, offset: index - recent.length + 1, upcoming: false })
+      items.push({ item, offset: index - recent.length + 1, upcoming: false, occurrence: index })
     })
   } else if (status.current) {
-    items.push({ item: status.current, offset: 0, upcoming: false })
+    items.push({ item: status.current, offset: 0, upcoming: false, occurrence: 0 })
   }
   status.upcoming.forEach((item, index) => {
     if (item.id !== currentId || index > 0) {
-      items.push({ item, offset: index + 1, upcoming: true })
+      items.push({ item, offset: index + 1, upcoming: true, occurrence: index })
     }
   })
   return items.filter(entry => Math.abs(entry.offset) <= maxVisibleDistance.value)
@@ -278,7 +282,7 @@ onBeforeUnmount(() => {
         <TransitionGroup name="idle-reel">
           <button
             v-for="entry in carouselItems"
-            :key="`${entry.upcoming ? 'next' : 'recent'}-${entry.item.id}`"
+            :key="`${entry.upcoming ? 'next' : 'recent'}-${entry.occurrence}-${entry.item.id}`"
             type="button"
             class="idle-reel-item"
             :class="[entry.offset === 0 && 'is-current', entry.upcoming && 'is-upcoming']"

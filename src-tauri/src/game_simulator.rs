@@ -658,18 +658,22 @@ pub fn simulated_process_hints() -> Vec<crate::cdp_game_spoof::SimulatedProcessH
 pub fn has_running_simulated_games() -> bool {
     #[cfg(target_os = "windows")]
     {
-        return RUNNING_GAMES
-            .lock()
-            .map(|games| !games.is_empty())
-            .unwrap_or(true);
+        match RUNNING_GAMES.lock() {
+            Ok(games) => !games.is_empty(),
+            // A panic while the registry lock was held would otherwise pin this
+            // guard to `true` for the rest of the process, permanently rejecting
+            // every quest start, manual simulation, and idle session. Recover the
+            // guard the same way `simulated_process_hints` does.
+            Err(poisoned) => !poisoned.into_inner().is_empty(),
+        }
     }
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     {
-        return RUNNING_UNIX_GAMES
-            .lock()
-            .map(|games| !games.is_empty())
-            .unwrap_or(true);
+        match RUNNING_UNIX_GAMES.lock() {
+            Ok(games) => !games.is_empty(),
+            Err(poisoned) => !poisoned.into_inner().is_empty(),
+        }
     }
 
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
@@ -683,18 +687,21 @@ pub fn has_running_simulated_games() -> bool {
 pub fn running_simulated_game_names() -> Vec<String> {
     #[cfg(target_os = "windows")]
     {
-        return RUNNING_GAMES
-            .lock()
-            .map(|games| games.iter().cloned().collect())
-            .unwrap_or_default();
+        match RUNNING_GAMES.lock() {
+            Ok(games) => games.iter().cloned().collect(),
+            // Keep this consistent with `has_running_simulated_games`: an empty
+            // list on a poisoned lock would make the reported activity
+            // un-clearable.
+            Err(poisoned) => poisoned.into_inner().iter().cloned().collect(),
+        }
     }
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     {
-        return RUNNING_UNIX_GAMES
-            .lock()
-            .map(|games| games.keys().cloned().collect())
-            .unwrap_or_default();
+        match RUNNING_UNIX_GAMES.lock() {
+            Ok(games) => games.keys().cloned().collect(),
+            Err(poisoned) => poisoned.into_inner().keys().cloned().collect(),
+        }
     }
 
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]

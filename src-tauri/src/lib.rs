@@ -1535,13 +1535,22 @@ async fn stop_all_game_simulations(
     app: tauri::AppHandle,
 ) -> Result<(), String> {
     let _gate = state.activity_gate.lock().await;
-    let history_path = simulation_history::SimulationHistory::file_path(&app)?;
+    // A history-path failure must not gate the stop itself: simulated
+    // processes, CDP injections, and Discord RPC presence would all survive a
+    // logout. Capture it and fold it into the result at the end.
+    let history_path = simulation_history::SimulationHistory::file_path(&app);
+    let history_path_error = history_path.as_ref().err().cloned();
+    // Without a resolved path the idle session still has to stop, so pass a
+    // placeholder that is never used for persistence in that case.
+    let path_for_stop = history_path
+        .clone()
+        .unwrap_or_else(|_| std::path::PathBuf::new());
 
     let idle_error = state
         .game_idle
         .stop(
             std::sync::Arc::clone(&state.simulation_history),
-            history_path.clone(),
+            path_for_stop,
             &app,
         )
         .await
@@ -1562,13 +1571,17 @@ async fn stop_all_game_simulations(
     .map(|error| format!("Failed to stop a simulated game: {error}"));
 
     let rpc_error = clear_discord_rpc().await.err();
-    let history_error = state
-        .simulation_history
-        .finish(&history_path, Some(&app))
-        .await
-        .err();
+    let history_error = match history_path {
+        Ok(path) => state
+            .simulation_history
+            .finish(&path, Some(&app))
+            .await
+            .err(),
+        Err(_) => None,
+    };
 
-    match idle_error
+    match history_path_error
+        .or(idle_error)
         .or(active_work_error)
         .or(process_error)
         .or(rpc_error)
@@ -2314,24 +2327,39 @@ async fn prepare_active_work_and_local_cleanup(
     // has run so an RPC/game cleanup failure cannot strand another resource.
     // Do not mark exit prepared until this cleanup succeeds; otherwise a
     // later prepare_app_exit (or a retried close) would skip rollback.
-    let history_path = simulation_history::SimulationHistory::file_path(app)?;
+    //
+    // Resolving the history file must not short-circuit the stop: an
+    // unresolvable path would otherwise leave simulated processes, CDP
+    // injections, and the RPC connection alive after exit starts.
+    let history_path = simulation_history::SimulationHistory::file_path(app);
+    let history_path_error = history_path.as_ref().err().cloned();
+    let path_for_stop = history_path
+        .clone()
+        .unwrap_or_else(|_| std::path::PathBuf::new());
     let idle_error = state
         .game_idle
         .stop(
             std::sync::Arc::clone(&state.simulation_history),
-            history_path.clone(),
+            path_for_stop,
             app,
         )
         .await
         .err();
     let active_work_error = stop_active_work_internal(state).await.err();
-    let history_error = state
-        .simulation_history
-        .finish(&history_path, Some(app))
-        .await
-        .err();
+    let history_error = match history_path {
+        Ok(path) => state
+            .simulation_history
+            .finish(&path, Some(app))
+            .await
+            .err(),
+        Err(_) => None,
+    };
     cleanup_local_resources_on_exit().await;
-    match idle_error.or(active_work_error).or(history_error) {
+    match history_path_error
+        .or(idle_error)
+        .or(active_work_error)
+        .or(history_error)
+    {
         Some(error) => Err(error),
         None => {
             APP_EXIT_CLEANUP.mark_prepared();

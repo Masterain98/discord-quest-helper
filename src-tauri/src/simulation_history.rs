@@ -212,11 +212,15 @@ impl SimulationHistory {
                 updated_at: chrono::Utc::now().to_rfc3339(),
             }));
         }
+        // Add the elapsed interval and persist it *before* advancing the
+        // checkpoint marker. If persistence fails, `checkpoint_at` still points
+        // at the start of the unsaved interval, so the same duration is retried
+        // (or captured by `finish`) instead of being silently dropped.
+        let entry = Self::add_elapsed(&mut runtime, seconds);
+        Self::save_locked(&runtime, path)?;
         if let Some(active) = runtime.active.as_mut() {
             active.checkpoint_at = Instant::now();
         }
-        let entry = Self::add_elapsed(&mut runtime, seconds);
-        Self::save_locked(&runtime, path)?;
         Ok(entry)
     }
 
@@ -297,14 +301,16 @@ mod tests {
 
     #[test]
     fn elapsed_time_is_isolated_by_account_and_app() {
-        let mut runtime = HistoryRuntime::default();
-        runtime.active = Some(ActiveUsage {
-            id: 1,
-            user_id: "account-a".into(),
-            app_id: "app-a".into(),
-            app_name: "Game A".into(),
-            checkpoint_at: Instant::now(),
-        });
+        let mut runtime = HistoryRuntime {
+            active: Some(ActiveUsage {
+                id: 1,
+                user_id: "account-a".into(),
+                app_id: "app-a".into(),
+                app_name: "Game A".into(),
+                checkpoint_at: Instant::now(),
+            }),
+            ..HistoryRuntime::default()
+        };
         SimulationHistory::add_elapsed(&mut runtime, 65);
         runtime.active = Some(ActiveUsage {
             id: 2,
@@ -340,6 +346,9 @@ mod tests {
                 checkpoint_at: Instant::now(),
             });
             SimulationHistory::add_elapsed(&mut runtime, 125);
+            // `runtime` is a MutexGuard here, not the struct itself, so this is
+            // a field write on the guard's target rather than a
+            // `field_reassign_with_default` pattern.
             runtime.active = None;
             SimulationHistory::save_locked(&runtime, &path).unwrap();
         }

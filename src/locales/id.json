@@ -359,6 +359,9 @@
     "cdp_unavailable": "Discord CDP tidak terhubung. Jalankan Discord dengan CDP aktif lalu coba lagi.",
     "cdp_button_hint": "Suntikkan game yang dipilih ke Discord sampai Anda menghentikannya secara manual.",
     "cdp_cleanup_failed": "Pembersihan CDP gagal: {error}",
+    "history_start_failed": "Tidak dapat memulai riwayat simulasi: {error}. Simulasi telah dibatalkan.",
+    "history_stop_failed": "Simulasi dihentikan, tetapi riwayatnya tidak dapat disimpan: {error}",
+    "history_rollback_failed": "Simulasi tidak dapat dibatalkan sepenuhnya: {error}",
     "no_active_process": "Tidak ada proses simulasi aktif yang ditemukan.",
     "stop_game": "Hentikan game",
     "stopping": "Menghentikan...",
@@ -484,6 +487,7 @@
   },
   "game_idle": {
     "nav": "Game idle",
+    "navigation_locked": "Mode idle sedang berjalan. Hentikan sebelum meninggalkan halaman ini.",
     "eyebrow": "Pengejar badge",
     "title": "Putar game terus-menerus",
     "description": "Gilir game yang terdeteksi Discord secara otomatis dengan durasi tetap dan jeda opsional.",

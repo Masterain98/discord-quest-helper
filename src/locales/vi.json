@@ -359,6 +359,9 @@
     "cdp_unavailable": "Discord CDP chưa kết nối. Hãy khởi động Discord với CDP được bật rồi thử lại.",
     "cdp_button_hint": "Chèn trò chơi đã chọn vào Discord cho đến khi bạn dừng thủ công.",
     "cdp_cleanup_failed": "Dọn dẹp CDP thất bại: {error}",
+    "history_start_failed": "Không thể bắt đầu lịch sử mô phỏng: {error}. Quá trình mô phỏng đã được hoàn tác.",
+    "history_stop_failed": "Quá trình mô phỏng đã dừng nhưng không thể lưu lịch sử: {error}",
+    "history_rollback_failed": "Không thể hoàn tác hoàn toàn quá trình mô phỏng: {error}",
     "no_active_process": "Không tìm thấy tiến trình mô phỏng đang hoạt động.",
     "stop_game": "Dừng trò chơi",
     "stopping": "Đang dừng...",
@@ -484,6 +487,7 @@
   },
   "game_idle": {
     "nav": "Treo trò chơi",
+    "navigation_locked": "Chế độ treo đang chạy. Hãy dừng trước khi rời trang này.",
     "eyebrow": "Tiến độ huy hiệu",
     "title": "Luân phiên trò chơi liên tục",
     "description": "Tự động chuyển giữa các trò chơi Discord nhận diện được với thời gian chơi cố định và khoảng nghỉ tùy chọn.",

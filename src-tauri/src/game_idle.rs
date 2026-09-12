@@ -107,9 +107,19 @@ impl IdleShared {
     }
 
     fn refill_bag(&mut self) {
-        self.removed_this_cycle.clear();
+        // Deliberately keep `removed_this_cycle`: reshuffling the bag only
+        // starts a new candidate order, it does not finish the cycle. A user
+        // removal must survive the refill, otherwise `fill_upcoming` can pull
+        // the removed app straight back into the visible queue. The exclusion
+        // is released in `mark_played` once the app is actually played.
         self.bag = self.all.clone();
         shuffle(&mut self.bag);
+    }
+
+    /// Release the "removed by the user" exclusion once an application has
+    /// actually been played, so it becomes eligible again on a later cycle.
+    fn mark_played(&mut self, app_id: &str) {
+        self.removed_this_cycle.remove(app_id);
     }
 
     fn fill_upcoming(&mut self) {
@@ -503,6 +513,7 @@ async fn run_session(
             while state.recent.len() > RECENT_LENGTH {
                 state.recent.pop_front();
             }
+            state.mark_played(&candidate.id);
             state.fill_upcoming();
             state.status.phase = GameIdlePhase::Playing;
             state.status.phase_started_at = now_millis();

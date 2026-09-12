@@ -359,6 +359,9 @@
     "cdp_unavailable": "Discord CDP ist nicht verbunden. Starte Discord mit aktiviertem CDP und versuche es erneut.",
     "cdp_button_hint": "Fügt das ausgewählte Spiel in Discord ein, bis du es manuell stoppst.",
     "cdp_cleanup_failed": "CDP-Bereinigung fehlgeschlagen: {error}",
+    "history_start_failed": "Simulationsverlauf konnte nicht gestartet werden: {error}. Die Simulation wurde zurückgerollt.",
+    "history_stop_failed": "Die Simulation wurde beendet, aber ihr Verlauf konnte nicht gespeichert werden: {error}",
+    "history_rollback_failed": "Die Simulation konnte nicht vollständig zurückgerollt werden: {error}",
     "no_active_process": "Kein aktiver simulierter Prozess gefunden.",
     "stop_game": "Spiel stoppen",
     "stopping": "Wird gestoppt...",
@@ -484,6 +487,7 @@
   },
   "game_idle": {
     "nav": "Spiel-Autopilot",
+    "navigation_locked": "Der Leerlaufmodus läuft. Beende ihn, bevor du diese Seite verlässt.",
     "eyebrow": "Badge-Lauf",
     "title": "Spiele automatisch wechseln",
     "description": "Wechsle automatisch zwischen von Discord erkannten Spielen, mit fester Spielzeit und optionaler Pause.",

@@ -359,6 +359,9 @@
     "cdp_unavailable": "Discord CDP n'est pas connecté. Démarrez Discord avec CDP activé puis réessayez.",
     "cdp_button_hint": "Injecte le jeu sélectionné dans Discord jusqu'à son arrêt manuel.",
     "cdp_cleanup_failed": "Échec du nettoyage CDP : {error}",
+    "history_start_failed": "Impossible de démarrer l'historique de simulation : {error}. La simulation a été annulée.",
+    "history_stop_failed": "La simulation s'est arrêtée, mais son historique n'a pas pu être enregistré : {error}",
+    "history_rollback_failed": "La simulation n'a pas pu être entièrement annulée : {error}",
     "no_active_process": "Aucun processus simulé actif n'a été trouvé.",
     "stop_game": "Arrêter le jeu",
     "stopping": "Arrêt...",
@@ -484,6 +487,7 @@
   },
   "game_idle": {
     "nav": "Jeu automatique",
+    "navigation_locked": "Le mode inactif est en cours. Arrêtez-le avant de quitter cette page.",
     "eyebrow": "Progression des badges",
     "title": "Faites tourner les jeux",
     "description": "Alternez automatiquement les jeux détectables par Discord avec une durée fixe et une pause facultative.",

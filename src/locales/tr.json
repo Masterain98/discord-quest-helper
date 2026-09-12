@@ -359,6 +359,9 @@
     "cdp_unavailable": "Discord CDP bağlı değil. Discord'u CDP etkin olarak başlatıp tekrar deneyin.",
     "cdp_button_hint": "Seçilen oyunu siz manuel olarak durdurana kadar Discord'a ekler.",
     "cdp_cleanup_failed": "CDP temizliği başarısız oldu: {error}",
+    "history_start_failed": "Simülasyon geçmişi başlatılamadı: {error}. Simülasyon geri alındı.",
+    "history_stop_failed": "Simülasyon durduruldu ancak geçmişi kaydedilemedi: {error}",
+    "history_rollback_failed": "Simülasyon tamamen geri alınamadı: {error}",
     "no_active_process": "Etkin bir simüle edilmiş işlem bulunamadı.",
     "stop_game": "Oyunu Durdur",
     "stopping": "Durduruluyor...",
@@ -484,6 +487,7 @@
   },
   "game_idle": {
     "nav": "Oyun bekletme",
+    "navigation_locked": "Boşta modu çalışıyor. Bu sayfadan ayrılmadan önce durdurun.",
     "eyebrow": "Rozet ilerlemesi",
     "title": "Oyunları sırayla çalıştır",
     "description": "Discord tarafından algılanan oyunları sabit oyun süresi ve isteğe bağlı molayla otomatik değiştir.",

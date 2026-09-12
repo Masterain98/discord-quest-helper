@@ -359,6 +359,9 @@
     "cdp_unavailable": "Discord CDP が接続されていません。CDP を有効にして Discord を起動し、再試行してください。",
     "cdp_button_hint": "手動で停止するまで、選択したゲームを Discord に注入します。",
     "cdp_cleanup_failed": "CDP のクリーンアップに失敗しました: {error}",
+    "history_start_failed": "シミュレーション履歴を開始できませんでした: {error}。シミュレーションはロールバックされました。",
+    "history_stop_failed": "シミュレーションは停止しましたが、履歴を保存できませんでした: {error}",
+    "history_rollback_failed": "シミュレーションを完全にロールバックできませんでした: {error}",
     "no_active_process": "実行中のシミュレートプロセスが見つかりません。",
     "stop_game": "ゲームを停止",
     "stopping": "停止中...",
@@ -484,6 +487,7 @@
   },
   "game_idle": {
     "nav": "ゲーム放置",
+    "navigation_locked": "ゲームアイドルが実行中です。このページを離れる前に停止してください。",
     "eyebrow": "バッジ進行",
     "title": "ゲームを自動で切り替える",
     "description": "Discord が検出できるゲームを、固定のプレイ時間と任意の休憩時間で自動的に切り替えます。",

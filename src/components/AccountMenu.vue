@@ -5,6 +5,15 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { ChevronDown, LogOut } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 
+const props = withDefaults(defineProps<{
+  /** Locks the menu while an exclusive activity (game idle) owns the app. */
+  disabled?: boolean
+  disabledHint?: string
+}>(), {
+  disabled: false,
+  disabledHint: undefined,
+})
+
 const { t } = useI18n()
 const authStore = useAuthStore()
 const emit = defineEmits<{ logout: [] }>()
@@ -24,7 +33,13 @@ function handleClickOutside(e: MouseEvent) {
   }
 }
 
+function toggleMenu() {
+  if (props.disabled) return
+  open.value = !open.value
+}
+
 function handleLogout() {
+  if (props.disabled) return
   open.value = false
   emit('logout')
 }
@@ -37,8 +52,10 @@ onUnmounted(() => document.removeEventListener('mousedown', handleClickOutside))
   <div v-if="user" ref="containerRef" class="relative">
     <!-- Trigger button — pure HTML, no Radix wrapper -->
     <button
-      class="h-10 px-2 rounded-lg inline-flex items-center gap-2 hover:bg-muted/60 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      @click="open = !open"
+      class="h-10 px-2 rounded-lg inline-flex items-center gap-2 hover:bg-muted/60 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
+      :disabled="props.disabled"
+      :title="props.disabled ? props.disabledHint : undefined"
+      @click="toggleMenu"
     >
       <Avatar class="w-8 h-8 shrink-0">
         <AvatarImage v-if="avatarUrl" :src="avatarUrl" :alt="user.username" />

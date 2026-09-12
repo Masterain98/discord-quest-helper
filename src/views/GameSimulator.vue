@@ -159,7 +159,9 @@ const canProceed = computed(() => {
 })
 
 function switchMode(m: 'select' | 'custom' | 'idle') {
-  if (hasActiveSimulation.value || simulatorBusy.value) return
+  // While idle is active the panel is the only reachable surface, so
+  // switching away would orphan the running session. Stop first.
+  if (idleStore.isActive || hasActiveSimulation.value || simulatorBusy.value) return
   mode.value = m
   error.value = null
   success.value = null
@@ -213,6 +215,55 @@ async function handleCreateGame() {
   }
 }
 
+/**
+ * Tear down a manual simulation that was started but could not be recorded.
+ * Best-effort: each native stop runs independently so one failure cannot strand
+ * the other resource, and any failure is surfaced through `error`.
+ */
+async function rollbackManualSimulation(): Promise<void> {
+  const failures: string[] = []
+  if (activeSimulationMode.value === 'cdp') {
+    try {
+      await stopManualCdpGameSimulation()
+    } catch (e) {
+      failures.push(errorMessage(e))
+    }
+  } else if (activeExecutable.value) {
+    if (activeRpc.value) {
+      try {
+        await disconnectFromDiscordRpc()
+      } catch (e) {
+        failures.push(errorMessage(e))
+      }
+    }
+    try {
+      await stopSimulatedGame(activeExecutable.value)
+    } catch (e) {
+      failures.push(errorMessage(e))
+    }
+  }
+  activeCdpSession.value = null
+  activeExecutable.value = null
+  activeRpc.value = false
+  activeSimulationMode.value = null
+  if (failures.length > 0) {
+    error.value = t('game_sim.history_rollback_failed', { error: failures.join('; ') })
+  }
+}
+
+/**
+ * Close out the usage-history segment after a native stop has already landed.
+ * A failure here is reported on its own — it must never re-activate the
+ * simulator or block the next start.
+ */
+async function finishSimulationHistory(): Promise<void> {
+  try {
+    await stopGameSimulationUsage()
+  } catch (e) {
+    error.value = t('game_sim.history_stop_failed', { error: errorMessage(e) })
+  }
+}
+
 async function handleRunGame() {
   // Resolve which exe name to use
   const exeName = effectiveExecutable.value
@@ -244,7 +295,15 @@ async function handleRunGame() {
       }
       await connectToDiscordRpc(JSON.stringify(activity), 'connect')
       activeRpc.value = true
-      await startGameSimulationUsage(selectedGame.value.id, selectedGame.value.name)
+      try {
+        await startGameSimulationUsage(selectedGame.value.id, selectedGame.value.name)
+      } catch (historyError) {
+        // The process and Discord presence are already live. History tracking is
+        // mandatory, so roll both back rather than leaving an untracked
+        // simulation running behind a failed Start.
+        await rollbackManualSimulation()
+        throw new Error(t('game_sim.history_start_failed', { error: errorMessage(historyError) }))
+      }
       success.value = t('game_sim.run_success_rpc')
     } else {
       // ── CUSTOM mode ─────────────────────────────────────────────────
@@ -279,7 +338,14 @@ async function handleRunCdpGame() {
     const session = await startManualCdpGameSimulation(game.id, game.name, store.cdpPort)
     activeCdpSession.value = session
     activeSimulationMode.value = 'cdp'
-    await startGameSimulationUsage(game.id, game.name)
+    try {
+      await startGameSimulationUsage(game.id, game.name)
+    } catch (historyError) {
+      // Remove the CDP injection before reporting the failure; otherwise Discord
+      // keeps showing activity that this app no longer accounts for.
+      await rollbackManualSimulation()
+      throw new Error(t('game_sim.history_start_failed', { error: errorMessage(historyError) }))
+    }
     success.value = t('game_sim.cdp_started', { name: game.name })
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
@@ -299,10 +365,13 @@ async function handleStopGame() {
   try {
     if (simulationMode === 'cdp') {
       await stopManualCdpGameSimulation()
-      await stopGameSimulationUsage()
+      // The native session is gone at this point: land local state before the
+      // history call so a tracking failure cannot leave `hasActiveSimulation`
+      // stuck on and block every future start.
       activeCdpSession.value = null
       activeSimulationMode.value = null
       success.value = t('game_sim.cdp_stopped')
+      await finishSimulationHistory()
       return
     }
 
@@ -317,10 +386,10 @@ async function handleStopGame() {
       activeRpc.value = false
     }
     await stopSimulatedGame(exeName)
-    await stopGameSimulationUsage()
     activeExecutable.value = null
     activeSimulationMode.value = null
     success.value = t('game_sim.stopped')
+    await finishSimulationHistory()
   } catch (e) {
     const detail = e instanceof Error ? e.message : String(e)
     error.value = simulationMode === 'cdp'

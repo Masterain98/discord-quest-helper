@@ -359,6 +359,9 @@
     "cdp_unavailable": "Discord CDP no está conectado. Inicia Discord con CDP habilitado e inténtalo de nuevo.",
     "cdp_button_hint": "Inyecta el juego seleccionado en Discord hasta que lo detengas manualmente.",
     "cdp_cleanup_failed": "Falló la limpieza de CDP: {error}",
+    "history_start_failed": "No se pudo iniciar el historial de simulación: {error}. La simulación se revirtió.",
+    "history_stop_failed": "La simulación se detuvo, pero no se pudo guardar su historial: {error}",
+    "history_rollback_failed": "No se pudo revertir por completo la simulación: {error}",
     "no_active_process": "No se encontró ningún proceso simulado activo.",
     "stop_game": "Detener juego",
     "stopping": "Deteniendo...",
@@ -484,6 +487,7 @@
   },
   "game_idle": {
     "nav": "Juego automático",
+    "navigation_locked": "La simulación en segundo plano está activa. Detenla antes de salir de esta página.",
     "eyebrow": "Progreso de insignias",
     "title": "Mantén los juegos en rotación",
     "description": "Alterna automáticamente entre juegos detectables por Discord con un tiempo fijo y descansos opcionales.",

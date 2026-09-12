@@ -8,6 +8,7 @@ import TitleBar from './components/TitleBar.vue'
 import { Button } from '@/components/ui/button'
 import { useAuthStore } from '@/stores/auth'
 import { useVersionStore } from '@/stores/version'
+import { useGameIdleStore } from '@/stores/gameIdle'
 import { useI18n } from 'vue-i18n'
 import { Moon, Sun, Languages } from 'lucide-vue-next'
 import AccountMenu from './components/AccountMenu.vue'
@@ -28,8 +29,16 @@ import {
 const { t, locale } = useI18n()
 const currentTab = ref<AppTab>('home')
 const authStore = useAuthStore()
+const gameIdleStore = useGameIdleStore()
 const authTransitioning = ref(false)
 const showStandardShell = computed(() => Boolean(authStore.user) || currentTab.value !== 'home')
+
+// While game idle owns the app, every affordance that would navigate away (or
+// end the session) is locked. The panel's own Stop button is the only exit, so
+// the backend scheduler cannot be orphaned by an unmounted page. The lock
+// lifts as soon as the user stops idle.
+const idleNavigationLocked = computed(() => gameIdleStore.isActive)
+const idleLockHint = computed(() => t('game_idle.navigation_locked'))
 
 // Theme Logic
 const isDark = ref(true) // Default to dark
@@ -136,6 +145,7 @@ onUnmounted(() => {
 })
 
 function handleAppNavigate(e: Event) {
+  if (idleNavigationLocked.value) return
   const tab = (e as CustomEvent<string>).detail
   if (tab === 'home' || tab === 'game' || tab === 'settings' || tab === 'debug') {
     currentTab.value = tab
@@ -150,8 +160,21 @@ function handleDebugDisabled() {
 }
 
 function openSettingsSection(section: 'discord_integration' | 'quest_behavior' | 'advanced' | 'account') {
+  if (idleNavigationLocked.value) return
   persistSettingsSection(section)
   currentTab.value = 'settings'
+}
+
+function handleNavigate(tab: AppTab) {
+  if (idleNavigationLocked.value) return
+  currentTab.value = tab
+}
+
+async function handleLogout() {
+  // Logging out would tear down the idle session from outside its own panel;
+  // require the user to stop idle first so cleanup stays observable.
+  if (idleNavigationLocked.value) return
+  await authStore.logout()
 }
 
 watch(
@@ -246,7 +269,12 @@ watch(
                   </DropdownMenuContent>
                 </DropdownMenu>
 
-                <AccountMenu v-if="authStore.user" @logout="authStore.logout" />
+                <AccountMenu
+                  v-if="authStore.user"
+                  :disabled="idleNavigationLocked"
+                  :disabled-hint="idleLockHint"
+                  @logout="handleLogout"
+                />
               </div>
             </div>
 
@@ -254,7 +282,9 @@ watch(
               <AppNavigation
                 :current="currentTab"
                 :debug-enabled="debugModeEnabled"
-                @navigate="currentTab = $event"
+                :disabled="idleNavigationLocked"
+                :disabled-hint="idleLockHint"
+                @navigate="handleNavigate"
               />
 
               <QuestModeIndicator
@@ -276,7 +306,9 @@ watch(
                     <AppNavigation
                       :current="currentTab"
                       :debug-enabled="debugModeEnabled"
-                      @navigate="currentTab = $event"
+                      :disabled="idleNavigationLocked"
+                      :disabled-hint="idleLockHint"
+                      @navigate="handleNavigate"
                     />
 
                     <span class="mx-1 hidden h-5 w-px bg-border sm:block" aria-hidden="true" />

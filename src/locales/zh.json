@@ -361,6 +361,9 @@
     "cdp_unavailable": "Discord CDP 未连接。请使用 CDP 模式启动 Discord 后重试。",
     "cdp_button_hint": "将所选游戏注入 Discord，直到你手动停止。",
     "cdp_cleanup_failed": "CDP 清理失败：{error}",
+    "history_start_failed": "无法开始模拟历史记录：{error}。模拟已回滚。",
+    "history_stop_failed": "模拟已停止，但无法保存其历史记录：{error}",
+    "history_rollback_failed": "无法完全回滚模拟：{error}",
     "no_active_process": "未找到正在运行的模拟进程。",
     "stop_game": "停止游戏",
     "stopping": "停止中...",
@@ -486,6 +489,7 @@
   },
   "game_idle": {
     "nav": "游戏挂机",
+    "navigation_locked": "挂机进行中，请先停止再离开此页面。",
     "eyebrow": "Badge 挂机",
     "title": "让游戏持续轮换",
     "description": "从 Discord 可检测游戏与 App 中自动轮换，并为每款游戏使用固定模拟时长和可选休息时间。",
