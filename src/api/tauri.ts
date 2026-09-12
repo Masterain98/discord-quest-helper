@@ -429,6 +429,13 @@ export interface GameSimulationHistoryEntry {
   updatedAt: string
 }
 
+export interface SimulationHistoryStatus {
+  active: boolean
+  pendingFinish: boolean
+  appId?: string | null
+  appName?: string | null
+}
+
 export async function startGameIdle(
   config: GameIdleConfig,
   games: DetectableGame[]
@@ -462,6 +469,10 @@ export async function startGameSimulationUsage(appId: string, appName: string): 
 
 export async function stopGameSimulationUsage(): Promise<void> {
   return await invoke('stop_game_simulation_usage')
+}
+
+export async function getGameSimulationUsageStatus(): Promise<SimulationHistoryStatus> {
+  return await invoke('get_game_simulation_usage_status')
 }
 
 export async function stopAllGameSimulations(): Promise<void> {

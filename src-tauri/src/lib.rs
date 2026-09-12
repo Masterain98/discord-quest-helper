@@ -1521,6 +1521,13 @@ async fn stop_game_simulation_usage(
     Ok(())
 }
 
+#[tauri::command]
+async fn get_game_simulation_usage_status(
+    state: State<'_, AppState>,
+) -> Result<simulation_history::SimulationHistoryStatus, String> {
+    Ok(state.simulation_history.status().await)
+}
+
 /// Stop every application-simulation owner before logout or account switch.
 /// This remains authoritative even when the page that launched a manual
 /// process has already been unmounted.
@@ -2197,6 +2204,7 @@ pub fn run() {
             get_game_simulation_history,
             start_game_simulation_usage,
             stop_game_simulation_usage,
+            get_game_simulation_usage_status,
             stop_all_game_simulations,
             fetch_detectable_games,
             accept_quest,

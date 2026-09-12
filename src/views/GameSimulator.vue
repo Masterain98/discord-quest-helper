@@ -15,6 +15,7 @@ import {
   getManualCdpGameSimulation,
   startGameSimulationUsage,
   stopGameSimulationUsage,
+  getGameSimulationUsageStatus,
 } from '@/api/tauri'
 import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -77,7 +78,11 @@ onMounted(async () => {
     console.warn('Failed to restore process game simulation:', err)
     return []
   })
-  const [session, processes] = await Promise.all([manualSession, runningProcesses, capabilities, cdpStatus])
+  const historyStatus = getGameSimulationUsageStatus().catch(err => {
+    console.warn('Failed to restore simulation history state:', err)
+    return null
+  })
+  const [session, processes, persistedHistoryStatus] = await Promise.all([manualSession, runningProcesses, historyStatus, capabilities, cdpStatus])
 
   if (session) {
     activeSimulationMode.value = 'cdp'
@@ -90,6 +95,12 @@ onMounted(async () => {
     // an absent RPC client is harmless, so retain a safe cleanup path.
     activeRpc.value = true
     success.value = t('game_sim.run_success')
+  } else if (persistedHistoryStatus?.active && persistedHistoryStatus.pendingFinish) {
+    // Native activity has already stopped, but final history persistence is
+    // retryable. Restore a generic stop surface even after navigation.
+    activeSimulationMode.value = 'process'
+    historyFinalizationPending.value = true
+    success.value = t('game_sim.stopped')
   }
 })
 

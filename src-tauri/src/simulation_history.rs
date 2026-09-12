@@ -18,6 +18,15 @@ pub struct GameSimulationHistoryEntry {
     pub updated_at: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SimulationHistoryStatus {
+    pub active: bool,
+    pub pending_finish: bool,
+    pub app_id: Option<String>,
+    pub app_name: Option<String>,
+}
+
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct PersistedHistory {
     #[serde(default = "history_version")]
@@ -369,6 +378,24 @@ impl SimulationHistory {
             .unwrap_or_default();
         entries.sort_by(|left, right| left.app_name.cmp(&right.app_name));
         Ok(entries)
+    }
+
+    pub async fn status(&self) -> SimulationHistoryStatus {
+        let runtime = self.runtime.lock().await;
+        let Some(active) = runtime.active.as_ref() else {
+            return SimulationHistoryStatus {
+                active: false,
+                pending_finish: false,
+                app_id: None,
+                app_name: None,
+            };
+        };
+        SimulationHistoryStatus {
+            active: true,
+            pending_finish: active.pending_finish_seconds.is_some(),
+            app_id: Some(active.app_id.clone()),
+            app_name: Some(active.app_name.clone()),
+        }
     }
 }
 
