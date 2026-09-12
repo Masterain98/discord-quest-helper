@@ -2,6 +2,7 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import type {
   GameIdleMode,
+  GameIdleItem,
   GameIdleStatus,
   GameSimulationHistoryEntry,
 } from '@/api/tauri'
@@ -88,26 +89,35 @@ export const useGameIdleStore = defineStore('gameIdle', () => {
   async function initialize() {
     if (initialized) return
     initialized = true
-    await Promise.all([quests.initPlatformCapabilities(), quests.initCdpMode().catch(() => undefined)])
-    if (savedMode === null) {
-      mode.value = quests.cdpAvailable ? 'cdp' : 'process'
+    try {
+      await Promise.all([quests.initPlatformCapabilities(), quests.initCdpMode().catch(() => undefined)])
+      if (savedMode === null) {
+        mode.value = quests.cdpAvailable ? 'cdp' : 'process'
+      }
+      const [activeStatus] = await Promise.all([
+        getGameIdleStatus(),
+        refreshHistory().catch(error => console.warn('Failed to load game history:', error)),
+      ])
+      status.value = activeStatus
+      if (activeStatus && activeStatus.phase !== 'stopped') {
+        playMinutes.value = activeStatus.playMinutes
+        restMinutes.value = activeStatus.restMinutes
+        mode.value = activeStatus.mode
+      }
+      statusUnlisten = await onGameIdleStatus(next => {
+        status.value = next
+      })
+      historyUnlisten = await onGameSimulationHistoryUpdated(entry => {
+        history.value = { ...history.value, [entry.appId]: entry }
+      })
+    } catch (cause) {
+      statusUnlisten?.()
+      historyUnlisten?.()
+      statusUnlisten = null
+      historyUnlisten = null
+      initialized = false
+      throw cause
     }
-    const [activeStatus] = await Promise.all([
-      getGameIdleStatus(),
-      refreshHistory().catch(error => console.warn('Failed to load game history:', error)),
-    ])
-    status.value = activeStatus
-    if (activeStatus && activeStatus.phase !== 'stopped') {
-      playMinutes.value = activeStatus.playMinutes
-      restMinutes.value = activeStatus.restMinutes
-      mode.value = activeStatus.mode
-    }
-    statusUnlisten = await onGameIdleStatus(next => {
-      status.value = next
-    })
-    historyUnlisten = await onGameSimulationHistoryUpdated(entry => {
-      history.value = { ...history.value, [entry.appId]: entry }
-    })
   }
 
   async function start() {
@@ -154,10 +164,10 @@ export const useGameIdleStore = defineStore('gameIdle', () => {
     }
   }
 
-  async function removeUpcoming(appId: string) {
+  async function removeUpcoming(item: GameIdleItem) {
     const sessionId = status.value?.sessionId
     if (!sessionId) return
-    status.value = await removeGameIdleQueueItem(sessionId, appId)
+    status.value = await removeGameIdleQueueItem(sessionId, item.id, item.occurrenceId)
   }
 
   async function stopForAccountChange() {

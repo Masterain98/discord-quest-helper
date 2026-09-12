@@ -36,6 +36,7 @@ struct ActiveUsage {
     user_id: String,
     app_id: String,
     app_name: String,
+    path: PathBuf,
     checkpoint_at: Instant,
 }
 
@@ -85,18 +86,20 @@ impl SimulationHistory {
                 // (now that history is mandatory) block every simulation until
                 // the file was deleted by hand. Preserve the unreadable bytes
                 // for diagnosis and start from an empty history.
-                let quarantine = path.with_extension("json.corrupt");
-                match std::fs::rename(path, &quarantine) {
-                    Ok(()) => eprintln!(
-                        "Game simulation history at {} is unreadable ({error}); moved it to {} and starting with an empty history",
+                let quarantine =
+                    path.with_extension(format!("json.corrupt-{}", uuid::Uuid::new_v4()));
+                std::fs::rename(path, &quarantine).map_err(|rename_error| {
+                    format!(
+                        "Game simulation history at {} is unreadable ({error}) and could not be preserved at {}: {rename_error}",
                         path.display(),
                         quarantine.display()
-                    ),
-                    Err(rename_error) => eprintln!(
-                        "Game simulation history at {} is unreadable ({error}); could not quarantine it ({rename_error}); starting with an empty history",
-                        path.display()
-                    ),
-                }
+                    )
+                })?;
+                eprintln!(
+                    "Game simulation history at {} is unreadable ({error}); moved it to {} and starting with an empty history",
+                    path.display(),
+                    quarantine.display()
+                );
                 PersistedHistory::default()
             }
         };
@@ -185,6 +188,7 @@ impl SimulationHistory {
                 user_id,
                 app_id,
                 app_name,
+                path: path.clone(),
                 checkpoint_at: Instant::now(),
             });
             usage_id
@@ -200,7 +204,14 @@ impl SimulationHistory {
                     Ok(Some(entry)) => {
                         let _ = app.emit("game-simulation-history-updated", entry);
                     }
-                    Ok(None) | Err(_) => break,
+                    Ok(None) => break,
+                    Err(error) => {
+                        // Keep retrying on the next minute. `checkpoint` rolls
+                        // back the failed addition and deliberately preserves
+                        // its time marker, so a transient filesystem failure is
+                        // recovered without losing or double-counting time.
+                        eprintln!("Game simulation history checkpoint failed: {error}");
+                    }
                 }
             }
         });
@@ -278,18 +289,55 @@ impl SimulationHistory {
     ) -> Result<Option<GameSimulationHistoryEntry>, String> {
         self.ensure_loaded(path).await?;
         let mut runtime = self.runtime.lock().await;
-        let seconds = runtime
-            .active
-            .as_ref()
-            .map(|active| active.checkpoint_at.elapsed().as_secs())
-            .unwrap_or(0);
+        let Some(active) = runtime.active.as_ref() else {
+            return Ok(None);
+        };
+        let seconds = active.checkpoint_at.elapsed().as_secs();
+        let (user_id, app_id) = (active.user_id.clone(), active.app_id.clone());
+        let previous_entry = runtime
+            .data
+            .accounts
+            .get(&user_id)
+            .and_then(|apps| apps.get(&app_id))
+            .cloned();
         let entry = Self::add_elapsed(&mut runtime, seconds);
+        if let Err(error) = Self::save_locked(&runtime, path) {
+            if let Some(apps) = runtime.data.accounts.get_mut(&user_id) {
+                match previous_entry {
+                    Some(previous) => {
+                        apps.insert(app_id, previous);
+                    }
+                    None => {
+                        apps.remove(&app_id);
+                    }
+                }
+            }
+            return Err(error);
+        }
+        // Only release the segment after its final elapsed interval is durable.
+        // A failed save deliberately leaves it active so Stop can be retried.
         runtime.active = None;
-        Self::save_locked(&runtime, path)?;
         if let (Some(app), Some(entry)) = (app, entry.as_ref()) {
             let _ = app.emit("game-simulation-history-updated", entry.clone());
         }
         Ok(entry)
+    }
+
+    /// Finish the current segment using the path captured when it began.
+    /// Cleanup must not depend on resolving the application data directory a
+    /// second time after the native simulation has already started.
+    pub async fn finish_active<R: Runtime>(
+        &self,
+        app: Option<&tauri::AppHandle<R>>,
+    ) -> Result<Option<GameSimulationHistoryEntry>, String> {
+        let path = {
+            let runtime = self.runtime.lock().await;
+            runtime.active.as_ref().map(|active| active.path.clone())
+        };
+        match path {
+            Some(path) => self.finish(&path, app).await,
+            None => Ok(None),
+        }
     }
 
     pub async fn entries_for_user(
@@ -354,6 +402,7 @@ mod tests {
                 user_id: "account-a".into(),
                 app_id: "app-a".into(),
                 app_name: "Game A".into(),
+                path: PathBuf::new(),
                 checkpoint_at: Instant::now(),
             }),
             ..HistoryRuntime::default()
@@ -364,6 +413,7 @@ mod tests {
             user_id: "account-b".into(),
             app_id: "app-a".into(),
             app_name: "Game A".into(),
+            path: PathBuf::new(),
             checkpoint_at: Instant::now(),
         });
         SimulationHistory::add_elapsed(&mut runtime, 30);
@@ -390,6 +440,7 @@ mod tests {
                 user_id: "account-a".into(),
                 app_id: "app-a".into(),
                 app_name: "Game A".into(),
+                path: path.clone(),
                 checkpoint_at: Instant::now(),
             });
             SimulationHistory::add_elapsed(&mut runtime, 125);
@@ -415,10 +466,8 @@ mod tests {
 
     #[tokio::test]
     async fn corrupt_history_is_quarantined_and_replaced_with_an_empty_one() {
-        let path = std::env::temp_dir().join(format!(
-            "dqh-corrupt-history-{}.json",
-            uuid::Uuid::new_v4()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("dqh-corrupt-history-{}.json", uuid::Uuid::new_v4()));
         std::fs::write(&path, b"{ this is not valid json").unwrap();
 
         let history = SimulationHistory::default();
@@ -434,10 +483,21 @@ mod tests {
             assert!(runtime.data.accounts.is_empty());
         }
 
-        let quarantine = path.with_extension("json.corrupt");
+        let file_name = path.file_name().unwrap().to_string_lossy().into_owned();
+        let quarantine = std::fs::read_dir(path.parent().unwrap())
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .find(|candidate| {
+                candidate.file_name().is_some_and(|name| {
+                    name.to_string_lossy()
+                        .starts_with(&format!("{file_name}.corrupt-"))
+                })
+            })
+            .expect("the unreadable file should be preserved under a unique .corrupt name");
         assert!(
             !path.exists() && quarantine.exists(),
-            "the unreadable file should be preserved under a .corrupt name"
+            "the unreadable file should be preserved under a unique .corrupt name"
         );
 
         let _ = std::fs::remove_file(&quarantine);
@@ -460,6 +520,7 @@ mod tests {
                 user_id: "account-a".into(),
                 app_id: "app-a".into(),
                 app_name: "Game A".into(),
+                path: path.clone(),
                 checkpoint_at: Instant::now() - std::time::Duration::from_secs(5),
             });
         }
@@ -486,6 +547,47 @@ mod tests {
         assert!(
             active.checkpoint_at.elapsed() >= std::time::Duration::from_secs(5),
             "the checkpoint marker must not advance, so `finish` still captures the interval"
+        );
+        drop(runtime);
+
+        let _ = std::fs::remove_file(&blocker);
+    }
+
+    #[tokio::test]
+    async fn failed_finish_preserves_the_active_interval_for_retry() {
+        let blocker =
+            std::env::temp_dir().join(format!("dqh-finish-blocker-{}", uuid::Uuid::new_v4()));
+        std::fs::write(&blocker, b"not a directory").unwrap();
+        let path = blocker.join("history.json");
+
+        let history = SimulationHistory::default();
+        {
+            let mut runtime = history.runtime.lock().await;
+            runtime.active = Some(ActiveUsage {
+                id: 1,
+                user_id: "account-a".into(),
+                app_id: "app-a".into(),
+                app_name: "Game A".into(),
+                path: path.clone(),
+                checkpoint_at: Instant::now() - std::time::Duration::from_secs(5),
+            });
+        }
+
+        assert!(history.finish::<tauri::Wry>(&path, None).await.is_err());
+
+        let runtime = history.runtime.lock().await;
+        assert!(
+            runtime.active.is_some(),
+            "the final interval must remain retryable"
+        );
+        assert!(
+            runtime
+                .data
+                .accounts
+                .get("account-a")
+                .and_then(|apps| apps.get("app-a"))
+                .is_none(),
+            "a failed final save must not remain counted only in memory"
         );
         drop(runtime);
 

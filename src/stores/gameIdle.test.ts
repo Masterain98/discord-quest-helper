@@ -3,6 +3,9 @@ import { createPinia, setActivePinia } from 'pinia'
 import { formatSimulationDuration, useGameIdleStore } from './gameIdle'
 
 const mocks = vi.hoisted(() => ({
+  getGameIdleStatus: vi.fn(),
+  onGameIdleStatus: vi.fn(),
+  onGameSimulationHistoryUpdated: vi.fn(),
   quests: {
     cdpAvailable: true,
     cdpPort: 9223,
@@ -14,10 +17,10 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@/api/tauri', () => ({
-  getGameIdleStatus: vi.fn().mockResolvedValue(null),
+  getGameIdleStatus: mocks.getGameIdleStatus,
   getGameSimulationHistory: vi.fn().mockResolvedValue([]),
-  onGameIdleStatus: vi.fn().mockResolvedValue(() => undefined),
-  onGameSimulationHistoryUpdated: vi.fn().mockResolvedValue(() => undefined),
+  onGameIdleStatus: mocks.onGameIdleStatus,
+  onGameSimulationHistoryUpdated: mocks.onGameSimulationHistoryUpdated,
   removeGameIdleQueueItem: vi.fn(),
   startGameIdle: vi.fn(),
   stopGameIdle: vi.fn().mockResolvedValue(null),
@@ -40,6 +43,9 @@ describe('game idle store', () => {
       removeItem: (key: string) => storage.delete(key),
     })
     vi.clearAllMocks()
+    mocks.getGameIdleStatus.mockResolvedValue(null)
+    mocks.onGameIdleStatus.mockResolvedValue(() => undefined)
+    mocks.onGameSimulationHistoryUpdated.mockResolvedValue(() => undefined)
     mocks.quests.cdpAvailable = true
   })
 
@@ -66,6 +72,20 @@ describe('game idle store', () => {
     store.playMinutes = 1
     store.restMinutes = -1
     expect(store.validateConfig()).toBe('rest_minutes')
+  })
+
+  it('can retry initialization after an API failure', async () => {
+    mocks.getGameIdleStatus
+      .mockRejectedValueOnce(new Error('temporary status failure'))
+      .mockResolvedValueOnce(null)
+    const store = useGameIdleStore()
+
+    await expect(store.initialize()).rejects.toThrow('temporary status failure')
+    await expect(store.initialize()).resolves.toBeUndefined()
+
+    expect(mocks.getGameIdleStatus).toHaveBeenCalledTimes(2)
+    expect(mocks.onGameIdleStatus).toHaveBeenCalledOnce()
+    expect(mocks.onGameSimulationHistoryUpdated).toHaveBeenCalledOnce()
   })
 })
 

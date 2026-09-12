@@ -60,21 +60,17 @@ const carouselItems = computed(() => {
   if (!status) return []
   const recent = status.recent.slice(-5)
   const currentId = status.current?.id
-  // `occurrence` disambiguates repeated applications. A small candidate pool
-  // can legitimately place the same app in `recent` more than once, and Vue's
-  // `TransitionGroup` needs a key that is unique per rendered entry — keying on
-  // the app id alone would collide and desync the reel transitions.
-  const items: Array<{ item: GameIdleItem; offset: number; upcoming: boolean; occurrence: number }> = []
+  const items: Array<{ item: GameIdleItem; offset: number; upcoming: boolean }> = []
   if (recent.length > 0) {
     recent.forEach((item, index) => {
-      items.push({ item, offset: index - recent.length + 1, upcoming: false, occurrence: index })
+      items.push({ item, offset: index - recent.length + 1, upcoming: false })
     })
   } else if (status.current) {
-    items.push({ item: status.current, offset: 0, upcoming: false, occurrence: 0 })
+    items.push({ item: status.current, offset: 0, upcoming: false })
   }
   status.upcoming.forEach((item, index) => {
     if (item.id !== currentId || index > 0) {
-      items.push({ item, offset: index + 1, upcoming: true, occurrence: index })
+      items.push({ item, offset: index + 1, upcoming: true })
     }
   })
   return items.filter(entry => Math.abs(entry.offset) <= maxVisibleDistance.value)
@@ -140,7 +136,7 @@ function handleFutureKeydown(event: KeyboardEvent, item: GameIdleItem) {
 async function removeContextItem() {
   const item = contextMenu.value?.item
   contextMenu.value = null
-  if (item) await idle.removeUpcoming(item.id).catch(() => undefined)
+  if (item) await idle.removeUpcoming(item).catch(() => undefined)
 }
 
 function closeContextMenu(event?: Event) {
@@ -282,7 +278,7 @@ onBeforeUnmount(() => {
         <TransitionGroup name="idle-reel">
           <button
             v-for="entry in carouselItems"
-            :key="`${entry.upcoming ? 'next' : 'recent'}-${entry.occurrence}-${entry.item.id}`"
+            :key="entry.item.occurrenceId"
             type="button"
             class="idle-reel-item"
             :class="[entry.offset === 0 && 'is-current', entry.upcoming && 'is-upcoming']"

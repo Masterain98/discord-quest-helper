@@ -225,29 +225,34 @@ async function rollbackManualSimulation(): Promise<void> {
   if (activeSimulationMode.value === 'cdp') {
     try {
       await stopManualCdpGameSimulation()
+      activeCdpSession.value = null
+      activeSimulationMode.value = null
     } catch (e) {
       failures.push(errorMessage(e))
     }
-  } else if (activeExecutable.value) {
+  } else {
     if (activeRpc.value) {
       try {
         await disconnectFromDiscordRpc()
+        activeRpc.value = false
       } catch (e) {
         failures.push(errorMessage(e))
       }
     }
-    try {
-      await stopSimulatedGame(activeExecutable.value)
-    } catch (e) {
-      failures.push(errorMessage(e))
+    if (activeExecutable.value) {
+      try {
+        await stopSimulatedGame(activeExecutable.value)
+        activeExecutable.value = null
+      } catch (e) {
+        failures.push(errorMessage(e))
+      }
+    }
+    if (!activeExecutable.value && !activeRpc.value) {
+      activeSimulationMode.value = null
     }
   }
-  activeCdpSession.value = null
-  activeExecutable.value = null
-  activeRpc.value = false
-  activeSimulationMode.value = null
   if (failures.length > 0) {
-    error.value = t('game_sim.history_rollback_failed', { error: failures.join('; ') })
+    throw new Error(t('game_sim.history_rollback_failed', { error: failures.join('; ') }))
   }
 }
 
@@ -301,7 +306,11 @@ async function handleRunGame() {
         // The process and Discord presence are already live. History tracking is
         // mandatory, so roll both back rather than leaving an untracked
         // simulation running behind a failed Start.
-        await rollbackManualSimulation()
+        try {
+          await rollbackManualSimulation()
+        } catch (cleanupError) {
+          throw new Error(`${t('game_sim.history_start_failed', { error: errorMessage(historyError) })} ${errorMessage(cleanupError)}`)
+        }
         throw new Error(t('game_sim.history_start_failed', { error: errorMessage(historyError) }))
       }
       success.value = t('game_sim.run_success_rpc')
@@ -343,7 +352,11 @@ async function handleRunCdpGame() {
     } catch (historyError) {
       // Remove the CDP injection before reporting the failure; otherwise Discord
       // keeps showing activity that this app no longer accounts for.
-      await rollbackManualSimulation()
+      try {
+        await rollbackManualSimulation()
+      } catch (cleanupError) {
+        throw new Error(`${t('game_sim.history_start_failed', { error: errorMessage(historyError) })} ${errorMessage(cleanupError)}`)
+      }
       throw new Error(t('game_sim.history_start_failed', { error: errorMessage(historyError) }))
     }
     success.value = t('game_sim.cdp_started', { name: game.name })
@@ -376,7 +389,7 @@ async function handleStopGame() {
     }
 
     const exeName = activeExecutable.value
-    if (!exeName) throw new Error(t('game_sim.no_active_process'))
+    if (!exeName && !activeRpc.value) throw new Error(t('game_sim.no_active_process'))
     // Disconnect the RPC client before clearing any state: if the disconnect
     // fails, the Stop button must stay available so the user can retry, and a
     // later retry skips the disconnect once activeRpc has been cleared.
@@ -385,9 +398,11 @@ async function handleStopGame() {
       await disconnectFromDiscordRpc()
       activeRpc.value = false
     }
-    await stopSimulatedGame(exeName)
-    activeExecutable.value = null
-    activeSimulationMode.value = null
+    if (exeName) {
+      await stopSimulatedGame(exeName)
+      activeExecutable.value = null
+    }
+    if (!activeExecutable.value && !activeRpc.value) activeSimulationMode.value = null
     success.value = t('game_sim.stopped')
     await finishSimulationHistory()
   } catch (e) {

@@ -5,19 +5,10 @@ import { useI18n } from 'vue-i18n'
 
 export type AppTab = 'home' | 'game' | 'settings' | 'debug'
 
-const props = withDefaults(defineProps<{
+const props = defineProps<{
   current: AppTab
   debugEnabled: boolean
-  /**
-   * Locks navigation while a long-running exclusive activity (game idle) owns
-   * the app. Disabled entries stay visible but cannot navigate away.
-   */
-  disabled?: boolean
-  disabledHint?: string
-}>(), {
-  disabled: false,
-  disabledHint: undefined,
-})
+}>()
 
 const emit = defineEmits<{
   navigate: [tab: AppTab]
@@ -31,11 +22,6 @@ const items = [
   { key: 'settings' as const, label: 'nav.settings' },
   { key: 'debug' as const, label: 'nav.debug', debugOnly: true },
 ]
-
-function onNavigate(tab: AppTab) {
-  if (props.disabled) return
-  emit('navigate', tab)
-}
 </script>
 
 <template>
@@ -46,8 +32,6 @@ function onNavigate(tab: AppTab) {
       :key="item.key"
       size="sm"
       variant="ghost"
-      :disabled="props.disabled"
-      :title="props.disabled ? props.disabledHint : undefined"
       :aria-current="props.current === item.key ? 'page' : undefined"
       :class="cn(
         'relative shrink-0 rounded-md px-3 text-muted-foreground transition-colors',
@@ -57,7 +41,7 @@ function onNavigate(tab: AppTab) {
           'shadow-[inset_0_-2px_0_hsl(var(--primary))]',
         ],
       )"
-      @click="onNavigate(item.key)"
+      @click="emit('navigate', item.key)"
     >
       {{ t(item.label) }}
     </Button>

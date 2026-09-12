@@ -1,6 +1,6 @@
 use crate::models::DetectableGame;
 use crate::simulation_history::SimulationHistory;
-use rand::RngExt;
+use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashSet, VecDeque};
 use std::path::PathBuf;
@@ -51,6 +51,9 @@ pub struct GameIdleItem {
     pub name: String,
     pub icon: Option<String>,
     pub type_name: Option<String>,
+    /// Stable identity for this occurrence in the idle reel. The same Discord
+    /// application can appear again in a later shuffle cycle.
+    pub occurrence_id: String,
     #[serde(skip)]
     executable_name: Option<String>,
 }
@@ -135,30 +138,33 @@ impl IdleShared {
             if self.removed_this_cycle.contains(&candidate.id) {
                 continue;
             }
-            let already_visible = self
-                .status
-                .current
-                .as_ref()
-                .is_some_and(|current| current.id == candidate.id)
-                || self.upcoming.iter().any(|item| item.id == candidate.id)
-                || self.recent.iter().any(|item| item.id == candidate.id);
-            if already_visible && self.all.len() > UPCOMING_LENGTH + RECENT_LENGTH {
+            let duplicates_active_queue = (self.all.len() > 1
+                && self
+                    .status
+                    .current
+                    .as_ref()
+                    .is_some_and(|current| current.id == candidate.id))
+                || self.upcoming.iter().any(|item| item.id == candidate.id);
+            if duplicates_active_queue {
                 continue;
             }
-            if self
-                .upcoming
-                .back()
-                .is_some_and(|previous| previous.id == candidate.id)
-            {
+            let recently_played = self.recent.iter().any(|item| item.id == candidate.id);
+            if recently_played && self.all.len() > UPCOMING_LENGTH + RECENT_LENGTH {
                 continue;
             }
-            self.upcoming.push_back(candidate);
+            let mut occurrence = candidate;
+            occurrence.occurrence_id = uuid::Uuid::new_v4().to_string();
+            self.upcoming.push_back(occurrence);
         }
         self.refresh_status_lists();
     }
 
-    fn remove_upcoming_item(&mut self, app_id: &str) -> bool {
-        let Some(position) = self.upcoming.iter().position(|item| item.id == app_id) else {
+    fn remove_upcoming_item(&mut self, app_id: &str, occurrence_id: &str) -> bool {
+        let Some(position) = self
+            .upcoming
+            .iter()
+            .position(|item| item.id == app_id && item.occurrence_id == occurrence_id)
+        else {
             return false;
         };
         self.upcoming.remove(position);
@@ -289,6 +295,7 @@ impl GameIdleManager {
         &self,
         session_id: &str,
         app_id: &str,
+        occurrence_id: &str,
         app: &tauri::AppHandle,
     ) -> Result<GameIdleStatus, String> {
         let shared = self
@@ -305,7 +312,7 @@ impl GameIdleManager {
         if shared.status.phase == GameIdlePhase::Starting {
             return Err("Wait until the next game has finished starting".to_string());
         }
-        if !shared.remove_upcoming_item(app_id) {
+        if !shared.remove_upcoming_item(app_id, occurrence_id) {
             return Err("Only upcoming games can be removed".to_string());
         }
         emit_status(app, &shared.status);
@@ -315,7 +322,6 @@ impl GameIdleManager {
     pub async fn stop(
         &self,
         history: Arc<SimulationHistory>,
-        history_path: PathBuf,
         app: &tauri::AppHandle,
     ) -> Result<Option<GameIdleStatus>, String> {
         let (shared, join) = {
@@ -364,7 +370,17 @@ impl GameIdleManager {
             return Err(error);
         }
 
-        history.finish(&history_path, Some(app)).await?;
+        if let Err(error) = history.finish_active(Some(app)).await {
+            let mut shared = shared.lock().await;
+            shared.status.phase = GameIdlePhase::Error;
+            shared.status.phase_ends_at = None;
+            shared.status.warning = Some(error.clone());
+            emit_status(app, &shared.status);
+            // Keep the manager entry so the user can retry Stop. Its native
+            // resource is already gone, while the history segment remains
+            // active until the final interval is durably persisted.
+            return Err(error);
+        }
         let final_status = {
             let mut shared = shared.lock().await;
             shared.status.phase = GameIdlePhase::Stopped;
@@ -430,6 +446,13 @@ async fn run_session(
                     }
                 }
             }
+        }
+
+        // Stopping during the retry delay is not a failed game start. Exit
+        // without removing the candidate, emitting a warning, or incrementing
+        // the consecutive-failure circuit breaker.
+        if *cancel.borrow() && running.is_none() {
+            break;
         }
 
         let Some(running) = running else {
@@ -508,7 +531,6 @@ async fn run_session(
             while state.recent.len() > RECENT_LENGTH {
                 state.recent.pop_front();
             }
-            state.mark_played(&candidate.id);
             state.fill_upcoming();
             state.status.phase = GameIdlePhase::Playing;
             state.status.phase_started_at = now_millis();
@@ -667,6 +689,7 @@ fn eligible_games(mode: GameIdleMode, games: Vec<DetectableGame>) -> Vec<GameIdl
                 name: game.name,
                 icon: game.icon,
                 type_name: game.type_name,
+                occurrence_id: String::new(),
                 executable_name,
             })
         })
@@ -685,14 +708,7 @@ fn select_executable(game: &DetectableGame) -> Option<String> {
 }
 
 fn shuffle<T>(values: &mut [T]) {
-    if values.len() < 2 {
-        return;
-    }
-    let mut rng = rand::rng();
-    for index in (1..values.len()).rev() {
-        let other = rng.random_range(0..=index);
-        values.swap(index, other);
-    }
+    values.shuffle(&mut rand::rng());
 }
 
 async fn set_error(
@@ -794,6 +810,7 @@ mod tests {
                 name: index.to_string(),
                 icon: None,
                 type_name: None,
+                occurrence_id: String::new(),
                 executable_name: Some(format!("{index}.exe")),
             })
             .collect();
@@ -838,6 +855,7 @@ mod tests {
                 name: index.to_string(),
                 icon: None,
                 type_name: None,
+                occurrence_id: String::new(),
                 executable_name: Some(format!("{index}.exe")),
             })
             .collect();
@@ -865,9 +883,11 @@ mod tests {
         };
         shared.refill_bag();
         shared.fill_upcoming();
-        let removed = shared.upcoming.front().unwrap().id.clone();
+        let removed_item = shared.upcoming.front().unwrap().clone();
+        let removed = removed_item.id.clone();
 
-        assert!(shared.remove_upcoming_item(&removed));
+        assert!(!shared.remove_upcoming_item(&removed, "stale-occurrence"));
+        assert!(shared.remove_upcoming_item(&removed, &removed_item.occurrence_id));
         assert!(shared.upcoming.iter().all(|item| item.id != removed));
     }
 
@@ -882,6 +902,7 @@ mod tests {
                 name: index.to_string(),
                 icon: None,
                 type_name: None,
+                occurrence_id: String::new(),
                 executable_name: Some(format!("{index}.exe")),
             })
             .collect();
@@ -909,9 +930,10 @@ mod tests {
         };
         shared.refill_bag();
         shared.fill_upcoming();
-        let removed = shared.upcoming.front().unwrap().id.clone();
+        let removed_item = shared.upcoming.front().unwrap().clone();
+        let removed = removed_item.id.clone();
 
-        assert!(shared.remove_upcoming_item(&removed));
+        assert!(shared.remove_upcoming_item(&removed, &removed_item.occurrence_id));
         assert!(shared.removed_this_cycle.contains(&removed));
 
         // The exclusion is scoped to the current shuffle cycle. Holding it
@@ -954,5 +976,66 @@ mod tests {
         shared.fill_upcoming();
 
         assert_eq!(shared.upcoming.len(), 1);
+        let first = shared.upcoming.pop_front().unwrap();
+        shared.status.current = Some(first.clone());
+        shared.bag.clear();
+        shared.fill_upcoming();
+
+        assert_eq!(shared.upcoming.len(), 1);
+        assert_eq!(shared.upcoming.front().unwrap().id, first.id);
+        assert_ne!(
+            shared.upcoming.front().unwrap().occurrence_id,
+            first.occurrence_id
+        );
+    }
+
+    #[test]
+    fn medium_pool_never_duplicates_the_active_queue_across_a_bag_refill() {
+        let candidates = eligible_games(
+            GameIdleMode::Cdp,
+            (0..6)
+                .map(|index| game(&index.to_string(), "win32"))
+                .collect(),
+        );
+        let mut shared = IdleShared {
+            status: GameIdleStatus {
+                session_id: "session".into(),
+                mode: GameIdleMode::Cdp,
+                phase: GameIdlePhase::Starting,
+                play_minutes: 1,
+                rest_minutes: 0,
+                current: Some(candidates[0].clone()),
+                recent: vec![],
+                upcoming: vec![],
+                phase_started_at: 0,
+                phase_ends_at: None,
+                accumulated_played_seconds: 0,
+                warning: None,
+            },
+            all: candidates.clone(),
+            // Force a mid-fill cycle boundary after one candidate.
+            bag: vec![candidates[1].clone()],
+            removed_this_cycle: HashSet::new(),
+            upcoming: VecDeque::new(),
+            recent: VecDeque::new(),
+            running: None,
+        };
+
+        shared.fill_upcoming();
+
+        let ids: HashSet<_> = shared
+            .upcoming
+            .iter()
+            .map(|item| item.id.as_str())
+            .collect();
+        assert_eq!(ids.len(), shared.upcoming.len());
+        assert!(shared
+            .upcoming
+            .iter()
+            .all(|item| item.id != shared.status.current.as_ref().unwrap().id));
+        assert!(shared
+            .upcoming
+            .iter()
+            .all(|item| !item.occurrence_id.is_empty()));
     }
 }

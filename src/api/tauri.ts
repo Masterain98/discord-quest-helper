@@ -404,6 +404,7 @@ export interface GameIdleItem {
   name: string
   icon?: string | null
   typeName?: string | null
+  occurrenceId: string
 }
 
 export interface GameIdleStatus {
@@ -441,9 +442,10 @@ export async function getGameIdleStatus(): Promise<GameIdleStatus | null> {
 
 export async function removeGameIdleQueueItem(
   sessionId: string,
-  appId: string
+  appId: string,
+  occurrenceId: string
 ): Promise<GameIdleStatus> {
-  return await invoke('remove_game_idle_queue_item', { sessionId, appId })
+  return await invoke('remove_game_idle_queue_item', { sessionId, appId, occurrenceId })
 }
 
 export async function stopGameIdle(): Promise<GameIdleStatus | null> {

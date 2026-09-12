@@ -795,10 +795,14 @@ export const useQuestsStore = defineStore('quests', () => {
       error.value = e instanceof Error ? e.message : String(e)
       // Clean up if started (only for simulate mode)
       if (activeGameExe.value) {
+        const executable = activeGameExe.value
         try {
-          await stopSimulatedGame(activeGameExe.value)
-        } catch { }
-        activeGameExe.value = null
+          await stopSimulatedGame(executable)
+          activeGameExe.value = null
+        } catch (cleanupError) {
+          console.error('Failed to clean up simulated game after start error:', cleanupError)
+        }
+        await emit('event_disconnect').catch(() => undefined)
       }
       throw e
     } finally {
@@ -887,6 +891,7 @@ export const useQuestsStore = defineStore('quests', () => {
   async function startPlayActivity(quest: Quest, secondsNeeded: number, initialProgress: number) {
     loading.value = true
     error.value = null
+    let preserveActiveState = false
     try {
       const appId = quest.config.application?.id
       if (!appId) throw new Error('Cloud game Activity quest is missing an application ID')
@@ -925,13 +930,18 @@ export const useQuestsStore = defineStore('quests', () => {
       } catch (historyError) {
         // Roll back the already-started activity simulation; running it without
         // an account-scoped history segment would silently break accounting.
-        await stopPlayActivityQuest(quest.id).catch(() => undefined)
-        await stopGameSimulationUsage().catch(() => undefined)
         const detail = historyError instanceof Error ? historyError.message : String(historyError)
+        try {
+          await teardownQuestSimulation()
+        } catch (cleanupError) {
+          preserveActiveState = true
+          const cleanupDetail = cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
+          throw new Error(`Failed to start activity simulation history: ${detail}. Cleanup also failed: ${cleanupDetail}`)
+        }
         throw new Error(`Failed to start activity simulation history: ${detail}`)
       }
     } catch (e) {
-      if (activeQuestId.value === quest.id) {
+      if (!preserveActiveState && activeQuestId.value === quest.id) {
         activeQuestId.value = null
         activeQuestType.value = null
         activeQuestProgress.value = 0
@@ -954,22 +964,35 @@ export const useQuestsStore = defineStore('quests', () => {
    * be live for a start that is about to report an error.
    */
   async function teardownQuestSimulation() {
+    const failures: string[] = []
     const exeToStop = activeGameExe.value
-    if (exeToStop && gameQuestMode.value === 'simulate') {
+    if (gameQuestMode.value === 'simulate' && (exeToStop || activeQuestType.value === 'game')) {
+      if (exeToStop) {
+        try {
+          await stopSimulatedGame(exeToStop)
+          activeGameExe.value = null
+        } catch (cleanupError) {
+          failures.push(cleanupError instanceof Error ? cleanupError.message : String(cleanupError))
+        }
+      }
       try {
-        await stopSimulatedGame(exeToStop)
         await emit('event_disconnect')
       } catch (cleanupError) {
-        console.error('Failed to roll back simulated game:', cleanupError)
+        failures.push(cleanupError instanceof Error ? cleanupError.message : String(cleanupError))
       }
-      activeGameExe.value = null
     }
     try {
       await stopQuest()
-    } catch {
-      // No quest was running; nothing to stop.
+    } catch (cleanupError) {
+      failures.push(cleanupError instanceof Error ? cleanupError.message : String(cleanupError))
     }
-    await stopGameSimulationUsage().catch(() => undefined)
+    try {
+      await stopGameSimulationUsage()
+    } catch (cleanupError) {
+      failures.push(cleanupError instanceof Error ? cleanupError.message : String(cleanupError))
+    }
+
+    if (failures.length > 0) throw new Error(failures.join('; '))
 
     activeQuestId.value = null
     activeQuestType.value = null
