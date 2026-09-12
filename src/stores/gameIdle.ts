@@ -29,6 +29,16 @@ function savedInteger(key: string, fallback: number, minimum: number): number {
   return Number.isSafeInteger(value) && value >= minimum ? value : fallback
 }
 
+function clearStoppedQueue(value: GameIdleStatus | null): GameIdleStatus | null {
+  if (!value || value.phase !== 'stopped') return value
+  return {
+    ...value,
+    current: null,
+    recent: [],
+    upcoming: [],
+  }
+}
+
 export function formatSimulationDuration(totalSeconds: number): { hours: number; minutes: number } {
   const totalMinutes = Math.floor(Math.max(0, totalSeconds) / 60)
   return {
@@ -99,14 +109,14 @@ export const useGameIdleStore = defineStore('gameIdle', () => {
         getGameIdleStatus(),
         refreshHistory().catch(error => console.warn('Failed to load game history:', error)),
       ])
-      status.value = activeStatus
+      status.value = clearStoppedQueue(activeStatus)
       if (activeStatus && activeStatus.phase !== 'stopped') {
         playMinutes.value = activeStatus.playMinutes
         restMinutes.value = activeStatus.restMinutes
         mode.value = activeStatus.mode
       }
       statusUnlisten = await onGameIdleStatus(next => {
-        status.value = next
+        status.value = clearStoppedQueue(next)
       })
       historyUnlisten = await onGameSimulationHistoryUpdated(entry => {
         history.value = { ...history.value, [entry.appId]: entry }
@@ -164,19 +174,10 @@ export const useGameIdleStore = defineStore('gameIdle', () => {
     stopping.value = true
     error.value = null
     try {
-      status.value = await stopGameIdle()
       // A stopped session will be rebuilt from a fresh shuffle bag on the
       // next start. Do not leave the old reel on screen as if it were still
-      // actionable; clearing it also prevents stale queue items from
-      // receiving context-menu interactions after the session is gone.
-      if (status.value?.phase === 'stopped') {
-        status.value = {
-          ...status.value,
-          current: null,
-          recent: [],
-          upcoming: [],
-        }
-      }
+      // actionable; clear it before rendering the stopped state.
+      status.value = clearStoppedQueue(await stopGameIdle())
       await refreshHistory()
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : String(cause)
