@@ -253,7 +253,13 @@ impl GameIdleManager {
         };
         shared_value.refill_bag();
         shared_value.fill_upcoming();
+        // Pick and expose the first queue entry before the worker begins its
+        // native launch. The UI can render the complete queue immediately,
+        // reducing perceived startup latency while the first game is prepared.
+        shared_value.status.current = shared_value.upcoming.front().cloned();
+        shared_value.refresh_status_lists();
         let initial = shared_value.status.clone();
+        emit_status(&app, &initial);
         let shared = Arc::new(tokio::sync::Mutex::new(shared_value));
         let (cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
         let task_shared = Arc::clone(&shared);

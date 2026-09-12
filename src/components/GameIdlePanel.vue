@@ -35,6 +35,7 @@ let clockTimer: ReturnType<typeof setInterval> | null = null
 let resizeObserver: ResizeObserver | null = null
 
 const active = computed(() => idle.isActive)
+const immersive = computed(() => active.value || idle.loading)
 const games = computed(() => quests.detectableGames)
 const uniqueGameCount = computed(() => new Set(games.value.map(game => game.id)).size)
 const processCandidateCount = computed(() => {
@@ -68,9 +69,14 @@ const carouselItems = computed(() => {
   } else if (status.current) {
     items.push({ item: status.current, offset: 0, upcoming: false })
   }
+  const queuedCurrent = Boolean(
+    status.current &&
+    status.upcoming[0]?.occurrenceId === status.current.occurrenceId
+  )
   status.upcoming.forEach((item, index) => {
+    if (queuedCurrent && index === 0) return
     if (item.id !== currentId || index > 0) {
-      items.push({ item, offset: index + 1, upcoming: true })
+      items.push({ item, offset: queuedCurrent ? index : index + 1, upcoming: true })
     }
   })
   return items.filter(entry => Math.abs(entry.offset) <= maxVisibleDistance.value)
@@ -170,8 +176,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="idle-shell space-y-5" aria-labelledby="game-idle-heading">
-    <div class="idle-controls grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+  <section class="idle-shell space-y-5" :class="immersive && 'is-immersive'" aria-labelledby="game-idle-heading">
+    <div v-if="!immersive" class="idle-controls grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
       <div>
         <div class="flex items-center gap-2 text-primary">
           <RotateCcw class="h-4 w-4" />
@@ -257,7 +263,7 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <div class="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-muted-foreground">
+    <div v-if="!immersive" class="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-muted-foreground">
       <span>{{ t('game_idle.candidate_count', { count: candidateCount }) }}</span>
       <span v-if="!auth.user" class="text-amber-600 dark:text-amber-300">{{ t('game_idle.sign_in_required') }}</span>
       <span v-else-if="configError" class="text-destructive">{{ t(`game_idle.${configError}_error`) }}</span>
@@ -268,10 +274,10 @@ onBeforeUnmount(() => {
       {{ idle.error || idle.status?.warning }}
     </div>
 
-    <div v-if="idle.status?.current" class="idle-machine">
+    <div v-if="idle.status?.current || idle.status?.upcoming.length" class="idle-machine">
       <div ref="stage" class="idle-stage" :aria-label="t('game_idle.queue_label')">
         <div class="idle-pointer" aria-hidden="true">
-          <span>{{ idle.status.phase === 'resting' ? t('game_idle.resting') : t('game_idle.current') }}</span>
+          <span>{{ idle.status.phase === 'resting' ? t('game_idle.resting') : idle.status.phase === 'starting' ? t('game_idle.starting') : t('game_idle.current') }}</span>
           <ChevronDown class="h-6 w-6 fill-current" />
         </div>
 
@@ -308,8 +314,8 @@ onBeforeUnmount(() => {
 
       <div class="idle-readout">
         <div class="idle-primary-readout">
-          <span class="idle-readout-label">{{ idle.status.phase === 'resting' ? t('game_idle.resting_after') : t('game_idle.now_playing') }}</span>
-          <strong>{{ idle.status.current.name }}</strong>
+          <span class="idle-readout-label">{{ idle.status.phase === 'resting' ? t('game_idle.resting_after') : idle.status.phase === 'starting' ? t('game_idle.starting') : t('game_idle.now_playing') }}</span>
+          <strong>{{ idle.status.current?.name || idle.status.upcoming[0]?.name || t('game_idle.preparing') }}</strong>
           <span class="idle-next">{{ t('game_idle.next') }} · {{ idle.status.upcoming[0]?.name || t('game_idle.preparing') }}</span>
         </div>
         <div class="idle-metric">
@@ -325,6 +331,18 @@ onBeforeUnmount(() => {
           <small>{{ t('game_idle.active_time_only') }}</small>
         </div>
       </div>
+
+      <div v-if="active" class="idle-immersive-footer">
+        <div class="idle-immersive-status">
+          <span class="idle-live-dot" aria-hidden="true" />
+          <span>{{ idle.status?.phase === 'resting' ? t('game_idle.resting') : t('game_idle.now_playing') }}</span>
+        </div>
+        <Button variant="destructive" class="idle-stop-button h-11 min-w-36 gap-2" :disabled="idle.stopping" @click="stopIdle">
+          <Loader2 v-if="idle.stopping" class="h-4 w-4 animate-spin" />
+          <Square v-else class="h-4 w-4 fill-current" />
+          {{ idle.stopping ? t('game_idle.stopping') : t('game_idle.stop') }}
+        </Button>
+      </div>
     </div>
 
     <div v-else class="idle-empty">
@@ -333,8 +351,8 @@ onBeforeUnmount(() => {
         <RotateCcw v-else class="h-7 w-7" />
       </div>
       <div>
-        <h4 class="font-medium">{{ active ? t('game_idle.starting') : t('game_idle.ready_title') }}</h4>
-        <p class="mt-1 text-sm text-muted-foreground">{{ active ? t('game_idle.preparing') : t('game_idle.ready_description') }}</p>
+        <h4 class="font-medium">{{ immersive ? t('game_idle.starting') : t('game_idle.ready_title') }}</h4>
+        <p class="mt-1 text-sm text-muted-foreground">{{ immersive ? t('game_idle.preparing') : t('game_idle.ready_description') }}</p>
       </div>
     </div>
 
@@ -369,6 +387,73 @@ onBeforeUnmount(() => {
   box-shadow: inset 0 1px 0 hsl(var(--foreground) / 0.04), 0 24px 60px -48px hsl(var(--primary) / 0.7);
   overflow: hidden;
 }
+
+.idle-shell.is-immersive {
+  min-height: calc(100dvh - 2rem);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border: 0;
+  border-radius: 0;
+  padding: clamp(1rem, 4vw, 4rem);
+  background:
+    radial-gradient(circle at 50% 38%, hsl(var(--primary) / 0.15), transparent 30rem),
+    hsl(var(--background));
+  box-shadow: none;
+}
+
+.idle-shell.is-immersive .idle-machine {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: min(42rem, 76dvh);
+  background: hsl(var(--card) / 0.52);
+  box-shadow: inset 0 1px 0 hsl(var(--foreground) / 0.06), 0 32px 80px -56px hsl(var(--primary) / 0.9);
+}
+
+.idle-shell.is-immersive .idle-stage {
+  height: clamp(18rem, 48dvh, 32rem);
+}
+
+.idle-immersive-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-top: 1px solid hsl(var(--border) / 0.55);
+  padding: 1rem 1.25rem 1.15rem;
+}
+
+.idle-immersive-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.idle-live-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: hsl(var(--destructive));
+  box-shadow: 0 0 0 0.25rem hsl(var(--destructive) / 0.12);
+}
+
+.idle-stop-button {
+  transition: transform 280ms cubic-bezier(.32,.72,0,1), box-shadow 280ms cubic-bezier(.32,.72,0,1);
+}
+
+.idle-stop-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px -18px hsl(var(--destructive));
+}
+
+.idle-stop-button:active:not(:disabled) { transform: translateY(0) scale(.98); }
 
 .idle-controls { position: relative; z-index: 2; }
 .idle-mode-button { display: inline-flex; align-items: center; gap: .35rem; border-radius: .28rem; padding: 0 .7rem; font-size: .75rem; color: hsl(var(--muted-foreground)); transition: color 180ms ease, background 180ms ease, transform 120ms ease; }
@@ -426,6 +511,14 @@ onBeforeUnmount(() => {
   .idle-readout { grid-template-columns: 1fr 1fr; }
   .idle-primary-readout { grid-column: 1 / -1; border-bottom: 1px solid hsl(var(--border) / .55); }
   .idle-metric:first-of-type { border-left: 0; }
+
+  .idle-shell.is-immersive { min-height: calc(100dvh - 1rem); padding: 0.75rem; }
+  .idle-shell.is-immersive .idle-machine { min-height: min(38rem, 78dvh); }
+}
+
+@media (max-width: 560px) {
+  .idle-immersive-footer { align-items: stretch; flex-direction: column; }
+  .idle-stop-button { width: 100%; }
 }
 
 @media (prefers-reduced-motion: reduce) {
