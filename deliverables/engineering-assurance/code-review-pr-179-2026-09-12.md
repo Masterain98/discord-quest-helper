@@ -4,7 +4,7 @@
 
 **Workflow**: Workflow 1 - Comprehensive Code Review
 
-**Scope**: all 24 inline review comments, current PR head, local CI-equivalent checks
+**Scope**: all 25 inline review comments, current PR head, local and remote CI checks
 
 **Participants**: code-reviewer, architect, testing-expert
 
@@ -12,7 +12,7 @@
 
 ## TL;DR
 
-- All 24 inline comments were assessed individually. Twenty-three identified real correctness, recovery, localization, or UI identity defects at the reviewed revision.
+- All 25 inline comments were assessed individually. Twenty-four identified real correctness, recovery, localization, or UI identity defects at the reviewed revision.
 - The remaining comment (use `SliceRandom::shuffle`) was not a correctness defect; it was a reasonable low-priority maintainability suggestion and was adopted.
 - Earlier commits addressed most first- and second-round feedback. This follow-up closes incomplete rollback, queue identity, small-pool cycling, corrupt-history recovery, initialization retry, cleanup, navigation, and CI issues.
 - The complete local CI-equivalent suite passes. The overall verdict remains conditional until the new commit finishes GitHub Actions and a real Discord CDP/process smoke test is performed.
@@ -24,8 +24,8 @@
 | Item | Content |
 |------|---------|
 | Overall rating | CONDITIONAL PASS |
-| Blocker count | 0 known code blockers; remote CI rerun pending |
-| Severity distribution | Critical 0 / High 12 / Medium 10 / Low 2 |
+| Blocker count | 0 known code blockers; fresh remote CI is green |
+| Severity distribution | Critical 0 / High 13 / Medium 10 / Low 2 |
 | Key action count | 5 |
 | Suggested next step | Push the remediation, resolve addressed threads, and require the fresh three-platform CI run before merge |
 
@@ -59,6 +59,7 @@
 | 3996231332 | Greptile | Fixed `.corrupt` backup can be overwritten, and rename failure loses recovery guarantees | Valid, medium severity | Use unique UUID backups and never continue with defaults when quarantine fails |
 | 3996377263 | Greptile | Manual stop loses its retry state after final history persistence fails | Valid, high severity | Freeze the final interval and retain the manual Stop state until persistence succeeds |
 | 3996714051 | Greptile | Navigating away loses the retry state for a failed final history save | Valid, high severity | Expose backend history-finalization status and restore the Stop retry surface on remount |
+| 3996746409 | Greptile | Recovered pending history can be mistaken for manual state after Game Idle stops | Valid, high severity | Track recovered versus manual ownership and clear only recovered page state when Game Idle reaches stopped |
 
 No additional actionable inline finding remained after applying these remediations. The duplicated comments were still treated as independent review records, while sharing the same root-cause fix.
 
@@ -100,7 +101,7 @@ Coverage remains weakest around real-time state-machine execution, overlapping f
 
 | # | Action | Owner Role | Urgency | Target |
 |---|--------|-----------|--------|--------|
-| 1 | Require the fresh Windows/macOS/Linux GitHub Actions run to pass | Maintainer | P0 | Before merge |
+| 1 | Require the fresh Windows/macOS/Linux GitHub Actions run to pass | Maintainer | P0 | Completed in run 34704201467 |
 | 2 | Perform one real process-mode and one real Discord CDP smoke session, including stop and app-exit cleanup | QA / Maintainer | P1 | Before release |
 | 3 | Add deterministic async tests for retry, cancellation, cleanup failure, and zero-rest transitions | Testing | P1 | Follow-up PR |
 | 4 | Add component tests for responsive carousel visibility, keyboard context menu, and reduced motion | Frontend | P2 | Follow-up PR |
@@ -111,7 +112,7 @@ Coverage remains weakest around real-time state-machine execution, overlapping f
 ## Known Limitations / Pending
 
 - This environment did not run a live Discord client in CDP/debug mode or a real detectable-game process smoke test.
-- Remote CI status must be read from the run created by the remediation commit; the previously failed run only contains the now-fixed TypeScript error.
+- The earlier failed run only contained the now-fixed TypeScript error; the latest remediation run 34704201467 passed on Windows, macOS, and Ubuntu.
 - Automated tests do not yet exercise every wall-clock transition or cleanup-failure interleaving.
 
 ---
@@ -122,7 +123,7 @@ Coverage remains weakest around real-time state-machine execution, overlapping f
 - Cody (code review): verified rollback independence, handle retention, and retryable cleanup behavior.
 - Archi (architect): reviewed ownership, queue identity, small-pool cycling, history-path lifetime, and shutdown behavior.
 - Tessa (testing): reproduced the CI TypeScript failure, audited local/remote test parity, and identified missing navigation/state-machine coverage.
-- Primary agent: reconciled all 22 comments with the current diff, implemented remediation, and ran the complete local verification matrix.
+- Primary agent: reconciled all 25 comments with the current diff, implemented remediation, and ran the complete local and remote verification matrix.
 
 ---
 
