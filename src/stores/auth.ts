@@ -1,8 +1,16 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { DiscordUser, ExtractedAccount, ProgramReward, AuthProgress, AuthProgressHandler } from '@/api/tauri'
-import { autoDetectToken, setToken, autoLoginViaCdp, autoFetchSuperProperties, getProgramRewards } from '@/api/tauri'
+import {
+  autoDetectToken,
+  setToken,
+  autoLoginViaCdp,
+  autoFetchSuperProperties,
+  getProgramRewards,
+  stopAllGameSimulations,
+} from '@/api/tauri'
 import { useQuestsStore } from './quests'
+import { useGameIdleStore } from './gameIdle'
 import { useI18n } from 'vue-i18n'
 import { useNow } from '@vueuse/core'
 import { getNitroOrbsClaim } from '@/utils/nitroOrbsCountdown'
@@ -68,6 +76,15 @@ export const useAuthStore = defineStore('auth', () => {
     error.value = null
     resetProgramRewardState()
     try {
+      const questsStore = useQuestsStore()
+      if (user.value) {
+        await stopAllGameSimulations()
+        await questsStore.stop().catch(() => undefined)
+      }
+      // The backend status event only reports `stopped`; drop the cached status
+      // and per-account history so the UI cannot show the previous account's
+      // simulation usage after signing in.
+      await useGameIdleStore().stopForAccountChange()
       user.value = await setToken(tokenValue, (progress) => {
         // The store still performs one final SuperProperties synchronization
         // after the backend command. Keep the visible operation running until
@@ -79,7 +96,6 @@ export const useAuthStore = defineStore('auth', () => {
       // After successful login, wait for SuperProperties fetch to complete
       // This ensures all data is ready before ending the loading state
       try {
-        const questsStore = useQuestsStore()
         await autoFetchSuperProperties(questsStore.cdpPort)
 
         bootstrapAfterLogin(questsStore, 'CDP init on login failed:')
@@ -111,6 +127,11 @@ export const useAuthStore = defineStore('auth', () => {
     resetProgramRewardState()
     try {
       const questsStore = useQuestsStore()
+      if (user.value) {
+        await stopAllGameSimulations()
+        await questsStore.stop().catch(() => undefined)
+      }
+      await useGameIdleStore().stopForAccountChange()
       user.value = await autoLoginViaCdp(questsStore.cdpPort, onProgress)
       // Intentionally leave `token` null: CDP auto-login never surfaces the raw
       // token. Authenticated backend commands use the client in AppState.
@@ -166,10 +187,21 @@ export const useAuthStore = defineStore('auth', () => {
     // Stop any in-progress quest before clearing state
     const questsStore = useQuestsStore()
     try {
+      await stopAllGameSimulations()
+    } catch (cause) {
+      error.value = cause instanceof Error ? cause.message : String(cause)
+      return
+    }
+    try {
       await questsStore.stop()
     } catch (e) {
       console.warn('Failed to stop quest during logout:', e)
     }
+
+    // Clear the idle status and per-account simulation history for the account
+    // being signed out. Keep the failed-logout early return above untouched so
+    // an unsuccessful stop leaves the current account state intact.
+    await useGameIdleStore().stopForAccountChange()
 
     user.value = null
     token.value = null

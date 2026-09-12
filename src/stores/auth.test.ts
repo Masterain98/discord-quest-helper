@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   setToken: vi.fn(),
   autoFetchSuperProperties: vi.fn(),
   getProgramRewards: vi.fn(),
+  getGameSimulationHistory: vi.fn(),
+  stopAllGameSimulations: vi.fn(),
   questsStore: {
     cdpPort: 9223,
     cdpAvailable: false,
@@ -18,6 +20,9 @@ const mocks = vi.hoisted(() => ({
     stop: vi.fn(),
     resetForLogout: vi.fn(),
   },
+  gameIdleStore: {
+    stopForAccountChange: vi.fn(),
+  },
 }))
 
 vi.mock('@/api/tauri', () => ({
@@ -26,10 +31,28 @@ vi.mock('@/api/tauri', () => ({
   setToken: mocks.setToken,
   autoFetchSuperProperties: mocks.autoFetchSuperProperties,
   getProgramRewards: mocks.getProgramRewards,
+  getGameSimulationHistory: mocks.getGameSimulationHistory,
+  stopAllGameSimulations: mocks.stopAllGameSimulations,
+  getGameIdleStatus: vi.fn().mockResolvedValue(null),
+  onGameIdleStatus: vi.fn(),
+  onGameSimulationHistoryUpdated: vi.fn(),
+  removeGameIdleQueueItem: vi.fn(),
+  startGameIdle: vi.fn(),
+  stopGameIdle: vi.fn(),
+  // `gameIdle.stopForAccountChange` (invoked on login/logout) finishes the
+  // active usage segment, so the mock must expose it.
+  stopGameSimulationUsage: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('./quests', () => ({
   useQuestsStore: () => mocks.questsStore,
+}))
+
+// The real store reads `localStorage` during setup, which the node test
+// environment does not provide. Replace the module the same way `./quests`
+// is replaced; only `stopForAccountChange` is reached from the auth flows.
+vi.mock('./gameIdle', () => ({
+  useGameIdleStore: () => mocks.gameIdleStore,
 }))
 
 vi.mock('vue-i18n', () => ({
@@ -58,9 +81,12 @@ describe('auth login quest mode selection', () => {
     mocks.setToken.mockResolvedValue(user)
     mocks.autoFetchSuperProperties.mockResolvedValue(undefined)
     mocks.getProgramRewards.mockResolvedValue([])
+    mocks.getGameSimulationHistory.mockResolvedValue([])
+    mocks.stopAllGameSimulations.mockResolvedValue(undefined)
     mocks.questsStore.initCdpMode.mockResolvedValue(undefined)
     mocks.questsStore.getDetectableGames.mockResolvedValue(undefined)
     mocks.questsStore.fetchOrbsBalance.mockResolvedValue(undefined)
+    mocks.gameIdleStore.stopForAccountChange.mockResolvedValue(undefined)
   })
 
   it('selects CDP quest execution after a successful CDP login', async () => {
