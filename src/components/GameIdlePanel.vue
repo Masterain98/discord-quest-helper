@@ -492,6 +492,10 @@ onBeforeUnmount(() => {
 .idle-icon-fallback { position: absolute; width: 38%; height: 38%; color: hsl(var(--muted-foreground) / .58); }
 .idle-icon-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .72rem; font-weight: 600; }
 .idle-reel-item.is-current { z-index: 3; opacity: 1; filter: none; transform: translate3d(-50%, -40%, 0) scale(1.22); }
+/* The compact, non-immersive stopped preview has less vertical room than the
+   running reel. Lower its centered tile slightly so the pointer remains
+   visually attached without overlapping the icon. */
+.idle-shell:not(.is-immersive) .idle-reel-item.is-current { transform: translate3d(-50%, -27%, 0) scale(1.22); }
 .idle-reel-item.is-current .idle-icon-frame { box-shadow: 0 0 0 1px hsl(var(--primary) / .55), 0 25px 45px -26px hsl(var(--primary)); }
 .idle-reel-item.is-upcoming:hover .idle-icon-frame { transform: translateY(-3px); box-shadow: inset 0 1px 0 hsl(var(--foreground) / .14), 0 24px 36px -24px hsl(var(--primary)); }
 .idle-more { position: absolute; right: .2rem; top: -.1rem; opacity: 0; color: hsl(var(--muted-foreground)); transition: opacity 180ms ease; }

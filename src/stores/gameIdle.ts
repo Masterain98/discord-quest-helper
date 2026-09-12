@@ -165,6 +165,18 @@ export const useGameIdleStore = defineStore('gameIdle', () => {
     error.value = null
     try {
       status.value = await stopGameIdle()
+      // A stopped session will be rebuilt from a fresh shuffle bag on the
+      // next start. Do not leave the old reel on screen as if it were still
+      // actionable; clearing it also prevents stale queue items from
+      // receiving context-menu interactions after the session is gone.
+      if (status.value?.phase === 'stopped') {
+        status.value = {
+          ...status.value,
+          current: null,
+          recent: [],
+          upcoming: [],
+        }
+      }
       await refreshHistory()
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : String(cause)

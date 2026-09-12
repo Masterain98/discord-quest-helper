@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { formatSimulationDuration, useGameIdleStore } from './gameIdle'
+import type { GameIdleStatus } from '@/api/tauri'
 
 const mocks = vi.hoisted(() => ({
   getGameIdleStatus: vi.fn(),
+  stopGameIdle: vi.fn(),
   onGameIdleStatus: vi.fn(),
   onGameSimulationHistoryUpdated: vi.fn(),
   quests: {
@@ -23,7 +25,7 @@ vi.mock('@/api/tauri', () => ({
   onGameSimulationHistoryUpdated: mocks.onGameSimulationHistoryUpdated,
   removeGameIdleQueueItem: vi.fn(),
   startGameIdle: vi.fn(),
-  stopGameIdle: vi.fn().mockResolvedValue(null),
+  stopGameIdle: mocks.stopGameIdle,
   stopGameSimulationUsage: vi.fn().mockResolvedValue(undefined),
 }))
 
@@ -44,6 +46,7 @@ describe('game idle store', () => {
     })
     vi.clearAllMocks()
     mocks.getGameIdleStatus.mockResolvedValue(null)
+    mocks.stopGameIdle.mockResolvedValue(null)
     mocks.onGameIdleStatus.mockResolvedValue(() => undefined)
     mocks.onGameSimulationHistoryUpdated.mockResolvedValue(() => undefined)
     mocks.quests.cdpAvailable = true
@@ -86,6 +89,33 @@ describe('game idle store', () => {
     expect(mocks.getGameIdleStatus).toHaveBeenCalledTimes(2)
     expect(mocks.onGameIdleStatus).toHaveBeenCalledOnce()
     expect(mocks.onGameSimulationHistoryUpdated).toHaveBeenCalledOnce()
+  })
+
+  it('clears the stopped queue so the next run starts with a fresh preview', async () => {
+    const stopped: GameIdleStatus = {
+      sessionId: 'session',
+      mode: 'cdp',
+      phase: 'stopped',
+      playMinutes: 60,
+      restMinutes: 0,
+      current: { id: 'current', name: 'Current', occurrenceId: 'current-1' },
+      recent: [{ id: 'recent', name: 'Recent', occurrenceId: 'recent-1' }],
+      upcoming: [{ id: 'next', name: 'Next', occurrenceId: 'next-1' }],
+      phaseStartedAt: 0,
+      phaseEndsAt: null,
+      accumulatedPlayedSeconds: 12,
+      warning: null,
+    }
+    mocks.stopGameIdle.mockResolvedValue(stopped)
+    const store = useGameIdleStore()
+    store.status = stopped
+
+    await store.stop()
+
+    expect(store.status?.phase).toBe('stopped')
+    expect(store.status?.current).toBeNull()
+    expect(store.status?.recent).toEqual([])
+    expect(store.status?.upcoming).toEqual([])
   })
 })
 
