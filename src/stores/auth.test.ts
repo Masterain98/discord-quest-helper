@@ -20,6 +20,9 @@ const mocks = vi.hoisted(() => ({
     stop: vi.fn(),
     resetForLogout: vi.fn(),
   },
+  gameIdleStore: {
+    stopForAccountChange: vi.fn(),
+  },
 }))
 
 vi.mock('@/api/tauri', () => ({
@@ -43,6 +46,13 @@ vi.mock('@/api/tauri', () => ({
 
 vi.mock('./quests', () => ({
   useQuestsStore: () => mocks.questsStore,
+}))
+
+// The real store reads `localStorage` during setup, which the node test
+// environment does not provide. Replace the module the same way `./quests`
+// is replaced; only `stopForAccountChange` is reached from the auth flows.
+vi.mock('./gameIdle', () => ({
+  useGameIdleStore: () => mocks.gameIdleStore,
 }))
 
 vi.mock('vue-i18n', () => ({
@@ -76,6 +86,7 @@ describe('auth login quest mode selection', () => {
     mocks.questsStore.initCdpMode.mockResolvedValue(undefined)
     mocks.questsStore.getDetectableGames.mockResolvedValue(undefined)
     mocks.questsStore.fetchOrbsBalance.mockResolvedValue(undefined)
+    mocks.gameIdleStore.stopForAccountChange.mockResolvedValue(undefined)
   })
 
   it('selects CDP quest execution after a successful CDP login', async () => {
