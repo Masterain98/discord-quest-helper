@@ -12,8 +12,6 @@ import {
   stopManualCdpGameSimulation,
   getManualCdpGameSimulation,
 } from '@/api/tauri'
-import { documentDir, sep } from '@tauri-apps/api/path'
-import { open as openFolderPicker } from '@tauri-apps/plugin-dialog'
 import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -38,8 +36,6 @@ const mode = ref<'select' | 'custom'>('select')
 const selectedGame = ref<DetectableGame | null>(null)
 const selectedExecutable = ref('')
 const customExeName = ref('')
-const installPath = ref('')
-const installPathPlaceholder = ref('DiscordQuestGames')
 const running = ref(false)
 const stopping = ref(false)
 const activeExecutable = ref<string | null>(null)
@@ -53,7 +49,10 @@ const success = ref<string | null>(null)
 
 // Create dialog state
 const showCreateDialog = ref(false)
-const dialogSavePath = ref('')
+
+function errorMessage(value: unknown): string {
+  return value instanceof Error ? value.message : String(value)
+}
 
 onMounted(async () => {
   const capabilities = store.initPlatformCapabilities()
@@ -64,10 +63,7 @@ onMounted(async () => {
     console.warn('Failed to restore manual CDP game simulation:', err)
     return null
   })
-  const [docDir, separator, session] = await Promise.all([documentDir(), sep(), manualSession])
-  installPathPlaceholder.value = `${docDir}${separator}DiscordQuestGames`
-  installPath.value = installPathPlaceholder.value
-  await Promise.all([capabilities, cdpStatus])
+  const [session] = await Promise.all([manualSession, capabilities, cdpStatus])
 
   if (session) {
     activeSimulationMode.value = 'cdp'
@@ -161,36 +157,32 @@ function selectGame(game: DetectableGame) {
   success.value = null
 }
 
-function openCreateDialog() {
-  dialogSavePath.value = installPath.value
-  showCreateDialog.value = true
-}
-
-async function pickInstallFolder() {
-  const selected = await openFolderPicker({ directory: true, multiple: false, defaultPath: installPath.value || undefined })
-  if (typeof selected === 'string') installPath.value = selected
-}
-
-async function pickDialogFolder() {
-  const selected = await openFolderPicker({ directory: true, multiple: false, defaultPath: dialogSavePath.value || undefined })
-  if (typeof selected === 'string') dialogSavePath.value = selected
+async function openCreateDialog() {
+  error.value = null
+  try {
+    await store.initSimulationPath()
+    showCreateDialog.value = true
+  } catch {
+    error.value = t('settings.simulation_directory_resolve_error')
+  }
 }
 
 async function handleCreateGame() {
   const exeName = effectiveExecutable.value
-  if (!exeName || !dialogSavePath.value) return
+  if (!exeName) return
 
   creating.value = true
   error.value = null
   success.value = null
 
   try {
+    const simulationPath = await store.initSimulationPath()
     const appId = mode.value === 'custom' ? '' : (selectedGame.value?.id ?? '')
-    await createSimulatedGame(dialogSavePath.value, exeName, appId)
+    await createSimulatedGame(simulationPath, exeName, appId)
     showCreateDialog.value = false
     success.value = t('game_sim.create_success')
   } catch (e) {
-    error.value = e as string
+    error.value = errorMessage(e)
   } finally {
     creating.value = false
   }
@@ -199,16 +191,17 @@ async function handleCreateGame() {
 async function handleRunGame() {
   // Resolve which exe name to use
   const exeName = effectiveExecutable.value
-  if (!exeName || !installPath.value || creating.value || hasActiveSimulation.value) return
+  if (!exeName || creating.value || hasActiveSimulation.value) return
 
   running.value = true
   error.value = null
   success.value = null
 
   try {
+    const simulationPath = await store.initSimulationPath()
     const appId = mode.value === 'custom' ? '' : (selectedGame.value?.id ?? '')
     const displayName = mode.value === 'custom' ? customExeName.value : (selectedGame.value?.name ?? '')
-    await runSimulatedGame(displayName, installPath.value, exeName, appId)
+    await runSimulatedGame(displayName, simulationPath, exeName, appId)
     activeExecutable.value = exeName
     activeSimulationMode.value = 'process'
 
@@ -235,7 +228,7 @@ async function handleRunGame() {
       success.value = t('game_sim.run_success')
     }
   } catch (e) {
-    error.value = e as string
+    error.value = errorMessage(e)
   } finally {
     running.value = false
   }
@@ -391,15 +384,6 @@ async function handleStopGame() {
                   />
                 </div>
 
-                <div class="space-y-2">
-                  <Label>{{ t('game_sim.install_path') }}</Label>
-                  <div class="flex gap-2">
-                    <Input v-model="installPath" :placeholder="installPathPlaceholder" class="flex-1" />
-                    <Button type="button" variant="outline" size="icon" @click="pickInstallFolder" class="shrink-0">
-                      <FolderOpen class="w-4 h-4" />
-                    </Button>
-                  </div>
-                </div>
               </template>
 
               <template v-else>
@@ -448,15 +432,6 @@ async function handleStopGame() {
                   </div>
                 </div>
 
-                <div class="space-y-2">
-                  <Label>{{ t('game_sim.install_path') }}</Label>
-                  <div class="flex gap-2">
-                    <Input v-model="installPath" :placeholder="installPathPlaceholder" class="flex-1" />
-                    <Button type="button" variant="outline" size="icon" @click="pickInstallFolder" class="shrink-0">
-                      <FolderOpen class="w-4 h-4" />
-                    </Button>
-                  </div>
-                </div>
               </template>
 
               <div v-if="error" class="p-3 bg-destructive/10 text-destructive rounded-md text-sm">{{ error }}</div>
@@ -476,16 +451,6 @@ async function handleStopGame() {
                 <p class="text-xs text-muted-foreground">{{ t('game_sim.custom_exe_hint') }}</p>
               </div>
 
-              <div class="space-y-2">
-                <Label>{{ t('game_sim.install_path') }}</Label>
-                <div class="flex gap-2">
-                  <Input v-model="installPath" :placeholder="installPathPlaceholder" class="flex-1" />
-                  <Button type="button" variant="outline" size="icon" @click="pickInstallFolder" class="shrink-0">
-                    <FolderOpen class="w-4 h-4" />
-                  </Button>
-                </div>
-              </div>
-
               <div v-if="error" class="p-3 bg-destructive/10 text-destructive rounded-md text-sm">{{ error }}</div>
               <div v-if="success" class="p-3 bg-green-500/10 text-green-600 rounded-md text-sm">{{ success }}</div>
             </div>
@@ -498,7 +463,7 @@ async function handleStopGame() {
               v-if="!hasActiveSimulation"
               @click="handleRunGame"
               class="w-full bg-green-600 hover:bg-green-700 text-white"
-              :disabled="!effectiveExecutable || !installPath || simulatorBusy || !!store.activeQuestId"
+              :disabled="!effectiveExecutable || simulatorBusy || !!store.activeQuestId"
             >
               <Play v-if="!running" class="w-4 h-4 mr-2" />
               <Loader2 v-else class="w-4 h-4 mr-2 animate-spin" />
@@ -554,18 +519,15 @@ async function handleStopGame() {
         </DialogHeader>
 
         <div class="space-y-4 py-2">
-          <div class="space-y-2">
+          <div v-if="store.simulationPath" class="space-y-2">
             <Label class="flex items-center gap-1.5">
               <FolderOpen class="w-3.5 h-3.5" />
-              {{ t('game_sim.create_dialog_path_label') }}
+              {{ t('settings.simulation_directory') }}
             </Label>
-            <div class="flex gap-2">
-              <Input v-model="dialogSavePath" :placeholder="installPath" class="flex-1" />
-              <Button type="button" variant="outline" size="icon" @click="pickDialogFolder" class="shrink-0">
-                <FolderOpen class="w-4 h-4" />
-              </Button>
+            <div class="rounded-md border bg-muted/40 px-3 py-2">
+              <code class="break-all text-xs font-mono">{{ store.simulationPath }}</code>
             </div>
-            <p class="text-xs text-muted-foreground">{{ t('game_sim.create_dialog_path_hint') }}</p>
+            <p class="text-xs text-muted-foreground">{{ t('settings.simulation_directory_desc') }}</p>
           </div>
 
           <div v-if="error" class="p-3 bg-destructive/10 text-destructive rounded-md text-sm">{{ error }}</div>
@@ -577,7 +539,7 @@ async function handleStopGame() {
           </Button>
           <Button
             @click="handleCreateGame"
-            :disabled="!dialogSavePath || creating"
+            :disabled="creating"
           >
             <Hammer v-if="!creating" class="w-4 h-4 mr-2" />
             <Loader2 v-else class="w-4 h-4 mr-2 animate-spin" />

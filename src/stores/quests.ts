@@ -55,12 +55,13 @@ import {
   getVirtualCurrencyBalance,
   getPlatformCapabilities
 } from '@/api/tauri'
-import { documentDir, join } from '@tauri-apps/api/path'
+import { appLocalDataDir, join } from '@tauri-apps/api/path'
 import { emit } from '@tauri-apps/api/event'
 
 
 // localStorage keys
 const STORAGE_SPEED_KEY = 'questHelper_speedMultiplier'
+const STORAGE_SIMULATION_PATH_KEY = 'questHelper_simulationPath'
 
 export const useQuestsStore = defineStore('quests', () => {
   const quests = ref<Quest[]>([])
@@ -74,6 +75,10 @@ export const useQuestsStore = defineStore('quests', () => {
   const orbsBalanceFetchedAt = ref<string | null>(null)
   const orbsBalanceLoading = ref(false)
   const orbsBalanceError = ref<string | null>(null)
+
+  // Single source of truth for every process-simulation entry point. The
+  // asynchronous default is resolved lazily by initSimulationPath().
+  const simulationPath = ref(localStorage.getItem(STORAGE_SIMULATION_PATH_KEY) ?? '')
 
   const activeQuestId = ref<string | null>(null)
   const activeQuestType = ref<'video' | 'stream' | 'game' | 'activity' | null>(null)
@@ -201,6 +206,49 @@ export const useQuestsStore = defineStore('quests', () => {
   const savedShowOrbsBalance = localStorage.getItem(STORAGE_SHOW_ORBS_BALANCE_KEY)
   const showOrbsBalance = ref(savedShowOrbsBalance === null ? true : savedShowOrbsBalance === 'true')
 
+  async function getDefaultSimulationPath(): Promise<string> {
+    try {
+      const base = await appLocalDataDir()
+      return await join(base, 'GameRuntime')
+    } catch {
+      throw new Error('Failed to resolve the default game simulation directory.')
+    }
+  }
+
+  async function initSimulationPath(): Promise<string> {
+    const configuredPath = simulationPath.value.trim()
+    if (configuredPath) {
+      if (configuredPath !== simulationPath.value) {
+        simulationPath.value = configuredPath
+      }
+      return configuredPath
+    }
+
+    const defaultPath = await getDefaultSimulationPath()
+
+    // Do not overwrite a path selected while the asynchronous Tauri calls
+    // above were in flight.
+    const latestConfiguredPath = simulationPath.value.trim()
+    if (latestConfiguredPath) return latestConfiguredPath
+
+    simulationPath.value = defaultPath
+    return defaultPath
+  }
+
+  function setSimulationPath(path: string): void {
+    const normalized = path.trim()
+    if (!normalized) {
+      throw new Error('Simulation path cannot be empty')
+    }
+    simulationPath.value = normalized
+  }
+
+  async function resetSimulationPath(): Promise<string> {
+    const defaultPath = await getDefaultSimulationPath()
+    simulationPath.value = defaultPath
+    return defaultPath
+  }
+
   // Activity quest checkpoint interval (seconds) - min/max time between checkpoints
   const STORAGE_ACTIVITY_CHECKPOINT_MIN_KEY = 'questHelper_activityCheckpointMin'
   const savedCheckpointMin = localStorage.getItem(STORAGE_ACTIVITY_CHECKPOINT_MIN_KEY)
@@ -255,6 +303,13 @@ export const useQuestsStore = defineStore('quests', () => {
       })
     }
   })
+
+  watch(simulationPath, (path) => {
+    const normalized = path.trim()
+    if (normalized) {
+      localStorage.setItem(STORAGE_SIMULATION_PATH_KEY, normalized)
+    }
+  }, { flush: 'sync' })
 
   function normalizeCheckpoint(value: number, fallback: number, min: number, max: number): number {
     if (!Number.isFinite(value)) return fallback
@@ -642,9 +697,9 @@ export const useQuestsStore = defineStore('quests', () => {
 
         console.log(`Starting simulated game for ${game.name} (${exeName})...`)
 
-        // 3. Setup path (use the localized Documents dir; avoids assuming ~/Documents)
-        const documents = await documentDir()
-        const installPath = await join(documents, 'DiscordQuestGames')
+        // 3. Resolve the configured simulation directory once so create and
+        // run always use the same path for this quest.
+        const installPath = await initSimulationPath()
 
         // 4. Create simulated game executable
         await createSimulatedGame(installPath, exeName, appId)
@@ -1270,6 +1325,10 @@ export const useQuestsStore = defineStore('quests', () => {
     orbsBalanceLoading,
     orbsBalanceError,
     showOrbsBalance,
+    simulationPath,
+    initSimulationPath,
+    setSimulationPath,
+    resetSimulationPath,
     activityCheckpointMin,
     activityCheckpointMax,
     activeQuestId,

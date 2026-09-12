@@ -1642,6 +1642,9 @@ async fn disconnect_from_discord_rpc(app: tauri::AppHandle) -> Result<(), String
 
 #[tauri::command]
 async fn open_in_explorer(path: String) -> Result<(), String> {
+    std::fs::create_dir_all(&path)
+        .map_err(|_| "Failed to create the requested directory".to_string())?;
+
     #[cfg(target_os = "windows")]
     {
         let mut path = path.replace("/", "\\");
