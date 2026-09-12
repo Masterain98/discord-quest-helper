@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   setToken: vi.fn(),
   autoFetchSuperProperties: vi.fn(),
   getProgramRewards: vi.fn(),
+  getGameSimulationHistory: vi.fn(),
+  stopAllGameSimulations: vi.fn(),
   questsStore: {
     cdpPort: 9223,
     cdpAvailable: false,
@@ -26,6 +28,14 @@ vi.mock('@/api/tauri', () => ({
   setToken: mocks.setToken,
   autoFetchSuperProperties: mocks.autoFetchSuperProperties,
   getProgramRewards: mocks.getProgramRewards,
+  getGameSimulationHistory: mocks.getGameSimulationHistory,
+  stopAllGameSimulations: mocks.stopAllGameSimulations,
+  getGameIdleStatus: vi.fn().mockResolvedValue(null),
+  onGameIdleStatus: vi.fn(),
+  onGameSimulationHistoryUpdated: vi.fn(),
+  removeGameIdleQueueItem: vi.fn(),
+  startGameIdle: vi.fn(),
+  stopGameIdle: vi.fn(),
 }))
 
 vi.mock('./quests', () => ({
@@ -58,6 +68,8 @@ describe('auth login quest mode selection', () => {
     mocks.setToken.mockResolvedValue(user)
     mocks.autoFetchSuperProperties.mockResolvedValue(undefined)
     mocks.getProgramRewards.mockResolvedValue([])
+    mocks.getGameSimulationHistory.mockResolvedValue([])
+    mocks.stopAllGameSimulations.mockResolvedValue(undefined)
     mocks.questsStore.initCdpMode.mockResolvedValue(undefined)
     mocks.questsStore.getDetectableGames.mockResolvedValue(undefined)
     mocks.questsStore.fetchOrbsBalance.mockResolvedValue(undefined)

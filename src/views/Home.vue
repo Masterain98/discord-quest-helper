@@ -45,7 +45,7 @@
           :show-filters="showFilters"
           :loading="questsStore.loading"
           :refresh-disabled="questsStore.loading || !authStore.user || isBatchAccepting"
-          :batch-disabled="isBatchAccepting || questsStore.isQueueRunning"
+          :batch-disabled="isBatchAccepting || questsStore.isQueueRunning || gameIdleStore.isActive"
           :accept-count="unenrolledCount"
           :complete-all-count="enrolledAllCount"
           :video-count="enrolledVideoCount"
@@ -226,7 +226,7 @@
                   v-else-if="!quest.user_status?.completed_at && canStartQuest(quest)"
                   @click="startQuest(quest)"
                   variant="default"
-                  :disabled="questsStore.activeQuestId !== null || startingQuestId !== null || isBatchAccepting"
+                  :disabled="questsStore.activeQuestId !== null || startingQuestId !== null || isBatchAccepting || gameIdleStore.isActive"
                 >
                   <Loader2 v-if="startingQuestId === quest.id" class="w-4 h-4 mr-2 animate-spin" />
                   {{ getStartButtonText(quest) }}
@@ -529,6 +529,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useQuestsStore } from '@/stores/quests'
 import { useVersionStore } from '@/stores/version'
+import { useGameIdleStore } from '@/stores/gameIdle'
 import OrbsNitroStatus from '@/components/OrbsNitroStatus.vue'
 import QuestListHeader from '@/components/home/QuestListHeader.vue'
 import QuestViewTabs from '@/components/home/QuestViewTabs.vue'
@@ -592,6 +593,7 @@ import {
 const { t } = useI18n()
 const authStore = useAuthStore()
 const questsStore = useQuestsStore()
+const gameIdleStore = useGameIdleStore()
 const versionStore = useVersionStore()
 const toast = useToastStore()
 

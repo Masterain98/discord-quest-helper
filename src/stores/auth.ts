@@ -1,7 +1,14 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { DiscordUser, ExtractedAccount, ProgramReward, AuthProgress, AuthProgressHandler } from '@/api/tauri'
-import { autoDetectToken, setToken, autoLoginViaCdp, autoFetchSuperProperties, getProgramRewards } from '@/api/tauri'
+import {
+  autoDetectToken,
+  setToken,
+  autoLoginViaCdp,
+  autoFetchSuperProperties,
+  getProgramRewards,
+  stopAllGameSimulations,
+} from '@/api/tauri'
 import { useQuestsStore } from './quests'
 import { useI18n } from 'vue-i18n'
 import { useNow } from '@vueuse/core'
@@ -68,6 +75,11 @@ export const useAuthStore = defineStore('auth', () => {
     error.value = null
     resetProgramRewardState()
     try {
+      const questsStore = useQuestsStore()
+      if (user.value) {
+        await stopAllGameSimulations()
+        await questsStore.stop().catch(() => undefined)
+      }
       user.value = await setToken(tokenValue, (progress) => {
         // The store still performs one final SuperProperties synchronization
         // after the backend command. Keep the visible operation running until
@@ -79,7 +91,6 @@ export const useAuthStore = defineStore('auth', () => {
       // After successful login, wait for SuperProperties fetch to complete
       // This ensures all data is ready before ending the loading state
       try {
-        const questsStore = useQuestsStore()
         await autoFetchSuperProperties(questsStore.cdpPort)
 
         bootstrapAfterLogin(questsStore, 'CDP init on login failed:')
@@ -111,6 +122,10 @@ export const useAuthStore = defineStore('auth', () => {
     resetProgramRewardState()
     try {
       const questsStore = useQuestsStore()
+      if (user.value) {
+        await stopAllGameSimulations()
+        await questsStore.stop().catch(() => undefined)
+      }
       user.value = await autoLoginViaCdp(questsStore.cdpPort, onProgress)
       // Intentionally leave `token` null: CDP auto-login never surfaces the raw
       // token. Authenticated backend commands use the client in AppState.
@@ -165,6 +180,12 @@ export const useAuthStore = defineStore('auth', () => {
 
     // Stop any in-progress quest before clearing state
     const questsStore = useQuestsStore()
+    try {
+      await stopAllGameSimulations()
+    } catch (cause) {
+      error.value = cause instanceof Error ? cause.message : String(cause)
+      return
+    }
     try {
       await questsStore.stop()
     } catch (e) {

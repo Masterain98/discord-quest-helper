@@ -7,6 +7,7 @@ mod cdp_quest;
 mod discord_api;
 mod discord_cdp_commands;
 mod discord_gateway;
+mod game_idle;
 mod game_simulator;
 mod logger;
 mod models;
@@ -15,6 +16,7 @@ mod quest_completer;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 mod runtime_bridge;
 mod runtime_identity;
+mod simulation_history;
 #[cfg(windows)]
 #[cfg_attr(debug_assertions, allow(dead_code))]
 mod stealth_pe;
@@ -82,6 +84,8 @@ struct AppState {
     authenticated_user: Mutex<Option<DiscordUser>>,
     quest_state: Mutex<Option<QuestState>>,
     manual_cdp_game: tokio::sync::Mutex<ManualCdpGameSessionState>,
+    game_idle: std::sync::Arc<game_idle::GameIdleManager>,
+    simulation_history: std::sync::Arc<simulation_history::SimulationHistory>,
     /// Serializes quest startup, manual CDP startup, and active-work teardown
     /// so the two Discord-activity owners cannot both pass their idle checks.
     activity_gate: tokio::sync::Mutex<()>,
@@ -798,6 +802,8 @@ async fn start_video_quest(
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
     let _gate = state.activity_gate.lock().await;
+    state.game_idle.ensure_idle().await?;
+    ensure_no_running_simulated_game()?;
     stop_active_work_internal(&state).await?;
 
     let client = state.client.lock().unwrap();
@@ -841,6 +847,8 @@ async fn start_stream_quest(
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
     let _gate = state.activity_gate.lock().await;
+    state.game_idle.ensure_idle().await?;
+    ensure_no_running_simulated_game()?;
     stop_active_work_internal(&state).await?;
 
     let client = {
@@ -885,6 +893,8 @@ async fn start_game_heartbeat_quest(
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
     let _gate = state.activity_gate.lock().await;
+    state.game_idle.ensure_idle().await?;
+    ensure_no_running_simulated_game()?;
     stop_active_work_internal(&state).await?;
 
     let client = {
@@ -988,6 +998,8 @@ async fn start_play_activity_quest(
         return Err("Not logged in".to_string());
     }
     let _gate = state.activity_gate.lock().await;
+    state.game_idle.ensure_idle().await?;
+    ensure_no_running_simulated_game()?;
     stop_active_work_internal(&state).await?;
     if transport == PlayActivityTransport::Cdp {
         ensure_cdp_account_consistency(&state, cdp_port).await?;
@@ -1055,6 +1067,8 @@ async fn start_cdp_quest(
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
     let _gate = state.activity_gate.lock().await;
+    state.game_idle.ensure_idle().await?;
+    ensure_no_running_simulated_game()?;
     stop_active_work_internal(&state).await?;
     ensure_cdp_account_consistency(&state, cdp_port).await?;
     let quest_id_for_state = quest_id.clone();
@@ -1212,6 +1226,14 @@ async fn ensure_no_active_quest(state: &State<'_, AppState>) -> Result<(), Strin
     Ok(())
 }
 
+fn ensure_no_running_simulated_game() -> Result<(), String> {
+    if game_simulator::has_running_simulated_games() {
+        Err("Stop the active simulated game before starting another activity".to_string())
+    } else {
+        Ok(())
+    }
+}
+
 async fn stop_manual_cdp_game_simulation_internal(
     state: &State<'_, AppState>,
 ) -> Result<(), String> {
@@ -1263,7 +1285,13 @@ async fn run_simulated_game(
     path: String,
     executable_name: String,
     app_id: String,
+    state: State<'_, AppState>,
 ) -> Result<(), String> {
+    let _gate = state.activity_gate.lock().await;
+    state.game_idle.ensure_idle().await?;
+    ensure_no_active_quest(&state).await?;
+    state.manual_cdp_game.lock().await.ensure_idle()?;
+    ensure_no_running_simulated_game()?;
     tauri::async_runtime::spawn_blocking(move || {
         game_simulator::run_simulated_game(&name, &path, &executable_name, &app_id)
     })
@@ -1274,9 +1302,16 @@ async fn run_simulated_game(
 
 /// Stop simulated game
 #[tauri::command]
-async fn stop_simulated_game(exec_name: String) -> Result<(), String> {
+async fn stop_simulated_game(exec_name: String, state: State<'_, AppState>) -> Result<(), String> {
+    let _gate = state.activity_gate.lock().await;
+    state.game_idle.ensure_idle().await?;
     game_simulator::stop_simulated_game(&exec_name)
         .map_err(|e| format!("Failed to stop simulated game: {}", e))
+}
+
+#[tauri::command]
+fn get_running_simulated_games() -> Vec<String> {
+    game_simulator::running_simulated_game_names()
 }
 
 /// Start a persistent manual game simulation inside Discord via CDP.
@@ -1303,7 +1338,9 @@ async fn start_manual_cdp_game_simulation(
     // pass its idle check, install QuestState, and then allow this command
     // to inject a second Discord activity.
     let _gate = state.activity_gate.lock().await;
+    state.game_idle.ensure_idle().await?;
     ensure_no_active_quest(&state).await?;
+    ensure_no_running_simulated_game()?;
 
     let mut sessions = state.manual_cdp_game.lock().await;
     sessions.ensure_idle()?;
@@ -1343,6 +1380,203 @@ async fn get_manual_cdp_game_simulation(
     state: State<'_, AppState>,
 ) -> Result<Option<ManualCdpGameSimulation>, String> {
     Ok(state.manual_cdp_game.lock().await.active())
+}
+
+#[tauri::command]
+async fn start_game_idle(
+    config: game_idle::GameIdleConfig,
+    games: Vec<DetectableGame>,
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+) -> Result<game_idle::GameIdleStatus, String> {
+    config.validate()?;
+    let user = state
+        .authenticated_user
+        .lock()
+        .map_err(|_| "Authenticated account state is unavailable".to_string())?
+        .clone()
+        .ok_or_else(|| "Sign in before starting game idle mode".to_string())?;
+
+    let _gate = state.activity_gate.lock().await;
+    state.game_idle.ensure_idle().await?;
+    ensure_no_active_quest(&state).await?;
+    state.manual_cdp_game.lock().await.ensure_idle()?;
+    ensure_no_running_simulated_game()?;
+    if config.mode == game_idle::GameIdleMode::Cdp {
+        let status = cdp_client::check_cdp_available(config.cdp_port).await;
+        if !status.connected {
+            return Err(status.error.unwrap_or_else(|| {
+                format!("Discord CDP is not connected on port {}", config.cdp_port)
+            }));
+        }
+        ensure_cdp_account_consistency(&state, config.cdp_port).await?;
+    }
+    let history_path = simulation_history::SimulationHistory::file_path(&app)?;
+    state
+        .game_idle
+        .start(
+            config,
+            games,
+            user.id,
+            std::sync::Arc::clone(&state.simulation_history),
+            history_path,
+            app,
+        )
+        .await
+}
+
+#[tauri::command]
+async fn get_game_idle_status(
+    state: State<'_, AppState>,
+) -> Result<Option<game_idle::GameIdleStatus>, String> {
+    Ok(state.game_idle.status().await)
+}
+
+#[tauri::command]
+async fn remove_game_idle_queue_item(
+    session_id: String,
+    app_id: String,
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+) -> Result<game_idle::GameIdleStatus, String> {
+    state
+        .game_idle
+        .remove_upcoming(&session_id, &app_id, &app)
+        .await
+}
+
+#[tauri::command]
+async fn stop_game_idle(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+) -> Result<Option<game_idle::GameIdleStatus>, String> {
+    let _gate = state.activity_gate.lock().await;
+    let history_path = simulation_history::SimulationHistory::file_path(&app)?;
+    state
+        .game_idle
+        .stop(
+            std::sync::Arc::clone(&state.simulation_history),
+            history_path,
+            &app,
+        )
+        .await
+}
+
+#[tauri::command]
+async fn get_game_simulation_history(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+) -> Result<Vec<simulation_history::GameSimulationHistoryEntry>, String> {
+    let user_id = state
+        .authenticated_user
+        .lock()
+        .map_err(|_| "Authenticated account state is unavailable".to_string())?
+        .as_ref()
+        .map(|user| user.id.clone());
+    let Some(user_id) = user_id else {
+        return Ok(Vec::new());
+    };
+    let path = simulation_history::SimulationHistory::file_path(&app)?;
+    state
+        .simulation_history
+        .entries_for_user(&path, &user_id)
+        .await
+}
+
+#[tauri::command]
+async fn start_game_simulation_usage(
+    app_id: String,
+    app_name: String,
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+) -> Result<bool, String> {
+    if app_id.trim().is_empty() {
+        return Ok(false);
+    }
+    let user_id = state
+        .authenticated_user
+        .lock()
+        .map_err(|_| "Authenticated account state is unavailable".to_string())?
+        .as_ref()
+        .map(|user| user.id.clone());
+    let Some(user_id) = user_id else {
+        return Ok(false);
+    };
+    let path = simulation_history::SimulationHistory::file_path(&app)?;
+    state
+        .simulation_history
+        .begin(
+            path,
+            app,
+            user_id,
+            app_id.trim().to_string(),
+            app_name.trim().to_string(),
+        )
+        .await?;
+    Ok(true)
+}
+
+#[tauri::command]
+async fn stop_game_simulation_usage(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    let path = simulation_history::SimulationHistory::file_path(&app)?;
+    state.simulation_history.finish(&path, Some(&app)).await?;
+    Ok(())
+}
+
+/// Stop every application-simulation owner before logout or account switch.
+/// This remains authoritative even when the page that launched a manual
+/// process has already been unmounted.
+#[tauri::command]
+async fn stop_all_game_simulations(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    let _gate = state.activity_gate.lock().await;
+    let history_path = simulation_history::SimulationHistory::file_path(&app)?;
+
+    let idle_error = state
+        .game_idle
+        .stop(
+            std::sync::Arc::clone(&state.simulation_history),
+            history_path.clone(),
+            &app,
+        )
+        .await
+        .err();
+    let active_work_error = stop_active_work_internal(&state).await.err();
+
+    let process_error = tauri::async_runtime::spawn_blocking(|| {
+        let mut first_error = None;
+        for executable in game_simulator::running_simulated_game_names() {
+            if let Err(error) = game_simulator::stop_simulated_game(&executable) {
+                first_error.get_or_insert_with(|| error.to_string());
+            }
+        }
+        first_error
+    })
+    .await
+    .map_err(|error| format!("Game process cleanup task failed: {error}"))?
+    .map(|error| format!("Failed to stop a simulated game: {error}"));
+
+    let rpc_error = clear_discord_rpc().await.err();
+    let history_error = state
+        .simulation_history
+        .finish(&history_path, Some(&app))
+        .await
+        .err();
+
+    match idle_error
+        .or(active_work_error)
+        .or(process_error)
+        .or(rpc_error)
+        .or(history_error)
+    {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
 }
 
 /// Get detectable games list (works with or without login)
@@ -1550,6 +1784,28 @@ fn get_discord_rpc_client() -> &'static Mutex<Option<rpc::Client>> {
     DISCORD_RPC_CLIENT.get_or_init(|| Mutex::new(None))
 }
 
+pub(crate) async fn clear_discord_rpc() -> Result<(), String> {
+    let client = get_discord_rpc_client()
+        .lock()
+        .map_err(|_| "Discord RPC state lock is poisoned".to_string())?
+        .take();
+    if let Some(client) = client {
+        client.discord.disconnect().await;
+    }
+    Ok(())
+}
+
+pub(crate) async fn replace_discord_rpc(activity_json: String) -> Result<(), String> {
+    clear_discord_rpc().await?;
+    let client = runner::set_activity(activity_json)
+        .await
+        .map_err(|error| format!("Failed to connect Discord RPC: {error}"))?;
+    *get_discord_rpc_client()
+        .lock()
+        .map_err(|_| "Discord RPC state lock is poisoned".to_string())? = Some(client);
+    Ok(())
+}
+
 #[tauri::command(rename_all = "snake_case")]
 fn connect_to_discord_rpc(handle: tauri::AppHandle, activity_json: String, action: String) {
     let _ = action;
@@ -1628,16 +1884,7 @@ async fn disconnect_from_discord_rpc(app: tauri::AppHandle) -> Result<(), String
     // pending task storing a new RPC client and restoring the presence.
     let _ = app.emit("event_disconnect", ());
 
-    let client = get_discord_rpc_client()
-        .lock()
-        .map_err(|_| "Discord RPC state lock is poisoned".to_string())?
-        .take();
-
-    if let Some(client) = client {
-        client.discord.disconnect().await;
-    }
-
-    Ok(())
+    clear_discord_rpc().await
 }
 
 fn validate_explorer_directory(path: &str) -> Result<std::path::PathBuf, String> {
@@ -1894,6 +2141,10 @@ pub fn run() {
             authenticated_user: Mutex::new(None),
             quest_state: Mutex::new(None),
             manual_cdp_game: tokio::sync::Mutex::new(ManualCdpGameSessionState::default()),
+            game_idle: std::sync::Arc::new(game_idle::GameIdleManager::default()),
+            simulation_history: std::sync::Arc::new(
+                simulation_history::SimulationHistory::default(),
+            ),
             activity_gate: tokio::sync::Mutex::new(()),
         })
         .setup(|app| {
@@ -1944,9 +2195,18 @@ pub fn run() {
             create_simulated_game,
             run_simulated_game,
             stop_simulated_game,
+            get_running_simulated_games,
             start_manual_cdp_game_simulation,
             stop_manual_cdp_game_simulation,
             get_manual_cdp_game_simulation,
+            start_game_idle,
+            get_game_idle_status,
+            remove_game_idle_queue_item,
+            stop_game_idle,
+            get_game_simulation_history,
+            start_game_simulation_usage,
+            stop_game_simulation_usage,
+            stop_all_game_simulations,
             fetch_detectable_games,
             accept_quest,
             get_virtual_currency_balance,
@@ -2001,8 +2261,8 @@ pub fn run() {
 }
 
 #[tauri::command]
-async fn prepare_app_exit(state: State<'_, AppState>) -> Result<(), String> {
-    prepare_active_work_and_local_cleanup(&state).await
+async fn prepare_app_exit(state: State<'_, AppState>, app: tauri::AppHandle) -> Result<(), String> {
+    prepare_active_work_and_local_cleanup(&state, &app).await
 }
 
 /// End the main process after the frontend has completed its best-effort
@@ -2011,13 +2271,13 @@ async fn prepare_app_exit(state: State<'_, AppState>) -> Result<(), String> {
 /// and routing the confirmed action back through it can leave the window
 /// alive with the frontend's close guard latched.
 #[tauri::command]
-async fn exit_app_now(state: State<'_, AppState>) -> Result<(), String> {
+async fn exit_app_now(state: State<'_, AppState>, app: tauri::AppHandle) -> Result<(), String> {
     // The close UI fail-opens after a short prepare deadline so a hung Discord
     // evaluation cannot trap the window. This command is the last chance to
     // finish or retry CDP rollback before the process disappears.
     match tokio::time::timeout(
         APP_EXIT_FINAL_CLEANUP_TIMEOUT,
-        prepare_active_work_and_local_cleanup(&state),
+        prepare_active_work_and_local_cleanup(&state, &app),
     )
     .await
     {
@@ -2036,7 +2296,10 @@ async fn exit_app_now(state: State<'_, AppState>) -> Result<(), String> {
     std::process::exit(0);
 }
 
-async fn prepare_active_work_and_local_cleanup(state: &State<'_, AppState>) -> Result<(), String> {
+async fn prepare_active_work_and_local_cleanup(
+    state: &State<'_, AppState>,
+    app: &tauri::AppHandle,
+) -> Result<(), String> {
     if APP_EXIT_CLEANUP.is_prepared() {
         return Ok(());
     }
@@ -2051,9 +2314,24 @@ async fn prepare_active_work_and_local_cleanup(state: &State<'_, AppState>) -> R
     // has run so an RPC/game cleanup failure cannot strand another resource.
     // Do not mark exit prepared until this cleanup succeeds; otherwise a
     // later prepare_app_exit (or a retried close) would skip rollback.
+    let history_path = simulation_history::SimulationHistory::file_path(app)?;
+    let idle_error = state
+        .game_idle
+        .stop(
+            std::sync::Arc::clone(&state.simulation_history),
+            history_path.clone(),
+            app,
+        )
+        .await
+        .err();
     let active_work_error = stop_active_work_internal(state).await.err();
+    let history_error = state
+        .simulation_history
+        .finish(&history_path, Some(app))
+        .await
+        .err();
     cleanup_local_resources_on_exit().await;
-    match active_work_error {
+    match idle_error.or(active_work_error).or(history_error) {
         Some(error) => Err(error),
         None => {
             APP_EXIT_CLEANUP.mark_prepared();

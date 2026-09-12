@@ -651,6 +651,58 @@ pub fn simulated_process_hints() -> Vec<crate::cdp_game_spoof::SimulatedProcessH
     }
 }
 
+/// Whether this application currently owns at least one simulated game
+/// process. This doubles as the backend activity guard because frontend
+/// component state disappears when the user changes pages while the child
+/// process intentionally keeps running.
+pub fn has_running_simulated_games() -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        return RUNNING_GAMES
+            .lock()
+            .map(|games| !games.is_empty())
+            .unwrap_or(true);
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        return RUNNING_UNIX_GAMES
+            .lock()
+            .map(|games| !games.is_empty())
+            .unwrap_or(true);
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        false
+    }
+}
+
+/// Names of simulated executables still owned by this process. The game
+/// simulator page uses this to restore its Stop control after navigation.
+pub fn running_simulated_game_names() -> Vec<String> {
+    #[cfg(target_os = "windows")]
+    {
+        return RUNNING_GAMES
+            .lock()
+            .map(|games| games.iter().cloned().collect())
+            .unwrap_or_default();
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        return RUNNING_UNIX_GAMES
+            .lock()
+            .map(|games| games.keys().cloned().collect())
+            .unwrap_or_default();
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        Vec::new()
+    }
+}
+
 /// Stop **all** tracked simulated game processes.
 ///
 /// Called on application exit to ensure no orphaned child processes are left
