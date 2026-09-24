@@ -19,6 +19,7 @@ import DiscordCdpExitDialog from './components/DiscordCdpExitDialog.vue'
 import LoginPanel from './components/auth/LoginPanel.vue'
 import { persistSettingsSection } from '@/composables/useSettingsNavigation'
 import { supportedLocales } from '@/locales/meta'
+import { isDebugModeEnabled } from '@/utils/debugMode'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -124,7 +125,7 @@ onMounted(() => {
   updateTheme()
 
   // Restore debug mode state
-  debugModeEnabled.value = localStorage.getItem('debugMode') === 'true'
+  debugModeEnabled.value = isDebugModeEnabled()
 
   // Check for updates
   const versionStore = useVersionStore()

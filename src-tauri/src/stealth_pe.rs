@@ -7,6 +7,7 @@ use std::path::Path;
 
 use windows::core::{BOOL, HSTRING, PCWSTR};
 use windows::Win32::Foundation::{FreeLibrary, HANDLE, HMODULE};
+#[cfg(test)]
 use windows::Win32::Storage::FileSystem::{
     GetFileVersionInfoSizeW, GetFileVersionInfoW, VerQueryValueW,
 };
@@ -260,6 +261,7 @@ pub(crate) fn build_version_info(file_name: &str, stem: &str) -> Vec<u8> {
     version_node("VS_VERSION_INFO", 0, fixed.len() as u16, &fixed, &children)
 }
 
+#[cfg(test)]
 pub(crate) fn query_version_string(path: &Path, key: &str) -> Result<String, String> {
     let path_h = HSTRING::from(path.to_string_lossy().as_ref());
     let mut handle = 0u32;

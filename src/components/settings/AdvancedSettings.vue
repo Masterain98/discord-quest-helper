@@ -11,6 +11,7 @@ import { navigateToTab } from '@/utils/navigate'
 import SettingsSectionCard from './SettingsSectionCard.vue'
 import { cn } from '@/lib/utils'
 import { settingToneClass, type SettingsTone } from './settingTones'
+import { isDebugModeEnabled } from '@/utils/debugMode'
 
 function goToPortSection() {
   navigateToTab('settings', 'discord_integration')
@@ -26,7 +27,7 @@ const questsStore = useQuestsStore()
 
 const superPropsMode = ref<SuperPropertiesModeInfo | null>(null)
 const retryingMode = ref(false)
-const debugModeEnabled = ref(localStorage.getItem('debugMode') === 'true')
+const debugModeEnabled = ref(isDebugModeEnabled())
 
 const superPropsTone = computed<SettingsTone>(() => {
   if (superPropsMode.value?.mode === 'cdp') return 'success'
@@ -57,7 +58,7 @@ async function retrySuperProps() {
 }
 
 onMounted(async () => {
-  debugModeEnabled.value = localStorage.getItem('debugMode') === 'true'
+  debugModeEnabled.value = isDebugModeEnabled()
   await loadSuperPropsMode()
 })
 </script>

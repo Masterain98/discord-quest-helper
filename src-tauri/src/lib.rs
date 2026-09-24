@@ -2118,7 +2118,7 @@ fn create_main_window(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>
     if runtime_identity::uses_temporary_runtime() {
         let title = runtime_identity::runtime_window_title();
         builder = builder.title(&title);
-        if let Some(user_data) = runtime_identity::webview_user_data_dir() {
+        if let Some(user_data) = runtime_identity::webview_user_data_dir()? {
             std::fs::create_dir_all(&user_data)?;
             builder = builder.data_directory(user_data);
         }
