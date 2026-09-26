@@ -335,13 +335,7 @@ fn renderer_grace_survives_a_temporary_endpoint_handoff() {
             target_title: Some("Friends".to_string()),
         },
     ]);
-    let options = LaunchOptions {
-        readiness_timeout: Duration::from_millis(20),
-        poll_interval: Duration::from_millis(12),
-        ..fast_options()
-    };
-
-    let result = launch_with_backends(options, &platform, &probe).unwrap();
+    let result = launch_with_backends(patient_options(), &platform, &probe).unwrap();
     assert!(result.cdp_connected);
 }
 

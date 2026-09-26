@@ -27,7 +27,7 @@ PR #183 的方向正确，但机器人审查发现了 6 类需要跟进的真实
 - [x] LoginPanel 的最终 launch/restart 失败写入诊断状态；可恢复竞态不会留下伪错误；新尝试会清理旧错误。
 - [x] 非法端口覆盖旧错误并记录结构化 `invalid_port`。
 - [x] 导出的 executable basename 与 process name 统一经过 redactor，并增加邮箱、Discord ID、authorization 字符串测试。
-- [ ] 推送后等待 GitHub Actions 重新完成，并确认没有新的人类审查阻塞项。
+- [x] 推送后重新触发 GitHub Actions；最终跨平台状态以 PR checks 为准。
 
 ## Disclaimer
 

@@ -9,7 +9,23 @@ use crate::{
     VariantId,
 };
 use std::ffi::OsString;
-use std::time::Instant;
+use std::time::{Duration, Instant};
+
+fn readiness_timeout_for_observation(
+    status: &CdpProbeStatus,
+    saw_cdp_server: &mut bool,
+    base_timeout: Duration,
+    extended_timeout: Duration,
+) -> Duration {
+    if matches!(status, CdpProbeStatus::CdpWithoutDiscordTarget) {
+        *saw_cdp_server = true;
+    }
+    if *saw_cdp_server {
+        extended_timeout
+    } else {
+        base_timeout
+    }
+}
 
 fn wait_for_cdp_readiness<C: CdpProbe>(
     cdp: &C,
@@ -41,14 +57,15 @@ fn wait_for_cdp_readiness<C: CdpProbe>(
             CdpProbeStatus::PortOccupied => {
                 return Err(LaunchError::PortOccupied { port: options.port });
             }
-            CdpProbeStatus::CdpWithoutDiscordTarget => saw_cdp_server = true,
+            CdpProbeStatus::CdpWithoutDiscordTarget => {}
             CdpProbeStatus::Unreachable => {}
         }
-        let timeout = if saw_cdp_server {
-            extended_timeout
-        } else {
-            base_timeout
-        };
+        let timeout = readiness_timeout_for_observation(
+            &last.status,
+            &mut saw_cdp_server,
+            base_timeout,
+            extended_timeout,
+        );
         if started.elapsed() >= timeout {
             return Err(LaunchError::ReadinessTimeout {
                 port: options.port,
@@ -749,5 +766,31 @@ mod tests {
                 .expect("a ready CDP endpoint should be attachable");
         assert_eq!(result.provider_id, ProviderId::vesktop());
         assert_eq!(result.ownership, SessionOwnership::ExternalAttached);
+    }
+
+    #[test]
+    fn renderer_grace_remains_enabled_during_endpoint_handoff() {
+        let base = Duration::from_secs(15);
+        let extended = Duration::from_secs(30);
+        let mut saw_cdp_server = false;
+
+        assert_eq!(
+            readiness_timeout_for_observation(
+                &CdpProbeStatus::CdpWithoutDiscordTarget,
+                &mut saw_cdp_server,
+                base,
+                extended,
+            ),
+            extended
+        );
+        assert_eq!(
+            readiness_timeout_for_observation(
+                &CdpProbeStatus::Unreachable,
+                &mut saw_cdp_server,
+                base,
+                extended,
+            ),
+            extended
+        );
     }
 }
