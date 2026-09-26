@@ -45,7 +45,6 @@ describe('sanitizeCdpDiagnosticExport', () => {
         isMainRenderer: false,
         classification: 'discordOtherRenderer',
       }],
-      lastLaunchError: null,
     } satisfies CdpDiagnosticSnapshot
     const exported = sanitizeCdpDiagnosticExport(snapshot, {
       code: 'cdp_readiness_timeout',
@@ -63,5 +62,48 @@ describe('sanitizeCdpDiagnosticExport', () => {
     expect(json).not.toContain('Private channel')
     expect(json).not.toContain('123456789012345678')
     expect(json).not.toContain('authorization')
+  })
+
+  it('redacts sensitive text in executable basenames and process names', () => {
+    const snapshot = {
+      timestamp: '2026-09-26T00:00:00Z',
+      port: 9223,
+      endpointStatus: 'unreachable',
+      endpointOwner: 'none',
+      ownerProviderId: null,
+      selectedClient: null,
+      selectedInstallationId: null,
+      selectedProviderId: null,
+      selectedVariantId: null,
+      selectedExecutablePath: 'C:\\portable\\alice@example.com.exe',
+      selectedRunning: false,
+      portListening: false,
+      cdpHttpReachable: false,
+      cdpHttpStatus: null,
+      cdpResponseParseable: false,
+      cdpTargetCount: 0,
+      discordTargetCount: 0,
+      mainRendererFound: false,
+      processes: [{
+        pid: 42,
+        processName: 'Bot top-secret',
+        providerId: null,
+        installationId: null,
+        executablePath: '/opt/123456789012345678.exe',
+        isSelectedInstallation: false,
+        hasRemoteDebuggingPortArg: true,
+        remoteDebuggingPort: 9223,
+        startTime: 1,
+      }],
+      targets: [],
+    } satisfies CdpDiagnosticSnapshot
+
+    const json = JSON.stringify(sanitizeCdpDiagnosticExport(snapshot, null))
+    expect(json).not.toContain('alice@example.com')
+    expect(json).not.toContain('123456789012345678')
+    expect(json).not.toContain('top-secret')
+    expect(json).toContain('[redacted-email]')
+    expect(json).toContain('[redacted-id]')
+    expect(json).toContain('[redacted-authorization]')
   })
 })

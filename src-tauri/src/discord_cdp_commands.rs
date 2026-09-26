@@ -267,7 +267,6 @@ pub(crate) struct CdpDiagnosticSnapshotDto {
     main_renderer_found: bool,
     processes: Vec<CdpDiagnosticProcessDto>,
     targets: Vec<CdpDiagnosticTargetDto>,
-    last_launch_error: Option<DesktopClientCommandError>,
 }
 
 #[tauri::command]
@@ -286,36 +285,10 @@ pub(crate) async fn get_cdp_diagnostic_snapshot(
     let config = load_config(&app)?;
     tauri::async_runtime::spawn_blocking(move || {
         let state = build_desktop_client_state(config, port);
-        let selected_installation = match &state.selection {
-            cdp_launch::LaunchSelector::Installation { installation_id } => state
-                .installations
-                .iter()
-                .find(|installation| &installation.id == installation_id),
-            cdp_launch::LaunchSelector::Provider {
-                provider_id,
-                variant_id,
-            } => state.installations.iter().find(|installation| {
-                &installation.provider_id == provider_id
-                    && variant_id
-                        .as_ref()
-                        .is_none_or(|variant| installation.variant_id.as_ref() == Some(variant))
-            }),
-            cdp_launch::LaunchSelector::Auto => None,
-        };
-        let selected_provider_id = selected_installation
-            .map(|installation| installation.provider_id.clone())
-            .or_else(|| match &state.selection {
-                cdp_launch::LaunchSelector::Provider { provider_id, .. } => {
-                    Some(provider_id.clone())
-                }
-                _ => None,
-            });
-        let selected_variant_id = selected_installation
-            .and_then(|installation| installation.variant_id.clone())
-            .or_else(|| match &state.selection {
-                cdp_launch::LaunchSelector::Provider { variant_id, .. } => variant_id.clone(),
-                _ => None,
-            });
+        let selected_installation =
+            diagnostic_selected_installation(&state.selection, &state.installations);
+        let (selected_provider_id, selected_variant_id) =
+            diagnostic_selected_provider_and_variant(&state.selection, selected_installation);
         let selected_installation_id =
             selected_installation.map(|installation| installation.id.clone());
         let processes = cdp_launch::cdp_diagnostic_processes(
@@ -323,13 +296,10 @@ pub(crate) async fn get_cdp_diagnostic_snapshot(
             selected_installation_id.as_ref(),
             port,
         );
-        let selected_running = processes.iter().any(|process| {
-            process.is_selected_installation
-                || selected_installation_id.is_none()
-                    && selected_provider_id
-                        .as_ref()
-                        .is_some_and(|provider| process.provider_id.as_ref() == Some(provider))
-        });
+        let selected_running = state
+            .processes
+            .iter()
+            .any(|process| client_process_matches_selector(process, &state.selection));
         let detailed = cdp_launch::detailed_probe_cdp(port);
         let inspected_owner = cdp_launch::inspect_cdp_port_owner(port);
         let owner = if inspected_owner == cdp_launch::CdpPortOwner::None && detailed.port_listening
@@ -375,7 +345,6 @@ pub(crate) async fn get_cdp_diagnostic_snapshot(
             main_renderer_found,
             processes: processes.into_iter().map(Into::into).collect(),
             targets: detailed.targets.into_iter().map(Into::into).collect(),
-            last_launch_error: None,
         })
     })
     .await
@@ -1155,6 +1124,63 @@ fn installation_executable_path(install: &cdp_launch::ClientInstallation) -> Opt
     }
 }
 
+fn diagnostic_selected_installation<'a>(
+    selector: &cdp_launch::LaunchSelector,
+    installations: &'a [cdp_launch::ClientInstallation],
+) -> Option<&'a cdp_launch::ClientInstallation> {
+    let cdp_launch::LaunchSelector::Installation { installation_id } = selector else {
+        return None;
+    };
+    installations
+        .iter()
+        .find(|installation| &installation.id == installation_id)
+}
+
+fn diagnostic_selected_provider_and_variant(
+    selector: &cdp_launch::LaunchSelector,
+    selected_installation: Option<&cdp_launch::ClientInstallation>,
+) -> (
+    Option<cdp_launch::ProviderId>,
+    Option<cdp_launch::VariantId>,
+) {
+    match selector {
+        cdp_launch::LaunchSelector::Auto => (None, None),
+        cdp_launch::LaunchSelector::Provider {
+            provider_id,
+            variant_id,
+        } => (Some(provider_id.clone()), variant_id.clone()),
+        cdp_launch::LaunchSelector::Installation { .. } => {
+            selected_installation.map_or((None, None), |installation| {
+                (
+                    Some(installation.provider_id.clone()),
+                    installation.variant_id.clone(),
+                )
+            })
+        }
+    }
+}
+
+fn client_process_matches_selector(
+    process: &ClientProcessDto,
+    selector: &cdp_launch::LaunchSelector,
+) -> bool {
+    match selector {
+        cdp_launch::LaunchSelector::Auto => false,
+        cdp_launch::LaunchSelector::Provider {
+            provider_id,
+            variant_id,
+        } => {
+            &process.provider_id == provider_id
+                && variant_id
+                    .as_ref()
+                    .is_none_or(|variant| process.variant_id.as_ref() == Some(variant))
+        }
+        cdp_launch::LaunchSelector::Installation { installation_id } => {
+            &process.installation_id == installation_id
+        }
+    }
+}
+
 fn config_path(app: &tauri::AppHandle) -> Result<PathBuf, DesktopClientCommandError> {
     app.path()
         .app_config_dir()
@@ -1606,6 +1632,63 @@ mod tests {
             None,
             Some(&VariantId("canary".into()))
         ));
+    }
+
+    #[test]
+    fn provider_diagnostics_do_not_claim_an_exact_installation() {
+        let installations = [ClientInstallation {
+            id: InstallationId("vencord.vesktop:portable".into()),
+            provider_id: ProviderId::vesktop(),
+            variant_id: None,
+            display_name: "Vesktop".into(),
+            source: DiscoverySource::User,
+            launch_target: LaunchTarget::Executable {
+                path: PathBuf::from("/opt/vesktop"),
+                working_dir: PathBuf::from("/opt"),
+                prefix_args: Vec::new(),
+            },
+            capabilities: ClientCapabilities {
+                cdp: true,
+                local_token: false,
+                restore_normal: true,
+            },
+            validation: ValidationState::Valid,
+        }];
+        let selector = LaunchSelector::Provider {
+            provider_id: ProviderId::vesktop(),
+            variant_id: None,
+        };
+
+        assert!(diagnostic_selected_installation(&selector, &installations).is_none());
+        assert_eq!(
+            diagnostic_selected_provider_and_variant(&selector, None),
+            (Some(ProviderId::vesktop()), None)
+        );
+
+        let exact = LaunchSelector::Installation {
+            installation_id: installations[0].id.clone(),
+        };
+        assert_eq!(
+            diagnostic_selected_installation(&exact, &installations).map(|value| &value.id),
+            Some(&installations[0].id)
+        );
+    }
+
+    #[test]
+    fn provider_variant_running_state_ignores_other_channels() {
+        let stable = ClientProcessDto {
+            provider_id: ProviderId::official_discord(),
+            installation_id: InstallationId("discord.official:stable".into()),
+            variant_id: Some(VariantId("stable".into())),
+            executable_path: None,
+            running: true,
+        };
+        let canary_selector = LaunchSelector::Provider {
+            provider_id: ProviderId::official_discord(),
+            variant_id: Some(VariantId("canary".into())),
+        };
+
+        assert!(!client_process_matches_selector(&stable, &canary_selector));
     }
 
     #[test]

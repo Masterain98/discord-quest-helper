@@ -814,7 +814,6 @@ export interface CdpDiagnosticSnapshot {
   mainRendererFound: boolean
   processes: CdpDiagnosticProcess[]
   targets: CdpDiagnosticTarget[]
-  lastLaunchError: DesktopClientCommandError | null
 }
 
 export interface DesktopClientInventory {

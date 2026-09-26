@@ -37,7 +37,11 @@ import {
   selectionForCurrentCdpOwner,
 } from '@/components/auth/loginFlow'
 import { commandErrorMessage } from '@/utils/commandError'
-import { clearCdpLaunchError, recordCdpLaunchError } from '@/composables/cdpDiagnostics'
+import {
+  clearCdpLaunchError,
+  invalidCdpPortError,
+  recordCdpLaunchError,
+} from '@/composables/cdpDiagnostics'
 
 const { t } = useI18n()
 const questsStore = useQuestsStore()
@@ -218,15 +222,15 @@ async function useCurrentCdpOwner() {
 async function performLaunch(restart: boolean) {
   cdpActionBusy.value = true
   resetLaunchMessage()
+  clearCdpLaunchError()
 
   if (!Number.isInteger(questsStore.cdpPort) || questsStore.cdpPort < 1024 || questsStore.cdpPort > 65535) {
-    cdpLaunchError.value = 'Invalid port number. Must be between 1024 and 65535.'
+    cdpLaunchError.value = recordCdpLaunchError(invalidCdpPortError(questsStore.cdpPort)).message
     cdpActionBusy.value = false
     return
   }
 
   try {
-    clearCdpLaunchError()
     const snapshot = await clients.refresh(questsStore.cdpPort)
     if (!snapshot) throw new Error(clients.error.value ?? 'Desktop client state is unavailable')
     const result = await launchDesktopClientCdp(

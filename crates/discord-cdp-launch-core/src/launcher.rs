@@ -18,7 +18,9 @@ fn wait_for_cdp_readiness<C: CdpProbe>(
     let started = Instant::now();
     let base_timeout = options.readiness_timeout;
     let extended_timeout = base_timeout.saturating_add(base_timeout);
-    let mut extension_enabled = false;
+    // Once a CDP server has appeared, keep the extended renderer grace period.
+    // Discord's updater-to-app handoff can make the endpoint briefly disappear.
+    let mut saw_cdp_server = false;
     let mut last = cdp.observe(options.port);
     let mut logged_status: Option<CdpProbeStatus> = None;
 
@@ -34,16 +36,15 @@ fn wait_for_cdp_readiness<C: CdpProbe>(
             );
             logged_status = Some(last.status.clone());
         }
-        let is_ready = matches!(last.status, CdpProbeStatus::DiscordReady { .. });
         match &last.status {
-            CdpProbeStatus::DiscordReady { .. } => {}
+            CdpProbeStatus::DiscordReady { .. } => return Ok(()),
             CdpProbeStatus::PortOccupied => {
                 return Err(LaunchError::PortOccupied { port: options.port });
             }
-            CdpProbeStatus::CdpWithoutDiscordTarget => extension_enabled = true,
+            CdpProbeStatus::CdpWithoutDiscordTarget => saw_cdp_server = true,
             CdpProbeStatus::Unreachable => {}
         }
-        let timeout = if extension_enabled {
+        let timeout = if saw_cdp_server {
             extended_timeout
         } else {
             base_timeout
@@ -57,9 +58,6 @@ fn wait_for_cdp_readiness<C: CdpProbe>(
                 discord_target_count: last.discord_target_count,
                 main_renderer_found: last.main_renderer_found,
             });
-        }
-        if is_ready {
-            return Ok(());
         }
         std::thread::sleep(options.poll_interval);
         last = cdp.observe(options.port);

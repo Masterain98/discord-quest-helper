@@ -2,7 +2,8 @@ import type { CdpDiagnosticSnapshot } from '@/api/tauri'
 import type { TimestampedCommandError } from '@/composables/cdpDiagnostics'
 
 function basename(path: string | null): string | null {
-  return path?.split(/[\\/]/).filter(Boolean).pop() ?? null
+  const name = path?.split(/[\\/]/).filter(Boolean).pop()
+  return name ? redactText(name) : null
 }
 
 function redactText(value: string): string {
@@ -48,7 +49,7 @@ export function sanitizeCdpDiagnosticExport(
     cdpResponseParseable: snapshot.cdpResponseParseable,
     launchRequestedPort: snapshot.port,
     processes: snapshot.processes.map(process => ({
-      processName: process.processName,
+      processName: redactText(process.processName),
       providerId: process.providerId,
       isSelectedInstallation: process.isSelectedInstallation,
       executable: basename(process.executablePath),

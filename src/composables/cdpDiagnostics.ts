@@ -17,6 +17,14 @@ export function clearCdpLaunchError() {
   lastCdpLaunchError.value = null
 }
 
+export function invalidCdpPortError(port: number) {
+  return {
+    code: 'invalid_port',
+    params: { port },
+    message: 'Invalid port number. Must be between 1024 and 65535.',
+  }
+}
+
 export function useCdpDiagnostics() {
   return { lastCdpLaunchError, recordCdpLaunchError, clearCdpLaunchError }
 }

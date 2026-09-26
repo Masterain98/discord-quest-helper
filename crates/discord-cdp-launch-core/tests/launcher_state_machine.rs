@@ -257,6 +257,23 @@ fn spawn_waits_until_discord_target_is_ready() {
 }
 
 #[test]
+fn ready_observation_wins_even_when_the_probe_returns_after_the_deadline() {
+    let platform = FakePlatform::new(vec![install(DiscordChannel::Stable)], &[false]);
+    let probe = DelayedReadyProbe {
+        calls: AtomicUsize::new(0),
+        delay: Duration::from_millis(20),
+    };
+    let options = LaunchOptions {
+        readiness_timeout: Duration::from_millis(1),
+        poll_interval: Duration::ZERO,
+        ..fast_options()
+    };
+
+    let result = launch_with_backends(options, &platform, &probe).unwrap();
+    assert!(result.cdp_connected);
+}
+
+#[test]
 fn spawn_readiness_timeout_is_typed() {
     let platform = FakePlatform::new(vec![install(DiscordChannel::Stable)], &[false]);
     let probe = FakeProbe::new(vec![CdpProbeStatus::Unreachable]);
@@ -264,6 +281,24 @@ fn spawn_readiness_timeout_is_typed() {
         launch_with_backends(fast_options(), &platform, &probe),
         Err(LaunchError::ReadinessTimeout { port: 9223, .. })
     ));
+}
+
+struct DelayedReadyProbe {
+    calls: AtomicUsize,
+    delay: Duration,
+}
+
+impl CdpProbe for DelayedReadyProbe {
+    fn probe(&self, _port: u16) -> CdpProbeStatus {
+        if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
+            CdpProbeStatus::Unreachable
+        } else {
+            std::thread::sleep(self.delay);
+            CdpProbeStatus::DiscordReady {
+                target_title: Some("Friends".to_string()),
+            }
+        }
+    }
 }
 
 #[test]
@@ -283,6 +318,29 @@ fn renderer_detection_extends_the_base_readiness_window() {
         poll_interval: Duration::from_millis(12),
         ..fast_options()
     };
+    let result = launch_with_backends(options, &platform, &probe).unwrap();
+    assert!(result.cdp_connected);
+}
+
+#[test]
+fn renderer_grace_survives_a_temporary_endpoint_handoff() {
+    let platform = FakePlatform::new(vec![install(DiscordChannel::Stable)], &[false]);
+    let probe = FakeProbe::new(vec![
+        CdpProbeStatus::Unreachable,
+        CdpProbeStatus::Unreachable,
+        CdpProbeStatus::CdpWithoutDiscordTarget,
+        CdpProbeStatus::Unreachable,
+        CdpProbeStatus::Unreachable,
+        CdpProbeStatus::DiscordReady {
+            target_title: Some("Friends".to_string()),
+        },
+    ]);
+    let options = LaunchOptions {
+        readiness_timeout: Duration::from_millis(20),
+        poll_interval: Duration::from_millis(12),
+        ..fast_options()
+    };
+
     let result = launch_with_backends(options, &platform, &probe).unwrap();
     assert!(result.cdp_connected);
 }
