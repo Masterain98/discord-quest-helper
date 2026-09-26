@@ -11,6 +11,61 @@ use crate::{
 use std::ffi::OsString;
 use std::time::Instant;
 
+fn wait_for_cdp_readiness<C: CdpProbe>(
+    cdp: &C,
+    options: &LaunchOptions,
+) -> Result<(), LaunchError> {
+    let started = Instant::now();
+    let base_timeout = options.readiness_timeout;
+    let extended_timeout = base_timeout.saturating_add(base_timeout);
+    let mut extension_enabled = false;
+    let mut last = cdp.observe(options.port);
+    let mut logged_status: Option<CdpProbeStatus> = None;
+
+    loop {
+        if logged_status.as_ref() != Some(&last.status) {
+            eprintln!(
+                "[cdp-launch] endpoint state={} targets={} elapsed={:.1}s",
+                last.status.as_str(),
+                last.target_count
+                    .map(|count| count.to_string())
+                    .unwrap_or_else(|| "unknown".to_string()),
+                started.elapsed().as_secs_f64()
+            );
+            logged_status = Some(last.status.clone());
+        }
+        let is_ready = matches!(last.status, CdpProbeStatus::DiscordReady { .. });
+        match &last.status {
+            CdpProbeStatus::DiscordReady { .. } => {}
+            CdpProbeStatus::PortOccupied => {
+                return Err(LaunchError::PortOccupied { port: options.port });
+            }
+            CdpProbeStatus::CdpWithoutDiscordTarget => extension_enabled = true,
+            CdpProbeStatus::Unreachable => {}
+        }
+        let timeout = if extension_enabled {
+            extended_timeout
+        } else {
+            base_timeout
+        };
+        if started.elapsed() >= timeout {
+            return Err(LaunchError::ReadinessTimeout {
+                port: options.port,
+                timeout,
+                last_status: last.status,
+                target_count: last.target_count,
+                discord_target_count: last.discord_target_count,
+                main_renderer_found: last.main_renderer_found,
+            });
+        }
+        if is_ready {
+            return Ok(());
+        }
+        std::thread::sleep(options.poll_interval);
+        last = cdp.observe(options.port);
+    }
+}
+
 pub trait PlatformBackend {
     fn find_installs(&self) -> Result<Vec<DiscordInstall>, LaunchError>;
     fn is_running(&self, channel: Option<DiscordChannel>) -> Result<bool, LaunchError>;
@@ -174,6 +229,7 @@ fn launch_flatpak_with_cdp<C: CdpProbe>(
         }
     }
     let pid = flatpak_spawn(app_id, command.as_deref(), Some(options.port))?;
+    eprintln!("[cdp-launch] process spawned pid={pid}");
     if !options.wait_for_cdp {
         return Ok(flatpak_result(
             installation,
@@ -183,23 +239,14 @@ fn launch_flatpak_with_cdp<C: CdpProbe>(
             false,
         ));
     }
-    let started = Instant::now();
-    while started.elapsed() < options.readiness_timeout {
-        if matches!(cdp.probe(options.port), CdpProbeStatus::DiscordReady { .. }) {
-            return Ok(flatpak_result(
-                installation,
-                &options,
-                LaunchOutcome::Spawned,
-                Some(pid),
-                true,
-            ));
-        }
-        std::thread::sleep(options.poll_interval);
-    }
-    Err(LaunchError::ReadinessTimeout {
-        port: options.port,
-        timeout: options.readiness_timeout,
-    })
+    wait_for_cdp_readiness(cdp, &options)?;
+    Ok(flatpak_result(
+        installation,
+        &options,
+        LaunchOutcome::Spawned,
+        Some(pid),
+        true,
+    ))
 }
 
 fn flatpak_result(
@@ -423,6 +470,7 @@ fn launch_vesktop_with_cdp<C: CdpProbe>(
     }
 
     let pid = spawn_vesktop(&install, DiscordLaunchMode::Cdp { port: options.port })?;
+    eprintln!("[cdp-launch] process spawned pid={pid}");
     if !options.wait_for_cdp {
         return Ok(vesktop_result(
             &install,
@@ -434,26 +482,15 @@ fn launch_vesktop_with_cdp<C: CdpProbe>(
         ));
     }
 
-    if crate::ProcessSupervisor::wait_for_discord_ready(
-        cdp,
-        options.port,
-        options.readiness_timeout,
-        options.poll_interval,
-    ) {
-        return Ok(vesktop_result(
-            &install,
-            &options,
-            selected_installation,
-            LaunchOutcome::Spawned,
-            Some(pid),
-            true,
-        ));
-    }
-
-    Err(LaunchError::ReadinessTimeout {
-        port: options.port,
-        timeout: options.readiness_timeout,
-    })
+    wait_for_cdp_readiness(cdp, &options)?;
+    Ok(vesktop_result(
+        &install,
+        &options,
+        selected_installation,
+        LaunchOutcome::Spawned,
+        Some(pid),
+        true,
+    ))
 }
 
 fn vesktop_result(
@@ -560,6 +597,7 @@ where
     }
 
     let pid = platform.spawn(&install, DiscordLaunchMode::Cdp { port: options.port })?;
+    eprintln!("[cdp-launch] process spawned pid={pid}");
     if !options.wait_for_cdp {
         return Ok(result_for(
             &install,
@@ -570,24 +608,14 @@ where
         ));
     }
 
-    let started = Instant::now();
-    while started.elapsed() < options.readiness_timeout {
-        if matches!(cdp.probe(options.port), CdpProbeStatus::DiscordReady { .. }) {
-            return Ok(result_for(
-                &install,
-                &options,
-                LaunchOutcome::Spawned,
-                Some(pid),
-                true,
-            ));
-        }
-        std::thread::sleep(options.poll_interval);
-    }
-
-    Err(LaunchError::ReadinessTimeout {
-        port: options.port,
-        timeout: options.readiness_timeout,
-    })
+    wait_for_cdp_readiness(cdp, &options)?;
+    Ok(result_for(
+        &install,
+        &options,
+        LaunchOutcome::Spawned,
+        Some(pid),
+        true,
+    ))
 }
 
 #[allow(dead_code)]

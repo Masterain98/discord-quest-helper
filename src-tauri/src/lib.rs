@@ -2226,6 +2226,7 @@ pub fn run() {
             fetch_running_games_cdp,
             discord_cdp_commands::is_discord_running,
             discord_cdp_commands::get_desktop_client_state,
+            discord_cdp_commands::get_cdp_diagnostic_snapshot,
             discord_cdp_commands::add_desktop_client_installation,
             discord_cdp_commands::remove_desktop_client_installation,
             discord_cdp_commands::set_desktop_client_selection,

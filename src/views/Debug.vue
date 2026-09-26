@@ -4,6 +4,7 @@ import {
   getDebugInfo,
   getRuntimeIdentityAudit,
   getRunnerInfo,
+  getCdpDiagnosticSnapshot,
   fetchRunningGamesCdp,
   captureDiscordHeadersCdp,
   getQuestDecisionDebug,
@@ -14,9 +15,14 @@ import {
   type CdpRunningGamesSnapshot,
   type CdpCapturedHeaders,
   type CapturedRequest,
+  type CdpDiagnosticSnapshot,
 } from '@/api/tauri'
 import { sanitizeRuntimeIdentityAuditExport } from '@/utils/runtimeIdentityAudit'
 import { useAuthStore } from '@/stores/auth'
+import { useQuestsStore } from '@/stores/quests'
+import { useCdpDiagnostics } from '@/composables/cdpDiagnostics'
+import { commandErrorMessage } from '@/utils/commandError'
+import { sanitizeCdpDiagnosticExport } from '@/utils/cdpDiagnostics'
 import { useI18n } from 'vue-i18n'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -25,11 +31,15 @@ import { RefreshCw, Copy, Check, Key, Package, Gamepad2, Radio, ChevronRight, Se
 
 const { t } = useI18n()
 const authStore = useAuthStore()
+const questsStore = useQuestsStore()
+const { lastCdpLaunchError } = useCdpDiagnostics()
 
 const debugInfo = ref<DebugInfo | null>(null)
 const identityAudit = ref<RuntimeIdentityAudit | null>(null)
 const showIdentityBaseline = ref(false)
 const runnerInfo = ref<RunnerInfo | null>(null)
+const cdpDiagnostics = ref<CdpDiagnosticSnapshot | null>(null)
+const cdpDiagnosticsError = ref<string | null>(null)
 const runningGamesSnapshot = ref<CdpRunningGamesSnapshot | null>(null)
 const runningGamesLoading = ref(false)
 const runningGamesError = ref<string | null>(null)
@@ -111,6 +121,16 @@ function rawValueText(value: unknown): string {
 
 function rawGameEntries(game: Record<string, unknown>): Array<[string, unknown]> {
   return Object.entries(game)
+}
+
+function cdpDiagnosticsExport() {
+  const snapshot = cdpDiagnostics.value
+  if (!snapshot) return null
+  return sanitizeCdpDiagnosticExport(snapshot, lastCdpLaunchError.value)
+}
+
+function cdpDiagnosticsJson(): string {
+  return JSON.stringify(cdpDiagnosticsExport(), null, 2)
 }
 
 function saveCapturedHeaders() {
@@ -393,7 +413,7 @@ function decodeBase64() {
     const parsed = JSON.parse(decoded)
     decoderResult.value = parsed
   } catch (e) {
-    decoderError.value = String(e)
+    decoderError.value = commandErrorMessage(e)
   }
 }
 
@@ -404,6 +424,21 @@ async function loadDebugInfo() {
   error.value = null
   const startedAt = performance.now()
   const errors: string[] = []
+  cdpDiagnosticsError.value = null
+  loadingStep.value = 'get_cdp_diagnostic_snapshot'
+  try {
+    cdpDiagnostics.value = await withCommandTimeout(
+      getCdpDiagnosticSnapshot(questsStore.cdpPort),
+      'get_cdp_diagnostic_snapshot',
+      10000,
+    )
+  } catch (e) {
+    cdpDiagnostics.value = null
+    cdpDiagnosticsError.value = commandErrorMessage(e)
+    errors.push(cdpDiagnosticsError.value)
+  }
+
+  loadingStep.value = 'get_debug_info'
   try {
     const debug = await withCommandTimeout(getDebugInfo(), 'get_debug_info')
     if (isRecord(debug)) {
@@ -414,7 +449,7 @@ async function loadDebugInfo() {
     }
   } catch (e) {
     debugInfo.value = {}
-    errors.push(String(e))
+    errors.push(commandErrorMessage(e))
   }
 
   loadingStep.value = 'get_runtime_identity_audit'
@@ -425,14 +460,14 @@ async function loadDebugInfo() {
     )
   } catch (e) {
     identityAudit.value = null
-    errors.push(String(e))
+    errors.push(commandErrorMessage(e))
   }
 
   loadingStep.value = 'get_runner_info'
   try {
     runnerInfo.value = await withCommandTimeout(getRunnerInfo(), 'get_runner_info')
   } catch (e) {
-    errors.push(String(e))
+    errors.push(commandErrorMessage(e))
   } finally {
     lastLoadDurationMs.value = Math.round(performance.now() - startedAt)
     error.value = errors.length > 0 ? errors.join('\n') : null
@@ -466,7 +501,7 @@ async function fetchRunningGames() {
       RUNNING_GAMES_COMMAND_TIMEOUT_MS,
     )
   } catch (e) {
-    runningGamesError.value = String(e)
+    runningGamesError.value = commandErrorMessage(e)
   } finally {
     runningGamesLoading.value = false
   }
@@ -512,7 +547,7 @@ async function captureHeaders() {
     capturedHeaders.value = await captureDiscordHeadersCdp(undefined, duration)
     saveCapturedHeaders()
   } catch (e) {
-    captureError.value = String(e)
+    captureError.value = commandErrorMessage(e)
   } finally {
     capturing.value = false
   }
@@ -527,7 +562,7 @@ async function fetchQuestDecisionDebug() {
       'get_quest_decision_debug'
     ) as Record<string, unknown>
   } catch (e) {
-    decisionError.value = String(e)
+    decisionError.value = commandErrorMessage(e)
   } finally {
     decisionLoading.value = false
   }
@@ -542,7 +577,7 @@ async function fetchQuestDecisionsDebug() {
       'get_quest_decisions_debug'
     ) as Record<string, unknown>
   } catch (e) {
-    decisionError.value = String(e)
+    decisionError.value = commandErrorMessage(e)
   } finally {
     decisionLoading.value = false
   }
@@ -582,6 +617,88 @@ onMounted(() => {
     </div>
 
     <div v-if="debugInfo" class="grid gap-4">
+      <!-- Discord CDP Diagnostics -->
+      <Card>
+        <CardHeader>
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <CardTitle class="flex items-center gap-2">
+                <Radio class="w-5 h-5" />
+                Discord CDP Diagnostics
+              </CardTitle>
+              <CardDescription>Local, sanitized snapshot of endpoint, launch flag, process, and target readiness.</CardDescription>
+            </div>
+            <Button
+              v-if="cdpDiagnostics"
+              variant="outline"
+              size="sm"
+              @click="copyToClipboard(cdpDiagnosticsJson(), 'cdp_diagnostics')"
+            >
+              <Check v-if="copied === 'cdp_diagnostics'" class="w-4 h-4 mr-1 text-green-500" />
+              <Copy v-else class="w-4 h-4 mr-1" />
+              Copy CDP Diagnostics
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent class="space-y-4">
+          <div v-if="cdpDiagnosticsError" class="rounded bg-destructive/10 p-3 text-sm text-destructive">
+            {{ cdpDiagnosticsError }}
+          </div>
+          <template v-if="cdpDiagnostics">
+            <div class="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-5">
+              <div class="p-2 bg-muted rounded"><div class="text-xs text-muted-foreground">Port</div><code>{{ cdpDiagnostics.port }}</code></div>
+              <div class="p-2 bg-muted rounded"><div class="text-xs text-muted-foreground">Endpoint status</div><code>{{ cdpDiagnostics.endpointStatus }}</code></div>
+              <div class="p-2 bg-muted rounded"><div class="text-xs text-muted-foreground">Port listening</div><code>{{ cdpDiagnostics.portListening }}</code></div>
+              <div class="p-2 bg-muted rounded"><div class="text-xs text-muted-foreground">HTTP reachable / status</div><code>{{ cdpDiagnostics.cdpHttpReachable }} / {{ cdpDiagnostics.cdpHttpStatus ?? fallbackText }}</code></div>
+              <div class="p-2 bg-muted rounded"><div class="text-xs text-muted-foreground">Owner</div><code>{{ cdpDiagnostics.endpointOwner }}</code></div>
+            </div>
+
+            <div class="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+              <div class="rounded border p-3"><div class="text-xs text-muted-foreground">Selected provider / variant</div><code>{{ cdpDiagnostics.selectedProviderId ?? 'auto' }} / {{ cdpDiagnostics.selectedVariantId ?? 'auto' }}</code></div>
+              <div class="rounded border p-3"><div class="text-xs text-muted-foreground">Selected installation</div><code class="break-all">{{ cdpDiagnostics.selectedClient ?? 'Auto' }}</code></div>
+              <div class="rounded border p-3"><div class="text-xs text-muted-foreground">Executable / running</div><code class="break-all">{{ cdpDiagnostics.selectedExecutablePath ?? fallbackText }} / {{ cdpDiagnostics.selectedRunning }}</code></div>
+              <div class="rounded border p-3"><div class="text-xs text-muted-foreground">Targets / Discord / main</div><code>{{ cdpDiagnostics.cdpTargetCount }} / {{ cdpDiagnostics.discordTargetCount }} / {{ cdpDiagnostics.mainRendererFound }}</code></div>
+            </div>
+
+            <div class="space-y-2">
+              <div class="text-sm font-medium">Launch flags and processes</div>
+              <div v-if="!cdpDiagnostics.processes.length" class="rounded bg-muted p-3 text-xs text-muted-foreground">No related Discord, Vesktop, or port-owning process found.</div>
+              <div v-for="process in cdpDiagnostics.processes" :key="process.pid" class="grid gap-2 rounded border p-3 text-xs sm:grid-cols-5">
+                <div><span class="text-muted-foreground">Process</span><code class="block">{{ process.processName }} ({{ process.pid }})</code></div>
+                <div><span class="text-muted-foreground">Provider</span><code class="block">{{ process.providerId ?? 'other' }}</code></div>
+                <div><span class="text-muted-foreground">Selected</span><code class="block">{{ process.isSelectedInstallation }}</code></div>
+                <div><span class="text-muted-foreground">CDP flag</span><code class="block">{{ process.hasRemoteDebuggingPortArg ? `--remote-debugging-port=${process.remoteDebuggingPort}` : 'missing' }}</code></div>
+                <div><span class="text-muted-foreground">Executable</span><code class="block break-all">{{ process.executablePath ?? fallbackText }}</code></div>
+              </div>
+            </div>
+
+            <div class="space-y-2">
+              <div class="text-sm font-medium">Targets</div>
+              <div v-if="!cdpDiagnostics.targets.length" class="rounded bg-muted p-3 text-xs text-muted-foreground">No parseable CDP targets.</div>
+              <div v-for="target in cdpDiagnostics.targets" :key="target.id" class="grid gap-2 rounded border p-3 text-xs sm:grid-cols-4">
+                <div><span class="text-muted-foreground">Type</span><code class="block">{{ target.type }}</code></div>
+                <div><span class="text-muted-foreground">Title</span><code class="block break-all">{{ target.title || fallbackText }}</code></div>
+                <div><span class="text-muted-foreground">Classification</span><code class="block">{{ target.classification }}</code></div>
+                <div><span class="text-muted-foreground">Sanitized URL</span><code class="block break-all">{{ target.url || fallbackText }}</code></div>
+              </div>
+            </div>
+
+            <div class="rounded border p-3 text-sm">
+              <div class="font-medium">Last CDP Launch Error</div>
+              <template v-if="lastCdpLaunchError">
+                <div class="mt-2 grid gap-2 sm:grid-cols-2">
+                  <div><span class="text-muted-foreground">Code</span><code class="block">{{ lastCdpLaunchError.code ?? fallbackText }}</code></div>
+                  <div><span class="text-muted-foreground">Timestamp</span><code class="block">{{ lastCdpLaunchError.timestamp }}</code></div>
+                </div>
+                <p class="mt-2 text-sm">{{ lastCdpLaunchError.message }}</p>
+                <pre class="mt-2 overflow-auto rounded bg-muted p-2 text-xs">{{ JSON.stringify(lastCdpLaunchError.params, null, 2) }}</pre>
+              </template>
+              <div v-else class="mt-2 text-xs text-muted-foreground">No launch error recorded in this app session.</div>
+            </div>
+          </template>
+        </CardContent>
+      </Card>
+
       <!-- Runtime Identity Audit -->
       <Card v-if="identityAudit">
         <CardHeader>

@@ -706,7 +706,7 @@ export type ProviderId = 'discord.official' | 'vencord.vesktop' | (string & {})
 export type SessionOwnership = 'managed' | 'externalAttached' | 'ambiguousExternal' | 'unknown'
 export type DiscoverySource = 'user' | 'runningProcess' | 'osMetadata' | 'standardPath'
 export type ValidationState = 'valid' | 'missing' | 'invalid'
-export type CdpEndpointState = 'unreachable' | 'occupied' | 'nonDiscordCdp' | 'discordReady'
+export type CdpEndpointState = 'unreachable' | 'occupiedNonCdp' | 'cdpWithoutDiscordTarget' | 'discordReady'
 
 export type ClientSelection =
   | { kind: 'auto' }
@@ -759,6 +759,64 @@ export interface DesktopClientCommandError {
   message: string
 }
 
+export type CdpTargetClassification =
+  | 'notPage'
+  | 'aboutBlank'
+  | 'updater'
+  | 'discordAuxiliary'
+  | 'discordMainRenderer'
+  | 'discordOtherRenderer'
+  | 'nonDiscordPage'
+  | 'missingWebSocketDebuggerUrl'
+
+export interface CdpDiagnosticProcess {
+  pid: number
+  processName: string
+  providerId: ProviderId | null
+  installationId: string | null
+  executablePath: string | null
+  isSelectedInstallation: boolean
+  hasRemoteDebuggingPortArg: boolean
+  remoteDebuggingPort: number | null
+  startTime: number | null
+}
+
+export interface CdpDiagnosticTarget {
+  id: string
+  type: string
+  title: string
+  url: string
+  hasWebSocketDebuggerUrl: boolean
+  isDiscordTarget: boolean
+  isAuxiliaryWindow: boolean
+  isMainRenderer: boolean
+  classification: CdpTargetClassification
+}
+
+export interface CdpDiagnosticSnapshot {
+  timestamp: string
+  port: number
+  endpointStatus: CdpEndpointState
+  endpointOwner: CdpPortOwner
+  ownerProviderId: ProviderId | null
+  selectedClient: string | null
+  selectedInstallationId: string | null
+  selectedProviderId: ProviderId | null
+  selectedVariantId: string | null
+  selectedExecutablePath: string | null
+  selectedRunning: boolean
+  portListening: boolean
+  cdpHttpReachable: boolean
+  cdpHttpStatus: number | null
+  cdpResponseParseable: boolean
+  cdpTargetCount: number
+  discordTargetCount: number
+  mainRendererFound: boolean
+  processes: CdpDiagnosticProcess[]
+  targets: CdpDiagnosticTarget[]
+  lastLaunchError: DesktopClientCommandError | null
+}
+
 export interface DesktopClientInventory {
   officialInstalled: boolean
   vesktopInstalled: boolean
@@ -796,6 +854,10 @@ export async function listDesktopClients(port?: number): Promise<DesktopClientIn
 
 export async function getDesktopClientState(port?: number): Promise<DesktopClientState> {
   return await invoke('get_desktop_client_state', { port })
+}
+
+export async function getCdpDiagnosticSnapshot(port?: number): Promise<CdpDiagnosticSnapshot> {
+  return await invoke('get_cdp_diagnostic_snapshot', { port })
 }
 
 export async function addDesktopClientInstallation(providerId: ProviderId, path: string, port?: number): Promise<DesktopClientState> {

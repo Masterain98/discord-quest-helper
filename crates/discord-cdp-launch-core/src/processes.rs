@@ -381,6 +381,67 @@ fn process_snapshots() -> Vec<ProcessSnapshot> {
         .collect()
 }
 
+pub fn cdp_diagnostic_processes(
+    installations: &[crate::ClientInstallation],
+    selected_installation_id: Option<&crate::InstallationId>,
+    requested_port: u16,
+) -> Vec<crate::CdpDiagnosticProcess> {
+    let mut system = System::new();
+    refresh_processes(&mut system);
+    let mut diagnostics: Vec<_> = system
+        .processes()
+        .iter()
+        .filter_map(|(pid, process)| {
+            let name = process.name().to_string_lossy().into_owned();
+            let provider_id = if crate::is_vesktop_process_name(&name) {
+                Some(crate::ProviderId::vesktop())
+            } else if channel_from_process_name(process.name()).is_some() {
+                Some(crate::ProviderId::official_discord())
+            } else {
+                None
+            };
+            let remote_debugging_port = process
+                .cmd()
+                .iter()
+                .filter_map(|argument| parse_cdp_port(argument))
+                .next();
+            if provider_id.is_none() && remote_debugging_port != Some(requested_port) {
+                return None;
+            }
+            let executable_path = process.exe().map(Path::to_path_buf);
+            let matching_installation = executable_path.as_deref().and_then(|path| {
+                installations.iter().find(|installation| {
+                    installation_executable_path(installation)
+                        .is_some_and(|candidate| paths_refer_to_same_executable(path, candidate))
+                })
+            });
+            let installation_id = matching_installation.map(|installation| installation.id.clone());
+            Some(crate::CdpDiagnosticProcess {
+                pid: pid.as_u32(),
+                process_name: name,
+                provider_id: provider_id.or_else(|| {
+                    matching_installation.map(|installation| installation.provider_id.clone())
+                }),
+                is_selected_installation: selected_installation_id
+                    .is_some_and(|selected| installation_id.as_ref() == Some(selected)),
+                installation_id,
+                executable_path,
+                has_remote_debugging_port_arg: remote_debugging_port.is_some(),
+                remote_debugging_port,
+                start_time: Some(process.start_time()),
+            })
+        })
+        .collect();
+    diagnostics.sort_by(|left, right| {
+        right
+            .is_selected_installation
+            .cmp(&left.is_selected_installation)
+            .then(left.process_name.cmp(&right.process_name))
+            .then(left.pid.cmp(&right.pid))
+    });
+    diagnostics
+}
+
 fn refresh_processes(system: &mut System) {
     system.refresh_processes_specifics(
         ProcessesToUpdate::All,

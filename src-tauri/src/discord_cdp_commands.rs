@@ -109,7 +109,7 @@ const fn config_version() -> u8 {
     1
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct DesktopClientCommandError {
     code: &'static str,
@@ -157,13 +157,235 @@ impl From<cdp_launch::LaunchError> for DesktopClientCommandError {
             cdp_launch::LaunchError::ShutdownTimeout { .. } => {
                 ("process_ambiguous", serde_json::json!({}))
             }
-            cdp_launch::LaunchError::ReadinessTimeout { port, .. } => {
-                ("cdp_readiness_timeout", serde_json::json!({ "port": port }))
-            }
+            cdp_launch::LaunchError::ReadinessTimeout {
+                port,
+                timeout,
+                last_status,
+                target_count,
+                discord_target_count,
+                main_renderer_found,
+            } => (
+                "cdp_readiness_timeout",
+                serde_json::json!({
+                    "port": port,
+                    "timeoutMs": timeout.as_millis(),
+                    "lastStatus": last_status.as_str(),
+                    "targetCount": target_count,
+                    "discordTargetCount": discord_target_count,
+                    "mainRendererFound": main_renderer_found,
+                }),
+            ),
             _ => ("launch_failed", serde_json::json!({})),
         };
         Self::new(code, params, error.to_string())
     }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CdpDiagnosticProcessDto {
+    pid: u32,
+    process_name: String,
+    provider_id: Option<cdp_launch::ProviderId>,
+    installation_id: Option<cdp_launch::InstallationId>,
+    executable_path: Option<String>,
+    is_selected_installation: bool,
+    has_remote_debugging_port_arg: bool,
+    remote_debugging_port: Option<u16>,
+    start_time: Option<u64>,
+}
+
+impl From<cdp_launch::CdpDiagnosticProcess> for CdpDiagnosticProcessDto {
+    fn from(value: cdp_launch::CdpDiagnosticProcess) -> Self {
+        Self {
+            pid: value.pid,
+            process_name: value.process_name,
+            provider_id: value.provider_id,
+            installation_id: value.installation_id,
+            executable_path: value
+                .executable_path
+                .map(|path| path.to_string_lossy().into_owned()),
+            is_selected_installation: value.is_selected_installation,
+            has_remote_debugging_port_arg: value.has_remote_debugging_port_arg,
+            remote_debugging_port: value.remote_debugging_port,
+            start_time: value.start_time,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CdpDiagnosticTargetDto {
+    id: String,
+    #[serde(rename = "type")]
+    target_type: String,
+    title: String,
+    url: String,
+    has_web_socket_debugger_url: bool,
+    is_discord_target: bool,
+    is_auxiliary_window: bool,
+    is_main_renderer: bool,
+    classification: &'static str,
+}
+
+impl From<cdp_launch::CdpDiagnosticTarget> for CdpDiagnosticTargetDto {
+    fn from(value: cdp_launch::CdpDiagnosticTarget) -> Self {
+        Self {
+            id: value.id,
+            target_type: value.target_type,
+            title: value.title,
+            url: value.url,
+            has_web_socket_debugger_url: value.has_web_socket_debugger_url,
+            is_discord_target: value.is_discord_target,
+            is_auxiliary_window: value.is_auxiliary_window,
+            is_main_renderer: value.is_main_renderer,
+            classification: value.classification.as_str(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CdpDiagnosticSnapshotDto {
+    timestamp: String,
+    port: u16,
+    endpoint_status: &'static str,
+    endpoint_owner: &'static str,
+    owner_provider_id: Option<cdp_launch::ProviderId>,
+    selected_client: Option<String>,
+    selected_installation_id: Option<cdp_launch::InstallationId>,
+    selected_provider_id: Option<cdp_launch::ProviderId>,
+    selected_variant_id: Option<cdp_launch::VariantId>,
+    selected_executable_path: Option<String>,
+    selected_running: bool,
+    port_listening: bool,
+    cdp_http_reachable: bool,
+    cdp_http_status: Option<u16>,
+    cdp_response_parseable: bool,
+    cdp_target_count: usize,
+    discord_target_count: usize,
+    main_renderer_found: bool,
+    processes: Vec<CdpDiagnosticProcessDto>,
+    targets: Vec<CdpDiagnosticTargetDto>,
+    last_launch_error: Option<DesktopClientCommandError>,
+}
+
+#[tauri::command]
+pub(crate) async fn get_cdp_diagnostic_snapshot(
+    app: tauri::AppHandle,
+    port: Option<u16>,
+) -> Result<CdpDiagnosticSnapshotDto, DesktopClientCommandError> {
+    let port = port.unwrap_or(cdp_launch::DEFAULT_CDP_PORT);
+    if port == 0 {
+        return Err(DesktopClientCommandError::new(
+            "invalid_port",
+            serde_json::json!({ "port": port }),
+            "CDP port must be between 1 and 65535.",
+        ));
+    }
+    let config = load_config(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = build_desktop_client_state(config, port);
+        let selected_installation = match &state.selection {
+            cdp_launch::LaunchSelector::Installation { installation_id } => state
+                .installations
+                .iter()
+                .find(|installation| &installation.id == installation_id),
+            cdp_launch::LaunchSelector::Provider {
+                provider_id,
+                variant_id,
+            } => state.installations.iter().find(|installation| {
+                &installation.provider_id == provider_id
+                    && variant_id
+                        .as_ref()
+                        .is_none_or(|variant| installation.variant_id.as_ref() == Some(variant))
+            }),
+            cdp_launch::LaunchSelector::Auto => None,
+        };
+        let selected_provider_id = selected_installation
+            .map(|installation| installation.provider_id.clone())
+            .or_else(|| match &state.selection {
+                cdp_launch::LaunchSelector::Provider { provider_id, .. } => {
+                    Some(provider_id.clone())
+                }
+                _ => None,
+            });
+        let selected_variant_id = selected_installation
+            .and_then(|installation| installation.variant_id.clone())
+            .or_else(|| match &state.selection {
+                cdp_launch::LaunchSelector::Provider { variant_id, .. } => variant_id.clone(),
+                _ => None,
+            });
+        let selected_installation_id =
+            selected_installation.map(|installation| installation.id.clone());
+        let processes = cdp_launch::cdp_diagnostic_processes(
+            &state.installations,
+            selected_installation_id.as_ref(),
+            port,
+        );
+        let selected_running = processes.iter().any(|process| {
+            process.is_selected_installation
+                || selected_installation_id.is_none()
+                    && selected_provider_id
+                        .as_ref()
+                        .is_some_and(|provider| process.provider_id.as_ref() == Some(provider))
+        });
+        let detailed = cdp_launch::detailed_probe_cdp(port);
+        let inspected_owner = cdp_launch::inspect_cdp_port_owner(port);
+        let owner = if inspected_owner == cdp_launch::CdpPortOwner::None && detailed.port_listening
+        {
+            cdp_launch::CdpPortOwner::Other
+        } else {
+            inspected_owner
+        };
+        let owner_provider_id = match owner {
+            cdp_launch::CdpPortOwner::Official => Some(cdp_launch::ProviderId::official_discord()),
+            cdp_launch::CdpPortOwner::Vesktop => Some(cdp_launch::ProviderId::vesktop()),
+            _ => None,
+        };
+        let discord_target_count = detailed
+            .targets
+            .iter()
+            .filter(|target| target.is_discord_target)
+            .count();
+        let main_renderer_found = detailed
+            .targets
+            .iter()
+            .any(|target| target.is_main_renderer);
+        Ok(CdpDiagnosticSnapshotDto {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            port,
+            endpoint_status: detailed.status.as_str(),
+            endpoint_owner: owner.as_str(),
+            owner_provider_id,
+            selected_client: selected_installation.map(|value| value.display_name.clone()),
+            selected_installation_id,
+            selected_provider_id,
+            selected_variant_id,
+            selected_executable_path: selected_installation
+                .and_then(installation_executable_path)
+                .map(|path| path.to_string_lossy().into_owned()),
+            selected_running,
+            port_listening: detailed.port_listening,
+            cdp_http_reachable: detailed.http_reachable,
+            cdp_http_status: detailed.http_status,
+            cdp_response_parseable: detailed.response_parseable,
+            cdp_target_count: detailed.targets.len(),
+            discord_target_count,
+            main_renderer_found,
+            processes: processes.into_iter().map(Into::into).collect(),
+            targets: detailed.targets.into_iter().map(Into::into).collect(),
+            last_launch_error: None,
+        })
+    })
+    .await
+    .map_err(|error| {
+        DesktopClientCommandError::new(
+            "diagnostic_failed",
+            serde_json::json!({ "port": port }),
+            format!("CDP diagnostic task failed: {error}"),
+        )
+    })?
 }
 
 #[tauri::command]
@@ -567,6 +789,14 @@ pub(crate) async fn launch_desktop_client_cdp(
         })??;
     }
     let options = options_for_selector(port, &selector, &config, restart_existing)?;
+    eprintln!(
+        "[cdp-launch] selected client={} variant={} port={port}",
+        options.client.as_str(),
+        options
+            .channel
+            .map(|channel| channel.as_str())
+            .unwrap_or("auto")
+    );
     let result =
         tauri::async_runtime::spawn_blocking(move || cdp_launch::launch_discord_with_cdp(options))
             .await
@@ -783,11 +1013,19 @@ fn build_desktop_client_state(config: DesktopClientsConfig, port: u16) -> Deskto
 }
 
 fn endpoint_dto(port: u16) -> CdpEndpointDto {
-    let owner = cdp_launch::inspect_cdp_port_owner(port);
-    let (status, target_title) = match cdp_launch::probe_cdp(port) {
+    let inspected_owner = cdp_launch::inspect_cdp_port_owner(port);
+    let probe = cdp_launch::probe_cdp(port);
+    let owner = if inspected_owner == cdp_launch::CdpPortOwner::None
+        && probe != cdp_launch::CdpProbeStatus::Unreachable
+    {
+        cdp_launch::CdpPortOwner::Other
+    } else {
+        inspected_owner
+    };
+    let (status, target_title) = match probe {
         cdp_launch::CdpProbeStatus::Unreachable => ("unreachable", None),
-        cdp_launch::CdpProbeStatus::PortOccupied => ("occupied", None),
-        cdp_launch::CdpProbeStatus::CdpWithoutDiscordTarget => ("nonDiscordCdp", None),
+        cdp_launch::CdpProbeStatus::PortOccupied => ("occupiedNonCdp", None),
+        cdp_launch::CdpProbeStatus::CdpWithoutDiscordTarget => ("cdpWithoutDiscordTarget", None),
         cdp_launch::CdpProbeStatus::DiscordReady { target_title } => ("discordReady", target_title),
     };
     let owner_provider_id = match owner {
@@ -1247,6 +1485,26 @@ mod tests {
         LaunchOutcome, LaunchResult, LaunchSelector, LaunchTarget, ProviderId, SessionOwnership,
         ValidationState, VariantId,
     };
+
+    #[test]
+    fn readiness_error_preserves_diagnostic_context() {
+        let error = DesktopClientCommandError::from(cdp_launch::LaunchError::ReadinessTimeout {
+            port: 9223,
+            timeout: std::time::Duration::from_secs(30),
+            last_status: cdp_launch::CdpProbeStatus::CdpWithoutDiscordTarget,
+            target_count: Some(3),
+            discord_target_count: Some(2),
+            main_renderer_found: Some(false),
+        });
+        let value = serde_json::to_value(error).unwrap();
+        assert_eq!(value["code"], "cdp_readiness_timeout");
+        assert_eq!(value["params"]["port"], 9223);
+        assert_eq!(value["params"]["timeoutMs"], 30_000);
+        assert_eq!(value["params"]["lastStatus"], "cdpWithoutDiscordTarget");
+        assert_eq!(value["params"]["targetCount"], 3);
+        assert_eq!(value["params"]["discordTargetCount"], 2);
+        assert_eq!(value["params"]["mainRendererFound"], false);
+    }
 
     #[test]
     fn generic_selection_uses_the_frontend_camel_case_contract() {

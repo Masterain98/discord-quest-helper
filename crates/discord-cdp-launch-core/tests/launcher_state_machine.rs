@@ -267,6 +267,55 @@ fn spawn_readiness_timeout_is_typed() {
 }
 
 #[test]
+fn renderer_detection_extends_the_base_readiness_window() {
+    let platform = FakePlatform::new(vec![install(DiscordChannel::Stable)], &[false]);
+    let probe = FakeProbe::new(vec![
+        CdpProbeStatus::Unreachable,
+        CdpProbeStatus::Unreachable,
+        CdpProbeStatus::CdpWithoutDiscordTarget,
+        CdpProbeStatus::CdpWithoutDiscordTarget,
+        CdpProbeStatus::DiscordReady {
+            target_title: Some("Friends".to_string()),
+        },
+    ]);
+    let options = LaunchOptions {
+        readiness_timeout: Duration::from_millis(20),
+        poll_interval: Duration::from_millis(12),
+        ..fast_options()
+    };
+    let result = launch_with_backends(options, &platform, &probe).unwrap();
+    assert!(result.cdp_connected);
+}
+
+#[test]
+fn renderer_timeout_reports_the_last_status_and_extended_budget() {
+    let platform = FakePlatform::new(vec![install(DiscordChannel::Stable)], &[false]);
+    let probe = FakeProbe::new(vec![
+        CdpProbeStatus::Unreachable,
+        CdpProbeStatus::Unreachable,
+        CdpProbeStatus::CdpWithoutDiscordTarget,
+    ]);
+    let options = LaunchOptions {
+        readiness_timeout: Duration::from_millis(4),
+        poll_interval: Duration::from_millis(1),
+        ..fast_options()
+    };
+    match launch_with_backends(options, &platform, &probe) {
+        Err(LaunchError::ReadinessTimeout {
+            timeout,
+            last_status,
+            main_renderer_found,
+            ..
+        }) => {
+            assert_eq!(timeout, Duration::from_millis(8));
+            assert_eq!(last_status, CdpProbeStatus::CdpWithoutDiscordTarget);
+            assert_eq!(main_renderer_found, Some(false));
+        }
+        result => panic!("expected renderer readiness timeout, got {result:?}"),
+    }
+}
+
+#[test]
 fn missing_requested_install_is_typed() {
     let platform = FakePlatform::new(vec![install(DiscordChannel::Stable)], &[false]);
     let probe = FakeProbe::new(vec![CdpProbeStatus::Unreachable]);

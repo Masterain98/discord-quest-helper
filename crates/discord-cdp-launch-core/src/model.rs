@@ -294,6 +294,116 @@ pub enum CdpProbeStatus {
     DiscordReady { target_title: Option<String> },
 }
 
+impl CdpProbeStatus {
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Unreachable => "unreachable",
+            Self::PortOccupied => "occupiedNonCdp",
+            Self::CdpWithoutDiscordTarget => "cdpWithoutDiscordTarget",
+            Self::DiscordReady { .. } => "discordReady",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CdpProbeObservation {
+    pub status: CdpProbeStatus,
+    pub target_count: Option<usize>,
+    pub discord_target_count: Option<usize>,
+    pub main_renderer_found: Option<bool>,
+}
+
+impl From<CdpProbeStatus> for CdpProbeObservation {
+    fn from(status: CdpProbeStatus) -> Self {
+        let main_renderer_found = matches!(status, CdpProbeStatus::DiscordReady { .. });
+        Self {
+            status,
+            target_count: None,
+            discord_target_count: None,
+            main_renderer_found: Some(main_renderer_found),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CdpTargetClassification {
+    NotPage,
+    AboutBlank,
+    Updater,
+    DiscordAuxiliary,
+    DiscordMainRenderer,
+    DiscordOtherRenderer,
+    NonDiscordPage,
+    MissingWebSocketDebuggerUrl,
+}
+
+impl CdpTargetClassification {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::NotPage => "notPage",
+            Self::AboutBlank => "aboutBlank",
+            Self::Updater => "updater",
+            Self::DiscordAuxiliary => "discordAuxiliary",
+            Self::DiscordMainRenderer => "discordMainRenderer",
+            Self::DiscordOtherRenderer => "discordOtherRenderer",
+            Self::NonDiscordPage => "nonDiscordPage",
+            Self::MissingWebSocketDebuggerUrl => "missingWebSocketDebuggerUrl",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CdpDiagnosticTarget {
+    pub id: String,
+    pub target_type: String,
+    pub title: String,
+    pub url: String,
+    pub has_web_socket_debugger_url: bool,
+    pub is_discord_target: bool,
+    pub is_auxiliary_window: bool,
+    pub is_main_renderer: bool,
+    pub classification: CdpTargetClassification,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DetailedCdpProbeResult {
+    pub status: CdpProbeStatus,
+    pub port_listening: bool,
+    pub http_reachable: bool,
+    pub http_status: Option<u16>,
+    pub response_parseable: bool,
+    pub targets: Vec<CdpDiagnosticTarget>,
+}
+
+impl DetailedCdpProbeResult {
+    pub fn observation(&self) -> CdpProbeObservation {
+        CdpProbeObservation {
+            status: self.status.clone(),
+            target_count: Some(self.targets.len()),
+            discord_target_count: Some(
+                self.targets
+                    .iter()
+                    .filter(|target| target.is_discord_target)
+                    .count(),
+            ),
+            main_renderer_found: Some(self.targets.iter().any(|target| target.is_main_renderer)),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CdpDiagnosticProcess {
+    pub pid: u32,
+    pub process_name: String,
+    pub provider_id: Option<ProviderId>,
+    pub installation_id: Option<InstallationId>,
+    pub executable_path: Option<PathBuf>,
+    pub is_selected_installation: bool,
+    pub has_remote_debugging_port_arg: bool,
+    pub remote_debugging_port: Option<u16>,
+    pub start_time: Option<u64>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]

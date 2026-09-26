@@ -36,6 +36,8 @@ import {
   findCurrentCdpOwnerSession,
   selectionForCurrentCdpOwner,
 } from '@/components/auth/loginFlow'
+import { commandErrorMessage } from '@/utils/commandError'
+import { clearCdpLaunchError, recordCdpLaunchError } from '@/composables/cdpDiagnostics'
 
 const { t } = useI18n()
 const questsStore = useQuestsStore()
@@ -116,7 +118,7 @@ async function fetchCdpSuperProperties() {
     await checkCdp()
     await loadDebugInfo()
   } catch (e) {
-    cdpFetchError.value = String(e)
+    cdpFetchError.value = commandErrorMessage(e)
     setTimeout(() => { cdpFetchError.value = '' }, 5000)
   } finally {
     cdpFetching.value = false
@@ -139,7 +141,7 @@ async function createShortcut() {
     shortcutSuccess.value = true
     setTimeout(() => { shortcutSuccess.value = false }, 3000)
   } catch (e) {
-    shortcutError.value = String(e)
+    shortcutError.value = commandErrorMessage(e)
     setTimeout(() => { shortcutError.value = '' }, 5000)
   } finally {
     shortcutCreating.value = false
@@ -170,7 +172,7 @@ async function requestCdpAction() {
     }
     await performLaunch(false)
   } catch (e) {
-    cdpLaunchError.value = String(e)
+    cdpLaunchError.value = recordCdpLaunchError(e).message
     setTimeout(() => { cdpLaunchError.value = '' }, 6000)
   } finally {
     cdpActionBusy.value = false
@@ -206,7 +208,7 @@ async function useCurrentCdpOwner() {
       questsStore.cdpAvailable = true
     }
   } catch (e) {
-    cdpLaunchError.value = String(e)
+    cdpLaunchError.value = recordCdpLaunchError(e).message
     setTimeout(() => { cdpLaunchError.value = '' }, 8000)
   } finally {
     cdpActionBusy.value = false
@@ -224,6 +226,7 @@ async function performLaunch(restart: boolean) {
   }
 
   try {
+    clearCdpLaunchError()
     const snapshot = await clients.refresh(questsStore.cdpPort)
     if (!snapshot) throw new Error(clients.error.value ?? 'Desktop client state is unavailable')
     const result = await launchDesktopClientCdp(
@@ -237,7 +240,7 @@ async function performLaunch(restart: boolean) {
     setTimeout(() => { cdpLaunchSuccess.value = '' }, 5000)
     await checkCdp()
   } catch (e) {
-    cdpLaunchError.value = String(e)
+    cdpLaunchError.value = recordCdpLaunchError(e).message
     setTimeout(() => { cdpLaunchError.value = '' }, 8000)
   } finally {
     cdpActionBusy.value = false

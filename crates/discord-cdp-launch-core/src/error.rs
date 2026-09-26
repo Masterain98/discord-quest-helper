@@ -1,4 +1,4 @@
-use crate::DiscordChannel;
+use crate::{CdpProbeStatus, DiscordChannel};
 use std::error::Error;
 use std::fmt;
 use std::io;
@@ -51,6 +51,10 @@ pub enum LaunchError {
     ReadinessTimeout {
         port: u16,
         timeout: Duration,
+        last_status: CdpProbeStatus,
+        target_count: Option<usize>,
+        discord_target_count: Option<usize>,
+        main_renderer_found: Option<bool>,
     },
     CdpProtocol {
         details: String,
@@ -125,11 +129,28 @@ impl fmt::Display for LaunchError {
                 "Failed to launch Discord with CDP from '{}': {source}",
                 path.display()
             ),
-            Self::ReadinessTimeout { port, timeout } => write!(
-                formatter,
-                "Discord was launched, but CDP did not become available on port {port} within {} seconds.",
-                timeout.as_secs()
-            ),
+            Self::ReadinessTimeout {
+                port,
+                timeout,
+                last_status,
+                ..
+            } => match last_status {
+                CdpProbeStatus::CdpWithoutDiscordTarget => write!(
+                    formatter,
+                    "Discord CDP became available on port {port}, but the main Discord renderer did not appear within {} seconds.",
+                    timeout.as_secs()
+                ),
+                CdpProbeStatus::Unreachable => write!(
+                    formatter,
+                    "Discord was launched with CDP requested, but the debugging endpoint on port {port} never became reachable within {} seconds.",
+                    timeout.as_secs()
+                ),
+                _ => write!(
+                    formatter,
+                    "Discord CDP did not become ready on port {port} within {} seconds.",
+                    timeout.as_secs()
+                ),
+            },
             Self::CdpProtocol { details } => {
                 write!(formatter, "CDP protocol error: {details}")
             }
