@@ -1291,6 +1291,7 @@ async fn run_simulated_game(
     app_id: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    let _gate = state.activity_gate.lock().await;
     state.game_idle.ensure_idle().await?;
     ensure_no_active_quest(&state).await?;
     state.manual_cdp_game.lock().await.ensure_idle()?;

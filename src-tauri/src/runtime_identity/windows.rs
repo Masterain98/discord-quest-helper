@@ -199,6 +199,10 @@ fn dir_looks_like_stealth_copy(dir: &Path) -> bool {
         || (dir.join(LEGACY_WEBVIEW_DATA_DIR_NAME).is_dir() && dir_contains_hex_stealth_exe(dir))
 }
 
+fn prepare_stealth_tree_for_cleanup(dir: &Path) -> bool {
+    dir_looks_like_stealth_copy(dir) && create_stealth_ownership_marker(dir).is_ok()
+}
+
 /// Check if currently running in stealth mode
 pub fn is_stealth_mode() -> bool {
     IS_STEALTH_MODE.load(Ordering::Relaxed)
@@ -427,7 +431,7 @@ fn cleanup_old_stealth_copies(current_exe: &Path) {
         if !is_hex_str(name, DIR_HEX_LEN) {
             continue;
         }
-        if !dir_looks_like_stealth_copy(&path) {
+        if !prepare_stealth_tree_for_cleanup(&path) {
             continue;
         }
         if remove_stealth_tree_best_effort(&path) {
@@ -635,8 +639,9 @@ mod tests {
         assert!(is_stealth_copy_path(&legacy_exe));
         fs::create_dir_all(legacy_dir.join(LEGACY_WEBVIEW_DATA_DIR_NAME)).unwrap();
         assert!(dir_looks_like_stealth_copy(&legacy_dir));
+        assert!(prepare_stealth_tree_for_cleanup(&legacy_dir));
         fs::remove_file(&legacy_exe).unwrap();
-        assert!(!dir_looks_like_stealth_copy(&legacy_dir));
+        assert!(dir_looks_like_stealth_copy(&legacy_dir));
 
         let _ = fs::remove_dir_all(&current_dir);
         let _ = fs::remove_dir_all(&legacy_dir);

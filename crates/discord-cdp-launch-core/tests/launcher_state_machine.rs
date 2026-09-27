@@ -309,6 +309,8 @@ fn renderer_detection_extends_the_base_readiness_window() {
         CdpProbeStatus::Unreachable,
         CdpProbeStatus::CdpWithoutDiscordTarget,
         CdpProbeStatus::CdpWithoutDiscordTarget,
+        CdpProbeStatus::CdpWithoutDiscordTarget,
+        CdpProbeStatus::CdpWithoutDiscordTarget,
         CdpProbeStatus::DiscordReady {
             target_title: Some("Friends".to_string()),
         },
