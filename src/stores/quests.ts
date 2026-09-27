@@ -361,8 +361,8 @@ export const useQuestsStore = defineStore('quests', () => {
   // `processQueue()`, skipping a never-started quest and starting another
   // concurrently.
   let pollingInFlight = false
-  // Synchronously claimed inside `checkActiveQuestStatus` before its first
-  // `await` so a second tick cannot re-enter the same completion transition.
+  // Synchronously claimed by either polling or the completion event before
+  // cleanup so both sources cannot advance the same queue item.
   let completionClaimedFor: string | null = null
 
   // Simulation internal vars
@@ -422,6 +422,45 @@ export const useQuestsStore = defineStore('quests', () => {
     }
   }
 
+  async function finishQueuedQuest(questId: string) {
+    if (!isQueueRunning.value || questQueue.value[0]?.id !== questId || activeQuestId.value !== questId) return
+    if (completionClaimedFor === questId) return
+    completionClaimedFor = questId
+    const completedExecutable = activeGameExe.value
+    activeQuestId.value = null
+    try {
+      if (completedExecutable && gameQuestMode.value === 'simulate') {
+        await stopSimulatedGame(completedExecutable)
+        await emit('event_disconnect')
+      }
+      await stopGameSimulationUsage()
+    } catch (cleanupError) {
+      // Keep the queue in place until both native activity and its history
+      // segment have been finalized. The user can retry cleanup with Stop.
+      activeQuestId.value = questId
+      error.value = cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
+      isQueueRunning.value = false
+      stopProgressSimulation()
+      cleanupListeners()
+      stopPolling()
+      return
+    }
+
+    questQueue.value.shift()
+    activeQuestType.value = null
+    activeQuestProgress.value = 0
+    activeQuestTargetDuration.value = 0
+    activeGameExe.value = null
+    localProgress.value = 0
+    stopProgressSimulation()
+    cleanupListeners()
+    stopPolling()
+    void fetchQuests(true, true)
+    setTimeout(() => {
+      if (isQueueRunning.value) void processQueue()
+    }, 2000)
+  }
+
   async function checkActiveQuestStatus() {
     if (!activeQuestId.value) return
     const quest = quests.value.find(q => q.id === activeQuestId.value)
@@ -431,56 +470,16 @@ export const useQuestsStore = defineStore('quests', () => {
     if (quest.user_status?.completed_at) {
       // If queue is running, handle transition to next quest instead of full stop
       if (isQueueRunning.value && questQueue.value.length > 0) {
-        // Claim this transition before the first `await`. A second tick (or a
-        // completion event) that observes the same still-active quest must not
-        // run the cleanup and queue shift a second time.
-        if (completionClaimedFor === quest.id) return
-        completionClaimedFor = quest.id
         console.log('Queue item completed detected via polling.')
-        const completedExecutable = activeGameExe.value
-        // Clear the active quest synchronously so any tick already queued
-        // behind this one bails out at the `activeQuestId` guard.
-        activeQuestId.value = null
-        try {
-          if (completedExecutable && gameQuestMode.value === 'simulate') {
-            await stopSimulatedGame(completedExecutable)
-            await emit('event_disconnect')
-          }
-          await stopGameSimulationUsage()
-        } catch (cleanupError) {
-          // Do not start the next queued quest while a process, RPC presence,
-          // or accounting segment may still belong to the completed item.
-          error.value = cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
-          isQueueRunning.value = false
-          stopProgressSimulation()
-          stopPolling()
-          return
-        }
-        const finished = questQueue.value.shift()
-        console.log(`Queue item finished: ${finished?.id}. Remaining: ${questQueue.value.length}`)
-
-        // Reset active state
-        activeQuestId.value = null
-        activeQuestType.value = null
-        activeQuestProgress.value = 0
-        activeQuestTargetDuration.value = 0
-        activeGameExe.value = null
-        localProgress.value = 0
-        stopProgressSimulation()
-        stopPolling()
-
-        // Refresh quests to update status in UI
-        fetchQuests(true, true)
-
-        // Process next item after a short delay
-        setTimeout(() => {
-          processQueue()
-        }, 2000)
+        await finishQueuedQuest(quest.id)
         return
       }
 
       console.log('Quest completed detected via polling, stopping game.')
-      stop()
+      if (completionClaimedFor === quest.id) return
+      completionClaimedFor = quest.id
+      await stop()
+      stopPolling()
       return
     }
 
@@ -1026,7 +1025,7 @@ export const useQuestsStore = defineStore('quests', () => {
       }
 
       // If manually stopping, ensure queue is also stopped/cleared
-      if (isQueueRunning.value) {
+      if (isQueueRunning.value || questQueue.value.length > 0) {
         isQueueRunning.value = false
         questQueue.value = [] // Clear queue on manual stop
       }
@@ -1064,7 +1063,8 @@ export const useQuestsStore = defineStore('quests', () => {
           // Disconnect RPC
           await emit('event_disconnect')
         } catch (e) {
-          console.error('Failed to stop game process:', e)
+          error.value = e instanceof Error ? e.message : String(e)
+          return
         }
         activeGameExe.value = null
       }
@@ -1074,7 +1074,12 @@ export const useQuestsStore = defineStore('quests', () => {
       } catch (e) {
         // Ignore error if no quest running
       }
-      await stopGameSimulationUsage().catch(() => undefined)
+      try {
+        await stopGameSimulationUsage()
+      } catch (historyError) {
+        error.value = historyError instanceof Error ? historyError.message : String(historyError)
+        return
+      }
 
       activeQuestId.value = null
       activeQuestType.value = null
@@ -1108,51 +1113,35 @@ export const useQuestsStore = defineStore('quests', () => {
       console.log('Quest progress listener ready')
     })
 
+    const listenedQuestId = activeQuestId.value
     onQuestComplete(async () => {
       console.log('Received quest-complete event')
-
-      const completedExecutable = activeGameExe.value
-      if (completedExecutable && gameQuestMode.value === 'simulate') {
-        await stopSimulatedGame(completedExecutable).catch(cleanupError => {
-          console.warn('Failed to stop completed simulated game:', cleanupError)
-        })
-        await emit('event_disconnect').catch(() => undefined)
-      }
-      await stopGameSimulationUsage().catch(historyError => {
-        console.warn('Failed to finish game simulation history:', historyError)
-      })
+      if (stopping.value) return
+      if (!listenedQuestId || activeQuestId.value !== listenedQuestId) return
 
       // If queue is running, handle transition
       if (isQueueRunning.value && questQueue.value.length > 0) {
-        // The active quest just finished. It should be the head of the queue.
-        // (Unless user manually stopped?)
-        // Let's assume head is active.
-        const finished = questQueue.value.shift()
-        console.log(`Queue item finished: ${finished?.id}. Remaining: ${questQueue.value.length}`)
-
-        // Reset state
-        activeQuestId.value = null
-        activeQuestType.value = null
-        activeQuestProgress.value = 0
-        activeGameExe.value = null
-        localProgress.value = 0
-        stopProgressSimulation()
-
-        // Refresh quests to update status in UI
-        fetchQuests(true, true)
-
-        // Trigger next item
-        setTimeout(() => {
-          processQueue()
-        }, 2000)
-
-        // We do NOT cleanup listeners fully if we want to reuse them?
-        // Actually processQueue calls startVideo which calls setupListeners.
-        // So cleaning up here is fine/correct.
-        cleanupListeners()
+        await finishQueuedQuest(listenedQuestId)
       } else {
-        // Normal single quest completion
+        if (completionClaimedFor === listenedQuestId) return
+        completionClaimedFor = listenedQuestId
+        const completedExecutable = activeGameExe.value
         activeQuestId.value = null
+        try {
+          if (completedExecutable && gameQuestMode.value === 'simulate') {
+            await stopSimulatedGame(completedExecutable)
+            await emit('event_disconnect')
+          }
+          await stopGameSimulationUsage()
+        } catch (cleanupError) {
+          activeQuestId.value = listenedQuestId
+          error.value = cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
+          stopProgressSimulation()
+          cleanupListeners()
+          stopPolling()
+          return
+        }
+        // Normal single quest completion
         activeQuestType.value = null
         activeQuestProgress.value = 0
         activeQuestTargetDuration.value = 0
@@ -1160,8 +1149,9 @@ export const useQuestsStore = defineStore('quests', () => {
         localProgress.value = 0
         stopProgressSimulation()
 
-        fetchQuests(true, true)
+        void fetchQuests(true, true)
         cleanupListeners()
+        stopPolling()
       }
     }).then((unlisten) => {
       completeUnlisten = unlisten

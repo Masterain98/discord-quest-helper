@@ -599,6 +599,8 @@ async fn set_token(
 
     // Save client AFTER initializing SuperProperties to avoid race conditions
     // where other commands might use the client with stale properties
+    let _gate = state.activity_gate.lock().await;
+    state.game_idle.ensure_idle().await?;
     *state.authenticated_user.lock().unwrap() = Some(user.clone());
     *state.client.lock().unwrap() = Some(client);
 
@@ -684,6 +686,8 @@ async fn auto_login_via_cdp(
 
     // 4. Save the client last (mirrors set_token) so no request runs with stale
     //    super properties.
+    let _gate = state.activity_gate.lock().await;
+    state.game_idle.ensure_idle().await?;
     *state.authenticated_user.lock().unwrap() = Some(user.clone());
     *state.client.lock().unwrap() = Some(client);
 
@@ -1287,7 +1291,6 @@ async fn run_simulated_game(
     app_id: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let _gate = state.activity_gate.lock().await;
     state.game_idle.ensure_idle().await?;
     ensure_no_active_quest(&state).await?;
     state.manual_cdp_game.lock().await.ensure_idle()?;
@@ -1390,6 +1393,7 @@ async fn start_game_idle(
     app: tauri::AppHandle,
 ) -> Result<game_idle::GameIdleStatus, String> {
     config.validate()?;
+    let _gate = state.activity_gate.lock().await;
     let user = state
         .authenticated_user
         .lock()
@@ -1517,6 +1521,8 @@ async fn stop_game_simulation_usage(
     state: State<'_, AppState>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
+    let _gate = state.activity_gate.lock().await;
+    state.game_idle.ensure_idle().await?;
     state.simulation_history.finish_active(Some(&app)).await?;
     Ok(())
 }

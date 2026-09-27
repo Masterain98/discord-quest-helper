@@ -14,7 +14,6 @@ import {
   removeGameIdleQueueItem,
   startGameIdle,
   stopGameIdle,
-  stopGameSimulationUsage,
 } from '@/api/tauri'
 import { useQuestsStore } from './quests'
 
@@ -60,6 +59,8 @@ export const useGameIdleStore = defineStore('gameIdle', () => {
   const stopRequested = ref(false)
   const error = ref<string | null>(null)
   let initialized = false
+  let accountGeneration = 0
+  let pendingStart: Promise<void> | null = null
   let statusUnlisten: (() => void) | null = null
   let historyUnlisten: (() => void) | null = null
 
@@ -134,35 +135,46 @@ export const useGameIdleStore = defineStore('gameIdle', () => {
   async function start() {
     const validation = validateConfig()
     if (validation) throw new Error(validation)
+    if (loading.value || isActive.value) return
+    const generation = accountGeneration
     loading.value = true
     stopRequested.value = false
     error.value = null
+    const task = (async () => {
+      try {
+        const [games, simulationPath] = await Promise.all([
+          quests.getDetectableGames(),
+          quests.initSimulationPath(),
+        ])
+        if (generation !== accountGeneration) return
+        persistConfig()
+        status.value = await startGameIdle(
+          {
+            mode: mode.value,
+            playMinutes: playMinutes.value,
+            restMinutes: restMinutes.value,
+            cdpPort: quests.cdpPort,
+            simulationPath,
+          },
+          games
+        )
+        // A stop click can arrive while candidates/path are still being loaded.
+        // The backend session is created by the time this resolves, so finish
+        // the requested stop immediately instead of leaving a detached worker.
+        if (stopRequested.value) await stop()
+      } catch (cause) {
+        error.value = cause instanceof Error ? cause.message : String(cause)
+        throw cause
+      } finally {
+        loading.value = false
+        if (!isActive.value) stopRequested.value = false
+      }
+    })()
+    pendingStart = task
     try {
-      const [games, simulationPath] = await Promise.all([
-        quests.getDetectableGames(),
-        quests.initSimulationPath(),
-      ])
-      persistConfig()
-      status.value = await startGameIdle(
-        {
-          mode: mode.value,
-          playMinutes: playMinutes.value,
-          restMinutes: restMinutes.value,
-          cdpPort: quests.cdpPort,
-          simulationPath,
-        },
-        games
-      )
-      // A stop click can arrive while candidates/path are still being loaded.
-      // The backend session is created by the time this resolves, so finish
-      // the requested stop immediately instead of leaving a detached worker.
-      if (stopRequested.value) await stop()
-    } catch (cause) {
-      error.value = cause instanceof Error ? cause.message : String(cause)
-      throw cause
+      await task
     } finally {
-      loading.value = false
-      if (!isActive.value) stopRequested.value = false
+      if (pendingStart === task) pendingStart = null
     }
   }
 
@@ -207,10 +219,12 @@ export const useGameIdleStore = defineStore('gameIdle', () => {
   }
 
   async function stopForAccountChange() {
+    accountGeneration++
+    stopRequested.value = true
+    await pendingStart?.catch(() => undefined)
     if (isActive.value) {
-      await stop().catch(error => console.warn('Failed to stop game idle mode:', error))
+      await stop()
     }
-    await stopGameSimulationUsage().catch(() => undefined)
     status.value = null
     history.value = {}
   }

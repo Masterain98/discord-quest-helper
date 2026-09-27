@@ -124,10 +124,12 @@ fn window_title_for_exe(exe: &Path) -> String {
         .to_string()
 }
 
-fn persistent_webview_data_dir_for(local_appdata: &Path) -> PathBuf {
-    local_appdata
-        .join(RUNTIME_NAMESPACE)
-        .join(WEBVIEW_PROFILE_DIR_NAME)
+fn persistent_webview_data_dir_for(local_appdata: &Path) -> Result<PathBuf, String> {
+    let suffix = Path::new(RUNTIME_NAMESPACE).join(WEBVIEW_PROFILE_DIR_NAME);
+    if contains_product_token(&suffix.to_string_lossy()) {
+        return Err("WebView2 profile path violates the runtime identity policy".into());
+    }
+    Ok(local_appdata.join(suffix))
 }
 
 fn create_stealth_ownership_marker(dir: &Path) -> io::Result<()> {
@@ -190,9 +192,11 @@ fn dir_contains_hex_stealth_exe(dir: &Path) -> bool {
 /// WebView2 `ud/` directory. Requiring ownership evidence avoids deleting an
 /// unrelated `%TEMP%/<16 hex>/` folder that happens to contain a 12-hex exe.
 fn dir_looks_like_stealth_copy(dir: &Path) -> bool {
-    let has_ownership_marker = dir.join(STEALTH_OWNERSHIP_MARKER_NAME).is_file()
-        || dir.join(LEGACY_WEBVIEW_DATA_DIR_NAME).is_dir();
-    has_ownership_marker && dir_contains_hex_stealth_exe(dir)
+    // A marked tree remains ours after its executable was removed on reboot.
+    // Legacy trees have no marker, so still require both the old profile and
+    // a matching executable before cleanup.
+    dir.join(STEALTH_OWNERSHIP_MARKER_NAME).is_file()
+        || (dir.join(LEGACY_WEBVIEW_DATA_DIR_NAME).is_dir() && dir_contains_hex_stealth_exe(dir))
 }
 
 /// Check if currently running in stealth mode
@@ -219,11 +223,7 @@ pub fn webview_user_data_dir() -> Result<Option<PathBuf>, String> {
     }
     let local_appdata = env::var_os("LOCALAPPDATA")
         .ok_or_else(|| "Could not resolve LOCALAPPDATA for the WebView2 profile".to_string())?;
-    let path = persistent_webview_data_dir_for(Path::new(&local_appdata));
-    if contains_product_token(&path.to_string_lossy()) {
-        return Err("WebView2 profile path violates the runtime identity policy".into());
-    }
-    Ok(Some(path))
+    persistent_webview_data_dir_for(Path::new(&local_appdata)).map(Some)
 }
 
 /// Set process identity that windowing APIs read before the first window.
@@ -491,8 +491,16 @@ fn remove_stealth_tree_best_effort(dir: &Path) -> bool {
         return false;
     }
 
-    let _ = fs::remove_file(&marker);
-    fs::remove_dir(dir).is_ok() || !dir.exists()
+    if fs::remove_file(&marker).is_err() && marker.exists() {
+        return false;
+    }
+    if fs::remove_dir(dir).is_ok() || !dir.exists() {
+        return true;
+    }
+    // Another entry may have appeared between enumeration and removal. Keep
+    // the directory recognizable so the next launch can retry safely.
+    let _ = create_stealth_ownership_marker(dir);
+    false
 }
 
 #[cfg(target_os = "windows")]
@@ -555,12 +563,20 @@ mod tests {
     #[test]
     fn persistent_webview_profile_is_stable_and_product_neutral() {
         let local_appdata = Path::new(r"C:\Users\fixture\AppData\Local");
-        let first = persistent_webview_data_dir_for(local_appdata);
-        let second = persistent_webview_data_dir_for(local_appdata);
+        let first = persistent_webview_data_dir_for(local_appdata).unwrap();
+        let second = persistent_webview_data_dir_for(local_appdata).unwrap();
 
         assert_eq!(first, local_appdata.join("blueorbit").join("webview"));
         assert_eq!(first, second);
         assert!(!contains_product_token(&first.to_string_lossy()));
+
+        let product_named_parent = Path::new(r"C:\Users\discord-quest-helper\AppData\Local");
+        assert_eq!(
+            persistent_webview_data_dir_for(product_named_parent).unwrap(),
+            product_named_parent
+                .join(RUNTIME_NAMESPACE)
+                .join(WEBVIEW_PROFILE_DIR_NAME)
+        );
     }
 
     #[test]
@@ -612,11 +628,15 @@ mod tests {
         assert!(!dir_looks_like_stealth_copy(&current_dir));
         create_stealth_ownership_marker(&current_dir).unwrap();
         assert!(dir_looks_like_stealth_copy(&current_dir));
+        fs::remove_file(&current_exe).unwrap();
+        assert!(dir_looks_like_stealth_copy(&current_dir));
 
         let (legacy_dir, legacy_exe) = fixture();
         assert!(is_stealth_copy_path(&legacy_exe));
         fs::create_dir_all(legacy_dir.join(LEGACY_WEBVIEW_DATA_DIR_NAME)).unwrap();
         assert!(dir_looks_like_stealth_copy(&legacy_dir));
+        fs::remove_file(&legacy_exe).unwrap();
+        assert!(!dir_looks_like_stealth_copy(&legacy_dir));
 
         let _ = fs::remove_dir_all(&current_dir);
         let _ = fs::remove_dir_all(&legacy_dir);

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   ChevronDown,
@@ -33,6 +33,7 @@ const now = ref(Date.now())
 const contextMenu = ref<{ item: GameIdleItem; x: number; y: number } | null>(null)
 let clockTimer: ReturnType<typeof setInterval> | null = null
 let resizeObserver: ResizeObserver | null = null
+let stopStageWatch: (() => void) | null = null
 
 const active = computed(() => idle.isActive)
 const immersive = computed(() => active.value || idle.loading)
@@ -172,7 +173,10 @@ onMounted(async () => {
   resizeObserver = new ResizeObserver(entries => {
     stageWidth.value = entries[0]?.contentRect.width ?? stageWidth.value
   })
-  if (stage.value) resizeObserver.observe(stage.value)
+  stopStageWatch = watch(stage, (element, previous) => {
+    if (previous) resizeObserver?.unobserve(previous)
+    if (element) resizeObserver?.observe(element)
+  }, { immediate: true })
   document.addEventListener('mousedown', closeContextMenu)
   document.addEventListener('keydown', handleDocumentKeydown)
   await idle.initialize()
@@ -181,6 +185,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   if (clockTimer) clearInterval(clockTimer)
+  stopStageWatch?.()
   resizeObserver?.disconnect()
   document.removeEventListener('mousedown', closeContextMenu)
   document.removeEventListener('keydown', handleDocumentKeydown)

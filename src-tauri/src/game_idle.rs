@@ -92,6 +92,20 @@ enum RunningSimulation {
     Cdp { port: u16 },
 }
 
+struct StartSimulationError {
+    message: String,
+    running: Option<RunningSimulation>,
+}
+
+impl From<String> for StartSimulationError {
+    fn from(message: String) -> Self {
+        Self {
+            message,
+            running: None,
+        }
+    }
+}
+
 #[derive(Debug)]
 struct IdleShared {
     status: GameIdleStatus,
@@ -448,7 +462,14 @@ async fn run_session(
                     break;
                 }
                 Err(error) => {
-                    last_error = error;
+                    last_error = error.message;
+                    if let Some(running) = error.running {
+                        // The attempted rollback failed. Retain ownership for
+                        // the normal Stop retry instead of launching it again.
+                        shared.lock().await.running = Some(running);
+                        set_error(&shared, &app, last_error).await;
+                        return;
+                    }
                     if attempt == 0 {
                         tokio::select! {
                             _ = tokio::time::sleep(Duration::from_secs(2)) => {},
@@ -609,7 +630,7 @@ async fn start_simulation(
     game: &GameIdleItem,
     config: &GameIdleConfig,
     _app: &tauri::AppHandle,
-) -> Result<RunningSimulation, String> {
+) -> Result<RunningSimulation, StartSimulationError> {
     match config.mode {
         GameIdleMode::Process => {
             let executable_name = game
@@ -643,11 +664,19 @@ async fn start_simulation(
             });
             if let Err(error) = crate::replace_discord_rpc(activity.to_string()).await {
                 let executable = executable_name.clone();
-                let _ = tauri::async_runtime::spawn_blocking(move || {
+                let cleanup = tauri::async_runtime::spawn_blocking(move || {
                     crate::game_simulator::stop_simulated_game(&executable)
                 })
-                .await;
-                return Err(error);
+                .await
+                .map_err(|join_error| join_error.to_string())
+                .and_then(|result| result.map_err(|stop_error| stop_error.to_string()));
+                return match cleanup {
+                    Ok(()) => Err(error.into()),
+                    Err(cleanup_error) => Err(StartSimulationError {
+                        message: format!("{error}. Process cleanup also failed: {cleanup_error}"),
+                        running: Some(RunningSimulation::Process { executable_name }),
+                    }),
+                };
             }
             Ok(RunningSimulation::Process { executable_name })
         }
@@ -668,14 +697,23 @@ async fn stop_simulation(
 ) -> Result<(), String> {
     match running {
         RunningSimulation::Process { executable_name } => {
-            crate::clear_discord_rpc().await?;
+            let rpc_error = crate::clear_discord_rpc().await.err();
             let executable_name = executable_name.clone();
-            tauri::async_runtime::spawn_blocking(move || {
+            let process_error = tauri::async_runtime::spawn_blocking(move || {
                 crate::game_simulator::stop_simulated_game(&executable_name)
             })
             .await
             .map_err(|error| format!("Process cleanup task failed: {error}"))?
-            .map_err(|error| error.to_string())
+            .err()
+            .map(|error| error.to_string());
+            match (rpc_error, process_error) {
+                (None, None) => Ok(()),
+                (Some(rpc), None) => Err(rpc),
+                (None, Some(process)) => Err(process),
+                (Some(rpc), Some(process)) => {
+                    Err(format!("{rpc}. Process cleanup also failed: {process}"))
+                }
+            }
         }
         RunningSimulation::Cdp { port } => crate::cdp_quest::stop_manual_game_spoof(*port)
             .await

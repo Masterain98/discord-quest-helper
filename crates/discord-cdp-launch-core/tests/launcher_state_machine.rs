@@ -314,8 +314,10 @@ fn renderer_detection_extends_the_base_readiness_window() {
         },
     ]);
     let options = LaunchOptions {
-        readiness_timeout: Duration::from_millis(20),
-        poll_interval: Duration::from_millis(12),
+        // The fifth observation must land after the base deadline but well
+        // inside the extended deadline, even on a loaded CI runner.
+        readiness_timeout: Duration::from_millis(250),
+        poll_interval: Duration::from_millis(75),
         ..fast_options()
     };
     let result = launch_with_backends(options, &platform, &probe).unwrap();

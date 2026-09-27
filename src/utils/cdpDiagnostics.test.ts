@@ -106,4 +106,27 @@ describe('sanitizeCdpDiagnosticExport', () => {
     expect(json).toContain('[redacted-id]')
     expect(json).toContain('[redacted-authorization]')
   })
+
+  it('validates diagnostic parameter values as well as their keys', () => {
+    const snapshot = {
+      timestamp: '2026-09-26T00:00:00Z', port: 9223,
+      endpointStatus: 'unreachable', endpointOwner: 'none', ownerProviderId: null,
+      selectedClient: null, selectedInstallationId: null, selectedProviderId: null,
+      selectedVariantId: null, selectedExecutablePath: null, selectedRunning: false,
+      portListening: false, cdpHttpReachable: false, cdpHttpStatus: null,
+      cdpResponseParseable: false, cdpTargetCount: 0, discordTargetCount: 0,
+      mainRendererFound: false, processes: [], targets: [],
+    } satisfies CdpDiagnosticSnapshot
+    const exported = sanitizeCdpDiagnosticExport(snapshot, {
+      code: 'cdp_error', message: 'Connection failed', rawType: 'object',
+      params: {
+        port: 'Bearer secret', timeoutMs: 10000, lastStatus: 'Bearer secret',
+        providerId: 'alice@example.com', mainRendererFound: false,
+      },
+      timestamp: '2026-09-26T00:00:01Z',
+    })
+    expect(exported.lastLaunchError?.params).toEqual({ timeoutMs: 10000, mainRendererFound: false })
+    expect(JSON.stringify(exported)).not.toContain('secret')
+    expect(JSON.stringify(exported)).not.toContain('alice@example.com')
+  })
 })

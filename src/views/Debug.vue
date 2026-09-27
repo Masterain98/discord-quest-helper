@@ -22,7 +22,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useQuestsStore } from '@/stores/quests'
 import { useCdpDiagnostics } from '@/composables/cdpDiagnostics'
 import { commandErrorMessage } from '@/utils/commandError'
-import { sanitizeCdpDiagnosticExport } from '@/utils/cdpDiagnostics'
+import { sanitizeCdpDiagnosticExport, sanitizeCdpLaunchError } from '@/utils/cdpDiagnostics'
 import { useI18n } from 'vue-i18n'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -33,6 +33,7 @@ const { t } = useI18n()
 const authStore = useAuthStore()
 const questsStore = useQuestsStore()
 const { lastCdpLaunchError } = useCdpDiagnostics()
+const visibleCdpLaunchError = computed(() => sanitizeCdpLaunchError(lastCdpLaunchError.value))
 
 const debugInfo = ref<DebugInfo | null>(null)
 const identityAudit = ref<RuntimeIdentityAudit | null>(null)
@@ -425,18 +426,19 @@ async function loadDebugInfo() {
   const startedAt = performance.now()
   const errors: string[] = []
   cdpDiagnosticsError.value = null
-  loadingStep.value = 'get_cdp_diagnostic_snapshot'
-  try {
-    cdpDiagnostics.value = await withCommandTimeout(
+  // The snapshot can wait for process and endpoint probes. Start it alongside
+  // the existing debug requests so their results can render immediately.
+  const diagnosticsLoad = withCommandTimeout(
       getCdpDiagnosticSnapshot(questsStore.cdpPort),
       'get_cdp_diagnostic_snapshot',
       10000,
-    )
-  } catch (e) {
-    cdpDiagnostics.value = null
-    cdpDiagnosticsError.value = commandErrorMessage(e)
-    errors.push(cdpDiagnosticsError.value)
-  }
+    ).then(snapshot => {
+      cdpDiagnostics.value = snapshot
+    }).catch(e => {
+      cdpDiagnostics.value = null
+      cdpDiagnosticsError.value = commandErrorMessage(e)
+      errors.push(cdpDiagnosticsError.value)
+    })
 
   loadingStep.value = 'get_debug_info'
   try {
@@ -469,6 +471,7 @@ async function loadDebugInfo() {
   } catch (e) {
     errors.push(commandErrorMessage(e))
   } finally {
+    await diagnosticsLoad
     lastLoadDurationMs.value = Math.round(performance.now() - startedAt)
     error.value = errors.length > 0 ? errors.join('\n') : null
     loadingStep.value = null
@@ -683,19 +686,19 @@ onMounted(() => {
               </div>
             </div>
 
-            <div class="rounded border p-3 text-sm">
-              <div class="font-medium">Last CDP Launch Error</div>
-              <template v-if="lastCdpLaunchError">
-                <div class="mt-2 grid gap-2 sm:grid-cols-2">
-                  <div><span class="text-muted-foreground">Code</span><code class="block">{{ lastCdpLaunchError.code ?? fallbackText }}</code></div>
-                  <div><span class="text-muted-foreground">Timestamp</span><code class="block">{{ lastCdpLaunchError.timestamp }}</code></div>
-                </div>
-                <p class="mt-2 text-sm">{{ lastCdpLaunchError.message }}</p>
-                <pre class="mt-2 overflow-auto rounded bg-muted p-2 text-xs">{{ JSON.stringify(lastCdpLaunchError.params, null, 2) }}</pre>
-              </template>
-              <div v-else class="mt-2 text-xs text-muted-foreground">No launch error recorded in this app session.</div>
-            </div>
           </template>
+          <div class="rounded border p-3 text-sm">
+            <div class="font-medium">Last CDP Launch Error</div>
+            <template v-if="visibleCdpLaunchError">
+              <div class="mt-2 grid gap-2 sm:grid-cols-2">
+                <div><span class="text-muted-foreground">Code</span><code class="block">{{ visibleCdpLaunchError.code ?? fallbackText }}</code></div>
+                <div><span class="text-muted-foreground">Timestamp</span><code class="block">{{ visibleCdpLaunchError.timestamp }}</code></div>
+              </div>
+              <p class="mt-2 text-sm">{{ visibleCdpLaunchError.message }}</p>
+              <pre class="mt-2 overflow-auto rounded bg-muted p-2 text-xs">{{ JSON.stringify(visibleCdpLaunchError.params, null, 2) }}</pre>
+            </template>
+            <div v-else class="mt-2 text-xs text-muted-foreground">No launch error recorded in this app session.</div>
+          </div>
         </CardContent>
       </Card>
 

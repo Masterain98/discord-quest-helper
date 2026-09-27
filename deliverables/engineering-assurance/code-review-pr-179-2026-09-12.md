@@ -122,7 +122,7 @@ Coverage remains weakest around real-time state-machine execution, overlapping f
 - Cody (code review): verified rollback independence, handle retention, and retryable cleanup behavior.
 - Archi (architect): reviewed ownership, queue identity, small-pool cycling, history-path lifetime, and shutdown behavior.
 - Tessa (testing): reproduced the CI TypeScript failure, audited local/remote test parity, and identified missing navigation/state-machine coverage.
-- Primary agent: reconciled all 22 comments with the current diff, implemented remediation, and ran the complete local verification matrix.
+- Primary agent: assessed 24 comment records, reconciled 22 distinct concerns after two duplicate reports, implemented remediation, and ran the complete local verification matrix.
 
 ---
 

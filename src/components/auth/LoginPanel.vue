@@ -411,6 +411,7 @@ async function launchOrRestartSelectedTarget(target: CdpLaunchTarget | null) {
     }
     if (latest.endpoint.status !== 'discordReady') {
       if (selectionIsRunning(latest, selection)) {
+        if (!launchCompleted) recordCdpLaunchError(launchError)
         requestCdpRestart(target)
         return
       }

@@ -92,7 +92,7 @@ onMounted(async () => {
     activeSimulationMode.value = 'cdp'
     activeCdpSession.value = session
     success.value = t('game_sim.cdp_session_restored', { name: session.appName })
-  } else if (!store.activeQuestId && processes.length > 0) {
+  } else if (!store.activeQuestId && !idleStore.isActive && !idleStore.loading && processes.length > 0) {
     activeSimulationMode.value = 'process'
     activeExecutable.value = processes[0]
     // A restored process may have been started from list mode. Disconnecting

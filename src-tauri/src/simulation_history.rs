@@ -295,7 +295,7 @@ impl SimulationHistory {
             return Err(error);
         }
         if let Some(active) = runtime.active.as_mut() {
-            active.checkpoint_at = Instant::now();
+            active.checkpoint_at += std::time::Duration::from_secs(seconds);
         }
         Ok(entry)
     }
@@ -596,6 +596,36 @@ mod tests {
         drop(runtime);
 
         let _ = std::fs::remove_file(&blocker);
+    }
+
+    #[tokio::test]
+    async fn checkpoint_retains_the_fractional_interval() {
+        let path =
+            std::env::temp_dir().join(format!("dqh-ckpt-fraction-{}.json", uuid::Uuid::new_v4()));
+        let history = SimulationHistory::default();
+        {
+            let mut runtime = history.runtime.lock().await;
+            runtime.active = Some(ActiveUsage {
+                id: 1,
+                user_id: "account-a".into(),
+                app_id: "app-a".into(),
+                app_name: "Game A".into(),
+                path: path.clone(),
+                checkpoint_at: Instant::now() - std::time::Duration::from_millis(1_500),
+                pending_finish_seconds: None,
+            });
+        }
+
+        history.checkpoint(1, &path).await.unwrap();
+        let runtime = history.runtime.lock().await;
+        assert_eq!(runtime.data.accounts["account-a"]["app-a"].total_seconds, 1);
+        assert!(
+            runtime.active.as_ref().unwrap().checkpoint_at.elapsed()
+                >= std::time::Duration::from_millis(500),
+            "the unsaved fraction must remain in the next interval"
+        );
+        drop(runtime);
+        let _ = std::fs::remove_file(&path);
     }
 
     #[tokio::test]

@@ -77,6 +77,7 @@ export const useAuthStore = defineStore('auth', () => {
     resetProgramRewardState()
     try {
       const questsStore = useQuestsStore()
+      await useGameIdleStore().stopForAccountChange()
       if (user.value) {
         await stopAllGameSimulations()
         await questsStore.stop().catch(() => undefined)
@@ -84,7 +85,6 @@ export const useAuthStore = defineStore('auth', () => {
       // The backend status event only reports `stopped`; drop the cached status
       // and per-account history so the UI cannot show the previous account's
       // simulation usage after signing in.
-      await useGameIdleStore().stopForAccountChange()
       user.value = await setToken(tokenValue, (progress) => {
         // The store still performs one final SuperProperties synchronization
         // after the backend command. Keep the visible operation running until
@@ -127,11 +127,11 @@ export const useAuthStore = defineStore('auth', () => {
     resetProgramRewardState()
     try {
       const questsStore = useQuestsStore()
+      await useGameIdleStore().stopForAccountChange()
       if (user.value) {
         await stopAllGameSimulations()
         await questsStore.stop().catch(() => undefined)
       }
-      await useGameIdleStore().stopForAccountChange()
       user.value = await autoLoginViaCdp(questsStore.cdpPort, onProgress)
       // Intentionally leave `token` null: CDP auto-login never surfaces the raw
       // token. Authenticated backend commands use the client in AppState.
@@ -187,6 +187,7 @@ export const useAuthStore = defineStore('auth', () => {
     // Stop any in-progress quest before clearing state
     const questsStore = useQuestsStore()
     try {
+      await useGameIdleStore().stopForAccountChange()
       await stopAllGameSimulations()
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : String(cause)
@@ -201,8 +202,6 @@ export const useAuthStore = defineStore('auth', () => {
     // Clear the idle status and per-account simulation history for the account
     // being signed out. Keep the failed-logout early return above untouched so
     // an unsuccessful stop leaves the current account state intact.
-    await useGameIdleStore().stopForAccountChange()
-
     user.value = null
     token.value = null
     error.value = null

@@ -86,6 +86,7 @@ describe('auth login quest mode selection', () => {
     mocks.questsStore.initCdpMode.mockResolvedValue(undefined)
     mocks.questsStore.getDetectableGames.mockResolvedValue(undefined)
     mocks.questsStore.fetchOrbsBalance.mockResolvedValue(undefined)
+    mocks.questsStore.stop.mockResolvedValue(undefined)
     mocks.gameIdleStore.stopForAccountChange.mockResolvedValue(undefined)
   })
 
@@ -105,6 +106,15 @@ describe('auth login quest mode selection', () => {
     await expect(authStore.loginWithToken('token-value')).resolves.toBe(true)
 
     expect(mocks.questsStore.gameQuestMode).toBe('simulate')
+  })
+
+  it('cancels pending idle work before stopping simulations for an account switch', async () => {
+    const authStore = useAuthStore()
+    authStore.user = user
+
+    await expect(authStore.loginWithToken('next-account-token')).resolves.toBe(true)
+    expect(mocks.gameIdleStore.stopForAccountChange.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.stopAllGameSimulations.mock.invocationCallOrder[0])
   })
 
   it('uses Discord program reward timestamps for the Orbs countdown', async () => {

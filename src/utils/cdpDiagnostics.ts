@@ -17,11 +17,28 @@ function redactText(value: string): string {
 
 function safeErrorParams(params: Record<string, unknown> | null): Record<string, unknown> | null {
   if (!params) return null
-  const allowed = new Set([
-    'port', 'timeoutMs', 'lastStatus', 'targetCount', 'discordTargetCount',
-    'mainRendererFound', 'providerId', 'variantId', 'owner', 'client',
-  ])
-  return Object.fromEntries(Object.entries(params).filter(([key]) => allowed.has(key)))
+  const numbers = new Set(['port', 'timeoutMs', 'targetCount', 'discordTargetCount'])
+  const safe: Record<string, number | boolean | string> = {}
+  for (const [key, value] of Object.entries(params)) {
+    if (numbers.has(key) && typeof value === 'number' && Number.isFinite(value)) {
+      safe[key] = value
+    } else if (key === 'mainRendererFound' && typeof value === 'boolean') {
+      safe[key] = value
+    } else if (key === 'lastStatus' && typeof value === 'string' &&
+      ['unreachable', 'portOccupied', 'cdpWithoutDiscordTarget', 'discordReady'].includes(value)) {
+      safe[key] = value
+    }
+  }
+  return safe
+}
+
+export function sanitizeCdpLaunchError(lastError: TimestampedCommandError | null) {
+  return lastError ? {
+    code: lastError.code ? redactText(lastError.code) : null,
+    message: redactText(lastError.message),
+    params: safeErrorParams(lastError.params),
+    timestamp: lastError.timestamp,
+  } : null
 }
 
 export function sanitizeCdpDiagnosticExport(
@@ -36,11 +53,11 @@ export function sanitizeCdpDiagnosticExport(
     timestamp: snapshot.timestamp,
     port: snapshot.port,
     endpointStatus: snapshot.endpointStatus,
-    endpointOwner: snapshot.endpointOwner,
-    ownerProviderId: snapshot.ownerProviderId,
-    selectedClient: snapshot.selectedClient,
-    selectedProviderId: snapshot.selectedProviderId,
-    selectedVariantId: snapshot.selectedVariantId,
+    endpointOwner: redactText(snapshot.endpointOwner),
+    ownerProviderId: snapshot.ownerProviderId ? redactText(snapshot.ownerProviderId) : null,
+    selectedClient: snapshot.selectedClient ? redactText(snapshot.selectedClient) : null,
+    selectedProviderId: snapshot.selectedProviderId ? redactText(snapshot.selectedProviderId) : null,
+    selectedVariantId: snapshot.selectedVariantId ? redactText(snapshot.selectedVariantId) : null,
     selectedExecutable: basename(snapshot.selectedExecutablePath),
     selectedRunning: snapshot.selectedRunning,
     portListening: snapshot.portListening,
@@ -50,7 +67,7 @@ export function sanitizeCdpDiagnosticExport(
     launchRequestedPort: snapshot.port,
     processes: snapshot.processes.map(process => ({
       processName: redactText(process.processName),
-      providerId: process.providerId,
+      providerId: process.providerId ? redactText(process.providerId) : null,
       isSelectedInstallation: process.isSelectedInstallation,
       executable: basename(process.executablePath),
       hasRemoteDebuggingPortArg: process.hasRemoteDebuggingPortArg,
@@ -62,11 +79,6 @@ export function sanitizeCdpDiagnosticExport(
       mainRendererFound: snapshot.mainRendererFound,
       classifications,
     },
-    lastLaunchError: lastError ? {
-      code: lastError.code,
-      message: redactText(lastError.message),
-      params: safeErrorParams(lastError.params),
-      timestamp: lastError.timestamp,
-    } : null,
+    lastLaunchError: sanitizeCdpLaunchError(lastError),
   }
 }

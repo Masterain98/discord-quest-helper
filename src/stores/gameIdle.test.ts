@@ -5,6 +5,7 @@ import type { GameIdleStatus } from '@/api/tauri'
 
 const mocks = vi.hoisted(() => ({
   getGameIdleStatus: vi.fn(),
+  startGameIdle: vi.fn(),
   stopGameIdle: vi.fn(),
   onGameIdleStatus: vi.fn(),
   onGameSimulationHistoryUpdated: vi.fn(),
@@ -24,9 +25,8 @@ vi.mock('@/api/tauri', () => ({
   onGameIdleStatus: mocks.onGameIdleStatus,
   onGameSimulationHistoryUpdated: mocks.onGameSimulationHistoryUpdated,
   removeGameIdleQueueItem: vi.fn(),
-  startGameIdle: vi.fn(),
+  startGameIdle: mocks.startGameIdle,
   stopGameIdle: mocks.stopGameIdle,
-  stopGameSimulationUsage: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('./quests', () => ({
@@ -47,6 +47,8 @@ describe('game idle store', () => {
     vi.clearAllMocks()
     mocks.getGameIdleStatus.mockResolvedValue(null)
     mocks.stopGameIdle.mockResolvedValue(null)
+    mocks.quests.getDetectableGames.mockResolvedValue([])
+    mocks.quests.initSimulationPath.mockResolvedValue('C:/simulations')
     mocks.onGameIdleStatus.mockResolvedValue(() => undefined)
     mocks.onGameSimulationHistoryUpdated.mockResolvedValue(() => undefined)
     mocks.quests.cdpAvailable = true
@@ -116,6 +118,44 @@ describe('game idle store', () => {
     expect(store.status?.current).toBeNull()
     expect(store.status?.recent).toEqual([])
     expect(store.status?.upcoming).toEqual([])
+  })
+
+  it('cancels a pending start before an account change', async () => {
+    let releaseGames!: (games: []) => void
+    mocks.quests.getDetectableGames.mockReturnValueOnce(new Promise<[]>(resolve => {
+      releaseGames = resolve
+    }))
+    const store = useGameIdleStore()
+    const pendingStart = store.start()
+    const accountChange = store.stopForAccountChange()
+    releaseGames([])
+
+    await Promise.all([pendingStart, accountChange])
+    expect(mocks.startGameIdle).not.toHaveBeenCalled()
+    expect(store.status).toBeNull()
+  })
+
+  it('waits for an admitted start and stops it before changing accounts', async () => {
+    let admitSession!: (status: GameIdleStatus) => void
+    mocks.startGameIdle.mockReturnValueOnce(new Promise<GameIdleStatus>(resolve => {
+      admitSession = resolve
+    }))
+    const active: GameIdleStatus = {
+      sessionId: 'new-session', mode: 'process', phase: 'starting',
+      playMinutes: 60, restMinutes: 0, current: null, recent: [], upcoming: [],
+      phaseStartedAt: 0, phaseEndsAt: null, accumulatedPlayedSeconds: 0, warning: null,
+    }
+    mocks.stopGameIdle.mockResolvedValue({ ...active, phase: 'stopped' })
+    const store = useGameIdleStore()
+    const pendingStart = store.start()
+    await vi.waitFor(() => expect(mocks.startGameIdle).toHaveBeenCalledOnce())
+
+    const accountChange = store.stopForAccountChange()
+    admitSession(active)
+    await Promise.all([pendingStart, accountChange])
+
+    expect(mocks.stopGameIdle).toHaveBeenCalledOnce()
+    expect(store.status).toBeNull()
   })
 })
 
