@@ -24,6 +24,7 @@ const LEGACY_SVC_PREFIX: &str = "svc_";
 /// Legacy WebView2 profile directory used beside temporary executables.
 /// Keep recognizing it so old abandoned runtime trees remain removable.
 const LEGACY_WEBVIEW_DATA_DIR_NAME: &str = "ud";
+const LEGACY_STEALTH_OWNERSHIP_MARKER_NAME: &str = ".runtime-owner";
 /// Explicit ownership marker for temporary runtime trees created by current builds.
 const STEALTH_OWNERSHIP_MARKER_NAME: &str = ".runtime-owner";
 const WEBVIEW_PROFILE_DIR_NAME: &str = "webview";
@@ -193,10 +194,15 @@ fn dir_contains_hex_stealth_exe(dir: &Path) -> bool {
 /// unrelated `%TEMP%/<16 hex>/` folder that happens to contain a 12-hex exe.
 fn dir_looks_like_stealth_copy(dir: &Path) -> bool {
     // A marked tree remains ours after its executable was removed on reboot.
-    // Legacy trees have no marker, so still require both the old profile and
-    // a matching executable before cleanup.
+    // Legacy trees require their profile and executable unless cleanup has
+    // left a marker inside that profile for a retry.
     dir.join(STEALTH_OWNERSHIP_MARKER_NAME).is_file()
-        || (dir.join(LEGACY_WEBVIEW_DATA_DIR_NAME).is_dir() && dir_contains_hex_stealth_exe(dir))
+        || (dir.join(LEGACY_WEBVIEW_DATA_DIR_NAME).is_dir()
+            && (dir_contains_hex_stealth_exe(dir)
+                || dir
+                    .join(LEGACY_WEBVIEW_DATA_DIR_NAME)
+                    .join(LEGACY_STEALTH_OWNERSHIP_MARKER_NAME)
+                    .is_file()))
 }
 
 fn prepare_stealth_tree_for_cleanup(dir: &Path) -> bool {
@@ -206,6 +212,13 @@ fn prepare_stealth_tree_for_cleanup(dir: &Path) -> bool {
     // A marker preserves ownership if a locked executable cannot be removed.
     // Still attempt this cleanup when the directory disallows new files.
     let _ = create_stealth_ownership_marker(dir);
+    let legacy_profile = dir.join(LEGACY_WEBVIEW_DATA_DIR_NAME);
+    if legacy_profile.is_dir() && dir_contains_hex_stealth_exe(dir) {
+        let _ = fs::write(
+            legacy_profile.join(LEGACY_STEALTH_OWNERSHIP_MARKER_NAME),
+            b"1",
+        );
+    }
     true
 }
 
@@ -518,7 +531,9 @@ fn remove_stealth_tree_best_effort(dir: &Path) -> bool {
 
 #[cfg(target_os = "windows")]
 fn remove_unmarked_legacy_tree_best_effort(dir: &Path, profile: &Path) -> bool {
-    remove_unmarked_legacy_tree_with(dir, profile, remove_tree_without_reboot)
+    remove_unmarked_legacy_tree_with(dir, profile, remove_tree_without_reboot, |path| {
+        fs::remove_dir(path).is_ok() || !path.exists()
+    })
 }
 
 #[cfg(target_os = "windows")]
@@ -526,6 +541,7 @@ fn remove_unmarked_legacy_tree_with(
     dir: &Path,
     profile: &Path,
     mut remove: impl FnMut(&Path) -> bool,
+    mut remove_dir: impl FnMut(&Path) -> bool,
 ) -> bool {
     let Ok(entries) = fs::read_dir(dir) else {
         return false;
@@ -553,18 +569,39 @@ fn remove_unmarked_legacy_tree_with(
     };
     for entry in profile_entries {
         let Ok(entry) = entry else {
+            restore_legacy_profile(profile);
             return false;
         };
         if !remove(&entry.path()) {
+            restore_legacy_profile(profile);
             return false;
         }
     }
     for executable in executables {
         if !remove(&executable) {
+            restore_legacy_profile(profile);
             return false;
         }
     }
-    fs::remove_dir(profile).is_ok() && (fs::remove_dir(dir).is_ok() || !dir.exists())
+    if !remove_dir(profile) {
+        restore_legacy_profile(profile);
+        return false;
+    }
+    if remove_dir(dir) {
+        return true;
+    }
+    restore_legacy_profile(profile);
+    false
+}
+
+#[cfg(target_os = "windows")]
+fn restore_legacy_profile(profile: &Path) {
+    if !profile.exists() {
+        let _ = fs::create_dir(profile);
+    }
+    if profile.is_dir() {
+        let _ = fs::write(profile.join(LEGACY_STEALTH_OWNERSHIP_MARKER_NAME), b"1");
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -731,17 +768,32 @@ mod tests {
         fs::write(&exe, b"exe").unwrap();
         fs::write(&other, b"other").unwrap();
 
-        assert!(!remove_unmarked_legacy_tree_with(&dir, &profile, |path| {
-            path != other && remove_tree_without_reboot(path)
-        }));
+        assert!(!remove_unmarked_legacy_tree_with(
+            &dir,
+            &profile,
+            |path| path != other && remove_tree_without_reboot(path),
+            |path| fs::remove_dir(path).is_ok() || !path.exists(),
+        ));
         assert!(exe.exists());
         assert!(profile.is_dir());
 
         fs::remove_file(&other).unwrap();
-        assert!(!remove_unmarked_legacy_tree_with(&dir, &profile, |path| {
-            path != exe && remove_tree_without_reboot(path)
-        }));
+        assert!(!remove_unmarked_legacy_tree_with(
+            &dir,
+            &profile,
+            |path| path != exe && remove_tree_without_reboot(path),
+            |path| fs::remove_dir(path).is_ok() || !path.exists(),
+        ));
         assert!(exe.exists());
+        assert!(profile.is_dir());
+        assert!(dir_looks_like_stealth_copy(&dir));
+
+        assert!(!remove_unmarked_legacy_tree_with(
+            &dir,
+            &profile,
+            remove_tree_without_reboot,
+            |path| path != dir && (fs::remove_dir(path).is_ok() || !path.exists()),
+        ));
         assert!(profile.is_dir());
         assert!(dir_looks_like_stealth_copy(&dir));
 
