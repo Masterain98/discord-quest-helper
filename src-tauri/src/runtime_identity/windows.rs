@@ -200,7 +200,13 @@ fn dir_looks_like_stealth_copy(dir: &Path) -> bool {
 }
 
 fn prepare_stealth_tree_for_cleanup(dir: &Path) -> bool {
-    dir_looks_like_stealth_copy(dir) && create_stealth_ownership_marker(dir).is_ok()
+    if !dir_looks_like_stealth_copy(dir) {
+        return false;
+    }
+    // A marker preserves ownership if a locked executable cannot be removed.
+    // Still attempt this cleanup when the directory disallows new files.
+    let _ = create_stealth_ownership_marker(dir);
+    true
 }
 
 /// Check if currently running in stealth mode
@@ -639,6 +645,10 @@ mod tests {
         assert!(is_stealth_copy_path(&legacy_exe));
         fs::create_dir_all(legacy_dir.join(LEGACY_WEBVIEW_DATA_DIR_NAME)).unwrap();
         assert!(dir_looks_like_stealth_copy(&legacy_dir));
+        let marker = legacy_dir.join(STEALTH_OWNERSHIP_MARKER_NAME);
+        fs::create_dir(&marker).unwrap();
+        assert!(prepare_stealth_tree_for_cleanup(&legacy_dir));
+        fs::remove_dir(&marker).unwrap();
         assert!(prepare_stealth_tree_for_cleanup(&legacy_dir));
         fs::remove_file(&legacy_exe).unwrap();
         assert!(dir_looks_like_stealth_copy(&legacy_dir));
