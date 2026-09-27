@@ -16,14 +16,14 @@ pub(crate) const CLIENT_MOD_DETECTION_BITS: u128 = 0b000000001000000000010000000
 // hardcoding their own values.
 // ─────────────────────────────────────────────────────────────────────────────
 /// Fallback build number when CDP extraction and remote JS fetch both fail.
-/// Updated: August 9th, 2026
-pub(crate) const DEFAULT_CLIENT_VERSION: &str = "1.0.9256";
+/// Updated: September 27th, 2026
+pub(crate) const DEFAULT_CLIENT_VERSION: &str = "1.0.9259";
 pub(crate) const DEFAULT_CHROME_VERSION: &str = "148.0.7778.280";
-pub(crate) const DEFAULT_ELECTRON_VERSION: &str = "42.9.0";
+pub(crate) const DEFAULT_ELECTRON_VERSION: &str = "42.11.4";
 pub(crate) const DEFAULT_OS_VERSION: &str = "10.0.19045";
 pub(crate) const DEFAULT_OS_SDK_VERSION: &str = "19045";
-pub(crate) const DEFAULT_CLIENT_BUILD_NUMBER: u64 = 607562;
-pub(crate) const DEFAULT_NATIVE_BUILD_NUMBER: u64 = 89799;
+pub(crate) const DEFAULT_CLIENT_BUILD_NUMBER: u64 = 621195;
+pub(crate) const DEFAULT_NATIVE_BUILD_NUMBER: u64 = 91497;
 
 pub(crate) fn discord_user_agent(client_version: &str) -> String {
     format!(
