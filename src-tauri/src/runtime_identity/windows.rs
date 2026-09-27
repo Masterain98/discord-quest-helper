@@ -476,28 +476,42 @@ fn schedule_self_deletion(exe_path: &Path) {
 #[cfg(target_os = "windows")]
 fn remove_stealth_tree_best_effort(dir: &Path) -> bool {
     let marker = dir.join(STEALTH_OWNERSHIP_MARKER_NAME);
+    let legacy_profile = dir.join(LEGACY_WEBVIEW_DATA_DIR_NAME);
+    let unmarked_legacy = !marker.is_file() && legacy_profile.is_dir();
     let mut all_payload_removed = true;
     let Ok(entries) = fs::read_dir(dir) else {
         return false;
     };
 
-    // Keep the ownership marker until every payload entry is gone. The running
-    // executable is normally locked on Windows and scheduled for reboot
-    // deletion; retaining the marker lets the next launch safely finish the
-    // cleanup instead of leaving an unidentifiable random directory behind.
+    // Keep the ownership marker until every payload entry is gone. If the
+    // marker could not be written to a legacy tree, retain its old profile
+    // until the executable is removed so an unsuccessful attempt stays
+    // recognizable. Do not schedule reboot deletion without a marker.
     for entry in entries {
         let Ok(entry) = entry else {
             all_payload_removed = false;
             continue;
         };
         let path = entry.path();
-        if path == marker {
+        if path == marker || (unmarked_legacy && path == legacy_profile) {
             continue;
         }
-        all_payload_removed &= remove_tree_best_effort(&path);
+        all_payload_removed &= if unmarked_legacy {
+            if path.is_dir() {
+                fs::remove_dir_all(&path).is_ok() || !path.exists()
+            } else {
+                fs::remove_file(&path).is_ok() || !path.exists()
+            }
+        } else {
+            remove_tree_best_effort(&path)
+        };
     }
 
     if !all_payload_removed {
+        return false;
+    }
+
+    if unmarked_legacy && !remove_tree_best_effort(&legacy_profile) {
         return false;
     }
 
