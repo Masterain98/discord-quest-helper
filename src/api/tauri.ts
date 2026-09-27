@@ -362,6 +362,10 @@ export async function stopSimulatedGame(execName: string): Promise<void> {
   return await invoke('stop_simulated_game', { execName })
 }
 
+export async function getRunningSimulatedGames(): Promise<string[]> {
+  return await invoke('get_running_simulated_games')
+}
+
 export interface ManualCdpGameSimulation {
   appId: string
   appName: string
@@ -382,6 +386,110 @@ export async function stopManualCdpGameSimulation(): Promise<void> {
 
 export async function getManualCdpGameSimulation(): Promise<ManualCdpGameSimulation | null> {
   return await invoke('get_manual_cdp_game_simulation')
+}
+
+export type GameIdleMode = 'process' | 'cdp'
+export type GameIdlePhase = 'starting' | 'playing' | 'resting' | 'stopping' | 'error' | 'stopped'
+
+export interface GameIdleConfig {
+  mode: GameIdleMode
+  playMinutes: number
+  restMinutes: number
+  cdpPort: number
+  simulationPath: string
+}
+
+export interface GameIdleItem {
+  id: string
+  name: string
+  icon?: string | null
+  typeName?: string | null
+  occurrenceId: string
+}
+
+export interface GameIdleStatus {
+  sessionId: string
+  mode: GameIdleMode
+  phase: GameIdlePhase
+  playMinutes: number
+  restMinutes: number
+  current: GameIdleItem | null
+  recent: GameIdleItem[]
+  upcoming: GameIdleItem[]
+  phaseStartedAt: number
+  phaseEndsAt: number | null
+  accumulatedPlayedSeconds: number
+  warning: string | null
+}
+
+export interface GameSimulationHistoryEntry {
+  appId: string
+  appName: string
+  totalSeconds: number
+  updatedAt: string
+}
+
+export interface SimulationHistoryStatus {
+  active: boolean
+  pendingFinish: boolean
+  appId?: string | null
+  appName?: string | null
+}
+
+export async function startGameIdle(
+  config: GameIdleConfig,
+  games: DetectableGame[]
+): Promise<GameIdleStatus> {
+  return await invoke('start_game_idle', { config, games })
+}
+
+export async function getGameIdleStatus(): Promise<GameIdleStatus | null> {
+  return await invoke('get_game_idle_status')
+}
+
+export async function removeGameIdleQueueItem(
+  sessionId: string,
+  appId: string,
+  occurrenceId: string
+): Promise<GameIdleStatus> {
+  return await invoke('remove_game_idle_queue_item', { sessionId, appId, occurrenceId })
+}
+
+export async function stopGameIdle(): Promise<GameIdleStatus | null> {
+  return await invoke('stop_game_idle')
+}
+
+export async function getGameSimulationHistory(): Promise<GameSimulationHistoryEntry[]> {
+  return await invoke('get_game_simulation_history')
+}
+
+export async function startGameSimulationUsage(appId: string, appName: string): Promise<boolean> {
+  return await invoke('start_game_simulation_usage', { appId, appName })
+}
+
+export async function stopGameSimulationUsage(): Promise<void> {
+  return await invoke('stop_game_simulation_usage')
+}
+
+export async function getGameSimulationUsageStatus(): Promise<SimulationHistoryStatus> {
+  return await invoke('get_game_simulation_usage_status')
+}
+
+export async function stopAllGameSimulations(): Promise<void> {
+  return await invoke('stop_all_game_simulations')
+}
+
+export function onGameIdleStatus(callback: (status: GameIdleStatus) => void) {
+  return listen<GameIdleStatus>('game-idle-status-changed', event => callback(event.payload))
+}
+
+export function onGameSimulationHistoryUpdated(
+  callback: (entry: GameSimulationHistoryEntry) => void
+) {
+  return listen<GameSimulationHistoryEntry>(
+    'game-simulation-history-updated',
+    event => callback(event.payload)
+  )
 }
 
 export async function fetchDetectableGames(): Promise<DetectableGame[]> {
@@ -598,7 +706,7 @@ export type ProviderId = 'discord.official' | 'vencord.vesktop' | (string & {})
 export type SessionOwnership = 'managed' | 'externalAttached' | 'ambiguousExternal' | 'unknown'
 export type DiscoverySource = 'user' | 'runningProcess' | 'osMetadata' | 'standardPath'
 export type ValidationState = 'valid' | 'missing' | 'invalid'
-export type CdpEndpointState = 'unreachable' | 'occupied' | 'nonDiscordCdp' | 'discordReady'
+export type CdpEndpointState = 'unreachable' | 'occupiedNonCdp' | 'cdpWithoutDiscordTarget' | 'discordReady'
 
 export type ClientSelection =
   | { kind: 'auto' }
@@ -651,6 +759,63 @@ export interface DesktopClientCommandError {
   message: string
 }
 
+export type CdpTargetClassification =
+  | 'notPage'
+  | 'aboutBlank'
+  | 'updater'
+  | 'discordAuxiliary'
+  | 'discordMainRenderer'
+  | 'discordOtherRenderer'
+  | 'nonDiscordPage'
+  | 'missingWebSocketDebuggerUrl'
+
+export interface CdpDiagnosticProcess {
+  pid: number
+  processName: string
+  providerId: ProviderId | null
+  installationId: string | null
+  executablePath: string | null
+  isSelectedInstallation: boolean
+  hasRemoteDebuggingPortArg: boolean
+  remoteDebuggingPort: number | null
+  startTime: number | null
+}
+
+export interface CdpDiagnosticTarget {
+  id: string
+  type: string
+  title: string
+  url: string
+  hasWebSocketDebuggerUrl: boolean
+  isDiscordTarget: boolean
+  isAuxiliaryWindow: boolean
+  isMainRenderer: boolean
+  classification: CdpTargetClassification
+}
+
+export interface CdpDiagnosticSnapshot {
+  timestamp: string
+  port: number
+  endpointStatus: CdpEndpointState
+  endpointOwner: CdpPortOwner
+  ownerProviderId: ProviderId | null
+  selectedClient: string | null
+  selectedInstallationId: string | null
+  selectedProviderId: ProviderId | null
+  selectedVariantId: string | null
+  selectedExecutablePath: string | null
+  selectedRunning: boolean
+  portListening: boolean
+  cdpHttpReachable: boolean
+  cdpHttpStatus: number | null
+  cdpResponseParseable: boolean
+  cdpTargetCount: number
+  discordTargetCount: number
+  mainRendererFound: boolean
+  processes: CdpDiagnosticProcess[]
+  targets: CdpDiagnosticTarget[]
+}
+
 export interface DesktopClientInventory {
   officialInstalled: boolean
   vesktopInstalled: boolean
@@ -688,6 +853,10 @@ export async function listDesktopClients(port?: number): Promise<DesktopClientIn
 
 export async function getDesktopClientState(port?: number): Promise<DesktopClientState> {
   return await invoke('get_desktop_client_state', { port })
+}
+
+export async function getCdpDiagnosticSnapshot(port?: number): Promise<CdpDiagnosticSnapshot> {
+  return await invoke('get_cdp_diagnostic_snapshot', { port })
 }
 
 export async function addDesktopClientInstallation(providerId: ProviderId, path: string, port?: number): Promise<DesktopClientState> {

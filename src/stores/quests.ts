@@ -53,14 +53,17 @@ import {
   startCdpQuest,
   checkCdpStatus,
   getVirtualCurrencyBalance,
-  getPlatformCapabilities
+  getPlatformCapabilities,
+  startGameSimulationUsage,
+  stopGameSimulationUsage,
 } from '@/api/tauri'
-import { documentDir, join } from '@tauri-apps/api/path'
+import { appLocalDataDir, join } from '@tauri-apps/api/path'
 import { emit } from '@tauri-apps/api/event'
 
 
 // localStorage keys
 const STORAGE_SPEED_KEY = 'questHelper_speedMultiplier'
+const STORAGE_SIMULATION_PATH_KEY = 'questHelper_simulationPath'
 
 export const useQuestsStore = defineStore('quests', () => {
   const quests = ref<Quest[]>([])
@@ -74,6 +77,11 @@ export const useQuestsStore = defineStore('quests', () => {
   const orbsBalanceFetchedAt = ref<string | null>(null)
   const orbsBalanceLoading = ref(false)
   const orbsBalanceError = ref<string | null>(null)
+
+  // Single source of truth for every process-simulation entry point. The
+  // asynchronous default is resolved lazily by initSimulationPath().
+  const simulationPath = ref(localStorage.getItem(STORAGE_SIMULATION_PATH_KEY) ?? '')
+  let simulationPathRevision = 0
 
   const activeQuestId = ref<string | null>(null)
   const activeQuestType = ref<'video' | 'stream' | 'game' | 'activity' | null>(null)
@@ -201,6 +209,54 @@ export const useQuestsStore = defineStore('quests', () => {
   const savedShowOrbsBalance = localStorage.getItem(STORAGE_SHOW_ORBS_BALANCE_KEY)
   const showOrbsBalance = ref(savedShowOrbsBalance === null ? true : savedShowOrbsBalance === 'true')
 
+  async function getDefaultSimulationPath(): Promise<string> {
+    try {
+      const base = await appLocalDataDir()
+      return await join(base, 'GameRuntime')
+    } catch {
+      throw new Error('Failed to resolve the default game simulation directory.')
+    }
+  }
+
+  async function initSimulationPath(): Promise<string> {
+    const configuredPath = simulationPath.value
+    if (configuredPath.trim()) {
+      return configuredPath
+    }
+
+    const defaultPath = await getDefaultSimulationPath()
+
+    // Do not overwrite a path selected while the asynchronous Tauri calls
+    // above were in flight.
+    const latestConfiguredPath = simulationPath.value
+    if (latestConfiguredPath.trim()) return latestConfiguredPath
+
+    simulationPath.value = defaultPath
+    return defaultPath
+  }
+
+  function setSimulationPath(path: string): void {
+    if (!path.trim()) {
+      throw new Error('Simulation path cannot be empty')
+    }
+    simulationPathRevision += 1
+    simulationPath.value = path
+  }
+
+  async function resetSimulationPath(): Promise<string> {
+    const revisionBeforeReset = simulationPathRevision
+    const defaultPath = await getDefaultSimulationPath()
+
+    // A later directory selection wins over this in-flight reset.
+    if (simulationPathRevision !== revisionBeforeReset && simulationPath.value.trim()) {
+      return simulationPath.value
+    }
+
+    simulationPathRevision += 1
+    simulationPath.value = defaultPath
+    return defaultPath
+  }
+
   // Activity quest checkpoint interval (seconds) - min/max time between checkpoints
   const STORAGE_ACTIVITY_CHECKPOINT_MIN_KEY = 'questHelper_activityCheckpointMin'
   const savedCheckpointMin = localStorage.getItem(STORAGE_ACTIVITY_CHECKPOINT_MIN_KEY)
@@ -256,6 +312,12 @@ export const useQuestsStore = defineStore('quests', () => {
     }
   })
 
+  watch(simulationPath, (path) => {
+    if (path.trim()) {
+      localStorage.setItem(STORAGE_SIMULATION_PATH_KEY, path)
+    }
+  }, { flush: 'sync' })
+
   function normalizeCheckpoint(value: number, fallback: number, min: number, max: number): number {
     if (!Number.isFinite(value)) return fallback
     const n = Math.round(value)
@@ -274,7 +336,7 @@ export const useQuestsStore = defineStore('quests', () => {
     if (activityCheckpointMax.value < normalizedMin) {
       activityCheckpointMax.value = normalizedMin
     }
-  })
+  }, { flush: 'sync' })
 
   watch(activityCheckpointMax, (newMax) => {
     const normalizedMax = normalizeCheckpoint(newMax, 300, 60, 900)
@@ -287,12 +349,21 @@ export const useQuestsStore = defineStore('quests', () => {
     if (activityCheckpointMin.value > normalizedMax) {
       activityCheckpointMin.value = normalizedMax
     }
-  })
+  }, { flush: 'sync' })
 
   let progressUnlisten: (() => void) | null = null
   let completeUnlisten: (() => void) | null = null
   let errorUnlisten: (() => void) | null = null
   let pollingTimer: ReturnType<typeof setInterval> | null = null
+  // Guards against overlapping interval callbacks. `setInterval` keeps firing
+  // while an async tick is still awaiting cleanup, and two ticks observing the
+  // same completed queue item would each shift the shared queue and schedule
+  // `processQueue()`, skipping a never-started quest and starting another
+  // concurrently.
+  let pollingInFlight = false
+  // Synchronously claimed by either polling or the completion event before
+  // cleanup so both sources cannot advance the same queue item.
+  let completionClaimedFor: string | null = null
 
   // Simulation internal vars
   let simAnimationFrame: number | null = null
@@ -351,7 +422,46 @@ export const useQuestsStore = defineStore('quests', () => {
     }
   }
 
-  function checkActiveQuestStatus() {
+  async function finishQueuedQuest(questId: string) {
+    if (!isQueueRunning.value || questQueue.value[0]?.id !== questId || activeQuestId.value !== questId) return
+    if (completionClaimedFor === questId) return
+    completionClaimedFor = questId
+    const completedExecutable = activeGameExe.value
+    activeQuestId.value = null
+    try {
+      if (completedExecutable && gameQuestMode.value === 'simulate') {
+        await stopSimulatedGame(completedExecutable)
+        await emit('event_disconnect')
+      }
+      await stopGameSimulationUsage()
+    } catch (cleanupError) {
+      // Keep the queue in place until both native activity and its history
+      // segment have been finalized. The user can retry cleanup with Stop.
+      activeQuestId.value = questId
+      error.value = cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
+      isQueueRunning.value = false
+      stopProgressSimulation()
+      cleanupListeners()
+      stopPolling()
+      return
+    }
+
+    questQueue.value.shift()
+    activeQuestType.value = null
+    activeQuestProgress.value = 0
+    activeQuestTargetDuration.value = 0
+    activeGameExe.value = null
+    localProgress.value = 0
+    stopProgressSimulation()
+    cleanupListeners()
+    stopPolling()
+    void fetchQuests(true, true)
+    setTimeout(() => {
+      if (isQueueRunning.value) void processQueue()
+    }, 2000)
+  }
+
+  async function checkActiveQuestStatus() {
     if (!activeQuestId.value) return
     const quest = quests.value.find(q => q.id === activeQuestId.value)
     if (!quest) return
@@ -361,31 +471,15 @@ export const useQuestsStore = defineStore('quests', () => {
       // If queue is running, handle transition to next quest instead of full stop
       if (isQueueRunning.value && questQueue.value.length > 0) {
         console.log('Queue item completed detected via polling.')
-        const finished = questQueue.value.shift()
-        console.log(`Queue item finished: ${finished?.id}. Remaining: ${questQueue.value.length}`)
-
-        // Reset active state
-        activeQuestId.value = null
-        activeQuestType.value = null
-        activeQuestProgress.value = 0
-        activeQuestTargetDuration.value = 0
-        activeGameExe.value = null
-        localProgress.value = 0
-        stopProgressSimulation()
-        stopPolling()
-
-        // Refresh quests to update status in UI
-        fetchQuests(true, true)
-
-        // Process next item after a short delay
-        setTimeout(() => {
-          processQueue()
-        }, 2000)
+        await finishQueuedQuest(quest.id)
         return
       }
 
       console.log('Quest completed detected via polling, stopping game.')
-      stop()
+      if (completionClaimedFor === quest.id) return
+      completionClaimedFor = quest.id
+      await stop()
+      stopPolling()
       return
     }
 
@@ -409,8 +503,16 @@ export const useQuestsStore = defineStore('quests', () => {
     // Use user-configurable game polling interval (in seconds, convert to ms)
     const intervalMs = gamePollingInterval.value * 1000
     pollingTimer = setInterval(async () => {
-      await fetchQuests(true, true)
-      checkActiveQuestStatus()
+      // Serialize ticks: when a previous tick is still awaiting `fetchQuests`
+      // or completion cleanup, skip this one instead of overlapping it.
+      if (pollingInFlight) return
+      pollingInFlight = true
+      try {
+        await fetchQuests(true, true)
+        await checkActiveQuestStatus()
+      } finally {
+        pollingInFlight = false
+      }
     }, intervalMs)
   }
 
@@ -419,6 +521,8 @@ export const useQuestsStore = defineStore('quests', () => {
       clearInterval(pollingTimer)
       pollingTimer = null
     }
+    pollingInFlight = false
+    completionClaimedFor = null
   }
 
   // --- Local Progress Simulation ---
@@ -541,13 +645,12 @@ export const useQuestsStore = defineStore('quests', () => {
       // 1. Get Application ID
       const appId = quest.config.application?.id
       if (!appId) throw new Error('Quest missing application ID')
+      const appName = quest.config.application?.name || quest.config.messages.game_title || 'Game'
 
       // Check mode: 'cdp' uses CDP injection, 'heartbeat' uses direct API calls, 'simulate' runs fake game
       if (gameQuestMode.value === 'cdp') {
         // CDP mode - inject into Discord client, no game simulation needed
         console.log(`Starting game quest via CDP for AppID: ${appId}`)
-        const appName = quest.config.application?.name || quest.config.messages.game_title || 'Game'
-
         const progressPct = (secondsNeeded > 0) ? (initialProgress / secondsNeeded) * 100 : 0
         await startCdpQuest(
           quest.id,
@@ -642,9 +745,9 @@ export const useQuestsStore = defineStore('quests', () => {
 
         console.log(`Starting simulated game for ${game.name} (${exeName})...`)
 
-        // 3. Setup path (use the localized Documents dir; avoids assuming ~/Documents)
-        const documents = await documentDir()
-        const installPath = await join(documents, 'DiscordQuestGames')
+        // 3. Resolve the configured simulation directory once so create and
+        // run always use the same path for this quest.
+        const installPath = await initSimulationPath()
 
         // 4. Create simulated game executable
         await createSimulatedGame(installPath, exeName, appId)
@@ -677,14 +780,28 @@ export const useQuestsStore = defineStore('quests', () => {
         setupListeners()
         startPolling()
       }
+      try {
+        await startGameSimulationUsage(appId, appName)
+      } catch (historyError) {
+        // A quest must not keep running without its account-scoped history
+        // segment: roll back the started work and fail the start so the UI does
+        // not report success for a simulation that cannot be recorded.
+        await teardownQuestSimulation()
+        const detail = historyError instanceof Error ? historyError.message : String(historyError)
+        throw new Error(`Failed to start game simulation history: ${detail}`)
+      }
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
       // Clean up if started (only for simulate mode)
       if (activeGameExe.value) {
+        const executable = activeGameExe.value
         try {
-          await stopSimulatedGame(activeGameExe.value)
-        } catch { }
-        activeGameExe.value = null
+          await stopSimulatedGame(executable)
+          activeGameExe.value = null
+        } catch (cleanupError) {
+          console.error('Failed to clean up simulated game after start error:', cleanupError)
+        }
+        await emit('event_disconnect').catch(() => undefined)
       }
       throw e
     } finally {
@@ -773,6 +890,7 @@ export const useQuestsStore = defineStore('quests', () => {
   async function startPlayActivity(quest: Quest, secondsNeeded: number, initialProgress: number) {
     loading.value = true
     error.value = null
+    let preserveActiveState = false
     try {
       const appId = quest.config.application?.id
       if (!appId) throw new Error('Cloud game Activity quest is missing an application ID')
@@ -805,8 +923,24 @@ export const useQuestsStore = defineStore('quests', () => {
         heartbeatInterval.value,
         gamePollingInterval.value
       )
+      const appName = quest.config.application?.name || quest.config.messages.game_title || 'Activity'
+      try {
+        await startGameSimulationUsage(appId, appName)
+      } catch (historyError) {
+        // Roll back the already-started activity simulation; running it without
+        // an account-scoped history segment would silently break accounting.
+        const detail = historyError instanceof Error ? historyError.message : String(historyError)
+        try {
+          await teardownQuestSimulation()
+        } catch (cleanupError) {
+          preserveActiveState = true
+          const cleanupDetail = cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
+          throw new Error(`Failed to start activity simulation history: ${detail}. Cleanup also failed: ${cleanupDetail}`)
+        }
+        throw new Error(`Failed to start activity simulation history: ${detail}`)
+      }
     } catch (e) {
-      if (activeQuestId.value === quest.id) {
+      if (!preserveActiveState && activeQuestId.value === quest.id) {
         activeQuestId.value = null
         activeQuestType.value = null
         activeQuestProgress.value = 0
@@ -820,6 +954,53 @@ export const useQuestsStore = defineStore('quests', () => {
     } finally {
       loading.value = false
     }
+  }
+
+  /**
+   * Roll back work started by `startPlay` when a later step fails, without
+   * touching quest state that was never claimed. Used by the history-tracking
+   * failure path, where a process/CDP session and Discord presence may already
+   * be live for a start that is about to report an error.
+   */
+  async function teardownQuestSimulation() {
+    const failures: string[] = []
+    const exeToStop = activeGameExe.value
+    if (gameQuestMode.value === 'simulate' && (exeToStop || activeQuestType.value === 'game')) {
+      if (exeToStop) {
+        try {
+          await stopSimulatedGame(exeToStop)
+          activeGameExe.value = null
+        } catch (cleanupError) {
+          failures.push(cleanupError instanceof Error ? cleanupError.message : String(cleanupError))
+        }
+      }
+      try {
+        await emit('event_disconnect')
+      } catch (cleanupError) {
+        failures.push(cleanupError instanceof Error ? cleanupError.message : String(cleanupError))
+      }
+    }
+    try {
+      await stopQuest()
+    } catch (cleanupError) {
+      failures.push(cleanupError instanceof Error ? cleanupError.message : String(cleanupError))
+    }
+    try {
+      await stopGameSimulationUsage()
+    } catch (cleanupError) {
+      failures.push(cleanupError instanceof Error ? cleanupError.message : String(cleanupError))
+    }
+
+    if (failures.length > 0) throw new Error(failures.join('; '))
+
+    activeQuestId.value = null
+    activeQuestType.value = null
+    activeQuestProgress.value = 0
+    activeQuestTargetDuration.value = 0
+    localProgress.value = 0
+    stopProgressSimulation()
+    cleanupListeners()
+    stopPolling()
   }
 
   async function stop() {
@@ -844,7 +1025,7 @@ export const useQuestsStore = defineStore('quests', () => {
       }
 
       // If manually stopping, ensure queue is also stopped/cleared
-      if (isQueueRunning.value) {
+      if (isQueueRunning.value || questQueue.value.length > 0) {
         isQueueRunning.value = false
         questQueue.value = [] // Clear queue on manual stop
       }
@@ -882,7 +1063,8 @@ export const useQuestsStore = defineStore('quests', () => {
           // Disconnect RPC
           await emit('event_disconnect')
         } catch (e) {
-          console.error('Failed to stop game process:', e)
+          error.value = e instanceof Error ? e.message : String(e)
+          return
         }
         activeGameExe.value = null
       }
@@ -891,6 +1073,12 @@ export const useQuestsStore = defineStore('quests', () => {
         await stopQuest()
       } catch (e) {
         // Ignore error if no quest running
+      }
+      try {
+        await stopGameSimulationUsage()
+      } catch (historyError) {
+        error.value = historyError instanceof Error ? historyError.message : String(historyError)
+        return
       }
 
       activeQuestId.value = null
@@ -925,40 +1113,35 @@ export const useQuestsStore = defineStore('quests', () => {
       console.log('Quest progress listener ready')
     })
 
-    onQuestComplete(() => {
+    const listenedQuestId = activeQuestId.value
+    onQuestComplete(async () => {
       console.log('Received quest-complete event')
+      if (stopping.value) return
+      if (!listenedQuestId || activeQuestId.value !== listenedQuestId) return
 
       // If queue is running, handle transition
       if (isQueueRunning.value && questQueue.value.length > 0) {
-        // The active quest just finished. It should be the head of the queue.
-        // (Unless user manually stopped?)
-        // Let's assume head is active.
-        const finished = questQueue.value.shift()
-        console.log(`Queue item finished: ${finished?.id}. Remaining: ${questQueue.value.length}`)
-
-        // Reset state
-        activeQuestId.value = null
-        activeQuestType.value = null
-        activeQuestProgress.value = 0
-        activeGameExe.value = null
-        localProgress.value = 0
-        stopProgressSimulation()
-
-        // Refresh quests to update status in UI
-        fetchQuests(true, true)
-
-        // Trigger next item
-        setTimeout(() => {
-          processQueue()
-        }, 2000)
-
-        // We do NOT cleanup listeners fully if we want to reuse them?
-        // Actually processQueue calls startVideo which calls setupListeners.
-        // So cleaning up here is fine/correct.
-        cleanupListeners()
+        await finishQueuedQuest(listenedQuestId)
       } else {
-        // Normal single quest completion
+        if (completionClaimedFor === listenedQuestId) return
+        completionClaimedFor = listenedQuestId
+        const completedExecutable = activeGameExe.value
         activeQuestId.value = null
+        try {
+          if (completedExecutable && gameQuestMode.value === 'simulate') {
+            await stopSimulatedGame(completedExecutable)
+            await emit('event_disconnect')
+          }
+          await stopGameSimulationUsage()
+        } catch (cleanupError) {
+          activeQuestId.value = listenedQuestId
+          error.value = cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
+          stopProgressSimulation()
+          cleanupListeners()
+          stopPolling()
+          return
+        }
+        // Normal single quest completion
         activeQuestType.value = null
         activeQuestProgress.value = 0
         activeQuestTargetDuration.value = 0
@@ -966,16 +1149,23 @@ export const useQuestsStore = defineStore('quests', () => {
         localProgress.value = 0
         stopProgressSimulation()
 
-        fetchQuests(true, true)
+        void fetchQuests(true, true)
         cleanupListeners()
+        stopPolling()
       }
     }).then((unlisten) => {
       completeUnlisten = unlisten
       console.log('Quest complete listener ready')
     })
 
-    onQuestError((err) => {
+    onQuestError(async (err) => {
       console.log('Received quest-error event:', err)
+      const failedExecutable = activeGameExe.value
+      if (failedExecutable && gameQuestMode.value === 'simulate') {
+        await stopSimulatedGame(failedExecutable).catch(() => undefined)
+        await emit('event_disconnect').catch(() => undefined)
+      }
+      await stopGameSimulationUsage().catch(() => undefined)
       error.value = err
       activeQuestId.value = null
       activeQuestType.value = null
@@ -1270,6 +1460,10 @@ export const useQuestsStore = defineStore('quests', () => {
     orbsBalanceLoading,
     orbsBalanceError,
     showOrbsBalance,
+    simulationPath,
+    initSimulationPath,
+    setSimulationPath,
+    resetSimulationPath,
     activityCheckpointMin,
     activityCheckpointMax,
     activeQuestId,

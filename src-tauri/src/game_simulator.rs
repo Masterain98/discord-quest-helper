@@ -651,6 +651,65 @@ pub fn simulated_process_hints() -> Vec<crate::cdp_game_spoof::SimulatedProcessH
     }
 }
 
+/// Whether this application currently owns at least one simulated game
+/// process. This doubles as the backend activity guard because frontend
+/// component state disappears when the user changes pages while the child
+/// process intentionally keeps running.
+pub fn has_running_simulated_games() -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        match RUNNING_GAMES.lock() {
+            Ok(games) => !games.is_empty(),
+            // A panic while the registry lock was held would otherwise pin this
+            // guard to `true` for the rest of the process, permanently rejecting
+            // every quest start, manual simulation, and idle session. Recover the
+            // guard the same way `simulated_process_hints` does.
+            Err(poisoned) => !poisoned.into_inner().is_empty(),
+        }
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        match RUNNING_UNIX_GAMES.lock() {
+            Ok(games) => !games.is_empty(),
+            Err(poisoned) => !poisoned.into_inner().is_empty(),
+        }
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        false
+    }
+}
+
+/// Names of simulated executables still owned by this process. The game
+/// simulator page uses this to restore its Stop control after navigation.
+pub fn running_simulated_game_names() -> Vec<String> {
+    #[cfg(target_os = "windows")]
+    {
+        match RUNNING_GAMES.lock() {
+            Ok(games) => games.iter().cloned().collect(),
+            // Keep this consistent with `has_running_simulated_games`: an empty
+            // list on a poisoned lock would make the reported activity
+            // un-clearable.
+            Err(poisoned) => poisoned.into_inner().iter().cloned().collect(),
+        }
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        match RUNNING_UNIX_GAMES.lock() {
+            Ok(games) => games.keys().cloned().collect(),
+            Err(poisoned) => poisoned.into_inner().keys().cloned().collect(),
+        }
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        Vec::new()
+    }
+}
+
 /// Stop **all** tracked simulated game processes.
 ///
 /// Called on application exit to ensure no orphaned child processes are left

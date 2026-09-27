@@ -1,31 +1,36 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import GameSelector from '@/components/GameSelector.vue'
+import GameIdlePanel from '@/components/GameIdlePanel.vue'
 import type { DetectableGame, ManualCdpGameSimulation } from '@/api/tauri'
 import {
   createSimulatedGame,
   runSimulatedGame,
   stopSimulatedGame,
+  getRunningSimulatedGames,
   connectToDiscordRpc,
   disconnectFromDiscordRpc,
   startManualCdpGameSimulation,
   stopManualCdpGameSimulation,
   getManualCdpGameSimulation,
+  startGameSimulationUsage,
+  stopGameSimulationUsage,
+  getGameSimulationUsageStatus,
 } from '@/api/tauri'
-import { documentDir, sep } from '@tauri-apps/api/path'
-import { open as openFolderPicker } from '@tauri-apps/plugin-dialog'
 import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
-import { Loader2, Play, Square, Hammer, List, Terminal, FolderOpen, ChevronDown, Check, MonitorPlay, WifiOff } from 'lucide-vue-next'
+import { Loader2, Play, Square, Hammer, List, Terminal, FolderOpen, ChevronDown, Check, MonitorPlay, WifiOff, RotateCcw } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useQuestsStore } from '@/stores/quests'
 import { getSimulationExecutables } from '@/utils/executables'
+import { formatSimulationDuration, useGameIdleStore } from '@/stores/gameIdle'
 
 const { t } = useI18n()
 const store = useQuestsStore()
+const idleStore = useGameIdleStore()
 
 // Avoid offering a platform-specific executable until the backend descriptor is
 // known; otherwise a failed capability load could silently select win32 on Linux.
@@ -33,19 +38,22 @@ const executablePriority = computed(() => store.platformCapabilities?.executable
 const hostOs = computed(() => store.platformCapabilities?.os ?? '')
 
 // Mode: 'select' = pick from detectable games list, 'custom' = enter any process name
-const mode = ref<'select' | 'custom'>('select')
+const mode = ref<'select' | 'custom' | 'idle'>('select')
 
 const selectedGame = ref<DetectableGame | null>(null)
 const selectedExecutable = ref('')
 const customExeName = ref('')
-const installPath = ref('')
-const installPathPlaceholder = ref('DiscordQuestGames')
 const running = ref(false)
 const stopping = ref(false)
 const activeExecutable = ref<string | null>(null)
 const activeRpc = ref(false)
 const activeSimulationMode = ref<'process' | 'cdp' | null>(null)
 const activeCdpSession = ref<ManualCdpGameSimulation | null>(null)
+const historyFinalizationPending = ref(false)
+// A recovered pending segment may belong to a Game Idle session that was
+// stopped while this page was unmounted. Keep its retry surface distinct from
+// manual simulation state so an idle stop can clear only the recovered state.
+const historyFinalizationOwner = ref<'manual' | 'recovered' | null>(null)
 const cdpStarting = ref(false)
 const creating = ref(false)
 const error = ref<string | null>(null)
@@ -53,9 +61,15 @@ const success = ref<string | null>(null)
 
 // Create dialog state
 const showCreateDialog = ref(false)
-const dialogSavePath = ref('')
+
+function errorMessage(value: unknown): string {
+  return value instanceof Error ? value.message : String(value)
+}
 
 onMounted(async () => {
+  await idleStore.initialize()
+  await idleStore.refreshHistory().catch(() => undefined)
+  if (idleStore.isActive || idleStore.loading) mode.value = 'idle'
   const capabilities = store.initPlatformCapabilities()
   const cdpStatus = store.initCdpMode().catch(err => {
     console.warn('Failed to refresh CDP status for game simulator:', err)
@@ -64,19 +78,54 @@ onMounted(async () => {
     console.warn('Failed to restore manual CDP game simulation:', err)
     return null
   })
-  const [docDir, separator, session] = await Promise.all([documentDir(), sep(), manualSession])
-  installPathPlaceholder.value = `${docDir}${separator}DiscordQuestGames`
-  installPath.value = installPathPlaceholder.value
-  await Promise.all([capabilities, cdpStatus])
+  const runningProcesses = getRunningSimulatedGames().catch(err => {
+    console.warn('Failed to restore process game simulation:', err)
+    return []
+  })
+  const historyStatus = getGameSimulationUsageStatus().catch(err => {
+    console.warn('Failed to restore simulation history state:', err)
+    return null
+  })
+  const [session, processes, persistedHistoryStatus] = await Promise.all([manualSession, runningProcesses, historyStatus, capabilities, cdpStatus])
 
   if (session) {
     activeSimulationMode.value = 'cdp'
     activeCdpSession.value = session
     success.value = t('game_sim.cdp_session_restored', { name: session.appName })
+  } else if (!store.activeQuestId && !idleStore.isActive && !idleStore.loading && processes.length > 0) {
+    activeSimulationMode.value = 'process'
+    activeExecutable.value = processes[0]
+    // A restored process may have been started from list mode. Disconnecting
+    // an absent RPC client is harmless, so retain a safe cleanup path.
+    activeRpc.value = true
+    success.value = t('game_sim.run_success')
+  } else if (persistedHistoryStatus?.active && persistedHistoryStatus.pendingFinish) {
+    // Native activity has already stopped, but final history persistence is
+    // retryable. Restore a generic stop surface even after navigation.
+    activeSimulationMode.value = 'process'
+    historyFinalizationPending.value = true
+    historyFinalizationOwner.value = 'recovered'
+    success.value = t('game_sim.stopped')
   }
 })
 
-const hasActiveSimulation = computed(() => activeSimulationMode.value !== null)
+watch(
+  () => idleStore.status?.phase,
+  phase => {
+    if (phase !== 'stopped' || historyFinalizationOwner.value !== 'recovered') return
+    // The recovered segment was owned by Game Idle. Once that session has
+    // successfully stopped, do not leave a page-local manual Stop state that
+    // would disable the simulator forever.
+    historyFinalizationPending.value = false
+    historyFinalizationOwner.value = null
+    activeSimulationMode.value = null
+    activeExecutable.value = null
+    activeRpc.value = false
+    activeCdpSession.value = null
+  }
+)
+
+const hasActiveSimulation = computed(() => activeSimulationMode.value !== null || idleStore.isActive)
 const simulatorBusy = computed(
   () => running.value || creating.value || cdpStarting.value || stopping.value
 )
@@ -142,12 +191,19 @@ const canProceed = computed(() => {
   return true
 })
 
-function switchMode(m: 'select' | 'custom') {
-  if (hasActiveSimulation.value || simulatorBusy.value) return
+function switchMode(m: 'select' | 'custom' | 'idle') {
+  // While idle is active the panel is the only reachable surface, so
+  // switching away would orphan the running session. Stop first.
+  if (idleStore.isActive || hasActiveSimulation.value || simulatorBusy.value) return
   mode.value = m
   error.value = null
   success.value = null
 }
+
+const selectedHistoryDuration = computed(() => {
+  const seconds = selectedGame.value ? idleStore.history[selectedGame.value.id]?.totalSeconds ?? 0 : 0
+  return formatSimulationDuration(seconds)
+})
 
 function selectGame(game: DetectableGame) {
   if (hasActiveSimulation.value || simulatorBusy.value) return
@@ -161,54 +217,103 @@ function selectGame(game: DetectableGame) {
   success.value = null
 }
 
-function openCreateDialog() {
-  dialogSavePath.value = installPath.value
-  showCreateDialog.value = true
-}
-
-async function pickInstallFolder() {
-  const selected = await openFolderPicker({ directory: true, multiple: false, defaultPath: installPath.value || undefined })
-  if (typeof selected === 'string') installPath.value = selected
-}
-
-async function pickDialogFolder() {
-  const selected = await openFolderPicker({ directory: true, multiple: false, defaultPath: dialogSavePath.value || undefined })
-  if (typeof selected === 'string') dialogSavePath.value = selected
+async function openCreateDialog() {
+  error.value = null
+  try {
+    await store.initSimulationPath()
+    showCreateDialog.value = true
+  } catch {
+    error.value = t('settings.simulation_directory_resolve_error')
+  }
 }
 
 async function handleCreateGame() {
   const exeName = effectiveExecutable.value
-  if (!exeName || !dialogSavePath.value) return
+  if (!exeName) return
 
   creating.value = true
   error.value = null
   success.value = null
 
   try {
+    const simulationPath = await store.initSimulationPath()
     const appId = mode.value === 'custom' ? '' : (selectedGame.value?.id ?? '')
-    await createSimulatedGame(dialogSavePath.value, exeName, appId)
+    await createSimulatedGame(simulationPath, exeName, appId)
     showCreateDialog.value = false
     success.value = t('game_sim.create_success')
   } catch (e) {
-    error.value = e as string
+    error.value = errorMessage(e)
   } finally {
     creating.value = false
   }
 }
 
+/**
+ * Tear down a manual simulation that was started but could not be recorded.
+ * Best-effort: each native stop runs independently so one failure cannot strand
+ * the other resource, and any failure is surfaced through `error`.
+ */
+async function rollbackManualSimulation(): Promise<void> {
+  const failures: string[] = []
+  if (activeSimulationMode.value === 'cdp') {
+    try {
+      await stopManualCdpGameSimulation()
+      activeCdpSession.value = null
+      activeSimulationMode.value = null
+    } catch (e) {
+      failures.push(errorMessage(e))
+    }
+  } else {
+    if (activeRpc.value) {
+      try {
+        await disconnectFromDiscordRpc()
+        activeRpc.value = false
+      } catch (e) {
+        failures.push(errorMessage(e))
+      }
+    }
+    if (activeExecutable.value) {
+      try {
+        await stopSimulatedGame(activeExecutable.value)
+        activeExecutable.value = null
+      } catch (e) {
+        failures.push(errorMessage(e))
+      }
+    }
+    if (!activeExecutable.value && !activeRpc.value) {
+      activeSimulationMode.value = null
+    }
+  }
+  if (failures.length > 0) {
+    throw new Error(t('game_sim.history_rollback_failed', { error: failures.join('; ') }))
+  }
+}
+
+/**
+ * Close out the usage-history segment after a native stop has already landed.
+ * The caller retains a retryable Stop state until this succeeds.
+ */
+async function finishSimulationHistory(): Promise<void> {
+  await stopGameSimulationUsage()
+  historyFinalizationPending.value = false
+  historyFinalizationOwner.value = null
+  activeSimulationMode.value = null
+}
+
 async function handleRunGame() {
   // Resolve which exe name to use
   const exeName = effectiveExecutable.value
-  if (!exeName || !installPath.value || creating.value || hasActiveSimulation.value) return
+  if (!exeName || creating.value || hasActiveSimulation.value) return
 
   running.value = true
   error.value = null
   success.value = null
 
   try {
+    const simulationPath = await store.initSimulationPath()
     const appId = mode.value === 'custom' ? '' : (selectedGame.value?.id ?? '')
     const displayName = mode.value === 'custom' ? customExeName.value : (selectedGame.value?.name ?? '')
-    await runSimulatedGame(displayName, installPath.value, exeName, appId)
+    await runSimulatedGame(displayName, simulationPath, exeName, appId)
     activeExecutable.value = exeName
     activeSimulationMode.value = 'process'
 
@@ -226,6 +331,19 @@ async function handleRunGame() {
       }
       await connectToDiscordRpc(JSON.stringify(activity), 'connect')
       activeRpc.value = true
+      try {
+        await startGameSimulationUsage(selectedGame.value.id, selectedGame.value.name)
+      } catch (historyError) {
+        // The process and Discord presence are already live. History tracking is
+        // mandatory, so roll both back rather than leaving an untracked
+        // simulation running behind a failed Start.
+        try {
+          await rollbackManualSimulation()
+        } catch (cleanupError) {
+          throw new Error(`${t('game_sim.history_start_failed', { error: errorMessage(historyError) })} ${errorMessage(cleanupError)}`)
+        }
+        throw new Error(t('game_sim.history_start_failed', { error: errorMessage(historyError) }))
+      }
       success.value = t('game_sim.run_success_rpc')
     } else {
       // ── CUSTOM mode ─────────────────────────────────────────────────
@@ -235,7 +353,7 @@ async function handleRunGame() {
       success.value = t('game_sim.run_success')
     }
   } catch (e) {
-    error.value = e as string
+    error.value = errorMessage(e)
   } finally {
     running.value = false
   }
@@ -260,6 +378,18 @@ async function handleRunCdpGame() {
     const session = await startManualCdpGameSimulation(game.id, game.name, store.cdpPort)
     activeCdpSession.value = session
     activeSimulationMode.value = 'cdp'
+    try {
+      await startGameSimulationUsage(game.id, game.name)
+    } catch (historyError) {
+      // Remove the CDP injection before reporting the failure; otherwise Discord
+      // keeps showing activity that this app no longer accounts for.
+      try {
+        await rollbackManualSimulation()
+      } catch (cleanupError) {
+        throw new Error(`${t('game_sim.history_start_failed', { error: errorMessage(historyError) })} ${errorMessage(cleanupError)}`)
+      }
+      throw new Error(t('game_sim.history_start_failed', { error: errorMessage(historyError) }))
+    }
     success.value = t('game_sim.cdp_started', { name: game.name })
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
@@ -278,15 +408,21 @@ async function handleStopGame() {
 
   try {
     if (simulationMode === 'cdp') {
-      await stopManualCdpGameSimulation()
-      activeCdpSession.value = null
-      activeSimulationMode.value = null
+      if (!historyFinalizationPending.value) {
+        await stopManualCdpGameSimulation()
+        activeCdpSession.value = null
+        historyFinalizationPending.value = true
+        historyFinalizationOwner.value = 'manual'
+      }
+      await finishSimulationHistory()
       success.value = t('game_sim.cdp_stopped')
       return
     }
 
     const exeName = activeExecutable.value
-    if (!exeName) throw new Error(t('game_sim.no_active_process'))
+    if (!exeName && !activeRpc.value && !historyFinalizationPending.value) {
+      throw new Error(t('game_sim.no_active_process'))
+    }
     // Disconnect the RPC client before clearing any state: if the disconnect
     // fails, the Stop button must stay available so the user can retry, and a
     // later retry skips the disconnect once activeRpc has been cleared.
@@ -295,13 +431,21 @@ async function handleStopGame() {
       await disconnectFromDiscordRpc()
       activeRpc.value = false
     }
-    await stopSimulatedGame(exeName)
-    activeExecutable.value = null
-    activeSimulationMode.value = null
+    if (exeName) {
+      await stopSimulatedGame(exeName)
+      activeExecutable.value = null
+    }
+    if (!activeExecutable.value && !activeRpc.value) {
+      historyFinalizationPending.value = true
+      historyFinalizationOwner.value = 'manual'
+    }
+    await finishSimulationHistory()
     success.value = t('game_sim.stopped')
   } catch (e) {
     const detail = e instanceof Error ? e.message : String(e)
-    error.value = simulationMode === 'cdp'
+    error.value = historyFinalizationPending.value
+      ? t('game_sim.history_stop_failed', { error: detail })
+      : simulationMode === 'cdp'
       ? t('game_sim.cdp_cleanup_failed', { error: detail })
       : detail
   } finally {
@@ -311,8 +455,8 @@ async function handleStopGame() {
 </script>
 
 <template>
-  <div class="game-simulator-view fade-in space-y-6">
-    <div class="flex justify-between items-center flex-wrap gap-3">
+  <div class="game-simulator-view fade-in space-y-6" :class="mode === 'idle' && (idleStore.isActive || idleStore.loading) && 'is-idle-immersive'">
+    <div v-if="!(mode === 'idle' && (idleStore.isActive || idleStore.loading))" class="flex justify-between items-center flex-wrap gap-3">
       <h2 class="text-2xl font-bold tracking-tight">{{ t('game_sim.title') }}</h2>
       <!-- Mode toggle -->
       <div class="flex rounded-lg border p-1 gap-1 bg-muted/50">
@@ -336,10 +480,22 @@ async function handleStopGame() {
           <Terminal class="w-3.5 h-3.5" />
           {{ t('game_sim.mode_custom') }}
         </Button>
+        <Button
+          size="sm"
+          :variant="mode === 'idle' ? 'default' : 'ghost'"
+          class="gap-1.5 h-7 px-3 text-xs"
+          :disabled="(hasActiveSimulation && !idleStore.isActive) || simulatorBusy"
+          @click="switchMode('idle')"
+        >
+          <RotateCcw class="w-3.5 h-3.5" />
+          {{ t('game_idle.nav') }}
+        </Button>
       </div>
     </div>
 
-    <div class="grid grid-cols-1 gap-6" :class="mode === 'select' ? 'lg:grid-cols-2' : ''">
+    <GameIdlePanel v-if="mode === 'idle'" />
+
+    <div v-else class="grid grid-cols-1 gap-6" :class="mode === 'select' ? 'lg:grid-cols-2' : ''">
       <GameSelector v-if="mode === 'select'" :disabled="hasActiveSimulation || simulatorBusy" @select="selectGame" />
 
       <Card>
@@ -366,6 +522,12 @@ async function handleStopGame() {
               <div class="p-4 bg-muted/50 rounded-lg space-y-1">
                 <div class="font-bold text-lg text-primary">{{ selectedGame.name }}</div>
                 <div class="text-xs text-muted-foreground font-mono">App ID: {{ selectedGame.id }}</div>
+                <div class="pt-2 text-sm font-medium text-foreground">
+                  {{ t('game_idle.history_duration', {
+                    hours: selectedHistoryDuration.hours,
+                    minutes: selectedHistoryDuration.minutes,
+                  }) }}
+                </div>
               </div>
 
               <div v-if="!store.platformCapabilitiesReady" class="text-center py-4 text-muted-foreground">
@@ -391,15 +553,6 @@ async function handleStopGame() {
                   />
                 </div>
 
-                <div class="space-y-2">
-                  <Label>{{ t('game_sim.install_path') }}</Label>
-                  <div class="flex gap-2">
-                    <Input v-model="installPath" :placeholder="installPathPlaceholder" class="flex-1" />
-                    <Button type="button" variant="outline" size="icon" @click="pickInstallFolder" class="shrink-0">
-                      <FolderOpen class="w-4 h-4" />
-                    </Button>
-                  </div>
-                </div>
               </template>
 
               <template v-else>
@@ -448,15 +601,6 @@ async function handleStopGame() {
                   </div>
                 </div>
 
-                <div class="space-y-2">
-                  <Label>{{ t('game_sim.install_path') }}</Label>
-                  <div class="flex gap-2">
-                    <Input v-model="installPath" :placeholder="installPathPlaceholder" class="flex-1" />
-                    <Button type="button" variant="outline" size="icon" @click="pickInstallFolder" class="shrink-0">
-                      <FolderOpen class="w-4 h-4" />
-                    </Button>
-                  </div>
-                </div>
               </template>
 
               <div v-if="error" class="p-3 bg-destructive/10 text-destructive rounded-md text-sm">{{ error }}</div>
@@ -476,16 +620,6 @@ async function handleStopGame() {
                 <p class="text-xs text-muted-foreground">{{ t('game_sim.custom_exe_hint') }}</p>
               </div>
 
-              <div class="space-y-2">
-                <Label>{{ t('game_sim.install_path') }}</Label>
-                <div class="flex gap-2">
-                  <Input v-model="installPath" :placeholder="installPathPlaceholder" class="flex-1" />
-                  <Button type="button" variant="outline" size="icon" @click="pickInstallFolder" class="shrink-0">
-                    <FolderOpen class="w-4 h-4" />
-                  </Button>
-                </div>
-              </div>
-
               <div v-if="error" class="p-3 bg-destructive/10 text-destructive rounded-md text-sm">{{ error }}</div>
               <div v-if="success" class="p-3 bg-green-500/10 text-green-600 rounded-md text-sm">{{ success }}</div>
             </div>
@@ -498,7 +632,7 @@ async function handleStopGame() {
               v-if="!hasActiveSimulation"
               @click="handleRunGame"
               class="w-full bg-green-600 hover:bg-green-700 text-white"
-              :disabled="!effectiveExecutable || !installPath || simulatorBusy || !!store.activeQuestId"
+              :disabled="!effectiveExecutable || simulatorBusy || !!store.activeQuestId"
             >
               <Play v-if="!running" class="w-4 h-4 mr-2" />
               <Loader2 v-else class="w-4 h-4 mr-2 animate-spin" />
@@ -554,18 +688,15 @@ async function handleStopGame() {
         </DialogHeader>
 
         <div class="space-y-4 py-2">
-          <div class="space-y-2">
+          <div v-if="store.simulationPath" class="space-y-2">
             <Label class="flex items-center gap-1.5">
               <FolderOpen class="w-3.5 h-3.5" />
-              {{ t('game_sim.create_dialog_path_label') }}
+              {{ t('settings.simulation_directory') }}
             </Label>
-            <div class="flex gap-2">
-              <Input v-model="dialogSavePath" :placeholder="installPath" class="flex-1" />
-              <Button type="button" variant="outline" size="icon" @click="pickDialogFolder" class="shrink-0">
-                <FolderOpen class="w-4 h-4" />
-              </Button>
+            <div class="rounded-md border bg-muted/40 px-3 py-2">
+              <code class="break-all text-xs font-mono">{{ store.simulationPath }}</code>
             </div>
-            <p class="text-xs text-muted-foreground">{{ t('game_sim.create_dialog_path_hint') }}</p>
+            <p class="text-xs text-muted-foreground">{{ t('settings.simulation_directory_desc') }}</p>
           </div>
 
           <div v-if="error" class="p-3 bg-destructive/10 text-destructive rounded-md text-sm">{{ error }}</div>
@@ -577,7 +708,7 @@ async function handleStopGame() {
           </Button>
           <Button
             @click="handleCreateGame"
-            :disabled="!dialogSavePath || creating"
+            :disabled="creating"
           >
             <Hammer v-if="!creating" class="w-4 h-4 mr-2" />
             <Loader2 v-else class="w-4 h-4 mr-2 animate-spin" />
@@ -588,4 +719,12 @@ async function handleStopGame() {
     </Dialog>
   </div>
 </template>
+
+<style scoped>
+.is-idle-immersive {
+  min-height: 100%;
+  width: 100%;
+  gap: 0;
+}
+</style>
 

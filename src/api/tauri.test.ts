@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { getProgramRewards } from './tauri'
+import { getCdpDiagnosticSnapshot, getProgramRewards } from './tauri'
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -67,5 +67,17 @@ describe('getProgramRewards', () => {
         total_countdown_duration_ms: 2592000000,
       },
     ])
+  })
+})
+
+describe('getCdpDiagnosticSnapshot', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('passes the optional port to the Tauri command', async () => {
+    mocks.invoke.mockResolvedValue({ port: 9333 })
+    await getCdpDiagnosticSnapshot(9333)
+    expect(mocks.invoke).toHaveBeenCalledWith('get_cdp_diagnostic_snapshot', { port: 9333 })
   })
 })

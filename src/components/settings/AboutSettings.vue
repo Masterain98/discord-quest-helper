@@ -22,6 +22,7 @@ import SettingsStatusPanel from './SettingsStatusPanel.vue'
 import SettingsSwitch from './SettingsSwitch.vue'
 import { cn } from '@/lib/utils'
 import { settingToneClass } from './settingTones'
+import { isDebugModeEnabled, persistDebugMode } from '@/utils/debugMode'
 
 const { t } = useI18n()
 const versionStore = useVersionStore()
@@ -31,7 +32,7 @@ const emit = defineEmits<{
   debugDisabled: []
 }>()
 
-const debugModeEnabled = ref(localStorage.getItem('debugMode') === 'true')
+const debugModeEnabled = ref(isDebugModeEnabled())
 const disableDialogOpen = ref(false)
 const versionTapCount = ref(0)
 const lastTapTime = ref(0)
@@ -70,7 +71,7 @@ function handleVersionTap() {
 
   if (versionTapCount.value >= 7) {
     debugModeEnabled.value = true
-    localStorage.setItem('debugMode', 'true')
+    persistDebugMode(true)
     versionTapCount.value = 0
     showDebugUnlockHint.value = false
     emit('debugUnlocked')
@@ -101,7 +102,7 @@ function handleVersionTapWithBubble() {
 
 function confirmDisableDebugMode() {
   debugModeEnabled.value = false
-  localStorage.removeItem('debugMode')
+  persistDebugMode(false)
   emit('debugDisabled')
 }
 

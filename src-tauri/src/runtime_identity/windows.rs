@@ -13,13 +13,21 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use super::model::{contains_product_token, RUNTIME_NAMESPACE};
+
 /// Hex directory name length under `temp_dir`.
 pub(crate) const DIR_HEX_LEN: usize = 16;
 /// Hex executable stem length inside the stealth directory.
 pub(crate) const FILE_HEX_LEN: usize = 12;
 /// Legacy prefix from the previous `svc_<hex>.exe` layout.
 const LEGACY_SVC_PREFIX: &str = "svc_";
-const WEBVIEW_DATA_DIR_NAME: &str = "ud";
+/// Legacy WebView2 profile directory used beside temporary executables.
+/// Keep recognizing it so old abandoned runtime trees remain removable.
+const LEGACY_WEBVIEW_DATA_DIR_NAME: &str = "ud";
+const LEGACY_STEALTH_OWNERSHIP_MARKER_NAME: &str = ".runtime-owner";
+/// Explicit ownership marker for temporary runtime trees created by current builds.
+const STEALTH_OWNERSHIP_MARKER_NAME: &str = ".runtime-owner";
+const WEBVIEW_PROFILE_DIR_NAME: &str = "webview";
 
 /// Flag indicating if current process is running in stealth mode
 static IS_STEALTH_MODE: AtomicBool = AtomicBool::new(false);
@@ -117,8 +125,16 @@ fn window_title_for_exe(exe: &Path) -> String {
         .to_string()
 }
 
-fn webview_user_data_dir_for_exe(exe: &Path) -> Option<PathBuf> {
-    exe.parent().map(|dir| dir.join(WEBVIEW_DATA_DIR_NAME))
+fn persistent_webview_data_dir_for(local_appdata: &Path) -> Result<PathBuf, String> {
+    let suffix = Path::new(RUNTIME_NAMESPACE).join(WEBVIEW_PROFILE_DIR_NAME);
+    if contains_product_token(&suffix.to_string_lossy()) {
+        return Err("WebView2 profile path violates the runtime identity policy".into());
+    }
+    Ok(local_appdata.join(suffix))
+}
+
+fn create_stealth_ownership_marker(dir: &Path) -> io::Result<()> {
+    fs::write(dir.join(STEALTH_OWNERSHIP_MARKER_NAME), b"1")
 }
 
 fn is_legacy_svc_file_name(name: &str) -> bool {
@@ -173,11 +189,37 @@ fn dir_contains_hex_stealth_exe(dir: &Path) -> bool {
     })
 }
 
-/// Owned stealth trees also have the WebView2 `ud/` directory. Requiring that
-/// marker avoids deleting unrelated `%TEMP%/<16 hex>/` folders that happen to
-/// contain a 12-hex executable.
+/// Owned stealth trees have either the current explicit marker or the legacy
+/// WebView2 `ud/` directory. Requiring ownership evidence avoids deleting an
+/// unrelated `%TEMP%/<16 hex>/` folder that happens to contain a 12-hex exe.
 fn dir_looks_like_stealth_copy(dir: &Path) -> bool {
-    dir.join(WEBVIEW_DATA_DIR_NAME).is_dir() && dir_contains_hex_stealth_exe(dir)
+    // A marked tree remains ours after its executable was removed on reboot.
+    // Legacy trees require their profile and executable unless cleanup has
+    // left a marker inside that profile for a retry.
+    dir.join(STEALTH_OWNERSHIP_MARKER_NAME).is_file()
+        || (dir.join(LEGACY_WEBVIEW_DATA_DIR_NAME).is_dir()
+            && (dir_contains_hex_stealth_exe(dir)
+                || dir
+                    .join(LEGACY_WEBVIEW_DATA_DIR_NAME)
+                    .join(LEGACY_STEALTH_OWNERSHIP_MARKER_NAME)
+                    .is_file()))
+}
+
+fn prepare_stealth_tree_for_cleanup(dir: &Path) -> bool {
+    if !dir_looks_like_stealth_copy(dir) {
+        return false;
+    }
+    // A marker preserves ownership if a locked executable cannot be removed.
+    // Still attempt this cleanup when the directory disallows new files.
+    let _ = create_stealth_ownership_marker(dir);
+    let legacy_profile = dir.join(LEGACY_WEBVIEW_DATA_DIR_NAME);
+    if legacy_profile.is_dir() && dir_contains_hex_stealth_exe(dir) {
+        let _ = fs::write(
+            legacy_profile.join(LEGACY_STEALTH_OWNERSHIP_MARKER_NAME),
+            b"1",
+        );
+    }
+    true
 }
 
 /// Check if currently running in stealth mode
@@ -193,14 +235,18 @@ pub fn generate_stealth_window_title() -> String {
         .unwrap_or_else(|| "Runtime".to_string())
 }
 
-/// WebView2 user-data directory beside the stealth copy (`ud/`).
-pub fn webview_user_data_dir() -> Option<PathBuf> {
+/// Stable, neutral WebView2 profile shared by every packaged app version.
+///
+/// Keeping this outside the temporary executable tree allows localStorage and
+/// other user preferences to survive normal exits and in-place upgrades while
+/// preserving a product-neutral path in WebView2 child-process diagnostics.
+pub fn webview_user_data_dir() -> Result<Option<PathBuf>, String> {
     if !is_stealth_mode() {
-        return None;
+        return Ok(None);
     }
-    env::current_exe()
-        .ok()
-        .and_then(|path| webview_user_data_dir_for_exe(&path))
+    let local_appdata = env::var_os("LOCALAPPDATA")
+        .ok_or_else(|| "Could not resolve LOCALAPPDATA for the WebView2 profile".to_string())?;
+    persistent_webview_data_dir_for(Path::new(&local_appdata)).map(Some)
 }
 
 /// Set process identity that windowing APIs read before the first window.
@@ -278,6 +324,12 @@ fn ensure_stealth_mode_impl() -> bool {
 
     if let Err(err) = fs::create_dir_all(&stealth_dir) {
         eprintln!("[Stealth] Failed to create stealth directory: {}", err);
+        return true;
+    }
+
+    if let Err(err) = create_stealth_ownership_marker(&stealth_dir) {
+        eprintln!("[Stealth] Failed to mark stealth directory ownership: {err}");
+        let _ = fs::remove_dir_all(&stealth_dir);
         return true;
     }
 
@@ -398,16 +450,13 @@ fn cleanup_old_stealth_copies(current_exe: &Path) {
         if !is_hex_str(name, DIR_HEX_LEN) {
             continue;
         }
-        if !dir_looks_like_stealth_copy(&path) {
+        if !prepare_stealth_tree_for_cleanup(&path) {
             continue;
         }
-        match fs::remove_dir_all(&path) {
-            Ok(()) => println!("[Stealth] Cleaned up: {}", name),
-            Err(err) => {
-                if cfg!(debug_assertions) {
-                    eprintln!("[Stealth] Failed to clean up {}: {}", name, err);
-                }
-            }
+        if remove_stealth_tree_best_effort(&path) {
+            println!("[Stealth] Cleaned up: {}", name);
+        } else if cfg!(debug_assertions) {
+            eprintln!("[Stealth] Could not fully clean up: {}", name);
         }
     }
 }
@@ -430,28 +479,142 @@ pub fn cleanup_on_exit() {
 /// `cleanup_old_stealth_copies` removes whatever remains.
 #[cfg(target_os = "windows")]
 fn schedule_self_deletion(exe_path: &Path) {
-    if let Some(ud) = webview_user_data_dir_for_exe(exe_path) {
-        remove_tree_best_effort(&ud);
-    }
     let Some(parent) = exe_path.parent() else {
         remove_tree_best_effort(exe_path);
         return;
     };
-    if let Ok(entries) = fs::read_dir(parent) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path == exe_path {
-                continue;
-            }
-            remove_tree_best_effort(&path);
-        }
-    }
-    remove_tree_best_effort(exe_path);
-    remove_tree_best_effort(parent);
+    remove_stealth_tree_best_effort(parent);
 }
 
 #[cfg(target_os = "windows")]
-fn remove_tree_best_effort(path: &Path) {
+fn remove_stealth_tree_best_effort(dir: &Path) -> bool {
+    let marker = dir.join(STEALTH_OWNERSHIP_MARKER_NAME);
+    let legacy_profile = dir.join(LEGACY_WEBVIEW_DATA_DIR_NAME);
+    if !marker.is_file() && legacy_profile.is_dir() {
+        return remove_unmarked_legacy_tree_best_effort(dir, &legacy_profile);
+    }
+    let mut all_payload_removed = true;
+    let Ok(entries) = fs::read_dir(dir) else {
+        return false;
+    };
+
+    // Keep the ownership marker until every payload entry is gone. The running
+    // executable can be scheduled for reboot deletion because this marker
+    // makes the remainder discoverable on the next launch.
+    for entry in entries {
+        let Ok(entry) = entry else {
+            all_payload_removed = false;
+            continue;
+        };
+        let path = entry.path();
+        if path == marker {
+            continue;
+        }
+        all_payload_removed &= remove_tree_best_effort(&path);
+    }
+
+    if !all_payload_removed {
+        return false;
+    }
+
+    if fs::remove_file(&marker).is_err() && marker.exists() {
+        return false;
+    }
+    if fs::remove_dir(dir).is_ok() || !dir.exists() {
+        return true;
+    }
+    // Another entry may have appeared between enumeration and removal. Keep
+    // the directory recognizable so the next launch can retry safely.
+    let _ = create_stealth_ownership_marker(dir);
+    false
+}
+
+#[cfg(target_os = "windows")]
+fn remove_unmarked_legacy_tree_best_effort(dir: &Path, profile: &Path) -> bool {
+    remove_unmarked_legacy_tree_with(dir, profile, remove_tree_without_reboot, |path| {
+        fs::remove_dir(path).is_ok() || !path.exists()
+    })
+}
+
+#[cfg(target_os = "windows")]
+fn remove_unmarked_legacy_tree_with(
+    dir: &Path,
+    profile: &Path,
+    mut remove: impl FnMut(&Path) -> bool,
+    mut remove_dir: impl FnMut(&Path) -> bool,
+) -> bool {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return false;
+    };
+    let mut executables = Vec::new();
+    for entry in entries {
+        let Ok(entry) = entry else {
+            return false;
+        };
+        let path = entry.path();
+        if path == profile {
+            continue;
+        }
+        if path.is_file() && is_stealth_copy_path(&path) {
+            executables.push(path);
+        } else if !remove(&path) {
+            return false;
+        }
+    }
+
+    // Leave both ownership clues in place while removing other payload. A
+    // locked item or executable can then be retried on the next launch.
+    let Ok(profile_entries) = fs::read_dir(profile) else {
+        return false;
+    };
+    for entry in profile_entries {
+        let Ok(entry) = entry else {
+            restore_legacy_profile(profile);
+            return false;
+        };
+        if !remove(&entry.path()) {
+            restore_legacy_profile(profile);
+            return false;
+        }
+    }
+    for executable in executables {
+        if !remove(&executable) {
+            restore_legacy_profile(profile);
+            return false;
+        }
+    }
+    if !remove_dir(profile) {
+        restore_legacy_profile(profile);
+        return false;
+    }
+    if remove_dir(dir) {
+        return true;
+    }
+    restore_legacy_profile(profile);
+    false
+}
+
+#[cfg(target_os = "windows")]
+fn restore_legacy_profile(profile: &Path) {
+    if !profile.exists() {
+        let _ = fs::create_dir(profile);
+    }
+    if profile.is_dir() {
+        let _ = fs::write(profile.join(LEGACY_STEALTH_OWNERSHIP_MARKER_NAME), b"1");
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn remove_tree_without_reboot(path: &Path) -> bool {
+    if path.is_dir() {
+        fs::remove_dir_all(path).is_ok() || !path.exists()
+    } else {
+        fs::remove_file(path).is_ok() || !path.exists()
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn remove_tree_best_effort(path: &Path) -> bool {
     let removed = if path.is_dir() {
         fs::remove_dir_all(path).is_ok()
     } else {
@@ -460,6 +623,7 @@ fn remove_tree_best_effort(path: &Path) {
     if !removed {
         mark_delete_on_reboot(path);
     }
+    removed || !path.exists()
 }
 
 #[cfg(target_os = "windows")]
@@ -504,7 +668,25 @@ mod tests {
             dir.join("c0ffee12beef")
         };
         assert!(is_stealth_copy_path(&exe));
-        assert_eq!(webview_user_data_dir_for_exe(&exe), Some(dir.join("ud")));
+    }
+
+    #[test]
+    fn persistent_webview_profile_is_stable_and_product_neutral() {
+        let local_appdata = Path::new(r"C:\Users\fixture\AppData\Local");
+        let first = persistent_webview_data_dir_for(local_appdata).unwrap();
+        let second = persistent_webview_data_dir_for(local_appdata).unwrap();
+
+        assert_eq!(first, local_appdata.join("blueorbit").join("webview"));
+        assert_eq!(first, second);
+        assert!(!contains_product_token(&first.to_string_lossy()));
+
+        let product_named_parent = Path::new(r"C:\Users\discord-quest-helper\AppData\Local");
+        assert_eq!(
+            persistent_webview_data_dir_for(product_named_parent).unwrap(),
+            product_named_parent
+                .join(RUNTIME_NAMESPACE)
+                .join(WEBVIEW_PROFILE_DIR_NAME)
+        );
     }
 
     #[test]
@@ -542,21 +724,81 @@ mod tests {
     }
 
     #[test]
-    fn dir_with_hex_exe_is_stealth_copy() {
+    fn ownership_markers_distinguish_stealth_trees_and_accept_legacy_profiles() {
+        fn fixture() -> (PathBuf, PathBuf) {
+            let dir = env::temp_dir().join(generate_random_suffix(DIR_HEX_LEN));
+            fs::create_dir_all(&dir).unwrap();
+            let exe = dir.join(format!("{}.exe", generate_random_suffix(FILE_HEX_LEN)));
+            fs::write(&exe, b"test").unwrap();
+            (dir, exe)
+        }
+
+        let (current_dir, current_exe) = fixture();
+        assert!(is_stealth_copy_path(&current_exe));
+        assert!(!dir_looks_like_stealth_copy(&current_dir));
+        create_stealth_ownership_marker(&current_dir).unwrap();
+        assert!(dir_looks_like_stealth_copy(&current_dir));
+        fs::remove_file(&current_exe).unwrap();
+        assert!(dir_looks_like_stealth_copy(&current_dir));
+
+        let (legacy_dir, legacy_exe) = fixture();
+        assert!(is_stealth_copy_path(&legacy_exe));
+        fs::create_dir_all(legacy_dir.join(LEGACY_WEBVIEW_DATA_DIR_NAME)).unwrap();
+        assert!(dir_looks_like_stealth_copy(&legacy_dir));
+        let marker = legacy_dir.join(STEALTH_OWNERSHIP_MARKER_NAME);
+        fs::create_dir(&marker).unwrap();
+        assert!(prepare_stealth_tree_for_cleanup(&legacy_dir));
+        fs::remove_dir(&marker).unwrap();
+        assert!(prepare_stealth_tree_for_cleanup(&legacy_dir));
+        fs::remove_file(&legacy_exe).unwrap();
+        assert!(dir_looks_like_stealth_copy(&legacy_dir));
+
+        let _ = fs::remove_dir_all(&current_dir);
+        let _ = fs::remove_dir_all(&legacy_dir);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn unmarked_legacy_cleanup_preserves_identification_on_partial_failure() {
         let dir = env::temp_dir().join(generate_random_suffix(DIR_HEX_LEN));
-        fs::create_dir_all(&dir).unwrap();
-        let exe_name = if cfg!(windows) {
-            format!("{}.exe", generate_random_suffix(FILE_HEX_LEN))
-        } else {
-            generate_random_suffix(FILE_HEX_LEN)
-        };
-        let exe = dir.join(&exe_name);
-        fs::write(&exe, b"test").unwrap();
-        assert!(is_stealth_copy_path(&exe));
-        assert!(!dir_looks_like_stealth_copy(&dir));
-        fs::create_dir_all(dir.join(WEBVIEW_DATA_DIR_NAME)).unwrap();
+        let profile = dir.join(LEGACY_WEBVIEW_DATA_DIR_NAME);
+        fs::create_dir_all(&profile).unwrap();
+        let exe = dir.join(format!("{}.exe", generate_random_suffix(FILE_HEX_LEN)));
+        let other = dir.join("locked.txt");
+        fs::write(&exe, b"exe").unwrap();
+        fs::write(&other, b"other").unwrap();
+
+        assert!(!remove_unmarked_legacy_tree_with(
+            &dir,
+            &profile,
+            |path| path != other && remove_tree_without_reboot(path),
+            |path| fs::remove_dir(path).is_ok() || !path.exists(),
+        ));
+        assert!(exe.exists());
+        assert!(profile.is_dir());
+
+        fs::remove_file(&other).unwrap();
+        assert!(!remove_unmarked_legacy_tree_with(
+            &dir,
+            &profile,
+            |path| path != exe && remove_tree_without_reboot(path),
+            |path| fs::remove_dir(path).is_ok() || !path.exists(),
+        ));
+        assert!(exe.exists());
+        assert!(profile.is_dir());
         assert!(dir_looks_like_stealth_copy(&dir));
-        let _ = fs::remove_dir_all(&dir);
+
+        assert!(!remove_unmarked_legacy_tree_with(
+            &dir,
+            &profile,
+            remove_tree_without_reboot,
+            |path| path != dir && (fs::remove_dir(path).is_ok() || !path.exists()),
+        ));
+        assert!(profile.is_dir());
+        assert!(dir_looks_like_stealth_copy(&dir));
+
+        assert!(remove_unmarked_legacy_tree_best_effort(&dir, &profile));
+        assert!(!dir.exists());
     }
 
     #[test]
@@ -591,14 +833,18 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
-    fn exit_cleanup_does_not_write_bat() {
+    fn exit_cleanup_does_not_write_bat_or_remove_persistent_profile() {
         let dir = env::temp_dir().join(generate_random_suffix(DIR_HEX_LEN));
         fs::create_dir_all(&dir).unwrap();
-        let ud = dir.join(WEBVIEW_DATA_DIR_NAME);
-        fs::create_dir_all(&ud).unwrap();
-        fs::write(ud.join("cache"), b"x").unwrap();
+        create_stealth_ownership_marker(&dir).unwrap();
         let exe = dir.join(format!("{}.exe", generate_random_suffix(FILE_HEX_LEN)));
         fs::write(&exe, b"test").unwrap();
+        let persistent_profile = env::temp_dir()
+            .join(format!("persistent-profile-{}", generate_random_suffix(8)))
+            .join(RUNTIME_NAMESPACE)
+            .join(WEBVIEW_PROFILE_DIR_NAME);
+        fs::create_dir_all(&persistent_profile).unwrap();
+        fs::write(persistent_profile.join("preferences"), b"keep").unwrap();
 
         let before: Vec<_> = fs::read_dir(env::temp_dir())
             .unwrap()
@@ -616,6 +862,12 @@ mod tests {
             .filter(|n| is_legacy_cleanup_bat(n))
             .collect();
         assert_eq!(before, after);
+        assert_eq!(
+            fs::read(persistent_profile.join("preferences")).unwrap(),
+            b"keep"
+        );
+        let persistent_root = persistent_profile.parent().unwrap().parent().unwrap();
+        let _ = fs::remove_dir_all(persistent_root);
         let _ = fs::remove_dir_all(&dir);
     }
 

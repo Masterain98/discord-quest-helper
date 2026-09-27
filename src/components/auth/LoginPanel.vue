@@ -39,6 +39,7 @@ import {
   type ExtractedAccount,
 } from '@/api/tauri'
 import { desktopClientArgForProvider, useDesktopClientState } from '@/composables/desktopClientState'
+import { clearCdpLaunchError, recordCdpLaunchError } from '@/composables/cdpDiagnostics'
 import {
   classifyCdpAvailability,
   canBeginLogin,
@@ -396,17 +397,25 @@ async function launchOrRestartSelectedTarget(target: CdpLaunchTarget | null) {
     'running',
     target === 'vesktop' ? 'auth.progress.launching_vesktop' : 'auth.progress.launching_discord',
   )
+  clearCdpLaunchError()
+  let launchCompleted = false
   try {
     await launchDesktopClientCdp(questsStore.cdpPort, selection, false)
+    launchCompleted = true
     await refreshCdpStatus()
   } catch (launchError) {
     const latest = await clients.refresh(questsStore.cdpPort)
-    if (!latest) throw launchError
+    if (!latest) {
+      if (!launchCompleted) recordCdpLaunchError(launchError)
+      throw launchError
+    }
     if (latest.endpoint.status !== 'discordReady') {
       if (selectionIsRunning(latest, selection)) {
+        if (!launchCompleted) recordCdpLaunchError(launchError)
         requestCdpRestart(target)
         return
       }
+      if (!launchCompleted) recordCdpLaunchError(launchError)
       throw launchError
     }
     const provider = selectionProvider(latest, selection)
@@ -499,11 +508,17 @@ async function confirmCdpRestart() {
   try {
     const snapshot = await clients.refresh(questsStore.cdpPort)
     if (!snapshot) throw new Error(clients.error.value ?? 'Desktop client state is unavailable')
-    await launchDesktopClientCdp(
-      questsStore.cdpPort,
-      selectionForTarget(selectedCdpTarget.value),
-      true,
-    )
+    clearCdpLaunchError()
+    try {
+      await launchDesktopClientCdp(
+        questsStore.cdpPort,
+        selectionForTarget(selectedCdpTarget.value),
+        true,
+      )
+    } catch (launchError) {
+      recordCdpLaunchError(launchError)
+      throw launchError
+    }
     ownerConflict.value = false
     await refreshCdpStatus()
     await finishCdpLogin()

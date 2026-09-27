@@ -1,4 +1,7 @@
-use crate::{CdpProbeStatus, CdpTarget};
+use crate::{
+    CdpDiagnosticTarget, CdpProbeObservation, CdpProbeStatus, CdpTarget, CdpTargetClassification,
+    DetailedCdpProbeResult,
+};
 use serde_json::Value;
 use std::error::Error;
 use std::fmt;
@@ -10,6 +13,10 @@ const MAX_HTTP_RESPONSE_BYTES: usize = 1024 * 1024;
 
 pub trait CdpProbe {
     fn probe(&self, port: u16) -> CdpProbeStatus;
+
+    fn observe(&self, port: u16) -> CdpProbeObservation {
+        self.probe(port).into()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -40,6 +47,10 @@ impl StdCdpProbe {
 impl CdpProbe for StdCdpProbe {
     fn probe(&self, port: u16) -> CdpProbeStatus {
         probe_with_timeouts(port, self.connect_timeout, self.io_timeout)
+    }
+
+    fn observe(&self, port: u16) -> CdpProbeObservation {
+        detailed_probe_with_timeouts(port, self.connect_timeout, self.io_timeout).observation()
     }
 }
 
@@ -116,7 +127,50 @@ pub fn pick_discord_target(targets: &[CdpTarget]) -> Option<&CdpTarget> {
         .iter()
         .filter(is_candidate)
         .find(|target| is_discord_main_renderer(target))
-        .or_else(|| targets.iter().find(is_candidate))
+}
+
+pub fn classify_cdp_target(target: &CdpTarget) -> CdpTargetClassification {
+    if target.target_type != "page" {
+        return CdpTargetClassification::NotPage;
+    }
+    if target.url.eq_ignore_ascii_case("about:blank") {
+        return CdpTargetClassification::AboutBlank;
+    }
+    if target.title.to_ascii_lowercase().contains("updater") {
+        return CdpTargetClassification::Updater;
+    }
+    if target.web_socket_debugger_url.is_none() {
+        return CdpTargetClassification::MissingWebSocketDebuggerUrl;
+    }
+    if !is_discord_target(target) {
+        return CdpTargetClassification::NonDiscordPage;
+    }
+    if is_discord_auxiliary_window(target) {
+        return CdpTargetClassification::DiscordAuxiliary;
+    }
+    if is_discord_main_renderer(target) {
+        return CdpTargetClassification::DiscordMainRenderer;
+    }
+    CdpTargetClassification::DiscordOtherRenderer
+}
+
+fn sanitized_target_url(url: &str) -> String {
+    url.split(['?', '#']).next().unwrap_or(url).to_string()
+}
+
+fn diagnostic_target(target: &CdpTarget) -> CdpDiagnosticTarget {
+    let classification = classify_cdp_target(target);
+    CdpDiagnosticTarget {
+        id: target.id.clone(),
+        target_type: target.target_type.clone(),
+        title: target.title.clone(),
+        url: sanitized_target_url(&target.url),
+        has_web_socket_debugger_url: target.web_socket_debugger_url.is_some(),
+        is_discord_target: is_discord_target(target),
+        is_auxiliary_window: is_discord_auxiliary_window(target),
+        is_main_renderer: classification == CdpTargetClassification::DiscordMainRenderer,
+        classification,
+    }
 }
 
 /// Loopback `/json` discovery error. This path never uses an HTTP proxy.
@@ -204,25 +258,99 @@ pub fn list_cdp_targets_with_timeouts(
     connect_timeout: Duration,
     io_timeout: Duration,
 ) -> Result<Vec<CdpTarget>, CdpListError> {
+    let response = fetch_cdp_http_response(port, connect_timeout, io_timeout)?;
+    parse_cdp_targets_http_response(port, &response)
+}
+
+fn fetch_cdp_http_response(
+    port: u16,
+    connect_timeout: Duration,
+    io_timeout: Duration,
+) -> Result<Vec<u8>, CdpListError> {
     if port == 0 {
         return Err(CdpListError::Unreachable { port });
     }
-
     let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
     let mut stream = TcpStream::connect_timeout(&address, connect_timeout)
         .map_err(|_| CdpListError::Unreachable { port })?;
-
     let _ = stream.set_read_timeout(Some(io_timeout));
     let _ = stream.set_write_timeout(Some(io_timeout));
     let request =
         format!("GET /json HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n");
-
     stream
         .write_all(request.as_bytes())
         .map_err(|source| CdpListError::ConnectionFailed { port, source })?;
+    read_http_response(&mut stream, port, io_timeout)
+}
 
-    let response = read_http_response(&mut stream, port, io_timeout)?;
-    parse_cdp_targets_http_response(port, &response)
+pub fn detailed_probe_cdp(port: u16) -> DetailedCdpProbeResult {
+    let probe = StdCdpProbe::default();
+    detailed_probe_with_timeouts(port, probe.connect_timeout, probe.io_timeout)
+}
+
+fn detailed_probe_with_timeouts(
+    port: u16,
+    connect_timeout: Duration,
+    io_timeout: Duration,
+) -> DetailedCdpProbeResult {
+    let response = match fetch_cdp_http_response(port, connect_timeout, io_timeout) {
+        Ok(response) => response,
+        Err(CdpListError::Unreachable { .. }) => {
+            return DetailedCdpProbeResult {
+                status: CdpProbeStatus::Unreachable,
+                port_listening: false,
+                http_reachable: false,
+                http_status: None,
+                response_parseable: false,
+                targets: Vec::new(),
+            };
+        }
+        Err(_) => {
+            return DetailedCdpProbeResult {
+                status: CdpProbeStatus::PortOccupied,
+                port_listening: true,
+                http_reachable: false,
+                http_status: None,
+                response_parseable: false,
+                targets: Vec::new(),
+            };
+        }
+    };
+    let http_status = http_status(&response);
+    match parse_cdp_targets_http_response(port, &response) {
+        Ok(raw_targets) => {
+            let status = pick_discord_target(&raw_targets).map_or(
+                CdpProbeStatus::CdpWithoutDiscordTarget,
+                |target| CdpProbeStatus::DiscordReady {
+                    target_title: (!target.title.is_empty()).then(|| target.title.clone()),
+                },
+            );
+            DetailedCdpProbeResult {
+                status,
+                port_listening: true,
+                http_reachable: true,
+                http_status,
+                response_parseable: true,
+                targets: raw_targets.iter().map(diagnostic_target).collect(),
+            }
+        }
+        Err(_) => DetailedCdpProbeResult {
+            status: CdpProbeStatus::PortOccupied,
+            port_listening: true,
+            http_reachable: http_status.is_some(),
+            http_status,
+            response_parseable: false,
+            targets: Vec::new(),
+        },
+    }
+}
+
+fn http_status(response: &[u8]) -> Option<u16> {
+    let header_end = response
+        .windows(4)
+        .position(|window| window == b"\r\n\r\n")?;
+    let head = std::str::from_utf8(&response[..header_end]).ok()?;
+    head.lines().next()?.split_whitespace().nth(1)?.parse().ok()
 }
 
 fn probe_with_timeouts(
@@ -449,6 +577,39 @@ mod tests {
         ];
         let picked = pick_discord_target(&targets).unwrap();
         assert_eq!(picked.id, "me");
+    }
+
+    #[test]
+    fn other_discord_renderer_is_classified_but_not_ready() {
+        let store = target(
+            "store",
+            "Discord Store",
+            "https://discord.com/store?source=test#top",
+        );
+        assert_eq!(
+            classify_cdp_target(&store),
+            CdpTargetClassification::DiscordOtherRenderer
+        );
+        assert!(pick_discord_target(std::slice::from_ref(&store)).is_none());
+        let diagnostic = diagnostic_target(&store);
+        assert_eq!(diagnostic.url, "https://discord.com/store");
+        assert!(!diagnostic.is_main_renderer);
+    }
+
+    #[test]
+    fn target_classification_explains_missing_websocket_and_non_page_targets() {
+        let mut missing_websocket = target("login", "Discord", "https://discord.com/login");
+        missing_websocket.web_socket_debugger_url = None;
+        assert_eq!(
+            classify_cdp_target(&missing_websocket),
+            CdpTargetClassification::MissingWebSocketDebuggerUrl
+        );
+        let mut worker = target("worker", "", "");
+        worker.target_type = "worker".to_string();
+        assert_eq!(
+            classify_cdp_target(&worker),
+            CdpTargetClassification::NotPage
+        );
     }
 
     #[test]

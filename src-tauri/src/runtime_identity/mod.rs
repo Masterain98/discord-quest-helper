@@ -160,14 +160,14 @@ pub fn runtime_window_title() -> String {
     }
 }
 
-pub fn webview_user_data_dir() -> Option<PathBuf> {
+pub fn webview_user_data_dir() -> Result<Option<PathBuf>, String> {
     #[cfg(target_os = "windows")]
     {
         windows::webview_user_data_dir()
     }
     #[cfg(not(target_os = "windows"))]
     {
-        None
+        Ok(None)
     }
 }
 

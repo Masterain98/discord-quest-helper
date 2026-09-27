@@ -1,13 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from 'vue'
-import { Check, Copy, FolderOpen, Loader2, RotateCw, SlidersHorizontal } from 'lucide-vue-next'
+import { Loader2, RotateCw, SlidersHorizontal } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
-import { invoke } from '@tauri-apps/api/core'
-import { documentDir, join } from '@tauri-apps/api/path'
-import { mkdir } from '@tauri-apps/plugin-fs'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Label } from '@/components/ui/label'
 import { useQuestsStore } from '@/stores/quests'
 import { getSuperPropertiesMode, retrySuperProperties, type SuperPropertiesModeInfo } from '@/api/tauri'
 import SettingRow from './SettingRow.vue'
@@ -15,6 +11,7 @@ import { navigateToTab } from '@/utils/navigate'
 import SettingsSectionCard from './SettingsSectionCard.vue'
 import { cn } from '@/lib/utils'
 import { settingToneClass, type SettingsTone } from './settingTones'
+import { isDebugModeEnabled } from '@/utils/debugMode'
 
 function goToPortSection() {
   navigateToTab('settings', 'discord_integration')
@@ -28,11 +25,9 @@ function goToPortSection() {
 const { t } = useI18n()
 const questsStore = useQuestsStore()
 
-const cachePath = ref('')
-const copied = ref(false)
 const superPropsMode = ref<SuperPropertiesModeInfo | null>(null)
 const retryingMode = ref(false)
-const debugModeEnabled = ref(localStorage.getItem('debugMode') === 'true')
+const debugModeEnabled = ref(isDebugModeEnabled())
 
 const superPropsTone = computed<SettingsTone>(() => {
   if (superPropsMode.value?.mode === 'cdp') return 'success'
@@ -62,27 +57,8 @@ async function retrySuperProps() {
   }
 }
 
-async function copyPath() {
-  if (!cachePath.value) return
-  await navigator.clipboard.writeText(cachePath.value)
-  copied.value = true
-  setTimeout(() => { copied.value = false }, 2000)
-}
-
-async function openCacheDir() {
-  if (!cachePath.value) return
-  try {
-    await mkdir(cachePath.value, { recursive: true })
-    await invoke('open_in_explorer', { path: cachePath.value })
-  } catch (e) {
-    console.error('Failed to open cache dir:', e)
-  }
-}
-
 onMounted(async () => {
-  const docDir = await documentDir()
-  cachePath.value = await join(docDir, 'DiscordQuestGames')
-  debugModeEnabled.value = localStorage.getItem('debugMode') === 'true'
+  debugModeEnabled.value = isDebugModeEnabled()
   await loadSuperPropsMode()
 })
 </script>
@@ -141,28 +117,5 @@ onMounted(async () => {
         </SettingRow>
       </div>
 
-      <div class="space-y-3 rounded-lg border border-sky-500/25 bg-sky-500/5 p-4">
-        <div>
-          <Label>{{ t('settings.cache') }}</Label>
-          <p class="mt-1 text-xs text-muted-foreground">{{ t('settings.cache_desc') }}</p>
-        </div>
-        <div class="flex items-center gap-2 rounded-md border bg-background/80 p-3" v-if="cachePath">
-          <code class="flex-1 break-all text-xs font-mono">{{ cachePath }}</code>
-          <Button
-            variant="ghost"
-            size="icon"
-            :aria-label="t('debug.copy')"
-            class="h-7 w-7 shrink-0 text-sky-700 hover:bg-sky-500/10 hover:text-sky-700 dark:text-sky-300 dark:hover:text-sky-300"
-            @click="copyPath"
-          >
-            <Check v-if="copied" class="h-3.5 w-3.5" />
-            <Copy v-else class="h-3.5 w-3.5" />
-          </Button>
-        </div>
-        <Button variant="outline" :class="cn('gap-2', settingToneClass.info.buttonSoft)" @click="openCacheDir">
-          <FolderOpen class="h-4 w-4" />
-          {{ t('settings.open_cache_dir') }}
-        </Button>
-      </div>
   </SettingsSectionCard>
 </template>

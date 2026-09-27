@@ -10,17 +10,13 @@ import {
   type DesktopClientState,
   type ProviderId,
 } from '@/api/tauri'
+import { commandErrorMessage } from '@/utils/commandError'
 
 const state = ref<DesktopClientState | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
 let latestRequest = 0
 const inFlightRefreshes = new Map<number, Promise<DesktopClientState | null>>()
-
-function errorMessage(value: unknown): string {
-  if (typeof value === 'object' && value && 'message' in value) return String(value.message)
-  return value instanceof Error ? value.message : String(value)
-}
 
 async function apply(
   operation: () => Promise<DesktopClientState>,
@@ -34,7 +30,7 @@ async function apply(
     if (request === latestRequest && snapshot.port === port) state.value = snapshot
     return snapshot
   } catch (cause) {
-    if (request === latestRequest) error.value = errorMessage(cause)
+    if (request === latestRequest) error.value = commandErrorMessage(cause)
     throw cause
   } finally {
     if (request === latestRequest) loading.value = false
