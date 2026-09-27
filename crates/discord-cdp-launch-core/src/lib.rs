@@ -10,10 +10,10 @@ mod supervisor;
 mod vesktop;
 
 pub use cdp::{
-    is_discord_auxiliary_page, is_discord_auxiliary_window, is_discord_target,
-    is_transient_cdp_io_error, list_cdp_targets, list_cdp_targets_with_timeouts,
-    parse_cdp_targets_http_response, pick_discord_target, probe_cdp, CdpListError, CdpProbe,
-    StdCdpProbe,
+    classify_cdp_target, detailed_probe_cdp, is_discord_auxiliary_page,
+    is_discord_auxiliary_window, is_discord_target, is_transient_cdp_io_error, list_cdp_targets,
+    list_cdp_targets_with_timeouts, parse_cdp_targets_http_response, pick_discord_target,
+    probe_cdp, CdpListError, CdpProbe, StdCdpProbe,
 };
 pub use channel::{parse_discord_channel, DiscordChannel};
 pub use error::LaunchError;
@@ -23,16 +23,17 @@ pub use launcher::{
     select_preferred_install, terminate_discord_processes, PlatformBackend,
 };
 pub use model::{
-    CdpPortOwner, CdpProbeStatus, CdpTarget, ClientCapabilities, ClientInstallation,
-    DesktopCdpSession, DesktopClientPreference, DiscordInstall, DiscordLaunchMode, DiscoverySource,
-    InstallationId, LaunchOptions, LaunchOutcome, LaunchResult, LaunchSelector, LaunchTarget,
-    LinuxDesktopProxySettings, ProviderId, RestoreFailure, RestoreResult, RunningCdpSession,
-    SessionOwnership, ValidationState, VariantId, DEFAULT_CDP_PORT,
+    CdpDiagnosticProcess, CdpDiagnosticTarget, CdpPortOwner, CdpProbeObservation, CdpProbeStatus,
+    CdpTarget, CdpTargetClassification, ClientCapabilities, ClientInstallation, DesktopCdpSession,
+    DesktopClientPreference, DetailedCdpProbeResult, DiscordInstall, DiscordLaunchMode,
+    DiscoverySource, InstallationId, LaunchOptions, LaunchOutcome, LaunchResult, LaunchSelector,
+    LaunchTarget, LinuxDesktopProxySettings, ProviderId, RestoreFailure, RestoreResult,
+    RunningCdpSession, SessionOwnership, ValidationState, VariantId, DEFAULT_CDP_PORT,
 };
 pub use platform::SystemPlatform;
 pub use processes::{
-    inspect_cdp_port_owner, is_client_installation_running, is_installation_running,
-    list_running_desktop_cdp_sessions, list_running_discord_cdp_sessions,
+    cdp_diagnostic_processes, inspect_cdp_port_owner, is_client_installation_running,
+    is_installation_running, list_running_desktop_cdp_sessions, list_running_discord_cdp_sessions,
     restore_all_discord_to_normal, restore_desktop_client_to_normal, running_vesktop_installs,
     terminate_installation_process_tree,
 };

@@ -1,6 +1,6 @@
 use discord_cdp_launch_core::{
-    list_cdp_targets_with_timeouts, parse_cdp_targets_http_response, CdpListError, CdpProbe,
-    CdpProbeStatus, StdCdpProbe,
+    detailed_probe_cdp, list_cdp_targets_with_timeouts, parse_cdp_targets_http_response,
+    CdpListError, CdpProbe, CdpProbeStatus, CdpTargetClassification, StdCdpProbe,
 };
 use std::io::{Read, Write};
 use std::net::TcpListener;
@@ -110,6 +110,50 @@ fn list_cdp_targets_rejects_http_400() {
         CdpListError::HttpStatus { status: 400, .. }
     ));
     assert!(!error.is_transient());
+}
+
+#[test]
+fn detailed_probe_reports_http_and_sanitized_target_classification() {
+    let _guard = serialize_socket_test();
+    let body = r#"[{"id":"1","type":"page","title":"Friends","url":"https://discord.com/channels/@me?secret=value#fragment","webSocketDebuggerUrl":"ws://127.0.0.1/devtools/page/private"},{"id":"2","type":"page","title":"Discord Overlay","url":"https://discord.com/popout","webSocketDebuggerUrl":"ws://127.0.0.1/devtools/page/overlay"}]"#;
+    let port = serve_once(
+        Some(leaked_response(response("200 OK", body))),
+        Duration::ZERO,
+    );
+    let detailed = detailed_probe_cdp(port);
+    assert!(matches!(
+        detailed.status,
+        CdpProbeStatus::DiscordReady { .. }
+    ));
+    assert!(detailed.port_listening);
+    assert!(detailed.http_reachable);
+    assert_eq!(detailed.http_status, Some(200));
+    assert!(detailed.response_parseable);
+    assert_eq!(detailed.targets.len(), 2);
+    assert_eq!(detailed.targets[0].url, "https://discord.com/channels/@me");
+    assert_eq!(
+        detailed.targets[0].classification,
+        CdpTargetClassification::DiscordMainRenderer
+    );
+    assert_eq!(
+        detailed.targets[1].classification,
+        CdpTargetClassification::DiscordAuxiliary
+    );
+}
+
+#[test]
+fn detailed_probe_distinguishes_non_cdp_http_service() {
+    let _guard = serialize_socket_test();
+    let port = serve_once(
+        Some(leaked_response(response("404 Not Found", "not cdp"))),
+        Duration::ZERO,
+    );
+    let detailed = detailed_probe_cdp(port);
+    assert_eq!(detailed.status, CdpProbeStatus::PortOccupied);
+    assert!(detailed.port_listening);
+    assert!(detailed.http_reachable);
+    assert_eq!(detailed.http_status, Some(404));
+    assert!(!detailed.response_parseable);
 }
 
 #[test]

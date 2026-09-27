@@ -49,34 +49,9 @@ pub fn list_running_desktop_cdp_sessions() -> Result<Vec<crate::DesktopCdpSessio
         };
         let variant_id =
             known_channel.map(|channel| crate::VariantId(channel.as_str().to_string()));
-        let matching_install = process
-            .executable_path
-            .as_deref()
-            .and_then(|path| {
-                installations.iter().find(|install| {
-                    install.provider_id == provider_id
-                        && installation_executable_path(install).is_some_and(|candidate| {
-                            paths_refer_to_same_executable(path, candidate)
-                        })
-                })
-            })
-            .or_else(|| {
-                let flatpak_path = process
-                    .executable_path
-                    .as_deref()
-                    .is_some_and(|path| path.starts_with("/app"));
-                flatpak_path
-                    .then(|| {
-                        installations.iter().find(|install| {
-                            install.provider_id == provider_id
-                                && matches!(
-                                    &install.launch_target,
-                                    crate::LaunchTarget::Flatpak { .. }
-                                )
-                        })
-                    })
-                    .flatten()
-            });
+        let matching_install = installations.iter().find(|install| {
+            install.provider_id == provider_id && process_matches_installation(process, install)
+        });
         for port in process
             .command_line
             .iter()
@@ -381,6 +356,68 @@ fn process_snapshots() -> Vec<ProcessSnapshot> {
         .collect()
 }
 
+pub fn cdp_diagnostic_processes(
+    installations: &[crate::ClientInstallation],
+    selected_installation_id: Option<&crate::InstallationId>,
+    requested_port: u16,
+) -> Vec<crate::CdpDiagnosticProcess> {
+    let mut system = System::new();
+    refresh_processes(&mut system);
+    let mut diagnostics: Vec<_> = system
+        .processes()
+        .iter()
+        .filter_map(|(pid, process)| {
+            let name = process.name().to_string_lossy().into_owned();
+            let provider_id = if crate::is_vesktop_process_name(&name) {
+                Some(crate::ProviderId::vesktop())
+            } else if channel_from_process_name(process.name()).is_some() {
+                Some(crate::ProviderId::official_discord())
+            } else {
+                None
+            };
+            let remote_debugging_port = process
+                .cmd()
+                .iter()
+                .filter_map(|argument| parse_cdp_port(argument))
+                .next();
+            if provider_id.is_none() && remote_debugging_port != Some(requested_port) {
+                return None;
+            }
+            let snapshot = ProcessSnapshot {
+                name: process.name().to_os_string(),
+                executable_path: process.exe().map(Path::to_path_buf),
+                command_line: process.cmd().to_vec(),
+            };
+            let matching_installation = installations
+                .iter()
+                .find(|installation| process_matches_installation(&snapshot, installation));
+            let installation_id = matching_installation.map(|installation| installation.id.clone());
+            Some(crate::CdpDiagnosticProcess {
+                pid: pid.as_u32(),
+                process_name: name,
+                provider_id: provider_id.or_else(|| {
+                    matching_installation.map(|installation| installation.provider_id.clone())
+                }),
+                is_selected_installation: selected_installation_id
+                    .is_some_and(|selected| installation_id.as_ref() == Some(selected)),
+                installation_id,
+                executable_path: snapshot.executable_path,
+                has_remote_debugging_port_arg: remote_debugging_port.is_some(),
+                remote_debugging_port,
+                start_time: Some(process.start_time()),
+            })
+        })
+        .collect();
+    diagnostics.sort_by(|left, right| {
+        right
+            .is_selected_installation
+            .cmp(&left.is_selected_installation)
+            .then(left.process_name.cmp(&right.process_name))
+            .then(left.pid.cmp(&right.pid))
+    });
+    diagnostics
+}
+
 fn refresh_processes(system: &mut System) {
     system.refresh_processes_specifics(
         ProcessesToUpdate::All,
@@ -601,27 +638,34 @@ fn cdp_port_matches_installation_in(
         if !uses_port {
             return false;
         }
-        match &installation.launch_target {
-            crate::LaunchTarget::Executable { path, .. } => process
-                .executable_path
-                .as_deref()
-                .is_some_and(|running| paths_refer_to_same_executable(running, path)),
-            crate::LaunchTarget::MacBundle {
-                executable_path, ..
-            } => process
-                .executable_path
-                .as_deref()
-                .is_some_and(|running| paths_refer_to_same_executable(running, executable_path)),
-            crate::LaunchTarget::Flatpak { .. } => {
-                installation.provider_id == crate::ProviderId::vesktop()
-                    && process
-                        .executable_path
-                        .as_deref()
-                        .is_some_and(|path| path.starts_with("/app"))
-                    && crate::is_vesktop_process_name(&process.name.to_string_lossy())
-            }
-        }
+        process_matches_installation(process, installation)
     })
+}
+
+fn process_matches_installation(
+    process: &ProcessSnapshot,
+    installation: &crate::ClientInstallation,
+) -> bool {
+    match &installation.launch_target {
+        crate::LaunchTarget::Executable { path, .. } => process
+            .executable_path
+            .as_deref()
+            .is_some_and(|running| paths_refer_to_same_executable(running, path)),
+        crate::LaunchTarget::MacBundle {
+            executable_path, ..
+        } => process
+            .executable_path
+            .as_deref()
+            .is_some_and(|running| paths_refer_to_same_executable(running, executable_path)),
+        crate::LaunchTarget::Flatpak { .. } => {
+            installation.provider_id == crate::ProviderId::vesktop()
+                && process
+                    .executable_path
+                    .as_deref()
+                    .is_some_and(|path| path.starts_with("/app"))
+                && crate::is_vesktop_process_name(&process.name.to_string_lossy())
+        }
+    }
 }
 
 pub(crate) fn classify_cdp_port_owner(
@@ -792,6 +836,39 @@ mod tests {
 
         assert!(!cdp_port_matches_installation_in(
             &processes, 9223, &selected
+        ));
+    }
+
+    #[test]
+    fn flatpak_vesktop_process_matches_the_flatpak_installation() {
+        let installation = crate::ClientInstallation {
+            id: crate::InstallationId("vencord.vesktop:flatpak".into()),
+            provider_id: crate::ProviderId::vesktop(),
+            variant_id: Some(crate::VariantId("flatpak".into())),
+            display_name: "Vesktop (Flatpak)".into(),
+            source: crate::DiscoverySource::OsMetadata,
+            launch_target: crate::LaunchTarget::Flatpak {
+                app_id: "dev.vencord.Vesktop".into(),
+                command: Some("flatpak".into()),
+            },
+            capabilities: crate::ClientCapabilities {
+                cdp: true,
+                local_token: false,
+                restore_normal: true,
+            },
+            validation: crate::ValidationState::Valid,
+        };
+        let process = ProcessSnapshot {
+            name: OsString::from("vesktop"),
+            executable_path: Some(PathBuf::from("/app/bin/vesktop")),
+            command_line: vec![OsString::from("--remote-debugging-port=9223")],
+        };
+
+        assert!(process_matches_installation(&process, &installation));
+        assert!(cdp_port_matches_installation_in(
+            &[process],
+            9223,
+            &installation
         ));
     }
 
