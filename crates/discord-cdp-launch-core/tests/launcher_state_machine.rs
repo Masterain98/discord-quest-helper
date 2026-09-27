@@ -311,15 +311,17 @@ fn renderer_detection_extends_the_base_readiness_window() {
         CdpProbeStatus::CdpWithoutDiscordTarget,
         CdpProbeStatus::CdpWithoutDiscordTarget,
         CdpProbeStatus::CdpWithoutDiscordTarget,
+        CdpProbeStatus::CdpWithoutDiscordTarget,
+        CdpProbeStatus::CdpWithoutDiscordTarget,
         CdpProbeStatus::DiscordReady {
             target_title: Some("Friends".to_string()),
         },
     ]);
     let options = LaunchOptions {
-        // The fifth observation must land after the base deadline but well
-        // inside the extended deadline, even on a loaded CI runner.
-        readiness_timeout: Duration::from_millis(250),
-        poll_interval: Duration::from_millis(75),
+        // The seventh renderer observation lands after the base deadline with
+        // enough slack to absorb delayed polling on loaded CI runners.
+        readiness_timeout: Duration::from_secs(1),
+        poll_interval: Duration::from_millis(200),
         ..fast_options()
     };
     let result = launch_with_backends(options, &platform, &probe).unwrap();
