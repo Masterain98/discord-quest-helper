@@ -477,41 +477,30 @@ fn schedule_self_deletion(exe_path: &Path) {
 fn remove_stealth_tree_best_effort(dir: &Path) -> bool {
     let marker = dir.join(STEALTH_OWNERSHIP_MARKER_NAME);
     let legacy_profile = dir.join(LEGACY_WEBVIEW_DATA_DIR_NAME);
-    let unmarked_legacy = !marker.is_file() && legacy_profile.is_dir();
+    if !marker.is_file() && legacy_profile.is_dir() {
+        return remove_unmarked_legacy_tree_best_effort(dir, &legacy_profile);
+    }
     let mut all_payload_removed = true;
     let Ok(entries) = fs::read_dir(dir) else {
         return false;
     };
 
-    // Keep the ownership marker until every payload entry is gone. If the
-    // marker could not be written to a legacy tree, retain its old profile
-    // until the executable is removed so an unsuccessful attempt stays
-    // recognizable. Do not schedule reboot deletion without a marker.
+    // Keep the ownership marker until every payload entry is gone. The running
+    // executable can be scheduled for reboot deletion because this marker
+    // makes the remainder discoverable on the next launch.
     for entry in entries {
         let Ok(entry) = entry else {
             all_payload_removed = false;
             continue;
         };
         let path = entry.path();
-        if path == marker || (unmarked_legacy && path == legacy_profile) {
+        if path == marker {
             continue;
         }
-        all_payload_removed &= if unmarked_legacy {
-            if path.is_dir() {
-                fs::remove_dir_all(&path).is_ok() || !path.exists()
-            } else {
-                fs::remove_file(&path).is_ok() || !path.exists()
-            }
-        } else {
-            remove_tree_best_effort(&path)
-        };
+        all_payload_removed &= remove_tree_best_effort(&path);
     }
 
     if !all_payload_removed {
-        return false;
-    }
-
-    if unmarked_legacy && !remove_tree_best_effort(&legacy_profile) {
         return false;
     }
 
@@ -525,6 +514,66 @@ fn remove_stealth_tree_best_effort(dir: &Path) -> bool {
     // the directory recognizable so the next launch can retry safely.
     let _ = create_stealth_ownership_marker(dir);
     false
+}
+
+#[cfg(target_os = "windows")]
+fn remove_unmarked_legacy_tree_best_effort(dir: &Path, profile: &Path) -> bool {
+    remove_unmarked_legacy_tree_with(dir, profile, remove_tree_without_reboot)
+}
+
+#[cfg(target_os = "windows")]
+fn remove_unmarked_legacy_tree_with(
+    dir: &Path,
+    profile: &Path,
+    mut remove: impl FnMut(&Path) -> bool,
+) -> bool {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return false;
+    };
+    let mut executables = Vec::new();
+    for entry in entries {
+        let Ok(entry) = entry else {
+            return false;
+        };
+        let path = entry.path();
+        if path == profile {
+            continue;
+        }
+        if path.is_file() && is_stealth_copy_path(&path) {
+            executables.push(path);
+        } else if !remove(&path) {
+            return false;
+        }
+    }
+
+    // Leave both ownership clues in place while removing other payload. A
+    // locked item or executable can then be retried on the next launch.
+    let Ok(profile_entries) = fs::read_dir(profile) else {
+        return false;
+    };
+    for entry in profile_entries {
+        let Ok(entry) = entry else {
+            return false;
+        };
+        if !remove(&entry.path()) {
+            return false;
+        }
+    }
+    for executable in executables {
+        if !remove(&executable) {
+            return false;
+        }
+    }
+    fs::remove_dir(profile).is_ok() && (fs::remove_dir(dir).is_ok() || !dir.exists())
+}
+
+#[cfg(target_os = "windows")]
+fn remove_tree_without_reboot(path: &Path) -> bool {
+    if path.is_dir() {
+        fs::remove_dir_all(path).is_ok() || !path.exists()
+    } else {
+        fs::remove_file(path).is_ok() || !path.exists()
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -669,6 +718,35 @@ mod tests {
 
         let _ = fs::remove_dir_all(&current_dir);
         let _ = fs::remove_dir_all(&legacy_dir);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn unmarked_legacy_cleanup_preserves_identification_on_partial_failure() {
+        let dir = env::temp_dir().join(generate_random_suffix(DIR_HEX_LEN));
+        let profile = dir.join(LEGACY_WEBVIEW_DATA_DIR_NAME);
+        fs::create_dir_all(&profile).unwrap();
+        let exe = dir.join(format!("{}.exe", generate_random_suffix(FILE_HEX_LEN)));
+        let other = dir.join("locked.txt");
+        fs::write(&exe, b"exe").unwrap();
+        fs::write(&other, b"other").unwrap();
+
+        assert!(!remove_unmarked_legacy_tree_with(&dir, &profile, |path| {
+            path != other && remove_tree_without_reboot(path)
+        }));
+        assert!(exe.exists());
+        assert!(profile.is_dir());
+
+        fs::remove_file(&other).unwrap();
+        assert!(!remove_unmarked_legacy_tree_with(&dir, &profile, |path| {
+            path != exe && remove_tree_without_reboot(path)
+        }));
+        assert!(exe.exists());
+        assert!(profile.is_dir());
+        assert!(dir_looks_like_stealth_copy(&dir));
+
+        assert!(remove_unmarked_legacy_tree_best_effort(&dir, &profile));
+        assert!(!dir.exists());
     }
 
     #[test]
