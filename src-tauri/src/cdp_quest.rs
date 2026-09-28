@@ -1324,6 +1324,12 @@ fn build_quest_route_warmup_plan(current_url: &str) -> Option<QuestRouteWarmupPl
     })
 }
 
+fn is_quest_home_url(current_url: &str) -> bool {
+    reqwest::Url::parse(current_url)
+        .map(|url| url.path().eq_ignore_ascii_case("/quest-home"))
+        .unwrap_or(false)
+}
+
 fn js_warmup_quest_route(plan: &QuestRouteWarmupPlan) -> String {
     let warmup_url = serde_json::to_string(&plan.warmup_url).unwrap_or_else(|_| "\"\"".to_string());
     let restore_url =
@@ -1406,6 +1412,23 @@ fn js_warmup_quest_route(plan: &QuestRouteWarmupPlan) -> String {
                 return {{ success: true, method: "already-there", targetPath, failures }};
             }}
 
+            // Discord's current router exports may expose transition methods that
+            // resolve without changing routes. Trying each one costs up to 7.5s
+            // before reaching this History API fallback. The fallback is also the
+            // only method observed to work on the current Discord client.
+            try {{
+                history.pushState(history.state, "", targetPath);
+                window.dispatchEvent(new PopStateEvent("popstate", {{ state: history.state }}));
+                window.dispatchEvent(new Event("locationchange"));
+                document.dispatchEvent(new Event("locationchange"));
+                if (await waitForPath(targetPath, 1200)) {{
+                    return {{ success: true, method: "history.pushState", targetPath, failures }};
+                }}
+                failures.push("history.pushState:no-route-change");
+            }} catch (e) {{
+                failures.push("history.pushState:" + String(e));
+            }}
+
             const router = findRouter();
             if (router) {{
                 if (typeof router.transitionTo === "function") {{
@@ -1445,19 +1468,6 @@ fn js_warmup_quest_route(plan: &QuestRouteWarmupPlan) -> String {
                 }}
             }} else {{
                 failures.push("router:not-found");
-            }}
-
-            try {{
-                history.pushState(history.state, "", targetPath);
-                window.dispatchEvent(new PopStateEvent("popstate", {{ state: history.state }}));
-                window.dispatchEvent(new Event("locationchange"));
-                document.dispatchEvent(new Event("locationchange"));
-                if (await waitForPath(targetPath, 1200)) {{
-                    return {{ success: true, method: "history.pushState", targetPath, failures }};
-                }}
-                failures.push("history.pushState:no-route-change");
-            }} catch (e) {{
-                failures.push("history.pushState:" + String(e));
             }}
 
             return {{ success: false, method: null, targetPath, failures }};
@@ -1657,6 +1667,16 @@ async fn cdp_warmup_quest_route(port: u16) {
             return;
         }
     };
+
+    if is_quest_home_url(&primary_target.url) {
+        log(
+            LogLevel::Info,
+            LogCategory::TokenExtraction,
+            "CDP quest route warmup skipped: already on quest-home",
+            None,
+        );
+        return;
+    }
 
     let plan = match build_quest_route_warmup_plan(&primary_target.url) {
         Some(plan) => plan,
@@ -4150,9 +4170,34 @@ mod tests {
     }
 
     #[test]
+    fn quest_route_warmup_is_skipped_when_already_on_quest_home() {
+        assert!(is_quest_home_url("https://discord.com/quest-home"));
+        assert!(is_quest_home_url("https://discord.com/quest-home?tab=all"));
+        assert!(!is_quest_home_url("https://discord.com/store"));
+    }
+
+    #[test]
     fn test_build_quest_route_warmup_plan_rejects_invalid_urls() {
         assert!(build_quest_route_warmup_plan("not-a-url").is_none());
         assert!(build_quest_route_warmup_plan("chrome://version").is_none());
+    }
+
+    #[test]
+    fn quest_route_warmup_tries_history_api_before_router_fallback() {
+        let plan = build_quest_route_warmup_plan("https://discord.com/quest-home").unwrap();
+        let js = js_warmup_quest_route(&plan);
+
+        let history_navigation = js
+            .find("history.pushState(history.state, \"\", targetPath)")
+            .expect("History API navigation should be present");
+        let router_fallback = js
+            .find("const router = findRouter()")
+            .expect("router fallback should remain available");
+
+        assert!(
+            history_navigation < router_fallback,
+            "the verified History API path should run before slower router fallbacks"
+        );
     }
 
     #[test]
