@@ -306,7 +306,9 @@ fn js_play_activity_status(quest_id: &str) -> String {
 ///
 /// Always injects via the native observer callback (append, never prepend),
 /// then dispatches `RUNNING_GAMES_CHANGE` so Discord's own heartbeat system
-/// picks the synthetic game up. Does not wait for or reuse a native detection.
+/// picks the synthetic game up. A synthetic positive PID is used when no real
+/// process hint exists because Discord's earlier process-monitor subscribers
+/// require a numeric PID before the quest heartbeat subscriber can run.
 fn js_spoof_play_game(app_id: &str, app_name: &str) -> String {
     js_spoof_play_game_for(
         app_id,
@@ -380,6 +382,22 @@ fn js_spoof_play_game_for(
             if (list.some(g => sameGame(g, fake))) return list;
             list.push(fake);
             return list;
+        }}
+        function allocateSyntheticPid(games) {{
+            const syntheticPidMin = 1000000000;
+            const syntheticPidRange = 1000000000;
+            const used = new Set((Array.isArray(games) ? games : [])
+                .map(game => Number(game && game.pid))
+                .filter(pid => Number.isInteger(pid) && pid > 0));
+            for (let attempt = 0; attempt < 32; attempt++) {{
+                const candidate = syntheticPidMin + Math.floor(Math.random() * syntheticPidRange);
+                if (!used.has(candidate)) return candidate;
+            }}
+            for (let offset = 0; offset <= used.size; offset++) {{
+                const candidate = syntheticPidMin + offset;
+                if (!used.has(candidate)) return candidate;
+            }}
+            throw new Error("Could not allocate a synthetic game PID");
         }}
         function detectableGamesPayload() {{
             const store = dqh.DetectableGameStore;
@@ -499,6 +517,14 @@ fn js_spoof_play_game_for(
             try {{ realGames = dqh._origGetRunningGames(); }} catch(e2) {{ realGames = []; }}
         }}
         if (!Array.isArray(realGames)) realGames = [];
+        if (!(hint && hint.pid)) {{
+            // Discord's native game/session subscribers call PID APIs before
+            // QuestProgressManager. They accept a positive integer even when
+            // no OS process exists, while an absent PID aborts the dispatch.
+            // Use a high synthetic value instead of monitoring an unrelated
+            // real process; avoid collisions with games already in the store.
+            fakeGame.pid = allocateSyntheticPid(realGames);
+        }}
 
         dqh._spoofActive = true;
         dqh._fakeGame = fakeGame;
@@ -4187,6 +4213,9 @@ mod tests {
         assert!(js.contains("if (dqh._spoofActive && dqh._fakeGame) return dqh._fakeGame"));
         assert!(js.contains("if (visible) return visible"));
         assert!(js.contains("const already = Array.isArray(event.games)"));
+        assert!(js.contains("function allocateSyntheticPid(games)"));
+        assert!(js.contains("const syntheticPidMin = 1000000000"));
+        assert!(js.contains("fakeGame.pid = allocateSyntheticPid(realGames)"));
         assert!(js.contains("wrappedCb"));
         let subscribe_call = js
             .rfind("subscribeHeartbeats();")
@@ -4371,7 +4400,12 @@ mod tests {
         }
         init.expect("quest module init should succeed on the main renderer");
 
-        let spoof_js = with_bridge(&js_spoof_play_game(&app_id, &app_name));
+        let spoof_js = with_bridge(&js_spoof_play_game_for(
+            &app_id,
+            &app_name,
+            DetectableOs::from_host(),
+            Vec::new(),
+        ));
         let spoof_raw =
             crate::cdp_client::execute_js_via_primary_discord_target(port, &spoof_js, true, 30)
                 .await;
@@ -4408,12 +4442,13 @@ mod tests {
             .get("start")
             .and_then(|value| value.as_u64())
             .is_some());
-        let pid = spoofed.get("pid");
+        let pid = spoofed
+            .get("pid")
+            .and_then(serde_json::Value::as_u64)
+            .expect("synthetic game should provide a numeric PID");
         assert!(
-            pid.is_none()
-                || pid == Some(&serde_json::Value::Null)
-                || pid == Some(&serde_json::json!("<undefined>")),
-            "spoof must not invent a pid"
+            (1_000_000_000..2_000_000_000).contains(&pid),
+            "synthetic PID should be positive and in the reserved high range: {pid}"
         );
         assert!(
             snapshot_game_by_id(&after, &app_id).is_none(),

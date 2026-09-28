@@ -1,5 +1,11 @@
 ## ✨ What's Changed
 
+### Hotfix 0.10.6
+
+- Fixed game type quests not promoted in CDP mode
+
+### Updates for 0.10.5
+
 1. Added Game Idle mode, which automatically rotates through available games with configurable play and rest periods. Choose between process and CDP simulation modes, manage the upcoming queue, and stop the session whenever you like.
 2. Added persistent game simulation history. Play time is recorded per game and account, so your totals remain available after restarting the app.
 3. Redesigned Game Idle startup as an immersive session view, with clearer startup and playback status, a live queue, and controls for upcoming games.
