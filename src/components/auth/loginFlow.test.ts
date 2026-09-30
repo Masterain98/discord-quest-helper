@@ -99,6 +99,15 @@ describe('CDP status and polling', () => {
     expect(classifyCdpAvailability(false, null, true)).toBe('error')
   })
 
+  it('separates loading and runtime failures from an offline debug endpoint', () => {
+    const runtime = { runtimeStatus: 'loading' as const, webSocketReachable: true, appRootPresent: true,
+      moduleLoaderPresent: false, nativeBridgePresent: false, focused: false, failureStage: null, reasonCode: null }
+    expect(classifyCdpAvailability(false, { ...offline, available: true, runtime }, false)).toBe('starting')
+    for (const runtimeStatus of ['probeFailed', 'unsupported', 'noCandidate'] as const) {
+      expect(classifyCdpAvailability(false, { ...offline, available: true, runtime: { ...runtime, runtimeStatus } }, false)).toBe('error')
+    }
+  })
+
   it('pauses polling while busy, authenticated, or hidden', () => {
     expect(shouldPollCdp({ busy: false, authenticated: false, visible: true })).toBe(true)
     expect(shouldPollCdp({ busy: true, authenticated: false, visible: true })).toBe(false)

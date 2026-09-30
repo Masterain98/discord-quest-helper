@@ -23,6 +23,8 @@
     "local_login_desc": "แยก Token ของบัญชีที่เข้าสู่ระบบทั้งหมดจากฐานข้อมูลในเครื่องของ Discord",
     "cdp_login_detail": "ใช้บัญชีที่กำลังเข้าสู่ระบบในไคลเอนต์ Discord โดยต้องเปิด Discord พร้อมเปิดใช้ CDP",
     "cdp_status_starting": "พบ CDP แล้ว กำลังเริ่ม Discord",
+    "cdp_runtime_loading": "กำลังรอให้ไคลเอนต์โหลด โปรดลองอีกครั้งในอีกสักครู่",
+    "cdp_runtime_unavailable": "ตรวจสอบสภาพแวดล้อมของไคลเอนต์ไม่สำเร็จ โปรดลองอีกครั้ง",
     "cdp_status_error": "ตรวจสอบสถานะไม่สำเร็จ",
     "back_to_methods": "ย้อนกลับ",
     "rescan": "สแกนอีกครั้ง",

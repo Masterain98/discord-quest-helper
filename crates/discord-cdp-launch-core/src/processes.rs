@@ -34,10 +34,8 @@ pub fn list_running_desktop_cdp_sessions() -> Result<Vec<crate::DesktopCdpSessio
     let official_installs = SystemPlatform.find_installs()?;
     let (installations, _) = crate::discover_client_installations();
     let snapshots = process_snapshots();
-    let probe = StdCdpProbe::default();
     let mut sessions = Vec::new();
     let mut seen = HashSet::new();
-    let mut port_readiness = HashMap::new();
     for process in &snapshots {
         let known_channel = classify_known_discord_process(process, &official_installs);
         let provider_id = if crate::is_vesktop_process_name(&process.name.to_string_lossy()) {
@@ -57,12 +55,6 @@ pub fn list_running_desktop_cdp_sessions() -> Result<Vec<crate::DesktopCdpSessio
             .iter()
             .filter_map(|argument| parse_cdp_port(argument))
         {
-            let ready = *port_readiness.entry(port).or_insert_with(|| {
-                matches!(probe.probe(port), CdpProbeStatus::DiscordReady { .. })
-            });
-            if !ready {
-                continue;
-            }
             let key = (
                 provider_id.clone(),
                 matching_install.map(|install| install.id.clone()),
@@ -112,10 +104,7 @@ pub fn restore_desktop_client_to_normal(
                 timeout: SHUTDOWN_TIMEOUT,
             });
         }
-        if matches!(
-            StdCdpProbe::default().probe(port),
-            CdpProbeStatus::DiscordReady { .. }
-        ) {
+        if crate::cdp::port_is_listening(port) {
             return Err(LaunchError::ProcessTermination {
                 process: installation.display_name.clone(),
                 details: format!(
@@ -147,10 +136,7 @@ pub fn restore_desktop_client_to_normal(
             timeout: SHUTDOWN_TIMEOUT,
         });
     }
-    if matches!(
-        StdCdpProbe::default().probe(port),
-        CdpProbeStatus::DiscordReady { .. }
-    ) {
+    if crate::cdp::port_is_listening(port) {
         return Err(LaunchError::ProcessTermination {
             process: installation.display_name.clone(),
             details: format!("CDP endpoint on port {port} remained active after shutdown"),
@@ -180,7 +166,7 @@ pub fn restore_all_discord_to_normal() -> Result<RestoreResult, LaunchError> {
 pub(crate) fn sessions_from_processes<C: CdpProbe>(
     processes: &[ProcessSnapshot],
     installs: &[DiscordInstall],
-    probe: &C,
+    _probe: &C,
 ) -> Vec<RunningCdpSession> {
     let mut candidates = HashSet::new();
     for process in processes {
@@ -194,15 +180,7 @@ pub(crate) fn sessions_from_processes<C: CdpProbe>(
         }
     }
 
-    let mut sessions: Vec<_> = candidates
-        .into_iter()
-        .filter(|session| {
-            matches!(
-                probe.probe(session.port),
-                CdpProbeStatus::DiscordReady { .. }
-            )
-        })
-        .collect();
+    let mut sessions: Vec<_> = candidates.into_iter().collect();
     sessions.sort_by_key(|session| (channel_order(session.channel), session.port));
     sessions
 }
@@ -278,7 +256,7 @@ fn restore_channel<P: PlatformBackend, C: CdpProbe>(
         .filter(|session| session.channel == channel)
         .map(|session| session.port)
     {
-        if matches!(probe.probe(port), CdpProbeStatus::DiscordReady { .. }) {
+        if !matches!(probe.probe(port), CdpProbeStatus::Unreachable) {
             return Err(format!(
                 "Discord {} CDP endpoint on port {port} remained active after shutdown.",
                 channel.display_name()
@@ -301,7 +279,7 @@ fn restore_channel<P: PlatformBackend, C: CdpProbe>(
         .filter(|session| session.channel == channel)
         .map(|session| session.port)
     {
-        if matches!(probe.probe(port), CdpProbeStatus::DiscordReady { .. }) {
+        if !matches!(probe.probe(port), CdpProbeStatus::Unreachable) {
             return Err(format!(
                 "Discord {} restarted but CDP is still active on port {port}.",
                 channel.display_name()
@@ -548,6 +526,24 @@ pub fn terminate_installation_process_tree(executable_path: &Path) -> Result<(),
             continue;
         }
         if !process.kill() {
+            // Electron may tear down several children when one exits. A failed
+            // kill is only a permission/termination failure if the same process
+            // identity is still alive after refreshing the OS process table.
+            let deadline = Instant::now() + Duration::from_millis(250);
+            let still_alive = loop {
+                refresh_processes(&mut current);
+                let same_identity = current.process(pid).is_some_and(|process| {
+                    process.start_time() == *expected_start
+                        && process.exe().map(Path::to_path_buf) == *expected_executable
+                });
+                if !same_identity || Instant::now() >= deadline {
+                    break same_identity;
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            };
+            if !still_alive {
+                continue;
+            }
             return Err(LaunchError::ProcessTermination {
                 process: pid.to_string(),
                 details: format!(
@@ -744,7 +740,7 @@ mod tests {
     }
 
     #[test]
-    fn discovers_only_confirmed_known_discord_sessions_and_deduplicates_children() {
+    fn discovers_known_process_sessions_even_when_renderer_is_not_ready() {
         let installs = vec![install(DiscordChannel::Stable, "C:\\Discord\\Discord.exe")];
         let discord = ProcessSnapshot {
             name: "Discord.exe".into(),
@@ -763,7 +759,7 @@ mod tests {
         let sessions = sessions_from_processes(
             &[discord.clone(), discord, unrelated, invalid],
             &installs,
-            &Probe(HashSet::from([9223])),
+            &Probe(HashSet::new()),
         );
         assert_eq!(
             sessions,

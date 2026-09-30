@@ -23,6 +23,8 @@
     "local_login_desc": "Discord 로컬 데이터베이스에서 로그인된 모든 계정의 Token을 추출합니다.",
     "cdp_login_detail": "Discord 클라이언트에 현재 로그인된 계정을 사용합니다. CDP를 활성화한 상태로 Discord를 실행해야 합니다.",
     "cdp_status_starting": "CDP 감지됨, Discord 시작 중",
+    "cdp_runtime_loading": "클라이언트가 로드되기를 기다리는 중입니다. 잠시 후 다시 시도하세요.",
+    "cdp_runtime_unavailable": "클라이언트 실행 환경을 확인하지 못했습니다. 다시 시도하세요.",
     "cdp_status_error": "상태 확인 실패",
     "back_to_methods": "뒤로",
     "rescan": "다시 스캔",

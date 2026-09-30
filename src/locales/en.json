@@ -35,6 +35,8 @@
     "cdp_client_canary": "Discord Canary",
     "cdp_client_vesktop": "Vesktop",
     "cdp_status_starting": "CDP found, Discord is starting",
+    "cdp_runtime_loading": "Waiting for the client to load. Retry shortly.",
+    "cdp_runtime_unavailable": "Client runtime verification failed. Please retry.",
     "cdp_status_error": "Status check failed",
     "back_to_methods": "Back",
     "rescan": "Scan again",

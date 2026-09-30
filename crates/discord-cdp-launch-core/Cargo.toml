@@ -11,6 +11,8 @@ serde = ["dep:serde"]
 [dependencies]
 serde = { workspace = true, optional = true }
 serde_json.workspace = true
+url = "2"
+tungstenite = { version = "=0.28.0", default-features = false, features = ["handshake"] }
 sysinfo = { version = "=0.35.2", default-features = false, features = ["system"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]

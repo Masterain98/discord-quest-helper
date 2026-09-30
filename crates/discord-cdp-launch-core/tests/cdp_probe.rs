@@ -18,32 +18,90 @@ fn serialize_socket_test() -> MutexGuard<'static, ()> {
 fn serve_once(response: Option<&'static str>, delay: Duration) -> u16 {
     let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
     let port = listener.local_addr().unwrap().port();
+    let mut capabilities = std::collections::HashMap::new();
+    let response = response.map(|raw| {
+        let (head, body) = raw.split_once("\r\n\r\n").unwrap();
+        if let Ok(mut targets) = serde_json::from_str::<serde_json::Value>(body) {
+            if let Some(items) = targets.as_array_mut() {
+                for target in items {
+                    let id = target["id"].as_str().unwrap_or("unknown").to_string();
+                    let ready = target["title"].as_str() != Some("Discord Overlay");
+                    capabilities.insert(id.clone(), target.get("testRuntime").cloned().unwrap_or_else(|| serde_json::json!({
+                        "appRootPresent":ready,"moduleLoaderPresent":ready,"nativeBridgePresent":ready,"focused":false,"loading":false,"documentGeneration":"100"
+                    })));
+                    if target.get("webSocketDebuggerUrl").is_some() {
+                        target["webSocketDebuggerUrl"] =
+                            serde_json::json!(format!("ws://127.0.0.1:{port}/devtools/page/{id}"));
+                    }
+                }
+                let body = targets.to_string();
+                let status = head
+                    .lines()
+                    .next()
+                    .unwrap()
+                    .strip_prefix("HTTP/1.1 ")
+                    .unwrap();
+                return response_owned(status, &body);
+            }
+        }
+        raw.to_string()
+    });
     std::thread::spawn(move || {
-        if let Ok((mut stream, _)) = listener.accept() {
-            let _ = stream.set_nodelay(true);
-            let _ = stream.set_read_timeout(Some(Duration::from_millis(50)));
+        listener.set_nonblocking(true).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(4);
+        while Instant::now() < deadline {
+            let Ok((mut stream, _)) = listener.accept() else {
+                std::thread::sleep(Duration::from_millis(5));
+                continue;
+            };
+            stream.set_nonblocking(false).unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(1)))
+                .unwrap();
+            stream
+                .set_write_timeout(Some(Duration::from_secs(1)))
+                .unwrap();
             let mut request = [0_u8; 1024];
-            let _ = stream.read(&mut request);
-            if !delay.is_zero() {
+            let size = stream.peek(&mut request).unwrap_or(0);
+            if String::from_utf8_lossy(&request[..size]).starts_with("GET /json") {
+                let _ = stream.read(&mut request);
                 std::thread::sleep(delay);
+                if let Some(raw) = &response {
+                    let _ = stream.write_all(raw.as_bytes());
+                    let _ = stream.flush();
+                }
+                std::thread::spawn(move || {
+                    std::thread::sleep(Duration::from_millis(400));
+                    drop(stream);
+                });
+            } else {
+                let mut target_id = String::new();
+                let socket = tungstenite::accept_hdr(
+                    stream,
+                    |req: &tungstenite::handshake::server::Request, response| {
+                        target_id = req
+                            .uri()
+                            .path()
+                            .rsplit('/')
+                            .next()
+                            .unwrap_or_default()
+                            .into();
+                        Ok(response)
+                    },
+                );
+                if let Ok(mut socket) = socket {
+                    let _ = socket.read();
+                    let reply = serde_json::json!({"id":1,"result":{"result":{"value": capabilities.get(&target_id)}}});
+                    let _ = socket.send(tungstenite::Message::Text(reply.to_string().into()));
+                    let _ = socket.read();
+                }
             }
-            if let Some(response) = response {
-                let _ = stream.write_all(response.as_bytes());
-                let _ = stream.flush();
-            }
-            // Keep the socket open long enough for the client to finish
-            // reading the Content-Length body. Dropping it immediately
-            // after a write can make Windows report a reset socket.
-            std::thread::spawn(move || {
-                std::thread::sleep(Duration::from_millis(400));
-                drop(stream);
-            });
         }
     });
     port
 }
 
-fn response(status: &str, body: &str) -> String {
+fn response_owned(status: &str, body: &str) -> String {
     format!(
         "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
         body.len()
@@ -65,7 +123,7 @@ fn recognizes_a_discord_page_target() {
     let _guard = serialize_socket_test();
     let body = r#"[{"id":"1","type":"page","title":"Quests","url":"https://discord.com/quest-home","webSocketDebuggerUrl":"ws://127.0.0.1/devtools/page/1"}]"#;
     let port = serve_once(
-        Some(leaked_response(response("200 OK", body))),
+        Some(leaked_response(response_owned("200 OK", body))),
         Duration::ZERO,
     );
     assert_eq!(
@@ -77,10 +135,34 @@ fn recognizes_a_discord_page_target() {
 }
 
 #[test]
+fn nitro_and_shop_pages_report_ready_and_a_main_renderer() {
+    let _guard = serialize_socket_test();
+    for route in ["store", "shop"] {
+        let body = format!(
+            r#"[{{"id":"1","type":"page","title":"Discord","url":"https://discord.com/{route}?source=test","webSocketDebuggerUrl":"ws://127.0.0.1/devtools/page/1"}}]"#
+        );
+        let port = serve_once(
+            Some(leaked_response(response_owned("200 OK", &body))),
+            Duration::ZERO,
+        );
+        let detailed = detailed_probe_cdp(port);
+        assert!(matches!(
+            detailed.status,
+            CdpProbeStatus::DiscordReady { .. }
+        ));
+        assert!(detailed.targets[0].is_main_renderer);
+        assert_eq!(
+            detailed.targets[0].classification,
+            CdpTargetClassification::DiscordMainRenderer
+        );
+    }
+}
+
+#[test]
 fn list_cdp_targets_returns_full_fixture_including_workers() {
     let _guard = serialize_socket_test();
     let body = r#"[{"id":"1","type":"page","title":"Quests","url":"https://discord.com/quest-home","webSocketDebuggerUrl":"ws://127.0.0.1/devtools/page/1"},{"id":"2","type":"worker","title":"","url":""}]"#;
-    let raw = response("200 OK", body);
+    let raw = response_owned("200 OK", body);
     let parsed = parse_cdp_targets_http_response(9223, raw.as_bytes()).unwrap();
     assert_eq!(parsed.len(), 2);
     assert_eq!(parsed[0].title, "Quests");
@@ -99,7 +181,7 @@ fn list_cdp_targets_returns_full_fixture_including_workers() {
 fn list_cdp_targets_rejects_http_400() {
     let _guard = serialize_socket_test();
     let port = serve_once(
-        Some(leaked_response(response("400 Bad Request", "[]"))),
+        Some(leaked_response(response_owned("400 Bad Request", "[]"))),
         Duration::ZERO,
     );
     let error =
@@ -117,7 +199,7 @@ fn detailed_probe_reports_http_and_sanitized_target_classification() {
     let _guard = serialize_socket_test();
     let body = r#"[{"id":"1","type":"page","title":"Friends","url":"https://discord.com/channels/@me?secret=value#fragment","webSocketDebuggerUrl":"ws://127.0.0.1/devtools/page/private"},{"id":"2","type":"page","title":"Discord Overlay","url":"https://discord.com/popout","webSocketDebuggerUrl":"ws://127.0.0.1/devtools/page/overlay"}]"#;
     let port = serve_once(
-        Some(leaked_response(response("200 OK", body))),
+        Some(leaked_response(response_owned("200 OK", body))),
         Duration::ZERO,
     );
     let detailed = detailed_probe_cdp(port);
@@ -145,7 +227,7 @@ fn detailed_probe_reports_http_and_sanitized_target_classification() {
 fn detailed_probe_distinguishes_non_cdp_http_service() {
     let _guard = serialize_socket_test();
     let port = serve_once(
-        Some(leaked_response(response("404 Not Found", "not cdp"))),
+        Some(leaked_response(response_owned("404 Not Found", "not cdp"))),
         Duration::ZERO,
     );
     let detailed = detailed_probe_cdp(port);
@@ -161,7 +243,7 @@ fn overlay_before_main_renderer_still_reports_main_window() {
     let _guard = serialize_socket_test();
     let body = r#"[{"id":"1","type":"page","title":"Discord Overlay","url":"https://discord.com/popout","webSocketDebuggerUrl":"ws://127.0.0.1/devtools/page/1"},{"id":"2","type":"page","title":"Friends","url":"https://discord.com/channels/@me","webSocketDebuggerUrl":"ws://127.0.0.1/devtools/page/2"}]"#;
     let port = serve_once(
-        Some(leaked_response(response("200 OK", body))),
+        Some(leaked_response(response_owned("200 OK", body))),
         Duration::ZERO,
     );
     assert_eq!(
@@ -177,7 +259,7 @@ fn overlay_only_is_not_discord_ready() {
     let _guard = serialize_socket_test();
     let body = r#"[{"id":"1","type":"page","title":"Discord Overlay","url":"https://discord.com/popout","webSocketDebuggerUrl":"ws://127.0.0.1/devtools/page/1"}]"#;
     let port = serve_once(
-        Some(leaked_response(response("200 OK", body))),
+        Some(leaked_response(response_owned("200 OK", body))),
         Duration::ZERO,
     );
     assert_eq!(
@@ -191,7 +273,7 @@ fn distinguishes_valid_chromium_without_discord() {
     let _guard = serialize_socket_test();
     let body = r#"[{"type":"page","title":"Chromium","url":"https://example.com","webSocketDebuggerUrl":"ws://example"}]"#;
     let port = serve_once(
-        Some(leaked_response(response("200 OK", body))),
+        Some(leaked_response(response_owned("200 OK", body))),
         Duration::ZERO,
     );
     assert_eq!(
@@ -205,7 +287,7 @@ fn discord_target_without_websocket_is_not_ready() {
     let _guard = serialize_socket_test();
     let body = r#"[{"type":"page","title":"Discord","url":"https://discord.com/app"}]"#;
     let port = serve_once(
-        Some(leaked_response(response("200 OK", body))),
+        Some(leaked_response(response_owned("200 OK", body))),
         Duration::ZERO,
     );
     assert_eq!(
@@ -218,8 +300,8 @@ fn discord_target_without_websocket_is_not_ready() {
 fn malformed_json_and_http_500_are_port_occupied() {
     let _guard = serialize_socket_test();
     for response in [
-        response("200 OK", "not json"),
-        response("500 Internal Server Error", "[]"),
+        response_owned("200 OK", "not json"),
+        response_owned("500 Internal Server Error", "[]"),
     ] {
         let port = serve_once(Some(leaked_response(response)), Duration::ZERO);
         assert_eq!(fast_probe().probe(port), CdpProbeStatus::PortOccupied);
@@ -280,7 +362,7 @@ fn unrelated_tcp_listener_is_not_misclassified_as_discord() {
 fn complete_content_length_does_not_wait_for_connection_close() {
     let _guard = serialize_socket_test();
     let body = r#"[{"type":"page","title":"Discord","url":"https://discord.com/app","webSocketDebuggerUrl":"ws://example"}]"#;
-    let response = response("200 OK", body);
+    let response = response_owned("200 OK", body);
     let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
     listener.set_nonblocking(true).unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -306,12 +388,33 @@ fn complete_content_length_does_not_wait_for_connection_close() {
         }
     });
     let started = Instant::now();
-    assert!(matches!(
-        StdCdpProbe::with_timeouts(Duration::from_millis(500), Duration::from_secs(3)).probe(port),
-        CdpProbeStatus::DiscordReady { .. }
-    ));
+    assert_eq!(
+        list_cdp_targets_with_timeouts(port, Duration::from_millis(500), Duration::from_secs(3))
+            .unwrap()
+            .len(),
+        1
+    );
     assert!(
         started.elapsed() < Duration::from_secs(1),
         "probe waited for the server to close the connection"
+    );
+}
+
+#[test]
+fn same_url_is_selected_by_runtime_not_route_or_login() {
+    let _guard = serialize_socket_test();
+    let body = r#"[{"id":"overlay","type":"page","title":"Discord","url":"https://discord.com/future-route","webSocketDebuggerUrl":"ws://placeholder","testRuntime":{"appRootPresent":false,"moduleLoaderPresent":false,"nativeBridgePresent":true,"focused":true,"loading":false}}, {"id":"vesktop","type":"page","title":"Sign in","url":"https://discord.com/future-route","webSocketDebuggerUrl":"ws://placeholder","testRuntime":{"appRootPresent":true,"moduleLoaderPresent":true,"nativeBridgePresent":false,"focused":false,"loading":false,"documentGeneration":"100"}}]"#;
+    let body = Box::leak(response_owned("200 OK", body).into_boxed_str());
+    let port = serve_once(Some(body), Duration::ZERO);
+    let probe = detailed_probe_cdp(port);
+    assert_eq!(probe.selected_target.unwrap().id, "vesktop");
+    assert!(!probe.runtime.native_bridge_present);
+    assert_eq!(
+        probe
+            .targets
+            .iter()
+            .filter(|target| target.is_main_renderer)
+            .count(),
+        1
     );
 }

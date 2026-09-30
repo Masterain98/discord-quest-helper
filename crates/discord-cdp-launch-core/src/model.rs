@@ -363,6 +363,34 @@ pub struct CdpDiagnosticTarget {
     pub is_auxiliary_window: bool,
     pub is_main_renderer: bool,
     pub classification: CdpTargetClassification,
+    pub runtime: CdpRuntime,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
+pub enum CdpRuntimeStatus {
+    Ready,
+    Loading,
+    Unsupported,
+    ProbeFailed,
+    #[default]
+    NoCandidate,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
+pub struct CdpRuntime {
+    pub runtime_status: CdpRuntimeStatus,
+    pub web_socket_reachable: bool,
+    pub app_root_present: bool,
+    pub module_loader_present: bool,
+    pub native_bridge_present: bool,
+    pub focused: bool,
+    pub document_generation: Option<String>,
+    pub failure_stage: Option<String>,
+    pub reason_code: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -373,6 +401,8 @@ pub struct DetailedCdpProbeResult {
     pub http_status: Option<u16>,
     pub response_parseable: bool,
     pub targets: Vec<CdpDiagnosticTarget>,
+    pub runtime: CdpRuntime,
+    pub selected_target: Option<CdpTarget>,
 }
 
 impl DetailedCdpProbeResult {

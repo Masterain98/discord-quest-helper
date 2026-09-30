@@ -23,6 +23,8 @@
     "local_login_desc": "Discord'un yerel veritabanından giriş yapılmış tüm hesapların Token'larını çıkarır.",
     "cdp_login_detail": "Discord istemcisinde açık olan hesabı kullanır. Discord, CDP etkin olarak çalışmalıdır.",
     "cdp_status_starting": "CDP bulundu, Discord başlatılıyor",
+    "cdp_runtime_loading": "İstemcinin yüklenmesi bekleniyor. Biraz sonra yeniden deneyin.",
+    "cdp_runtime_unavailable": "İstemci çalışma ortamı doğrulanamadı. Yeniden deneyin.",
     "cdp_status_error": "Durum kontrolü başarısız oldu",
     "back_to_methods": "Geri",
     "rescan": "Tekrar tara",

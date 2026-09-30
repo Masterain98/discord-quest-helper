@@ -23,6 +23,8 @@
     "local_login_desc": "Wyodrębnia Tokeny wszystkich zalogowanych kont z lokalnej bazy danych Discorda.",
     "cdp_login_detail": "Używa konta aktualnie zalogowanego w kliencie Discord. Discord musi działać z włączonym CDP.",
     "cdp_status_starting": "Wykryto CDP, Discord się uruchamia",
+    "cdp_runtime_loading": "Oczekiwanie na załadowanie klienta. Spróbuj ponownie za chwilę.",
+    "cdp_runtime_unavailable": "Weryfikacja środowiska klienta nie powiodła się. Spróbuj ponownie.",
     "cdp_status_error": "Sprawdzanie stanu nie powiodło się",
     "back_to_methods": "Wstecz",
     "rescan": "Skanuj ponownie",
