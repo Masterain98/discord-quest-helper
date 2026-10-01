@@ -15,6 +15,8 @@ fn serialize_socket_test() -> MutexGuard<'static, ()> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+// tungstenite's handshake callback requires an unboxed HTTP ErrorResponse.
+#[allow(clippy::result_large_err)]
 fn serve_once(response: Option<&'static str>, delay: Duration) -> u16 {
     let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -220,6 +222,44 @@ fn detailed_probe_reports_http_and_sanitized_target_classification() {
     assert_eq!(
         detailed.targets[1].classification,
         CdpTargetClassification::DiscordAuxiliary
+    );
+}
+
+#[test]
+fn diagnostics_mark_only_the_preferred_ready_target_as_main() {
+    let _guard = serialize_socket_test();
+    let body = serde_json::json!([
+        {"id":"a-popout", "type":"page", "title":"Popout", "url":"https://discord.com/new-popout-route",
+            "webSocketDebuggerUrl":"ws://127.0.0.1/devtools/page/a-popout",
+            "testRuntime":{"appRootPresent":true,"moduleLoaderPresent":true,"nativeBridgePresent":false,"focused":true,"loading":false,"documentGeneration":"100"}},
+        {"id":"z-main", "type":"page", "title":"Discord", "url":"https://discord.com/new-main-route",
+            "webSocketDebuggerUrl":"ws://127.0.0.1/devtools/page/z-main",
+            "testRuntime":{"appRootPresent":true,"moduleLoaderPresent":true,"nativeBridgePresent":true,"focused":false,"loading":false,"documentGeneration":"200"}}
+    ]).to_string();
+    let port = serve_once(
+        Some(leaked_response(response_owned("200 OK", &body))),
+        Duration::ZERO,
+    );
+    let detailed = detailed_probe_cdp(port);
+    assert_eq!(detailed.selected_target.as_ref().unwrap().id, "z-main");
+    assert!(detailed.targets.iter().all(|target| {
+        target.runtime.runtime_status == discord_cdp_launch_core::CdpRuntimeStatus::Ready
+    }));
+    assert_eq!(
+        detailed
+            .targets
+            .iter()
+            .filter(|target| target.is_main_renderer)
+            .count(),
+        1
+    );
+    assert_eq!(
+        detailed.targets[0].classification,
+        CdpTargetClassification::DiscordOtherRenderer
+    );
+    assert_eq!(
+        detailed.targets[1].classification,
+        CdpTargetClassification::DiscordMainRenderer
     );
 }
 

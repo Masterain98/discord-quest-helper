@@ -1377,11 +1377,18 @@ async fn start_manual_cdp_game_simulation(
 
     ensure_cdp_account_consistency(&state, cdp_port).await?;
 
-    cdp_client::with_pinned_discord_session(cdp_quest::start_manual_game_spoof(
+    if let Err(error) = cdp_client::with_pinned_discord_session(cdp_quest::start_manual_game_spoof(
         cdp_port, &app_id, &app_name,
     ))
     .await
-    .map_err(|error| format!("Failed to start manual CDP game simulation: {error}"))?;
+    {
+        // The watcher can cancel the start future after injection, before its
+        // internal rollback runs. Clean up outside the cancelled session scope.
+        cdp_quest::cdp_cleanup_after_stop(cdp_port, "manual game simulation aborted", false).await;
+        return Err(format!(
+            "Failed to start manual CDP game simulation: {error}"
+        ));
+    }
 
     let session = ManualCdpGameSimulation {
         app_id,

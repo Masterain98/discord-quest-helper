@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest'
 
 const source = readFileSync('src-tauri/src/cdp_quest.rs', 'utf8')
 const script = source.match(/const JS_INIT_QUEST_MODULES: &str = r#"([\s\S]*?)"#;/)[1]
+const activityHelpers = source.match(/const JS_ACTIVITY_HELPERS: &str = r#"([\s\S]*?)"#;/)[1]
+const sdkDiscovery = source.match(/async function waitForSdk\(\) \{([\s\S]*?)\r?\n    \}\r?\n\r?\n    try \{\r?\n        let sdkState;/)[1]
 const game = [['RunningGameStore', 'getRunningGames'], ['RunningGameStore', 'getGameForPID'],
   ['QuestsStore', 'getQuest'], ['FluxDispatcher', 'dispatch'], ['FluxDispatcher', 'subscribe'], ['FluxDispatcher', 'unsubscribe']]
 const stream = [['ApplicationStreamingStore', 'getStreamerActiveStreamMetadata'], ['QuestsStore', 'getQuest'], ['FluxDispatcher', 'dispatch']]
@@ -65,5 +67,41 @@ describe('on-demand CDP module discovery', () => {
     expect(state._heartbeatFn).toBeDefined()
     expect(state.RunningGameStore).toBeDefined()
     expect(second.requests).toBe(0)
+  })
+})
+
+describe('activity SDK capability discovery', () => {
+  async function waitForSdk(availableAfterMs) {
+    let elapsed = 0
+    let checks = 0
+    let calls = 0
+    const window = {
+      get discordSDK() {
+        checks++
+        return elapsed >= availableAfterMs
+          ? { commands: { questStartTimer: () => { calls++ } } }
+          : undefined
+      },
+    }
+    const promise = runInNewContext(
+      `${activityHelpers}\nasync function waitForSdk() {${sdkDiscovery}\n}\nwaitForSdk()`,
+      { window, Date: { now: () => elapsed }, sleep: async ms => { elapsed += ms } },
+    )
+    return { promise, elapsed: () => elapsed, checks: () => checks, calls: () => calls }
+  }
+
+  it('accepts an SDK loaded after the former 750ms window without calling commands', async () => {
+    const result = await waitForSdk(1500)
+    expect((await result.promise).waitedMs).toBe(1800)
+    expect(result.checks()).toBe(3)
+    expect(result.calls()).toBe(0)
+  })
+
+  it('reports a missing SDK within three checks and the two-second budget', async () => {
+    const result = await waitForSdk(Infinity)
+    await expect(result.promise).rejects.toThrow('cdp_capability_missing')
+    expect(result.checks()).toBe(3)
+    expect(result.elapsed()).toBeLessThanOrEqual(2000)
+    expect(result.calls()).toBe(0)
   })
 })

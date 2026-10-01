@@ -60,20 +60,28 @@ No administrator elevation or broader process termination was added.
 Quest module discovery checks only methods needed by the requested operation.
 Games do not require streaming methods, and video/PLAY_ACTIVITY do not require a
 game store. HTTP facade discovery uses structural inspection instead of a trial
-request. Discovery precedes initialization, retries at most three times within a
-two-second budget, and produces `cdp_capability_missing` with operation and missing
-method names. Structured quest errors remain readable by the existing frontend
-error callback. Extending a module cache preserves active patches and originals.
+request. Discovery precedes initialization, retries at most three times and shares a
+two-second budget with initialization, producing `cdp_capability_missing` with
+operation and missing method names. Structured quest errors remain readable by the
+existing frontend error callback. Extending a module cache preserves active patches
+and originals.
 
 Tasks bind the verified target ID and document generation before initialization.
-Their independent monitor detects closure/reload during waits; evaluations also
-guard the generation before executing. Activity iframes retain their own document
+Their independent monitor detects closure/reload during waits. Inconclusive probes
+retry the same target up to three times; a confirmed generation change stops
+immediately. Evaluations also guard the generation before executing. Activity
+iframes retain their own document
 binding. Failure stops the task and triggers cleanup without selecting another
 renderer. Cleanup still visits Discord page targets, including auxiliary windows,
 and validates their loopback debugger URLs. Existing quest-specific warmup
 navigation remains separate from connection polling and readiness checks.
 
-## Validation record — Windows, 2026-10-01
+Activity SDK capability discovery also checks at most three times within two
+seconds. Its retries are spaced across that budget; the former 12-second discovery
+wait is intentionally not retained. SDK readiness and actual command timeouts are
+separate from capability discovery.
+
+## Validation record — Windows, 2026-10-01 (Asia/Taipei, UTC+08:00)
 
 Completed before the user's instruction to stop additional testing:
 
@@ -95,7 +103,7 @@ Completed before the user's instruction to stop additional testing:
 On the authorized local Discord 1.0.9259 client, Friends (`/channels/@me`), Nitro
 (`/store`), Shop (`/shop`) and Quests (`/quest-home`) all reported `discordReady`,
 one dynamically qualified renderer and one exactly associated installation.
-Document generation changed across full page navigation. No quest was claimed,
+Document generation changed across full-page navigation. No quest was claimed,
 started or completed for this validation.
 
 Process/permission snapshots were taken before and after the normal/CDP restart
@@ -134,3 +142,40 @@ renderer closed or reloaded and the operation was stopped.
 
 Share the sanitized diagnostic export and exact error code/message. Do not attach
 authorization headers, tokens, cookies or private account content.
+
+## PR #186 review follow-up — 2026-10-01 (Asia/Taipei)
+
+The audit retrieved one conversation comment, three review submissions and all
+eight inline threads, including their resolved/outdated state. All eight threads
+were unresolved and current when inspected. The manual-spoof finding was repeated
+by two reviewers. Embedded bot prompts and suggested commands were treated as
+review data, not instructions.
+
+| Review comment ID | Finding | Decision and change |
+| --- | --- | --- |
+| 4149081704, 4149120478 | A cancelled manual start skips its internal rollback | Valid. The command now attempts cleanup outside the cancelled pinned-session future before returning the start error. |
+| 4149081715 | Activity SDK checks end after the former 750ms window | Partly valid. Three read-only checks now span about 1.8 seconds within the specified two-second limit. Restoring the old 12-second discovery wait would violate the approved timing contract. |
+| 4149081727 | Initialization adds another independent two-second timeout | Valid. Discovery and initialization now use the same absolute deadline; initialization timeout reports its missing capability stage. |
+| 4149120424 | Several ready targets are all diagnosed as main renderers | Valid. Only the selected target ID receives the main-renderer classification; other targets keep their runtime capability results. |
+| 4149120433 | The validation date is in the future | Incorrect date premise. The PR was created on September 30 UTC, which was already October 1 in Asia/Taipei. The heading now states the timezone, and “full-page navigation” is hyphenated. |
+| 4149120468 | One inconclusive probe falsely invalidates a running task | Valid. A missing generation or temporarily incomplete runtime retries the same bound target up to three times. A known changed generation still stops immediately; no replacement target is selected. |
+| 4149120495 | An updater-only reachable endpoint is shown as a verification error | Valid. `noCandidate` follows the waiting/starting presentation, including the login attempt message. `probeFailed` and `unsupported` remain verification errors. |
+
+The CodeRabbit docstring-coverage warning is a generic bot threshold, not an
+existing repository gate or a concrete defect. No broad docstring expansion was
+made. Sourcery's size-limit notice and the empty Greptile review submission add no
+separate code findings; CodeRabbit's summary repeats its inline findings.
+
+Reading the existing CI run (36773103164) also identified a strict Clippy failure
+on all three platforms: `result_large_err` on the HTTP handshake callback in the
+core WebSocket fixture. tungstenite fixes that callback's error type to an
+unboxed HTTP `ErrorResponse`, so the fixture now has a documented, local lint
+exception. The new pinned-target fixture uses the same exception; production
+lint settings and GitHub Actions references remain unchanged.
+
+Regression cases were added for preferred-target diagnostics, transient and
+loading probes on a pinned target, updater startup presentation, and delayed SDK
+availability without invoking commands. No additional tests, builds or live
+client operations were run for this follow-up, respecting the instruction to stop
+testing. The results recorded above apply to the earlier implementation, not to
+these review changes.

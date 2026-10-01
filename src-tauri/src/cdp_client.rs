@@ -354,17 +354,27 @@ pub async fn get_primary_discord_target(port: u16) -> Result<CdpTarget> {
         if bound.port != port {
             anyhow::bail!("cdp_target_invalidated: port changed");
         }
-        let target = bound.target.clone();
-        let runtime = tauri::async_runtime::spawn_blocking(move || {
-            discord_cdp_launch_core::verify_cdp_target(port, &target)
-        })
-        .await?;
-        if runtime.runtime_status != discord_cdp_launch_core::CdpRuntimeStatus::Ready
-            || runtime.document_generation.as_deref() != Some(bound.generation.as_str())
-        {
-            anyhow::bail!("cdp_target_invalidated: target closed or document reloaded");
+        // A missing generation is inconclusive (for example a busy renderer or
+        // handshake timeout). Retry the same target; never rediscover a replacement.
+        for attempt in 0..3 {
+            let target = bound.target.clone();
+            let runtime = tauri::async_runtime::spawn_blocking(move || {
+                discord_cdp_launch_core::verify_cdp_target(port, &target)
+            })
+            .await?;
+            if let Some(generation) = runtime.document_generation.as_deref() {
+                if generation != bound.generation.as_str() {
+                    anyhow::bail!("cdp_target_invalidated: document reloaded");
+                }
+                if runtime.runtime_status == discord_cdp_launch_core::CdpRuntimeStatus::Ready {
+                    return Ok(bound.target);
+                }
+            }
+            if attempt < 2 {
+                tokio::time::sleep(Duration::from_millis(250)).await;
+            }
         }
-        return Ok(bound.target);
+        anyhow::bail!("cdp_target_invalidated: bound target remained unavailable after retries");
     }
     let probe = tauri::async_runtime::spawn_blocking(move || {
         discord_cdp_launch_core::detailed_probe_cdp(port)
@@ -2351,6 +2361,67 @@ mod tests {
         .await
         .unwrap();
         server.join().unwrap();
+    }
+
+    #[tokio::test]
+    // tungstenite's handshake callback requires an unboxed HTTP ErrorResponse.
+    #[allow(clippy::result_large_err)]
+    async fn pinned_target_retries_transient_failure_and_loading_without_rediscovery() {
+        for loading in [false, true] {
+            let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let server = std::thread::spawn(move || {
+                for attempt in 0..2 {
+                    let (stream, _) = listener.accept().unwrap();
+                    stream
+                        .set_read_timeout(Some(Duration::from_secs(2)))
+                        .unwrap();
+                    let mut socket = tokio_tungstenite::tungstenite::accept_hdr(
+                        stream,
+                        |request: &tokio_tungstenite::tungstenite::handshake::server::Request,
+                         response| {
+                            assert_eq!(request.uri().path(), "/devtools/page/pinned");
+                            Ok(response)
+                        },
+                    )
+                    .unwrap();
+                    let request: serde_json::Value =
+                        serde_json::from_str(&socket.read().unwrap().into_text().unwrap()).unwrap();
+                    assert_eq!(request["method"], "Runtime.evaluate");
+                    let reply = if attempt == 0 && !loading {
+                        serde_json::json!({"id":1,"error":{"code":-32000,"message":"temporary failure"}})
+                    } else {
+                        serde_json::json!({"id":1,"result":{"result":{"value":{
+                            "appRootPresent":true,"moduleLoaderPresent":attempt > 0,
+                            "nativeBridgePresent":false,"focused":false,"loading":attempt == 0,
+                            "documentGeneration":"100"}}}})
+                    };
+                    socket
+                        .send(Message::Text(reply.to_string().into()))
+                        .unwrap();
+                    let _ = socket.read();
+                }
+            });
+            let bound = BoundDiscordTarget {
+                port,
+                generation: "100".into(),
+                target: CdpTarget {
+                    id: "pinned".into(),
+                    target_type: "page".into(),
+                    title: "Discord".into(),
+                    url: "https://discord.com/unknown-route".into(),
+                    web_socket_debugger_url: Some(format!(
+                        "ws://127.0.0.1:{port}/devtools/page/pinned"
+                    )),
+                },
+            };
+            TASK_TARGET
+                .scope(std::cell::RefCell::new(Some(bound)), async {
+                    assert_eq!(get_primary_discord_target(port).await.unwrap().id, "pinned");
+                })
+                .await;
+            server.join().unwrap();
+        }
     }
 
     #[tokio::test]

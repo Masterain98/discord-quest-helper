@@ -108,8 +108,12 @@ fn sanitized_target_url(url: &str) -> String {
     url.split(['?', '#']).next().unwrap_or(url).to_string()
 }
 
-fn diagnostic_target(target: &CdpTarget, runtime: crate::CdpRuntime) -> CdpDiagnosticTarget {
-    let classification = if runtime.runtime_status == crate::CdpRuntimeStatus::Ready {
+fn diagnostic_target(
+    target: &CdpTarget,
+    runtime: crate::CdpRuntime,
+    selected_id: Option<&str>,
+) -> CdpDiagnosticTarget {
+    let classification = if selected_id == Some(target.id.as_str()) {
         CdpTargetClassification::DiscordMainRenderer
     } else if is_discord_auxiliary_window(target) {
         CdpTargetClassification::DiscordAuxiliary
@@ -354,6 +358,7 @@ fn detailed_probe_with_timeouts(
                         diagnostic_target(
                             target,
                             runtimes.get(&target.id).cloned().unwrap_or_default(),
+                            selected_target.as_ref().map(|target| target.id.as_str()),
                         )
                     })
                     .collect(),

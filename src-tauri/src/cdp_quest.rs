@@ -1880,13 +1880,22 @@ async fn initialize_modules(port: u16, operation: &str) -> Result<()> {
         })??;
         let parsed: serde_json::Value = serde_json::from_str(&result)?;
         if parsed["success"] == true {
-            let raw = cdp_client::execute_js_via_primary_discord_target(
-                port,
-                &with_bridge(&module_script(operation, false)),
-                true,
-                2,
+            let raw = tokio::time::timeout_at(
+                deadline,
+                cdp_client::execute_js_via_primary_discord_target(
+                    port,
+                    &with_bridge(&module_script(operation, false)),
+                    true,
+                    2,
+                ),
             )
-            .await?;
+            .await
+            .map_err(|_| {
+                anyhow::Error::from(capability_error(
+                    operation,
+                    &serde_json::json!({"missing":["module_initialization_timeout"]}),
+                ))
+            })??;
             let initialized: serde_json::Value = serde_json::from_str(&raw)?;
             if initialized["success"] == true {
                 return Ok(());
@@ -3030,7 +3039,7 @@ fn js_dispatch_message_event(event_type: &str, payload_json: &str) -> String {
 }
 
 const JS_ACTIVITY_HELPERS: &str = r#"
-    const DQH_SDK_WAIT_TIMEOUT_MS = 12000;
+    const DQH_SDK_WAIT_TIMEOUT_MS = 2000;
     const DQH_SDK_READY_TIMEOUT_MS = 5000;
     const DQH_COMMAND_TIMEOUT_MS = 5000;
     const DQH_QUEST_START_TIMER_TIMEOUT_MS = 10000;
@@ -3104,7 +3113,7 @@ __DQH_ACTIVITY_HELPERS__
         const startedAt = Date.now();
         let lastState = "window.discordSDK missing";
 
-        for (let attempt = 0; attempt < 3 && Date.now() - startedAt < 2000; attempt++) {
+        for (let attempt = 0; attempt < 3 && Date.now() - startedAt < DQH_SDK_WAIT_TIMEOUT_MS; attempt++) {
             const sdk = window.discordSDK;
             if (sdk && sdk.commands) {
                 const commands = commandNames(sdk);
@@ -3115,7 +3124,11 @@ __DQH_ACTIVITY_HELPERS__
             } else if (sdk) {
                 lastState = "window.discordSDK present but commands missing";
             }
-            await sleep(250);
+            if (attempt < 2) {
+                const remainingMs = DQH_SDK_WAIT_TIMEOUT_MS - (Date.now() - startedAt);
+                if (remainingMs <= 0) break;
+                await sleep(Math.min(900, remainingMs));
+            }
         }
 
         throw new Error("cdp_capability_missing: operation=activity, missing=discordSDK.commands.questStartTimer; " + lastState);
