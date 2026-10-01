@@ -43,9 +43,9 @@
           v-model:query="searchQuery"
           :active-filter-count="activeFilterCount"
           :show-filters="showFilters"
-          :loading="questsStore.loading"
-          :refresh-disabled="questsStore.loading || !authStore.user || isBatchAccepting"
-          :batch-disabled="isBatchAccepting || questsStore.isQueueRunning || gameIdleStore.isActive"
+          :loading="questsStore.loading || questsStore.refreshing"
+          :refresh-disabled="questsStore.loading || questsStore.refreshing || !authStore.user || isBatchAccepting"
+          :batch-disabled="isBatchAccepting || startingQuestId !== null || questsStore.isQueueRunning || gameIdleStore.isActive"
           :accept-count="unenrolledCount"
           :complete-all-count="enrolledAllCount"
           :video-count="enrolledVideoCount"
@@ -174,87 +174,90 @@
            <p class="text-muted-foreground">{{ t('general.login_prompt') }}</p>
         </div>
 
-        <div v-else-if="questsStore.loading" class="text-center py-12 text-muted-foreground">
+        <div v-else-if="questsStore.loading && !questsStore.hasLoadedQuests && questsStore.quests.length === 0" class="text-center py-12 text-muted-foreground" role="status">
           {{ t('general.loading') }}
         </div>
         
-        <div v-else-if="filteredQuests.length === 0" class="rounded-lg border border-dashed p-8 text-center">
-          <p class="font-medium">{{ emptyStateText }}</p>
-          <div class="mt-3 flex justify-center gap-2">
-            <Button v-if="hasActiveFilters" variant="outline" @click="clearFilters">
-              {{ t('home.reset_filters') }}
-            </Button>
-            <Button v-else-if="selectedPreset !== 'recommended'" variant="outline" @click="backToRecommended">
-              {{ t('home.back_to_recommended') }}
-            </Button>
-            <Button variant="ghost" @click="refreshQuests">
-              {{ t('general.refresh') }}
-            </Button>
-          </div>
-        </div>
-
         <template v-else>
-          <TransitionGroup name="quest-list" tag="div" class="space-y-3">
+          <TransitionGroup name="quest-list" tag="div" class="relative space-y-3">
             <QuestCard
               v-for="quest in filteredQuests"
               :key="quest.id"
               :quest="quest"
               :quest-type="getQuestType(quest)"
               :show-developer-details="props.debugModeEnabled"
+              :busy="startingQuestId === quest.id || acceptingQuest === quest.id || acceptingAllQuestIds.has(quest.id) || claimingQuest === quest.id || (questsStore.stopping && questsStore.activeQuestId === quest.id)"
               density="compact"
             >
               <template #actions>
-                <Button
-                  v-if="!quest.user_status?.enrolled_at"
-                  @click="acceptQuest(quest)"
-                  :disabled="acceptingQuest === quest.id || acceptingAllQuestIds.has(quest.id)"
-                >
-                  {{ (acceptingQuest === quest.id || acceptingAllQuestIds.has(quest.id)) ? t('home.accepting') : t('home.accept_quest') }}
-                </Button>
-
-                <Button
-                  v-else-if="questsStore.activeQuestId === quest.id"
-                  @click="questsStore.stop()"
-                  variant="destructive"
-                  :disabled="questsStore.stopping || isBatchAccepting"
-                >
-                  <Loader2 v-if="questsStore.stopping" class="w-4 h-4 mr-2 animate-spin" />
-                  {{ t('home.stop') }}
-                </Button>
-
-                <Button
-                  v-else-if="!quest.user_status?.completed_at && canStartQuest(quest)"
-                  @click="startQuest(quest)"
-                  variant="default"
-                  :disabled="questsStore.activeQuestId !== null || startingQuestId !== null || isBatchAccepting || gameIdleStore.isActive"
-                >
-                  <Loader2 v-if="startingQuestId === quest.id" class="w-4 h-4 mr-2 animate-spin" />
-                  {{ getStartButtonText(quest) }}
-                </Button>
-
-                <div v-else-if="quest.user_status?.completed_at && !quest.user_status?.claimed_at" class="relative -mt-1 mb-1">
+                <Transition name="quest-action" mode="out-in">
                   <Button
-                    :disabled="claimingQuest === quest.id || isBatchAccepting"
-                    class="bg-green-600 hover:bg-green-700 text-white gap-1.5"
-                    @click="claimReward(quest)"
+                    v-if="!quest.user_status?.enrolled_at"
+                    @click="acceptQuest(quest)"
+                    :disabled="acceptingQuest === quest.id || acceptingAllQuestIds.has(quest.id)"
                   >
-                    <Loader2 v-if="claimingQuest === quest.id" class="w-4 h-4 animate-spin" />
-                    <Gift v-else class="w-4 h-4" />
-                    {{ t('home.claim_reward') }}
+                    <Loader2 v-if="acceptingQuest === quest.id || acceptingAllQuestIds.has(quest.id)" class="w-4 h-4 mr-2 animate-spin" />
+                    {{ (acceptingQuest === quest.id || acceptingAllQuestIds.has(quest.id)) ? t('home.accepting') : t('home.accept_quest') }}
                   </Button>
-                  <span
-                    v-if="claimedNoticeQuestId === quest.id"
-                    class="absolute top-full right-0 mt-1.5 whitespace-nowrap text-[11px] text-green-600 dark:text-green-400 notice-fade"
+
+                  <Button
+                    v-else-if="questsStore.activeQuestId === quest.id && startingQuestId !== quest.id"
+                    @click="questsStore.stop()"
+                    variant="destructive"
+                    :disabled="questsStore.stopping || isBatchAccepting"
                   >
-                    {{ t('home.claim_navigated') }}
+                    <Loader2 v-if="questsStore.stopping" class="w-4 h-4 mr-2 animate-spin" />
+                    {{ t('home.stop') }}
+                  </Button>
+
+                  <Button
+                    v-else-if="!quest.user_status?.completed_at && canStartQuest(quest)"
+                    @click="startQuest(quest)"
+                    variant="default"
+                    :disabled="questsStore.activeQuestId !== null || startingQuestId !== null || isBatchAccepting || gameIdleStore.isActive"
+                  >
+                    <Loader2 v-if="startingQuestId === quest.id" class="w-4 h-4 mr-2 animate-spin" />
+                    {{ getStartButtonText(quest) }}
+                  </Button>
+
+                  <div v-else-if="quest.user_status?.completed_at && !quest.user_status?.claimed_at" class="relative -mt-1 mb-1">
+                    <Button
+                      :disabled="claimingQuest === quest.id || isBatchAccepting"
+                      class="bg-green-600 hover:bg-green-700 text-white gap-1.5"
+                      @click="claimReward(quest)"
+                    >
+                      <Loader2 v-if="claimingQuest === quest.id" class="w-4 h-4 animate-spin" />
+                      <Gift v-else class="w-4 h-4" />
+                      {{ t('home.claim_reward') }}
+                    </Button>
+                    <span
+                      v-if="claimedNoticeQuestId === quest.id"
+                      class="absolute top-full right-0 mt-1.5 whitespace-nowrap text-[11px] text-green-600 dark:text-green-400 notice-fade"
+                    >
+                      {{ t('home.claim_navigated') }}
+                    </span>
+                  </div>
+                   <span v-else-if="quest.user_status?.completed_at" class="self-center px-2 text-sm font-medium text-green-500">
+                    {{ t('home.completed') }}
                   </span>
-                </div>
-                 <span v-else-if="quest.user_status?.completed_at" class="self-center px-2 text-sm font-medium text-green-500">
-                  {{ t('home.completed') }}
-                </span>
+                </Transition>
               </template>
             </QuestCard>
           </TransitionGroup>
+          <div v-if="filteredQuests.length === 0" class="rounded-lg border border-dashed p-8 text-center">
+            <p class="font-medium">{{ emptyStateText }}</p>
+            <div class="mt-3 flex justify-center gap-2">
+              <Button v-if="hasActiveFilters" variant="outline" @click="clearFilters">
+                {{ t('home.reset_filters') }}
+              </Button>
+              <Button v-else-if="selectedPreset !== 'recommended'" variant="outline" @click="backToRecommended">
+                {{ t('home.back_to_recommended') }}
+              </Button>
+              <Button variant="ghost" @click="refreshQuests">
+                {{ t('general.refresh') }}
+              </Button>
+            </div>
+          </div>
         </template>
       </div>
     </div>
@@ -702,7 +705,8 @@ let claimedNoticeTimer: ReturnType<typeof setTimeout> | null = null
 const acceptingAllQuestIds = ref<Set<string>>(new Set())
 
 // Loading state for the Start button (fetching detectable games, etc.)
-const startingQuestId = ref<string | null>(null)
+const preparingQuestId = ref<string | null>(null)
+const startingQuestId = computed(() => preparingQuestId.value ?? questsStore.startingQuestId)
 
 // Confirmation dialogs state
 const showAcceptAllDialog = ref(false)
@@ -1287,9 +1291,9 @@ async function startQuest(quest: Quest) {
     document.activeElement.blur()
   }
 
-  if (questsStore.activeQuestId) return
+  if (questsStore.activeQuestId || startingQuestId.value) return
   
-  startingQuestId.value = quest.id
+  preparingQuestId.value = quest.id
   try {
   const task = firstStartableTask(quest)
   if (!task?.target) return
@@ -1399,7 +1403,7 @@ async function startQuest(quest: Quest) {
     toast.error({ title: t('toast.unknown_quest_type', { types: taskTypes.join(', ') || 'none' }) })
   }
   } finally {
-    startingQuestId.value = null
+    preparingQuestId.value = null
   }
 }
 
@@ -1449,13 +1453,13 @@ async function confirmActivityLaunch() {
   if (!quest) return
 
   showActivityLaunchDialog.value = false
-  startingQuestId.value = quest.id
+  preparingQuestId.value = quest.id
   try {
     await questsStore.startActivity(quest)
   } catch (e) {
     toast.error({ title: t('toast.failed_start_activity'), description: String(e) })
   } finally {
-    startingQuestId.value = null
+    preparingQuestId.value = null
     activityLaunchQuest.value = null
   }
 }
@@ -1507,13 +1511,45 @@ async function claimReward(quest: Quest) {
   animation: noticeLifecycle 4s ease forwards;
 }
 
-/* Quest list leave animation */
+.quest-list-move {
+  transition: transform 0.24s ease;
+}
+.quest-list-enter-active,
 .quest-list-leave-active {
-  transition: opacity 0.35s ease, transform 0.35s ease;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.quest-list-leave-active {
+  position: absolute;
+  width: 100%;
   pointer-events: none;
 }
+.quest-list-enter-from,
 .quest-list-leave-to {
   opacity: 0;
-  transform: translateY(-6px) scale(0.98);
+  transform: translateY(6px);
+}
+.quest-action-enter-active,
+.quest-action-leave-active {
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+.quest-action-enter-from,
+.quest-action-leave-to {
+  opacity: 0;
+  transform: translateY(3px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .quest-list-move,
+  .quest-list-enter-active,
+  .quest-list-leave-active,
+  .quest-action-enter-active,
+  .quest-action-leave-active {
+    transition: none;
+  }
+  .quest-list-enter-from,
+  .quest-list-leave-to,
+  .quest-action-enter-from,
+  .quest-action-leave-to {
+    transform: none;
+  }
 }
 </style>

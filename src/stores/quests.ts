@@ -71,6 +71,9 @@ export const useQuestsStore = defineStore('quests', () => {
   const questEnrollmentBlockedUntil = ref<string | null>(null)
   const lastQuestsFetchTime = ref(0)
   const loading = ref(false)
+  const refreshing = ref(false)
+  const hasLoadedQuests = ref(false)
+  const startingQuestId = ref<string | null>(null)
   const stopping = ref(false)
   const error = ref<string | null>(null)
   const orbsBalance = ref<number | null>(null)
@@ -370,7 +373,19 @@ export const useQuestsStore = defineStore('quests', () => {
   let simLastTime = 0
   let simCurrentSpeed = 1.0
 
+  let questsFetchGeneration = 0
+  let questsFetchInFlight: Promise<void> | null = null
+
   async function fetchQuests(silent = false, force = false) {
+    // Manual refresh and polling share a request, so an older response cannot
+    // replace newer data or finish another request's loading indicator.
+    if (questsFetchInFlight) {
+      if (!silent) {
+        loading.value = !hasLoadedQuests.value && quests.value.length === 0
+        refreshing.value = !loading.value
+      }
+      return questsFetchInFlight
+    }
     if (!force && quests.value.length > 0) {
       const now = Date.now()
       // 30 minutes cache
@@ -380,19 +395,47 @@ export const useQuestsStore = defineStore('quests', () => {
       }
     }
 
-    if (!silent) loading.value = true
+    const generation = questsFetchGeneration
+    if (!silent) {
+      loading.value = !hasLoadedQuests.value && quests.value.length === 0
+      refreshing.value = !loading.value
+    }
     error.value = null
+    const request = (async () => {
+      try {
+        console.log('Fetching quests from API...')
+        const response = await getQuestsFull()
+        if (generation !== questsFetchGeneration) return
+        // Keep unchanged quest props stable; keyed cards retain their local state
+        // and only cards whose server data changed need to update.
+        const previous = new Map(quests.value.map(quest => [quest.id, quest]))
+        const next = response.quests.map(quest => {
+          const existing = previous.get(quest.id)
+          return existing && JSON.stringify(existing) === JSON.stringify(quest) ? existing : quest
+        })
+        if (next.length !== quests.value.length || next.some((quest, index) => quest !== quests.value[index])) {
+          quests.value = next
+        }
+        excludedQuests.value = response.excluded_quests || []
+        questEnrollmentBlockedUntil.value = response.quest_enrollment_blocked_until || null
+        lastQuestsFetchTime.value = Date.now()
+        hasLoadedQuests.value = true
+      } catch (e) {
+        if (generation === questsFetchGeneration) {
+          error.value = e instanceof Error ? e.message : String(e)
+        }
+      } finally {
+        if (generation === questsFetchGeneration) {
+          loading.value = false
+          refreshing.value = false
+        }
+      }
+    })()
+    questsFetchInFlight = request
     try {
-      console.log('Fetching quests from API...')
-      const response = await getQuestsFull()
-      quests.value = response.quests
-      excludedQuests.value = response.excluded_quests || []
-      questEnrollmentBlockedUntil.value = response.quest_enrollment_blocked_until || null
-      lastQuestsFetchTime.value = Date.now()
-    } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
+      await request
     } finally {
-      if (!silent) loading.value = false
+      if (questsFetchInFlight === request) questsFetchInFlight = null
     }
   }
 
@@ -594,6 +637,7 @@ export const useQuestsStore = defineStore('quests', () => {
   }
 
   async function startVideo(questId: string, secondsNeeded: number, initialProgress: number) {
+    startingQuestId.value = questId
     try {
       const progressPct = (secondsNeeded > 0) ? (initialProgress / secondsNeeded) * 100 : 0
 
@@ -616,10 +660,13 @@ export const useQuestsStore = defineStore('quests', () => {
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
       throw e
+    } finally {
+      startingQuestId.value = null
     }
   }
 
   async function startStream(questId: string, streamKey: string, secondsNeeded: number, initialProgress: number) {
+    startingQuestId.value = questId
     try {
       const progressPct = (secondsNeeded > 0) ? (initialProgress / secondsNeeded) * 100 : 0
       await startStreamQuest(questId, streamKey, secondsNeeded, progressPct)
@@ -633,11 +680,13 @@ export const useQuestsStore = defineStore('quests', () => {
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
       throw e
+    } finally {
+      startingQuestId.value = null
     }
   }
 
   async function startPlay(quest: Quest, secondsNeeded: number, initialProgress: number, selectedExeName?: string) {
-    loading.value = true
+    startingQuestId.value = quest.id
     error.value = null
     // Remember the request so a soft error can offer "switch to CDP and retry".
     lastPlayRequest.value = { quest, secondsNeeded, initialProgress, selectedExeName }
@@ -725,7 +774,6 @@ export const useQuestsStore = defineStore('quests', () => {
             recoverable: true,
           }
           if (isQueueRunning.value) queuePauseReason.value = 'simulation_incompatible'
-          loading.value = false
           return
         }
         if (resolution.kind === 'not_found') {
@@ -738,7 +786,6 @@ export const useQuestsStore = defineStore('quests', () => {
             recoverable: true,
           }
           if (isQueueRunning.value) queuePauseReason.value = 'simulation_incompatible'
-          loading.value = false
           return
         }
         const exeName = resolution.executable.name
@@ -805,12 +852,12 @@ export const useQuestsStore = defineStore('quests', () => {
       }
       throw e
     } finally {
-      loading.value = false
+      startingQuestId.value = null
     }
   }
 
   async function startActivity(quest: Quest) {
-    loading.value = true
+    startingQuestId.value = quest.id
     error.value = null
     try {
       // Activity quests require CDP mode
@@ -883,12 +930,12 @@ export const useQuestsStore = defineStore('quests', () => {
       error.value = e instanceof Error ? e.message : String(e)
       throw e
     } finally {
-      loading.value = false
+      startingQuestId.value = null
     }
   }
 
   async function startPlayActivity(quest: Quest, secondsNeeded: number, initialProgress: number) {
-    loading.value = true
+    startingQuestId.value = quest.id
     error.value = null
     let preserveActiveState = false
     try {
@@ -952,7 +999,7 @@ export const useQuestsStore = defineStore('quests', () => {
       error.value = e instanceof Error ? e.message : String(e)
       throw e
     } finally {
-      loading.value = false
+      startingQuestId.value = null
     }
   }
 
@@ -1214,7 +1261,6 @@ export const useQuestsStore = defineStore('quests', () => {
   }
 
   async function acceptAllQuests(questIds: string[]) {
-    loading.value = true
     error.value = null
     let successCount = 0
     let failCount = 0
@@ -1232,7 +1278,6 @@ export const useQuestsStore = defineStore('quests', () => {
         }
       }
     } finally {
-      loading.value = false
       if (failCount > 0) {
         error.value = `Accepted ${successCount} quests, failed ${failCount}`
       }
@@ -1340,11 +1385,16 @@ export const useQuestsStore = defineStore('quests', () => {
 
   function resetForLogout() {
     orbsFetchGeneration++
+    questsFetchGeneration++
+    questsFetchInFlight = null
     quests.value = []
     excludedQuests.value = []
     questEnrollmentBlockedUntil.value = null
     lastQuestsFetchTime.value = 0
     loading.value = false
+    refreshing.value = false
+    hasLoadedQuests.value = false
+    startingQuestId.value = null
     error.value = null
     orbsBalance.value = null
     orbsBalanceFetchedAt.value = null
@@ -1454,6 +1504,9 @@ export const useQuestsStore = defineStore('quests', () => {
     excludedQuests,
     questEnrollmentBlockedUntil,
     loading,
+    refreshing,
+    hasLoadedQuests,
+    startingQuestId,
     error,
     orbsBalance,
     orbsBalanceFetchedAt,
