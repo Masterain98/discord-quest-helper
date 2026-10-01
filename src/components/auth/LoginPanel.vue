@@ -385,7 +385,7 @@ async function launchOrRestartSelectedTarget(target: CdpLaunchTarget | null) {
   if (!snapshot) throw new Error(clients.error.value ?? 'Desktop client state is unavailable')
   const selection = selectionForTarget(target)
   if (snapshot.endpoint.status === 'cdpWithoutDiscordTarget' || snapshot.endpoint.status === 'occupiedNonCdp') {
-    throw new Error(t(['loading', 'noCandidate'].includes(snapshot.endpoint.runtime?.runtimeStatus ?? '')
+    throw new Error(t(snapshot.endpoint.runtime?.runtimeStatus === 'loading'
       ? 'auth.cdp_runtime_loading' : 'auth.cdp_runtime_unavailable'))
   }
   if (selectionIsRunning(snapshot, selection)) {
@@ -440,7 +440,7 @@ async function handleCdpLogin() {
     const status = await refreshCdpStatus()
     const snapshot = clients.state.value
     if (snapshot?.endpoint.status === 'cdpWithoutDiscordTarget' || snapshot?.endpoint.status === 'occupiedNonCdp') {
-      throw new Error(t(['loading', 'noCandidate'].includes(snapshot.endpoint.runtime?.runtimeStatus ?? '')
+      throw new Error(t(snapshot.endpoint.runtime?.runtimeStatus === 'loading'
         ? 'auth.cdp_runtime_loading' : 'auth.cdp_runtime_unavailable'))
     }
     if (status?.connected && snapshot) {

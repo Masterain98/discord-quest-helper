@@ -59,7 +59,9 @@ export function classifyCdpAvailability(
 ): CdpAvailability {
   if (checking && !status) return 'checking'
   if (probeFailed) return 'error'
-  if (status?.runtime && ['probeFailed', 'unsupported'].includes(status.runtime.runtimeStatus) && status.available) return 'error'
+  // No candidate is inconclusive about startup: unrelated CDP endpoints and
+  // empty target lists have this status too. Only explicit loading is a wait state.
+  if (status?.runtime && ['probeFailed', 'unsupported', 'noCandidate'].includes(status.runtime.runtimeStatus) && status.available) return 'error'
   if (status?.connected) return 'ready'
   if (status?.available) return 'starting'
   return 'offline'

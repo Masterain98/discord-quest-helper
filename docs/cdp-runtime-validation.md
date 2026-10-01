@@ -43,6 +43,9 @@ The added `runtime` object contains:
 | `failureStage`, `reasonCode` | Sanitized discovery/connection/handshake/evaluation failure |
 
 Loading and failed verification show wait/retry guidance in all existing locales.
+Only an explicit `loading` runtime establishes that the client is loading.
+`noCandidate` is shown as verification unavailable: an updater, an unrelated
+Chromium endpoint and an empty target list cannot be distinguished by that status.
 A reachable endpoint with an insufficient runtime does not open a restart dialog.
 The debug view and sanitized export expose runtime capabilities; the export omits
 document generation and arbitrary extra runtime properties.
@@ -159,7 +162,7 @@ review data, not instructions.
 | 4149120424 | Several ready targets are all diagnosed as main renderers | Valid. Only the selected target ID receives the main-renderer classification; other targets keep their runtime capability results. |
 | 4149120433 | The validation date is in the future | Incorrect date premise. The PR was created on September 30 UTC, which was already October 1 in Asia/Taipei. The heading now states the timezone, and “full-page navigation” is hyphenated. |
 | 4149120468 | One inconclusive probe falsely invalidates a running task | Valid. A missing generation or temporarily incomplete runtime retries the same bound target up to three times. A known changed generation still stops immediately; no replacement target is selected. |
-| 4149120495 | An updater-only reachable endpoint is shown as a verification error | Valid. `noCandidate` follows the waiting/starting presentation, including the login attempt message. `probeFailed` and `unsupported` remain verification errors. |
+| 4149120495 | An updater-only reachable endpoint is shown as a verification error | The initial change treated `noCandidate` as waiting. Further review found that this also labels unrelated endpoints and empty target lists as loading, so that inference was removed. Only explicit `loading` uses the waiting presentation; `noCandidate` reports verification unavailable without prompting a restart. |
 
 The CodeRabbit docstring-coverage warning is a generic bot threshold, not an
 existing repository gate or a concrete defect. No broad docstring expansion was
@@ -179,3 +182,9 @@ availability without invoking commands. No additional tests, builds or live
 client operations were run for this follow-up, respecting the instruction to stop
 testing. The results recorded above apply to the earlier implementation, not to
 these review changes.
+
+A subsequent review of `loginFlow.ts` correctly identified that the `noCandidate`
+waiting presentation hid non-Discord endpoints. The classifier and both login
+attempt messages now treat that status as verification unavailable. Regression
+cases cover empty target lists and unrelated Chromium targets; the explicit
+`loading` case still waits. These additional cases were not run locally.
