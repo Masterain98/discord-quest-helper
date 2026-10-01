@@ -122,8 +122,11 @@ const JS_INIT_QUEST_MODULES: &str = r#"
             }
         }
 
-        // Structural discovery never sends an API request. Reject translation
-        // proxies exposing arbitrary methods; accept one unambiguous HTTP facade.
+        // Structural discovery never sends an API request. Discord's HTTP facade
+        // is an object accepting request options. The callable low-level HTTP
+        // library is also a webpack root export with the same method names, but
+        // takes URL strings and must not create a false ambiguous match.
+        // Reject translation proxies and require one unambiguous object facade.
         function hasConcreteMethod(candidate, name) {
             const seen = new Set();
             for (let owner = candidate; owner && !seen.has(owner); owner = Object.getPrototypeOf(owner)) {
@@ -137,7 +140,8 @@ const JS_INIT_QUEST_MODULES: &str = r#"
         }
         const apiMatches = [...new Set(apiCandidates)].filter(candidate => {
             try {
-                return !Object.hasOwn(candidate, "getRunningGames") &&
+                return typeof candidate === "object" &&
+                    !Object.hasOwn(candidate, "getRunningGames") &&
                     ["get", "post", "put", "patch", "del"].every(name => hasConcreteMethod(candidate, name));
             } catch (_) { return false; }
         });

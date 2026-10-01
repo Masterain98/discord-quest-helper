@@ -76,7 +76,9 @@ game store. Stream operations require both streaming and companion-game methods
 before installing state, and both spoofs must succeed before polling. Startup
 failure triggers cleanup rather than silently continuing.
 HTTP facade discovery accepts concrete methods on the object or its prototypes,
-including accessor-backed functions; dynamic-method proxies and ambiguous matches
+including accessor-backed functions. Callable low-level HTTP library exports are
+excluded: they accept URL strings rather than Discord's request options and may
+coexist with the authenticated facade. Dynamic-method proxies and ambiguous object matches
 are rejected without a trial request. Discovery precedes initialization, retries
 at most three times and shares a two-second budget with initialization, producing `cdp_capability_missing` with
 operation and missing method names. Structured quest errors remain readable by the
