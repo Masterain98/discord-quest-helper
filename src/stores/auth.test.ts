@@ -4,6 +4,7 @@ import type { DiscordUser } from '@/api/tauri'
 import { useAuthStore } from './auth'
 
 const mocks = vi.hoisted(() => ({
+  autoDetectToken: vi.fn(),
   autoLoginViaCdp: vi.fn(),
   setToken: vi.fn(),
   autoFetchSuperProperties: vi.fn(),
@@ -26,7 +27,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@/api/tauri', () => ({
-  autoDetectToken: vi.fn(),
+  autoDetectToken: mocks.autoDetectToken,
   autoLoginViaCdp: mocks.autoLoginViaCdp,
   setToken: mocks.setToken,
   autoFetchSuperProperties: mocks.autoFetchSuperProperties,
@@ -75,6 +76,7 @@ describe('auth login quest mode selection', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    mocks.autoDetectToken.mockResolvedValue([])
     mocks.questsStore.cdpAvailable = false
     mocks.questsStore.gameQuestMode = 'simulate'
     mocks.autoLoginViaCdp.mockResolvedValue(user)
@@ -107,6 +109,30 @@ describe('auth login quest mode selection', () => {
 
     expect(mocks.questsStore.gameQuestMode).toBe('simulate')
   })
+
+  it.each(['cdp', 'token', 'auto'] as const)(
+    'displays structured command errors from %s login',
+    async (method) => {
+      const failure = {
+        code: 'process_ambiguous',
+        params: { port: 9223 },
+        message: 'The current CDP owner could not be mapped to one exact installation.',
+      }
+      const authStore = useAuthStore()
+      mocks.autoLoginViaCdp.mockRejectedValue(failure)
+      mocks.setToken.mockRejectedValue(failure)
+      mocks.autoDetectToken.mockRejectedValue(failure)
+
+      const result = method === 'cdp' ? await authStore.loginViaCdp()
+        : method === 'token' ? await authStore.loginWithToken('test-token')
+          : await authStore.tryAutoDetect()
+
+      expect(result).toBe(false)
+      expect(authStore.error).toBe(failure.message)
+      expect(authStore.loading).toBe(false)
+      expect(authStore.user).toBeNull()
+    },
+  )
 
   it('cancels pending idle work before stopping simulations for an account switch', async () => {
     const authStore = useAuthStore()

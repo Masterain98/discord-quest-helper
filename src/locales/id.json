@@ -23,6 +23,8 @@
     "local_login_desc": "Ekstrak token semua akun yang sudah masuk dari basis data lokal Discord.",
     "cdp_login_detail": "Gunakan akun yang sedang masuk di klien Discord. Discord harus berjalan dengan CDP aktif.",
     "cdp_status_starting": "CDP ditemukan, Discord sedang dimulai",
+    "cdp_runtime_loading": "Menunggu klien dimuat. Coba lagi sebentar lagi.",
+    "cdp_runtime_unavailable": "Verifikasi lingkungan klien gagal. Silakan coba lagi.",
     "cdp_status_error": "Pemeriksaan status gagal",
     "back_to_methods": "Kembali",
     "rescan": "Pindai lagi",

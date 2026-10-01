@@ -1,4 +1,4 @@
-import type { CdpDiagnosticSnapshot } from '@/api/tauri'
+import type { CdpDiagnosticSnapshot, CdpRuntime } from '@/api/tauri'
 import type { TimestampedCommandError } from '@/composables/cdpDiagnostics'
 
 function basename(path: string | null): string | null {
@@ -41,6 +41,18 @@ export function sanitizeCdpLaunchError(lastError: TimestampedCommandError | null
   } : null
 }
 
+function sanitizeRuntime(runtime: CdpRuntime) {
+  return {
+    runtimeStatus: runtime.runtimeStatus,
+    webSocketReachable: runtime.webSocketReachable,
+    appRootPresent: runtime.appRootPresent,
+    moduleLoaderPresent: runtime.moduleLoaderPresent,
+    nativeBridgePresent: runtime.nativeBridgePresent,
+    failureStage: runtime.failureStage ? redactText(runtime.failureStage) : null,
+    reasonCode: runtime.reasonCode ? redactText(runtime.reasonCode) : null,
+  }
+}
+
 export function sanitizeCdpDiagnosticExport(
   snapshot: CdpDiagnosticSnapshot,
   lastError: TimestampedCommandError | null,
@@ -77,6 +89,7 @@ export function sanitizeCdpDiagnosticExport(
       total: snapshot.cdpTargetCount,
       discord: snapshot.discordTargetCount,
       mainRendererFound: snapshot.mainRendererFound,
+      ...(snapshot.runtime ? { runtime: sanitizeRuntime(snapshot.runtime) } : {}),
       classifications,
     },
     lastLaunchError: sanitizeCdpLaunchError(lastError),

@@ -44,12 +44,9 @@ const CDP_CLEANUP_VERIFY_TIMEOUT_SECS: u64 = 10;
 const JS_INIT_QUEST_MODULES: &str = r#"
 (async () => {
     try {
-        const DQH_INIT_VERSION = 7;
-        if (window.__dqh_cdp && window.__dqh_cdp.initialized && window.__dqh_cdp._initVersion === DQH_INIT_VERSION) {
-            return JSON.stringify({ success: true, cached: true });
-        }
-
-        delete window.$;
+        const DQH_INIT_VERSION = 8;
+        const required = __DQH_REQUIRED__;
+        const discoverOnly = __DQH_DISCOVER_ONLY__;
         let wpRequire = webpackChunkdiscord_app.push([[Symbol()], {}, r => r]);
         webpackChunkdiscord_app.pop();
 
@@ -65,17 +62,13 @@ const JS_INIT_QUEST_MODULES: &str = r#"
 
         // Phase 1: Scan all webpack modules for stores (prototype-based detection)
         // and collect API module candidates (anything with get + post)
-        let scanned = 0;
         let apiCandidates = [];
         for (const m of Object.values(wpRequire.c)) {
             try {
                 const exp = m?.exports;
                 if (!exp) continue;
-                scanned++;
-
-                for (const key of Object.keys(exp)) {
+                for (const val of [exp, ...Object.values(exp)]) {
                     try {
-                        const val = exp[key];
                         if (!val) continue;
 
                         // FluxDispatcher: __proto__ has flushWaitQueue (gist pattern)
@@ -129,44 +122,39 @@ const JS_INIT_QUEST_MODULES: &str = r#"
             }
         }
 
-        // Phase 2: Identify the real HTTP API module via behavioral test.
-        // Multiple webpack modules may have get/post that return Promises, but only
-        // the real HTTP API module's Promises actually settle (resolve/reject).
-        // Other modules (e.g. router, RPC) return Promises that may never settle.
-        // We test by calling .get({url:""}) and racing it against a 3s timeout.
-        // The real API will reject quickly with a 404-type error.
-        const TIMEOUT_MS = 3000;
-        let apiTestedCount = 0;
-        for (const candidate of apiCandidates) {
-            try {
-                const r = candidate.get({url: ""});
-                if (!r || typeof r.then !== 'function') continue;
-                apiTestedCount++;
-
-                // Race the test call against a timeout
-                const settled = await Promise.race([
-                    r.then(() => "ok", () => "err"),
-                    new Promise(resolve => setTimeout(() => resolve("timeout"), TIMEOUT_MS))
-                ]);
-
-                if (settled !== "timeout") {
-                    // This candidate's Promise actually settled — it's the real HTTP API
-                    modules.api = candidate;
-                    break;
+        // Structural discovery never sends an API request. Reject translation
+        // proxies exposing arbitrary methods; accept one unambiguous HTTP facade.
+        const apiMatches = [...new Set(apiCandidates)].filter(candidate =>
+            !Object.hasOwn(candidate, "getRunningGames") &&
+            ["get", "post", "put", "patch", "del"].every(name =>
+                typeof Object.getOwnPropertyDescriptor(candidate, name)?.value === "function"));
+        modules.api = apiMatches.length === 1 ? apiMatches[0] : null;
+        const missing = required.filter(([name, method]) => typeof modules[name]?.[method] !== "function")
+            .map(([name, method]) => name + "." + method);
+        if (missing.length) return JSON.stringify({success:false, code:"cdp_capability_missing", missing});
+        if (discoverOnly) return JSON.stringify({success:true});
+        const previous = window.__dqh_cdp;
+        if (previous?.initialized && previous._initVersion === DQH_INIT_VERSION &&
+            required.every(([name, method]) => typeof previous[name]?.[method] === "function")) {
+            return JSON.stringify({success:true, cached:true});
+        }
+        // Adding an optional operation must retain patch bookkeeping and originals.
+        if (previous?.initialized && previous._initVersion === DQH_INIT_VERSION) {
+            for (const [name, module] of Object.entries(modules)) {
+                if (!previous[name] && module) {
+                    previous[name] = module;
+                    if (name === "RunningGameStore") {
+                        for (const method of ["getRunningGames", "getGameForPID", "getVisibleRunningGames",
+                            "getVisibleGame", "getCurrentGameForAnalytics", "getGameForName"]) {
+                            previous["_orig" + method[0].toUpperCase() + method.slice(1)] = module[method] || null;
+                        }
+                    }
+                    if (name === "ApplicationStreamingStore") {
+                        previous._origGetStreamerActiveStreamMetadata = module.getStreamerActiveStreamMetadata;
+                    }
                 }
-                // Timed out — not the real API, try next candidate
-            } catch(e) {
-                // Sync throw = not HTTP API
             }
-        }
-
-        let missing = [];
-        for (const [name, mod] of Object.entries(modules)) {
-            if (!mod && name !== "NativeUtils" && name !== "DetectableGameStore") missing.push(name);
-        }
-
-        if (missing.length > 0) {
-            return JSON.stringify({ success: false, error: "Missing modules: " + missing.join(", ") + " (scanned " + scanned + " modules, " + apiCandidates.length + " API candidates, " + apiTestedCount + " tested)" });
+            return JSON.stringify({success:true, cached:true});
         }
 
         Object.defineProperty(window, "__dqh_cdp", {
@@ -175,20 +163,20 @@ const JS_INIT_QUEST_MODULES: &str = r#"
                 initialized: true,
                 _initVersion: DQH_INIT_VERSION,
                 // Save original functions for cleanup
-            _origGetRunningGames: modules.RunningGameStore.getRunningGames,
-            _origGetGameForPID: modules.RunningGameStore.getGameForPID || null,
-            _origGetVisibleRunningGames: modules.RunningGameStore.getVisibleRunningGames || null,
-            _origGetVisibleGame: modules.RunningGameStore.getVisibleGame || null,
-            _origGetCurrentGameForAnalytics: modules.RunningGameStore.getCurrentGameForAnalytics || null,
-            _origGetGameForName: modules.RunningGameStore.getGameForName || null,
-            _origGetStreamerActiveStreamMetadata: modules.ApplicationStreamingStore.getStreamerActiveStreamMetadata
+            _origGetRunningGames: modules.RunningGameStore?.getRunningGames,
+            _origGetGameForPID: modules.RunningGameStore?.getGameForPID || null,
+            _origGetVisibleRunningGames: modules.RunningGameStore?.getVisibleRunningGames || null,
+            _origGetVisibleGame: modules.RunningGameStore?.getVisibleGame || null,
+            _origGetCurrentGameForAnalytics: modules.RunningGameStore?.getCurrentGameForAnalytics || null,
+            _origGetGameForName: modules.RunningGameStore?.getGameForName || null,
+            _origGetStreamerActiveStreamMetadata: modules.ApplicationStreamingStore?.getStreamerActiveStreamMetadata
             },
             writable: true,
             configurable: true,
             enumerable: false
         });
 
-        return JSON.stringify({ success: true, cached: false, apiCandidates: apiCandidates.length, apiTested: apiTestedCount });
+        return JSON.stringify({ success: true, cached: false, apiCandidates: apiCandidates.length });
     } catch (e) {
         return JSON.stringify({ success: false, error: String(e) });
     }
@@ -1562,7 +1550,7 @@ fn log_partial_target_failures(operation: &str, failures: &[String]) {
     );
 }
 
-async fn cdp_execute_json_on_all_targets(
+async fn cdp_execute_json_on_task_target(
     port: u16,
     js_code: &str,
     await_promise: bool,
@@ -1570,24 +1558,20 @@ async fn cdp_execute_json_on_all_targets(
     operation: &str,
 ) -> Result<CdpJsonExecutionSummary> {
     let rewritten = with_bridge(js_code);
-    let results = match cdp_client::execute_js_via_all_discord_targets(
+    let target = cdp_client::get_primary_discord_target(port).await?;
+    let raw = cdp_client::execute_js_via_primary_discord_target(
         port,
         &rewritten,
         await_promise,
         timeout_secs,
     )
-    .await
-    {
-        Ok(results) => results,
-        Err(error) if cdp_client::error_is_cdp_endpoint_failure(&error) => {
-            return Err(error);
-        }
-        Err(error) => {
-            return Err(error).with_context(|| {
-                format!("Failed to execute CDP {} across Discord targets", operation)
-            });
-        }
-    };
+    .await?;
+    let results = vec![cdp_client::CdpTargetExecutionResult {
+        target_title: target.title,
+        target_url: target.url,
+        result: Some(raw),
+        error: None,
+    }];
 
     let total_targets = results.len();
     let mut successful_results = Vec::new();
@@ -1831,59 +1815,159 @@ fn map_quest_module_init_error(quest_kind: &str, error: anyhow::Error) -> anyhow
     }
 }
 
+fn module_requirements(operation: &str) -> Vec<(&'static str, &'static str)> {
+    match operation {
+        "video quest" | "PLAY_ACTIVITY" => {
+            vec![("api", "get"), ("api", "post"), ("QuestsStore", "getQuest")]
+        }
+        "stream quest" => vec![
+            (
+                "ApplicationStreamingStore",
+                "getStreamerActiveStreamMetadata",
+            ),
+            ("QuestsStore", "getQuest"),
+            ("FluxDispatcher", "dispatch"),
+            ("FluxDispatcher", "subscribe"),
+            ("FluxDispatcher", "unsubscribe"),
+        ],
+        _ => {
+            let mut requirements = vec![
+                ("RunningGameStore", "getRunningGames"),
+                ("RunningGameStore", "getGameForPID"),
+                ("FluxDispatcher", "dispatch"),
+                ("FluxDispatcher", "subscribe"),
+                ("FluxDispatcher", "unsubscribe"),
+            ];
+            if operation != "manual game simulation" {
+                requirements.push(("QuestsStore", "getQuest"));
+            }
+            requirements
+        }
+    }
+}
+
+fn module_script(operation: &str, discover_only: bool) -> String {
+    JS_INIT_QUEST_MODULES
+        .replace(
+            "__DQH_REQUIRED__",
+            &serde_json::to_string(&module_requirements(operation)).unwrap(),
+        )
+        .replace(
+            "__DQH_DISCOVER_ONLY__",
+            if discover_only { "true" } else { "false" },
+        )
+}
+
+async fn initialize_modules(port: u16, operation: &str) -> Result<()> {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+    // Discover first; no cache or client state is installed until all required methods exist.
+    for attempt in 0..3 {
+        let result = tokio::time::timeout_at(
+            deadline,
+            cdp_client::execute_js_via_primary_discord_target(
+                port,
+                &module_script(operation, true),
+                true,
+                2,
+            ),
+        )
+        .await
+        .map_err(|_| {
+            anyhow::Error::from(capability_error(
+                operation,
+                &serde_json::json!({"missing":["module_discovery_timeout"]}),
+            ))
+        })??;
+        let parsed: serde_json::Value = serde_json::from_str(&result)?;
+        if parsed["success"] == true {
+            let raw = tokio::time::timeout_at(
+                deadline,
+                cdp_client::execute_js_via_primary_discord_target(
+                    port,
+                    &with_bridge(&module_script(operation, false)),
+                    true,
+                    2,
+                ),
+            )
+            .await
+            .map_err(|_| {
+                anyhow::Error::from(capability_error(
+                    operation,
+                    &serde_json::json!({"missing":["module_initialization_timeout"]}),
+                ))
+            })??;
+            let initialized: serde_json::Value = serde_json::from_str(&raw)?;
+            if initialized["success"] == true {
+                return Ok(());
+            }
+            return Err(capability_error(operation, &initialized).into());
+        }
+        if attempt == 2 || tokio::time::Instant::now() + Duration::from_millis(400) >= deadline {
+            return Err(capability_error(operation, &parsed).into());
+        }
+        sleep(Duration::from_millis(400)).await;
+    }
+    unreachable!()
+}
+
+#[derive(Debug, serde::Serialize)]
+struct CdpCapabilityError {
+    code: &'static str,
+    params: serde_json::Value,
+    message: String,
+}
+
+impl std::fmt::Display for CdpCapabilityError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "{}: {}", self.code, self.message)
+    }
+}
+impl std::error::Error for CdpCapabilityError {}
+
+fn capability_error(operation: &str, result: &serde_json::Value) -> CdpCapabilityError {
+    let missing: Vec<_> = result
+        .get("missing")
+        .and_then(serde_json::Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .collect()
+        })
+        .unwrap_or_else(|| vec!["module_discovery"]);
+    CdpCapabilityError {
+        code: "cdp_capability_missing",
+        params: serde_json::json!({"operation":operation,"missingCapabilities":missing}),
+        message: format!(
+            "CDP capability missing for {operation}: {}",
+            missing.join(", ")
+        ),
+    }
+}
+
+pub(crate) fn quest_error_payload(error: &anyhow::Error, prefix: &str) -> serde_json::Value {
+    if let Some(capability) = error.downcast_ref::<CdpCapabilityError>() {
+        serde_json::to_value(capability).expect("capability error is serializable")
+    } else {
+        serde_json::json!(format!("{prefix}: {error:#}"))
+    }
+}
+
 async fn cdp_prepare_quest_modules(port: u16, quest_kind: &str) -> Result<()> {
     cdp_wait_for_endpoint(port).await?;
-    cdp_init_modules(port)
+    cdp_client::pin_discord_target(port).await?;
+    initialize_modules(port, quest_kind)
         .await
         .map_err(|error| map_quest_module_init_error(quest_kind, error))
 }
 
 async fn cdp_prepare_quest_modules_on_primary(port: u16, quest_kind: &str) -> Result<()> {
-    cdp_wait_for_endpoint(port).await?;
-    cdp_init_modules_on_primary(port)
-        .await
-        .map_err(|error| map_quest_module_init_error(quest_kind, error))
+    cdp_prepare_quest_modules(port, quest_kind).await
 }
 
-/// Initialize Discord webpack modules via CDP.
+#[cfg(test)]
 async fn cdp_init_modules(port: u16) -> Result<()> {
-    use crate::logger::{log, LogCategory, LogLevel};
-
-    let summary = cdp_execute_json_on_all_targets(
-        port,
-        JS_INIT_QUEST_MODULES,
-        true,
-        60,
-        "module initialization",
-    )
-    .await?;
-
-    log_partial_target_failures("module initialization", &summary.target_failures);
-
-    let cached_targets = summary
-        .successful_results
-        .iter()
-        .filter(|parsed| {
-            parsed
-                .get("cached")
-                .and_then(|value| value.as_bool())
-                .unwrap_or(false)
-        })
-        .count();
-
-    log(
-        LogLevel::Info,
-        LogCategory::TokenExtraction,
-        &format!(
-            "CDP modules initialized on {}/{} target(s) (cached on {})",
-            summary.successful_results.len(),
-            summary.total_targets,
-            cached_targets
-        ),
-        None,
-    );
-
-    Ok(())
+    initialize_modules(port, "manual game simulation").await
 }
 
 fn parse_play_activity_cdp_status(raw: &str) -> Result<PlayActivityHeartbeatStatus> {
@@ -1910,37 +1994,6 @@ fn parse_play_activity_cdp_status(raw: &str) -> Result<PlayActivityHeartbeatStat
         progress_seconds,
         completed,
     })
-}
-
-async fn cdp_init_modules_on_primary(port: u16) -> Result<()> {
-    let raw = match cdp_client::execute_js_via_primary_discord_target(
-        port,
-        &with_bridge(JS_INIT_QUEST_MODULES),
-        true,
-        60,
-    )
-    .await
-    {
-        Ok(raw) => raw,
-        Err(error) if cdp_client::error_is_cdp_endpoint_failure(&error) => return Err(error),
-        Err(error) => {
-            return Err(error)
-                .context("Failed to initialize Discord modules on the primary CDP target");
-        }
-    };
-    let parsed: serde_json::Value =
-        serde_json::from_str(&raw).context("CDP module initialization returned invalid JSON")?;
-    if parsed.get("success").and_then(|value| value.as_bool()) == Some(true) {
-        return Ok(());
-    }
-
-    anyhow::bail!(
-        "CDP module initialization failed: {}",
-        parsed
-            .get("error")
-            .and_then(|value| value.as_str())
-            .unwrap_or("unknown error")
-    )
 }
 
 async fn cdp_send_play_activity_heartbeat(
@@ -1983,7 +2036,7 @@ async fn cdp_cleanup_best_effort(port: u16) {
     let _ = cdp_cleanup_with_attempts(port, CDP_CLEANUP_ATTEMPTS).await;
 }
 
-async fn cdp_cleanup_after_stop(port: u16, context: &str, cancelled: bool) {
+pub(crate) async fn cdp_cleanup_after_stop(port: u16, context: &str, cancelled: bool) {
     let attempts = if cancelled {
         CDP_CLEANUP_CANCEL_ATTEMPTS
     } else {
@@ -2200,7 +2253,7 @@ pub async fn start_manual_game_spoof(port: u16, app_id: &str, app_name: &str) ->
     cdp_prepare_quest_modules(port, "manual game simulation").await?;
 
     let js = js_spoof_play_game(app_id, app_name);
-    let summary = match cdp_execute_json_on_all_targets(
+    let summary = match cdp_execute_json_on_task_target(
         port,
         &js,
         true,
@@ -2254,7 +2307,7 @@ async fn cdp_poll_progress(port: u16, quest_id: &str) -> Result<(f64, bool)> {
     use crate::logger::{log, LogCategory, LogLevel};
 
     let js = js_query_progress(quest_id);
-    let summary = cdp_execute_json_on_all_targets(port, &js, true, 15, "progress query").await?;
+    let summary = cdp_execute_json_on_task_target(port, &js, true, 15, "progress query").await?;
     let mut parsed = summary
         .successful_results
         .first()
@@ -2415,7 +2468,7 @@ pub async fn complete_play_quest_via_cdp(
     // 2. Spoof running game
     let js = js_spoof_play_game(&app_id, &app_name);
     let spoof_summary =
-        match cdp_execute_json_on_all_targets(port, &js, true, 15, "play quest spoof").await {
+        match cdp_execute_json_on_task_target(port, &js, true, 15, "play quest spoof").await {
             Ok(summary) => summary,
             Err(err) => {
                 cdp_cleanup_after_stop(port, "play quest spoof failed", false).await;
@@ -2485,6 +2538,8 @@ pub async fn complete_play_quest_via_cdp(
                 return Ok(());
             }
         }
+
+        cdp_client::get_primary_discord_target(port).await?;
 
         // Primary: poll via Rust API client (same as quest list refresh)
         let poll_result = if let Some(ref api_client) = client {
@@ -2594,7 +2649,7 @@ pub async fn complete_stream_quest_via_cdp(
     // 2. Spoof streaming metadata
     let js = js_spoof_stream(&app_id);
     let stream_summary =
-        match cdp_execute_json_on_all_targets(port, &js, false, 10, "stream quest spoof").await {
+        match cdp_execute_json_on_task_target(port, &js, false, 10, "stream quest spoof").await {
             Ok(summary) => summary,
             Err(err) => {
                 cdp_cleanup_after_stop(port, "stream quest spoof failed", false).await;
@@ -2606,23 +2661,31 @@ pub async fn complete_stream_quest_via_cdp(
 
     // Also spoof running game (stream quests also need the game running)
     let js_game = js_spoof_play_game(&app_id, "StreamedApp");
-    if let Ok(game_summary) =
-        cdp_execute_json_on_all_targets(port, &js_game, true, 15, "stream companion game spoof")
-            .await
+    if initialize_modules(port, "manual game simulation")
+        .await
+        .is_ok()
     {
-        log_partial_target_failures("stream companion game spoof", &game_summary.target_failures);
-    }
+        if let Ok(game_summary) =
+            cdp_execute_json_on_task_target(port, &js_game, true, 15, "stream companion game spoof")
+                .await
+        {
+            log_partial_target_failures(
+                "stream companion game spoof",
+                &game_summary.target_failures,
+            );
+        }
 
-    log(
-        LogLevel::Info,
-        LogCategory::TokenExtraction,
-        &format!(
-            "CDP: Stream spoofed successfully on {}/{} target(s). Polling progress...",
-            stream_summary.successful_results.len(),
-            stream_summary.total_targets
-        ),
-        None,
-    );
+        log(
+            LogLevel::Info,
+            LogCategory::TokenExtraction,
+            &format!(
+                "CDP: Stream spoofed successfully on {}/{} target(s). Polling progress...",
+                stream_summary.successful_results.len(),
+                stream_summary.total_targets
+            ),
+            None,
+        );
+    }
 
     // 3. Poll progress using Rust API client (reliable) with CDP fallback
     let poll_interval = Duration::from_secs(20);
@@ -2644,7 +2707,10 @@ pub async fn complete_stream_quest_via_cdp(
             }
         }
 
+        cdp_client::get_primary_discord_target(port).await?;
+
         // Primary: poll via Rust API client
+        cdp_client::get_primary_discord_target(port).await?;
         let poll_result = if let Some(ref api_client) = client {
             match api_client.get_quest_progress(&quest_id).await {
                 Ok((progress_secs, completed)) => {
@@ -2764,7 +2830,7 @@ pub async fn complete_video_quest_via_cdp(
     //    This avoids CDP "Promise was collected" errors from awaitPromise=true.
     let js = js_start_video_quest(&quest_id, seconds_needed, initial_progress);
 
-    let start_summary = cdp_execute_json_on_all_targets(port, &js, false, 15, "video quest start")
+    let start_summary = cdp_execute_json_on_task_target(port, &js, false, 15, "video quest start")
         .await
         .context("Failed to launch video quest JS")?;
 
@@ -2793,7 +2859,7 @@ pub async fn complete_video_quest_via_cdp(
             _ = cancel_rx.recv() => {
                 log(LogLevel::Info, LogCategory::TokenExtraction, "CDP video quest cancelled", None);
                 // Try to stop the JS loop
-                let _ = cdp_execute_json_on_all_targets(
+                let _ = cdp_execute_json_on_task_target(
                     port,
                     "(() => { if (window.__dqh_cdp) { window.__dqh_cdp._videoRunning = false; } return JSON.stringify({ success: true, stopped: true }); })()",
                     false,
@@ -2805,6 +2871,8 @@ pub async fn complete_video_quest_via_cdp(
                 return Ok(());
             }
         }
+
+        cdp_client::get_primary_discord_target(port).await?;
 
         // Timeout safety
         if start_time.elapsed() > max_duration {
@@ -2862,7 +2930,7 @@ pub async fn complete_video_quest_via_cdp(
         }
 
         // Check if the JS loop has finished by reading _videoResult
-        match cdp_execute_json_on_all_targets(
+        match cdp_execute_json_on_task_target(
             port,
             "(() => { const d = window.__dqh_cdp; return JSON.stringify({ success: true, running: !!d?._videoRunning, result: d?._videoResult || null }); })()",
             false,
@@ -2924,7 +2992,7 @@ pub async fn complete_video_quest_via_cdp(
                                 if parsed.get("apiModuleWrong") == Some(&serde_json::json!(true)) {
                                     log(LogLevel::Warn, LogCategory::TokenExtraction,
                                         "API module mismatch detected — invalidating CDP module cache", None);
-                                    let _ = cdp_execute_json_on_all_targets(
+                                    let _ = cdp_execute_json_on_task_target(
                                         port,
                                         "(() => { delete window.__dqh_cdp; return JSON.stringify({ success: true, cleared: true }); })()",
                                         false,
@@ -2971,7 +3039,7 @@ fn js_dispatch_message_event(event_type: &str, payload_json: &str) -> String {
 }
 
 const JS_ACTIVITY_HELPERS: &str = r#"
-    const DQH_SDK_WAIT_TIMEOUT_MS = 12000;
+    const DQH_SDK_WAIT_TIMEOUT_MS = 2000;
     const DQH_SDK_READY_TIMEOUT_MS = 5000;
     const DQH_COMMAND_TIMEOUT_MS = 5000;
     const DQH_QUEST_START_TIMER_TIMEOUT_MS = 10000;
@@ -3045,7 +3113,7 @@ __DQH_ACTIVITY_HELPERS__
         const startedAt = Date.now();
         let lastState = "window.discordSDK missing";
 
-        while (Date.now() - startedAt < DQH_SDK_WAIT_TIMEOUT_MS) {
+        for (let attempt = 0; attempt < 3 && Date.now() - startedAt < DQH_SDK_WAIT_TIMEOUT_MS; attempt++) {
             const sdk = window.discordSDK;
             if (sdk && sdk.commands) {
                 const commands = commandNames(sdk);
@@ -3056,10 +3124,14 @@ __DQH_ACTIVITY_HELPERS__
             } else if (sdk) {
                 lastState = "window.discordSDK present but commands missing";
             }
-            await sleep(250);
+            if (attempt < 2) {
+                const remainingMs = DQH_SDK_WAIT_TIMEOUT_MS - (Date.now() - startedAt);
+                if (remainingMs <= 0) break;
+                await sleep(Math.min(900, remainingMs));
+            }
         }
 
-        throw new Error("Discord SDK not ready: " + lastState);
+        throw new Error("cdp_capability_missing: operation=activity, missing=discordSDK.commands.questStartTimer; " + lastState);
     }
 
     try {
@@ -3456,7 +3528,7 @@ pub async fn navigate_discord_spa(port: u16, target_path: &str) -> Result<()> {
     use crate::logger::{log, LogCategory, LogLevel};
 
     let js = js_navigate_spa(target_path);
-    let summary = cdp_execute_json_on_all_targets(port, &js, true, 15, "SPA navigation").await?;
+    let summary = cdp_execute_json_on_task_target(port, &js, true, 15, "SPA navigation").await?;
 
     log_partial_target_failures("SPA navigation", &summary.target_failures);
 
@@ -3636,6 +3708,9 @@ pub async fn complete_play_activity_via_cdp(
                 status
             }
             Err(error) => {
+                if cdp_client::error_is_target_invalidated(&error) {
+                    return Err(error);
+                }
                 consecutive_errors += 1;
                 log(
                     LogLevel::Warn,
@@ -3655,7 +3730,7 @@ pub async fn complete_play_activity_via_cdp(
                     return Err(error.context("CDP PLAY_ACTIVITY heartbeat failed three times"));
                 }
 
-                let _ = cdp_init_modules_on_primary(port).await;
+                let _ = initialize_modules(port, "PLAY_ACTIVITY").await;
                 tokio::select! {
                     _ = sleep(Duration::from_secs(RETRY_DELAY_SECS)) => {},
                     _ = cancel_rx.recv() => {
@@ -3685,6 +3760,7 @@ pub async fn complete_play_activity_via_cdp(
 
         let next_heartbeat = Instant::now() + heartbeat_interval;
         loop {
+            cdp_client::get_primary_discord_target(port).await?;
             let wake_at = next_heartbeat.min(next_progress_poll).min(timeout_at);
             tokio::select! {
                 _ = sleep_until(wake_at) => {},
@@ -3783,6 +3859,7 @@ pub async fn complete_activity_quest_via_cdp(
         Some(application_id.trim())
     };
 
+    cdp_client::pin_discord_target(port).await?;
     let iframe_target =
         cdp_client::find_activity_iframe_target_for_application(port, application_id_filter)
             .await
@@ -3791,6 +3868,9 @@ pub async fn complete_activity_quest_via_cdp(
     let ws_url = iframe_target
         .web_socket_debugger_url
         .context("Activity iframe target has no WebSocket URL")?;
+    if !discord_cdp_launch_core::is_loopback_cdp_websocket(port, &ws_url) {
+        anyhow::bail!("Activity target has a non-loopback debugger URL");
+    }
 
     log(
         LogLevel::Info,
@@ -3888,7 +3968,14 @@ pub async fn complete_activity_quest_via_cdp(
             })
             .to_string();
             let completed_js = js_dispatch_message_event("quest-completed", &completed_payload);
-            match cdp_client::execute_js_on_target(&ws_url, &completed_js, false, 10).await {
+            let dispatched =
+                cdp_client::execute_js_on_target(&ws_url, &completed_js, false, 10).await;
+            if let Err(ref error) = dispatched {
+                if cdp_client::error_is_target_invalidated(error) {
+                    anyhow::bail!("cdp_target_invalidated");
+                }
+            }
+            match dispatched {
                 Ok(result) => log(
                     LogLevel::Info,
                     LogCategory::TokenExtraction,
@@ -3912,7 +3999,14 @@ pub async fn complete_activity_quest_via_cdp(
 
             let progress_payload = checkpoint_num.to_string();
             let progress_js = js_dispatch_message_event("quest-progress", &progress_payload);
-            match cdp_client::execute_js_on_target(&ws_url, &progress_js, false, 10).await {
+            let dispatched =
+                cdp_client::execute_js_on_target(&ws_url, &progress_js, false, 10).await;
+            if let Err(ref error) = dispatched {
+                if cdp_client::error_is_target_invalidated(error) {
+                    anyhow::bail!("cdp_target_invalidated");
+                }
+            }
+            match dispatched {
                 Ok(result) => log(
                     LogLevel::Info,
                     LogCategory::TokenExtraction,
@@ -4066,6 +4160,31 @@ pub async fn complete_activity_quest_via_cdp(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn capability_errors_keep_their_details_through_context_and_events() {
+        let error = anyhow::Error::from(capability_error(
+            "stream quest",
+            &serde_json::json!({
+                "missing":["ApplicationStreamingStore.getStreamerActiveStreamMetadata"]
+            }),
+        ))
+        .context("module initialization failed");
+        let payload = quest_error_payload(&error, "CDP quest failed");
+        assert_eq!(payload["code"], "cdp_capability_missing");
+        assert_eq!(payload["params"]["operation"], "stream quest");
+        assert_eq!(
+            payload["params"]["missingCapabilities"][0],
+            "ApplicationStreamingStore.getStreamerActiveStreamMetadata"
+        );
+        assert!(payload["message"]
+            .as_str()
+            .unwrap()
+            .contains("getStreamerActiveStreamMetadata"));
+        assert!(
+            quest_error_payload(&anyhow::anyhow!("capture failed"), "CDP quest failed").is_string()
+        );
+    }
+
     use super::*;
 
     #[test]
@@ -4295,12 +4414,12 @@ mod tests {
     }
 
     #[test]
-    fn overlay_and_popout_are_skipped_during_cleanup_verify() {
+    fn cleanup_auxiliary_hint_does_not_classify_routes() {
         assert!(is_discord_auxiliary_page(
             "Discord Overlay",
             "https://discord.com/popout"
         ));
-        assert!(is_discord_auxiliary_page(
+        assert!(!is_discord_auxiliary_page(
             "Friends",
             "https://discord.com/popout"
         ));
@@ -4401,7 +4520,7 @@ mod tests {
         assert!(JS_VERIFY_CLEANUP_STATE.contains("const val = exp[key];"));
         assert!(JS_INIT_QUEST_MODULES.contains("NativeUtils"));
         assert!(JS_INIT_QUEST_MODULES.contains("DetectableGameStore"));
-        assert!(JS_INIT_QUEST_MODULES.contains("const DQH_INIT_VERSION = 7"));
+        assert!(JS_INIT_QUEST_MODULES.contains("const DQH_INIT_VERSION = 8"));
     }
 
     fn snapshot_game_by_id<'a>(

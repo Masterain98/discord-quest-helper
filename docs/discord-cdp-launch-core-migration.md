@@ -1,5 +1,9 @@
 # Discord CDP launch core migration
 
+> Runtime verification follow-up: see [cdp-runtime-validation.md](cdp-runtime-validation.md).
+> Readiness now verifies the loaded runtime over WebSocket; the fixture and size
+> measurements below are historical migration baselines.
+
 > Multi-client follow-up: see [desktop-client-provider-migration.md](desktop-client-provider-migration.md). The four-field Tauri DTO and official-channel-only session model described below are the historical baseline; current launch results also expose provider/installation/variant/ownership and the new atomic state API.
 
 This document records the behavior and artifact baseline for the migration from

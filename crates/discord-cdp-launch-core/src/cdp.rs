@@ -11,6 +11,14 @@ use std::time::{Duration, Instant};
 
 const MAX_HTTP_RESPONSE_BYTES: usize = 1024 * 1024;
 
+pub(crate) fn port_is_listening(port: u16) -> bool {
+    TcpStream::connect_timeout(
+        &SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port),
+        Duration::from_millis(500),
+    )
+    .is_ok()
+}
+
 pub trait CdpProbe {
     fn probe(&self, port: u16) -> CdpProbeStatus;
 
@@ -62,71 +70,22 @@ pub fn is_discord_target(target: &CdpTarget) -> bool {
     if target.target_type != "page" {
         return false;
     }
-
-    let title = target.title.to_ascii_lowercase();
-    let url = target.url.to_ascii_lowercase();
-    if title.contains("updater") || url == "about:blank" {
-        return false;
-    }
-
-    title.contains("discord") || url.contains("discord.com") || url.contains("discordapp.com")
+    url::Url::parse(&target.url).ok().is_some_and(|url| {
+        matches!(url.scheme(), "https" | "http")
+            && url.host_str().is_some_and(|host| {
+                ["discord.com", "discordapp.com"]
+                    .iter()
+                    .any(|domain| host == *domain || host.ends_with(&format!(".{domain}")))
+            })
+    })
 }
 
-/// Overlay and popout windows are Discord pages, but they do not load
-/// `webpackChunkdiscord_app` or `DiscordNative`. Live Discord CDP lists
-/// `Discord Overlay` (`https://discord.com/popout`) before the main renderer.
+// Auxiliary labels are diagnostic hints only, never target selection gates.
 pub fn is_discord_auxiliary_window(target: &CdpTarget) -> bool {
     is_discord_auxiliary_page(&target.title, &target.url)
 }
-
-/// Title/URL form used when CDP execution results no longer carry a full target.
-pub fn is_discord_auxiliary_page(title: &str, url: &str) -> bool {
-    if title.eq_ignore_ascii_case("discord overlay") {
-        return true;
-    }
-
-    let path = discord_target_path(url);
-    path == "popout"
-        || path.starts_with("popout/")
-        || path == "overlay"
-        || path.starts_with("overlay/")
-}
-
-fn discord_target_path(url: &str) -> String {
-    let lowered = url.to_ascii_lowercase();
-    let without_scheme = lowered
-        .split_once("://")
-        .map(|(_, rest)| rest)
-        .unwrap_or(&lowered);
-    let path = without_scheme
-        .split_once('/')
-        .map(|(_, path)| path)
-        .unwrap_or("");
-    path.split(['?', '#']).next().unwrap_or(path).to_string()
-}
-
-fn is_discord_main_renderer(target: &CdpTarget) -> bool {
-    let path = discord_target_path(&target.url);
-    path == "app"
-        || path.starts_with("app/")
-        || path == "login"
-        || path.starts_with("login/")
-        || path.starts_with("channels/")
-        || path == "quest-home"
-        || path.starts_with("quest-home/")
-}
-
-pub fn pick_discord_target(targets: &[CdpTarget]) -> Option<&CdpTarget> {
-    let is_candidate = |target: &&CdpTarget| {
-        is_discord_target(target)
-            && target.web_socket_debugger_url.is_some()
-            && !is_discord_auxiliary_window(target)
-    };
-
-    targets
-        .iter()
-        .filter(is_candidate)
-        .find(|target| is_discord_main_renderer(target))
+pub fn is_discord_auxiliary_page(title: &str, _url: &str) -> bool {
+    title.eq_ignore_ascii_case("discord overlay")
 }
 
 pub fn classify_cdp_target(target: &CdpTarget) -> CdpTargetClassification {
@@ -136,20 +95,11 @@ pub fn classify_cdp_target(target: &CdpTarget) -> CdpTargetClassification {
     if target.url.eq_ignore_ascii_case("about:blank") {
         return CdpTargetClassification::AboutBlank;
     }
-    if target.title.to_ascii_lowercase().contains("updater") {
-        return CdpTargetClassification::Updater;
-    }
     if target.web_socket_debugger_url.is_none() {
         return CdpTargetClassification::MissingWebSocketDebuggerUrl;
     }
     if !is_discord_target(target) {
         return CdpTargetClassification::NonDiscordPage;
-    }
-    if is_discord_auxiliary_window(target) {
-        return CdpTargetClassification::DiscordAuxiliary;
-    }
-    if is_discord_main_renderer(target) {
-        return CdpTargetClassification::DiscordMainRenderer;
     }
     CdpTargetClassification::DiscordOtherRenderer
 }
@@ -158,8 +108,18 @@ fn sanitized_target_url(url: &str) -> String {
     url.split(['?', '#']).next().unwrap_or(url).to_string()
 }
 
-fn diagnostic_target(target: &CdpTarget) -> CdpDiagnosticTarget {
-    let classification = classify_cdp_target(target);
+fn diagnostic_target(
+    target: &CdpTarget,
+    runtime: crate::CdpRuntime,
+    selected_id: Option<&str>,
+) -> CdpDiagnosticTarget {
+    let classification = if selected_id == Some(target.id.as_str()) {
+        CdpTargetClassification::DiscordMainRenderer
+    } else if is_discord_auxiliary_window(target) {
+        CdpTargetClassification::DiscordAuxiliary
+    } else {
+        classify_cdp_target(target)
+    };
     CdpDiagnosticTarget {
         id: target.id.clone(),
         target_type: target.target_type.clone(),
@@ -170,6 +130,7 @@ fn diagnostic_target(target: &CdpTarget) -> CdpDiagnosticTarget {
         is_auxiliary_window: is_discord_auxiliary_window(target),
         is_main_renderer: classification == CdpTargetClassification::DiscordMainRenderer,
         classification,
+        runtime,
     }
 }
 
@@ -270,17 +231,27 @@ fn fetch_cdp_http_response(
     if port == 0 {
         return Err(CdpListError::Unreachable { port });
     }
+    let deadline = Instant::now() + (connect_timeout + io_timeout).min(Duration::from_secs(3));
     let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
-    let mut stream = TcpStream::connect_timeout(&address, connect_timeout)
-        .map_err(|_| CdpListError::Unreachable { port })?;
+    let mut stream = TcpStream::connect_timeout(
+        &address,
+        connect_timeout.min(deadline.saturating_duration_since(Instant::now())),
+    )
+    .map_err(|_| CdpListError::Unreachable { port })?;
     let _ = stream.set_read_timeout(Some(io_timeout));
-    let _ = stream.set_write_timeout(Some(io_timeout));
+    let _ = stream.set_write_timeout(Some(
+        io_timeout.min(deadline.saturating_duration_since(Instant::now())),
+    ));
     let request =
         format!("GET /json HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n");
     stream
         .write_all(request.as_bytes())
         .map_err(|source| CdpListError::ConnectionFailed { port, source })?;
-    read_http_response(&mut stream, port, io_timeout)
+    read_http_response(
+        &mut stream,
+        port,
+        deadline.saturating_duration_since(Instant::now()),
+    )
 }
 
 pub fn detailed_probe_cdp(port: u16) -> DetailedCdpProbeResult {
@@ -293,6 +264,7 @@ fn detailed_probe_with_timeouts(
     connect_timeout: Duration,
     io_timeout: Duration,
 ) -> DetailedCdpProbeResult {
+    let deadline = Instant::now() + Duration::from_secs(3);
     let response = match fetch_cdp_http_response(port, connect_timeout, io_timeout) {
         Ok(response) => response,
         Err(CdpListError::Unreachable { .. }) => {
@@ -303,6 +275,13 @@ fn detailed_probe_with_timeouts(
                 http_status: None,
                 response_parseable: false,
                 targets: Vec::new(),
+                runtime: crate::CdpRuntime {
+                    runtime_status: crate::CdpRuntimeStatus::ProbeFailed,
+                    failure_stage: Some("discovery".into()),
+                    reason_code: Some("endpoint_unreachable".into()),
+                    ..Default::default()
+                },
+                selected_target: None,
             };
         }
         Err(_) => {
@@ -313,16 +292,58 @@ fn detailed_probe_with_timeouts(
                 http_status: None,
                 response_parseable: false,
                 targets: Vec::new(),
+                runtime: crate::CdpRuntime {
+                    runtime_status: crate::CdpRuntimeStatus::ProbeFailed,
+                    failure_stage: Some("discovery".into()),
+                    reason_code: Some("http_failed".into()),
+                    ..Default::default()
+                },
+                selected_target: None,
             };
         }
     };
     let http_status = http_status(&response);
     match parse_cdp_targets_http_response(port, &response) {
         Ok(raw_targets) => {
-            let status = pick_discord_target(&raw_targets).map_or(
+            let mut candidates: Vec<_> = raw_targets
+                .iter()
+                .filter(|t| is_discord_target(t))
+                .collect();
+            candidates.sort_by(|a, b| a.id.cmp(&b.id));
+            let runtimes: std::collections::HashMap<_, _> = candidates
+                .iter()
+                .map(|target| {
+                    (
+                        target.id.clone(),
+                        crate::runtime::verify(port, target, deadline),
+                    )
+                })
+                .collect();
+            let selected = candidates
+                .iter()
+                .filter(|target| {
+                    runtimes[&target.id].runtime_status == crate::CdpRuntimeStatus::Ready
+                })
+                .min_by_key(|target| crate::runtime::preference(&runtimes[&target.id], &target.id));
+            let selected_target = selected.map(|target| (*target).clone());
+            let runtime = selected
+                .map(|target| runtimes[&target.id].clone())
+                .unwrap_or_else(|| {
+                    candidates
+                        .iter()
+                        .filter_map(|target| runtimes.get(&target.id))
+                        .min_by_key(|runtime| match runtime.runtime_status {
+                            crate::CdpRuntimeStatus::Loading => 0,
+                            crate::CdpRuntimeStatus::ProbeFailed => 1,
+                            _ => 2,
+                        })
+                        .cloned()
+                        .unwrap_or_default()
+                });
+            let status = selected_target.as_ref().map_or(
                 CdpProbeStatus::CdpWithoutDiscordTarget,
                 |target| CdpProbeStatus::DiscordReady {
-                    target_title: (!target.title.is_empty()).then(|| target.title.clone()),
+                    target_title: Some(target.title.clone()),
                 },
             );
             DetailedCdpProbeResult {
@@ -331,7 +352,18 @@ fn detailed_probe_with_timeouts(
                 http_reachable: true,
                 http_status,
                 response_parseable: true,
-                targets: raw_targets.iter().map(diagnostic_target).collect(),
+                targets: raw_targets
+                    .iter()
+                    .map(|target| {
+                        diagnostic_target(
+                            target,
+                            runtimes.get(&target.id).cloned().unwrap_or_default(),
+                            selected_target.as_ref().map(|target| target.id.as_str()),
+                        )
+                    })
+                    .collect(),
+                runtime,
+                selected_target,
             }
         }
         Err(_) => DetailedCdpProbeResult {
@@ -341,6 +373,13 @@ fn detailed_probe_with_timeouts(
             http_status,
             response_parseable: false,
             targets: Vec::new(),
+            runtime: crate::CdpRuntime {
+                runtime_status: crate::CdpRuntimeStatus::ProbeFailed,
+                failure_stage: Some("discovery".into()),
+                reason_code: Some("invalid_target_list".into()),
+                ..Default::default()
+            },
+            selected_target: None,
         },
     }
 }
@@ -358,19 +397,7 @@ fn probe_with_timeouts(
     connect_timeout: Duration,
     io_timeout: Duration,
 ) -> CdpProbeStatus {
-    match list_cdp_targets_with_timeouts(port, connect_timeout, io_timeout) {
-        Ok(targets) => {
-            if let Some(target) = pick_discord_target(&targets) {
-                CdpProbeStatus::DiscordReady {
-                    target_title: (!target.title.is_empty()).then(|| target.title.clone()),
-                }
-            } else {
-                CdpProbeStatus::CdpWithoutDiscordTarget
-            }
-        }
-        Err(CdpListError::Unreachable { .. }) => CdpProbeStatus::Unreachable,
-        Err(_) => CdpProbeStatus::PortOccupied,
-    }
+    detailed_probe_with_timeouts(port, connect_timeout, io_timeout).status
 }
 
 fn read_http_response(
@@ -385,6 +412,11 @@ fn read_http_response(
         if Instant::now() >= deadline {
             break;
         }
+        let _ = stream.set_read_timeout(Some(
+            deadline
+                .saturating_duration_since(Instant::now())
+                .max(Duration::from_millis(1)),
+        ));
         match stream.read(&mut buffer) {
             Ok(0) => break,
             Ok(read) => {
@@ -550,109 +582,28 @@ mod tests {
     }
 
     #[test]
-    fn pick_skips_overlay_in_favor_of_main_renderer() {
-        let targets = vec![
-            target("overlay", "Discord Overlay", "https://discord.com/popout"),
-            target("friends", "Friends", "https://discord.com/channels/@me"),
-        ];
-        let picked = pick_discord_target(&targets).unwrap();
-        assert_eq!(picked.id, "friends");
-    }
-
-    #[test]
-    fn overlay_only_is_not_a_primary_target() {
-        let targets = vec![target(
-            "overlay",
-            "Discord Overlay",
-            "https://discord.com/popout",
-        )];
-        assert!(pick_discord_target(&targets).is_none());
-    }
-
-    #[test]
-    fn pick_prefers_channels_over_other_discord_pages() {
-        let targets = vec![
-            target("store", "Discord Store", "https://discord.com/store"),
-            target("me", "Friends", "https://canary.discord.com/channels/@me"),
-        ];
-        let picked = pick_discord_target(&targets).unwrap();
-        assert_eq!(picked.id, "me");
-    }
-
-    #[test]
-    fn other_discord_renderer_is_classified_but_not_ready() {
-        let store = target(
-            "store",
-            "Discord Store",
-            "https://discord.com/store?source=test#top",
-        );
-        assert_eq!(
-            classify_cdp_target(&store),
-            CdpTargetClassification::DiscordOtherRenderer
-        );
-        assert!(pick_discord_target(std::slice::from_ref(&store)).is_none());
-        let diagnostic = diagnostic_target(&store);
-        assert_eq!(diagnostic.url, "https://discord.com/store");
-        assert!(!diagnostic.is_main_renderer);
-    }
-
-    #[test]
-    fn target_classification_explains_missing_websocket_and_non_page_targets() {
-        let mut missing_websocket = target("login", "Discord", "https://discord.com/login");
-        missing_websocket.web_socket_debugger_url = None;
-        assert_eq!(
-            classify_cdp_target(&missing_websocket),
-            CdpTargetClassification::MissingWebSocketDebuggerUrl
-        );
-        let mut worker = target("worker", "", "");
-        worker.target_type = "worker".to_string();
-        assert_eq!(
-            classify_cdp_target(&worker),
-            CdpTargetClassification::NotPage
-        );
-    }
-
-    #[test]
-    fn application_directory_is_not_treated_as_app_renderer() {
-        let targets = vec![
-            target(
-                "directory",
-                "App Directory",
-                "https://discord.com/application-directory",
-            ),
-            target("app", "Discord", "https://discord.com/app"),
-        ];
-        let picked = pick_discord_target(&targets).unwrap();
-        assert_eq!(picked.id, "app");
-    }
-
-    #[test]
-    fn vesktop_friends_page_is_a_main_discord_target() {
-        let vesktop = CdpTarget {
-            id: "vesktop-main".to_string(),
-            target_type: "page".to_string(),
-            title: "\u{0007} Discord | Friends".to_string(),
-            url: "https://discord.com/channels/@me".to_string(),
-            web_socket_debugger_url: Some("ws://127.0.0.1:9223/devtools/page/1".to_string()),
-        };
-        assert!(is_discord_target(&vesktop));
-        assert!(!is_discord_auxiliary_window(&vesktop));
-        assert_eq!(pick_discord_target(&[vesktop]).unwrap().id, "vesktop-main");
-    }
-
-    #[test]
-    fn overlay_is_still_a_discord_page_target() {
-        let overlay = target("overlay", "Discord Overlay", "https://discord.com/popout");
-        assert!(is_discord_target(&overlay));
-        assert!(is_discord_auxiliary_window(&overlay));
-        assert!(is_discord_auxiliary_page(
-            "Discord Overlay",
-            "https://discord.com/popout"
-        ));
-        assert!(!is_discord_auxiliary_page(
-            "Friends",
-            "https://discord.com/channels/@me"
-        ));
+    fn candidates_use_exact_domains_and_not_routes_or_titles() {
+        assert!(is_discord_target(&target(
+            "a",
+            "",
+            "https://discord.com/future/unknown"
+        )));
+        assert!(is_discord_target(&target(
+            "a",
+            "",
+            "https://canary.discord.com/anything"
+        )));
+        assert!(!is_discord_target(&target(
+            "a",
+            "Discord",
+            "https://discord.com.evil.test/app"
+        )));
+        assert!(!is_discord_target(&target(
+            "a",
+            "Discord",
+            "https://example.com/discord.com"
+        )));
+        assert!(!is_discord_target(&target("a", "Discord", "about:blank")));
     }
 
     fn http_json(status: &str, body: &str) -> Vec<u8> {

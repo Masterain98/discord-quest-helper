@@ -1011,40 +1011,51 @@ async fn start_play_activity_quest(
     let quest_id_for_state = quest_id.clone();
     let (cancel_tx, cancel_rx) = tokio::sync::mpsc::channel::<()>(1);
     let join = tokio::spawn(async move {
-        let result = if transport == PlayActivityTransport::Cdp {
-            cdp_quest::complete_play_activity_via_cdp(
-                cdp_port,
-                quest_id,
-                application_id,
-                seconds_needed,
-                initial_progress,
-                heartbeat_interval,
-                progress_polling_interval,
-                app_handle.clone(),
-                cancel_rx,
-            )
-            .await
-        } else {
-            quest_completer::complete_play_activity_via_heartbeat(
-                client
-                    .as_ref()
-                    .expect("direct PLAY_ACTIVITY mode validated an API client"),
-                quest_id,
-                application_id,
-                seconds_needed,
-                initial_progress,
-                heartbeat_interval,
-                progress_polling_interval,
-                app_handle.clone(),
-                cancel_rx,
-            )
-            .await
-        };
+        let result = cdp_client::with_pinned_discord_session(async {
+            if transport == PlayActivityTransport::Cdp {
+                cdp_quest::complete_play_activity_via_cdp(
+                    cdp_port,
+                    quest_id,
+                    application_id,
+                    seconds_needed,
+                    initial_progress,
+                    heartbeat_interval,
+                    progress_polling_interval,
+                    app_handle.clone(),
+                    cancel_rx,
+                )
+                .await
+            } else {
+                quest_completer::complete_play_activity_via_heartbeat(
+                    client
+                        .as_ref()
+                        .expect("direct PLAY_ACTIVITY mode validated an API client"),
+                    quest_id,
+                    application_id,
+                    seconds_needed,
+                    initial_progress,
+                    heartbeat_interval,
+                    progress_polling_interval,
+                    app_handle.clone(),
+                    cancel_rx,
+                )
+                .await
+            }
+        })
+        .await;
 
         if let Err(error) = result {
+            if transport == PlayActivityTransport::Cdp {
+                cdp_quest::cdp_cleanup_after_stop(
+                    cdp_port,
+                    "task failed or target invalidated",
+                    true,
+                )
+                .await;
+            }
             let _ = app_handle.emit(
                 "quest-error",
-                format!("PLAY_ACTIVITY quest failed: {:#}", error),
+                cdp_quest::quest_error_payload(&error, "PLAY_ACTIVITY quest failed"),
             );
         }
     });
@@ -1084,69 +1095,77 @@ async fn start_cdp_quest(
     let client = state.client.lock().unwrap().clone();
 
     let join = tokio::spawn(async move {
-        let result = match quest_type_clone.as_str() {
-            "play" => {
-                cdp_quest::complete_play_quest_via_cdp(
-                    cdp_port,
-                    quest_id,
-                    application_id,
-                    application_name,
-                    seconds_needed,
-                    initial_progress,
-                    client,
-                    app_handle.clone(),
-                    cancel_rx,
-                )
-                .await
+        let result = cdp_client::with_pinned_discord_session(async {
+            match quest_type_clone.as_str() {
+                "play" => {
+                    cdp_quest::complete_play_quest_via_cdp(
+                        cdp_port,
+                        quest_id,
+                        application_id,
+                        application_name,
+                        seconds_needed,
+                        initial_progress,
+                        client,
+                        app_handle.clone(),
+                        cancel_rx,
+                    )
+                    .await
+                }
+                "stream" => {
+                    cdp_quest::complete_stream_quest_via_cdp(
+                        cdp_port,
+                        quest_id,
+                        application_id,
+                        seconds_needed,
+                        initial_progress,
+                        client,
+                        app_handle.clone(),
+                        cancel_rx,
+                    )
+                    .await
+                }
+                "video" => {
+                    cdp_quest::complete_video_quest_via_cdp(
+                        cdp_port,
+                        quest_id,
+                        seconds_needed,
+                        initial_progress,
+                        app_handle.clone(),
+                        cancel_rx,
+                    )
+                    .await
+                }
+                "activity" => {
+                    let times = checkpoint_times
+                        .filter(|v| !v.is_empty())
+                        .unwrap_or_else(|| vec![180, 180, 180]);
+                    cdp_quest::complete_activity_quest_via_cdp(
+                        cdp_port,
+                        quest_id,
+                        application_id,
+                        initial_progress,
+                        times,
+                        client,
+                        app_handle.clone(),
+                        cancel_rx,
+                    )
+                    .await
+                }
+                _ => Err(anyhow::anyhow!(
+                    "Unknown CDP quest type: {}",
+                    quest_type_clone
+                )),
             }
-            "stream" => {
-                cdp_quest::complete_stream_quest_via_cdp(
-                    cdp_port,
-                    quest_id,
-                    application_id,
-                    seconds_needed,
-                    initial_progress,
-                    client,
-                    app_handle.clone(),
-                    cancel_rx,
-                )
-                .await
-            }
-            "video" => {
-                cdp_quest::complete_video_quest_via_cdp(
-                    cdp_port,
-                    quest_id,
-                    seconds_needed,
-                    initial_progress,
-                    app_handle.clone(),
-                    cancel_rx,
-                )
-                .await
-            }
-            "activity" => {
-                let times = checkpoint_times
-                    .filter(|v| !v.is_empty())
-                    .unwrap_or_else(|| vec![180, 180, 180]);
-                cdp_quest::complete_activity_quest_via_cdp(
-                    cdp_port,
-                    quest_id,
-                    application_id,
-                    initial_progress,
-                    times,
-                    client,
-                    app_handle.clone(),
-                    cancel_rx,
-                )
-                .await
-            }
-            _ => Err(anyhow::anyhow!(
-                "Unknown CDP quest type: {}",
-                quest_type_clone
-            )),
-        };
+        })
+        .await;
 
         if let Err(e) = result {
-            let _ = app_handle.emit("quest-error", format!("CDP quest failed: {:#}", e));
+            cdp_quest::cdp_cleanup_after_stop(cdp_port, "task failed or target invalidated", true)
+                .await;
+            let _ = app_handle.emit(
+                "quest-error",
+                cdp_quest::quest_error_payload(&e, "CDP quest failed"),
+            );
         }
     });
     store_running_quest(&state, quest_id_for_state, cancel_tx, join);
@@ -1358,9 +1377,18 @@ async fn start_manual_cdp_game_simulation(
 
     ensure_cdp_account_consistency(&state, cdp_port).await?;
 
-    cdp_quest::start_manual_game_spoof(cdp_port, &app_id, &app_name)
-        .await
-        .map_err(|error| format!("Failed to start manual CDP game simulation: {error}"))?;
+    if let Err(error) = cdp_client::with_pinned_discord_session(cdp_quest::start_manual_game_spoof(
+        cdp_port, &app_id, &app_name,
+    ))
+    .await
+    {
+        // The watcher can cancel the start future after injection, before its
+        // internal rollback runs. Clean up outside the cancelled session scope.
+        cdp_quest::cdp_cleanup_after_stop(cdp_port, "manual game simulation aborted", false).await;
+        return Err(format!(
+            "Failed to start manual CDP game simulation: {error}"
+        ));
+    }
 
     let session = ManualCdpGameSimulation {
         app_id,

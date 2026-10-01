@@ -72,6 +72,7 @@ pub(crate) struct CdpEndpointDto {
     owner: &'static str,
     owner_provider_id: Option<cdp_launch::ProviderId>,
     target_title: Option<String>,
+    runtime: cdp_launch::CdpRuntime,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -226,6 +227,7 @@ pub(crate) struct CdpDiagnosticTargetDto {
     is_auxiliary_window: bool,
     is_main_renderer: bool,
     classification: &'static str,
+    runtime: cdp_launch::CdpRuntime,
 }
 
 impl From<cdp_launch::CdpDiagnosticTarget> for CdpDiagnosticTargetDto {
@@ -240,6 +242,7 @@ impl From<cdp_launch::CdpDiagnosticTarget> for CdpDiagnosticTargetDto {
             is_auxiliary_window: value.is_auxiliary_window,
             is_main_renderer: value.is_main_renderer,
             classification: value.classification.as_str(),
+            runtime: value.runtime,
         }
     }
 }
@@ -265,6 +268,7 @@ pub(crate) struct CdpDiagnosticSnapshotDto {
     cdp_target_count: usize,
     discord_target_count: usize,
     main_renderer_found: bool,
+    runtime: cdp_launch::CdpRuntime,
     processes: Vec<CdpDiagnosticProcessDto>,
     targets: Vec<CdpDiagnosticTargetDto>,
 }
@@ -284,7 +288,8 @@ pub(crate) async fn get_cdp_diagnostic_snapshot(
     }
     let config = load_config(&app)?;
     tauri::async_runtime::spawn_blocking(move || {
-        let state = build_desktop_client_state(config, port);
+        let detailed = cdp_launch::detailed_probe_cdp(port);
+        let state = build_desktop_client_state_with_probe(config, port, &detailed);
         let selected_installation =
             diagnostic_selected_installation(&state.selection, &state.installations);
         let (selected_provider_id, selected_variant_id) =
@@ -300,7 +305,6 @@ pub(crate) async fn get_cdp_diagnostic_snapshot(
             .processes
             .iter()
             .any(|process| client_process_matches_selector(process, &state.selection));
-        let detailed = cdp_launch::detailed_probe_cdp(port);
         let inspected_owner = cdp_launch::inspect_cdp_port_owner(port);
         let owner = if inspected_owner == cdp_launch::CdpPortOwner::None && detailed.port_listening
         {
@@ -343,6 +347,7 @@ pub(crate) async fn get_cdp_diagnostic_snapshot(
             cdp_target_count: detailed.targets.len(),
             discord_target_count,
             main_renderer_found,
+            runtime: detailed.runtime,
             processes: processes.into_iter().map(Into::into).collect(),
             targets: detailed.targets.into_iter().map(Into::into).collect(),
         })
@@ -822,9 +827,12 @@ fn resolve_conflicting_endpoint(
     }
     let sessions =
         cdp_launch::list_running_desktop_cdp_sessions().map_err(DesktopClientCommandError::from)?;
-    let owner_session = sessions
+    let mut owner_sessions = sessions
         .into_iter()
-        .find(|session| session.port == port && session.provider_id == owner_provider)
+        .filter(|session| session.port == port && session.provider_id == owner_provider);
+    let owner_session = owner_sessions
+        .next()
+        .filter(|_| owner_sessions.next().is_none())
         .ok_or_else(|| {
             DesktopClientCommandError::new(
                 "process_ambiguous",
@@ -921,6 +929,15 @@ async fn launch_compat(
 }
 
 fn build_desktop_client_state(config: DesktopClientsConfig, port: u16) -> DesktopClientStateDto {
+    let detailed = cdp_launch::detailed_probe_cdp(port);
+    build_desktop_client_state_with_probe(config, port, &detailed)
+}
+
+fn build_desktop_client_state_with_probe(
+    config: DesktopClientsConfig,
+    port: u16,
+    detailed: &cdp_launch::DetailedCdpProbeResult,
+) -> DesktopClientStateDto {
     let mut issues = Vec::new();
     let mut installations: Vec<_> = config
         .installations
@@ -973,7 +990,7 @@ fn build_desktop_client_state(config: DesktopClientsConfig, port: u16) -> Deskto
     DesktopClientStateDto {
         installations,
         processes,
-        endpoint: endpoint_dto(port),
+        endpoint: endpoint_dto(port, detailed),
         selection: config.selection,
         discovery_issues: issues,
         port,
@@ -981,9 +998,9 @@ fn build_desktop_client_state(config: DesktopClientsConfig, port: u16) -> Deskto
     }
 }
 
-fn endpoint_dto(port: u16) -> CdpEndpointDto {
+fn endpoint_dto(port: u16, detailed: &cdp_launch::DetailedCdpProbeResult) -> CdpEndpointDto {
     let inspected_owner = cdp_launch::inspect_cdp_port_owner(port);
-    let probe = cdp_launch::probe_cdp(port);
+    let probe = detailed.status.clone();
     let owner = if inspected_owner == cdp_launch::CdpPortOwner::None
         && probe != cdp_launch::CdpProbeStatus::Unreachable
     {
@@ -1008,6 +1025,7 @@ fn endpoint_dto(port: u16) -> CdpEndpointDto {
         owner: owner.as_str(),
         owner_provider_id,
         target_title,
+        runtime: detailed.runtime.clone(),
     }
 }
 

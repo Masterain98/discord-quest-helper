@@ -1,5 +1,6 @@
 import { Channel, invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import { commandErrorMessage } from '@/utils/commandError'
 
 export type GameQuestMode = 'simulate' | 'heartbeat' | 'cdp'
 
@@ -514,8 +515,8 @@ export function onQuestComplete(callback: () => void) {
 }
 
 export function onQuestError(callback: (error: string) => void) {
-  return listen<string>('quest-error', (event) => {
-    callback(event.payload)
+  return listen<string | DesktopClientCommandError>('quest-error', (event) => {
+    callback(commandErrorMessage(event.payload))
   })
 }
 
@@ -657,7 +658,19 @@ export async function getRunnerInfo(): Promise<RunnerInfo> {
 }
 
 // CDP (Chrome DevTools Protocol) types and commands
+export interface CdpRuntime {
+  runtimeStatus: 'ready' | 'loading' | 'unsupported' | 'probeFailed' | 'noCandidate'
+  webSocketReachable: boolean
+  appRootPresent: boolean
+  moduleLoaderPresent: boolean
+  nativeBridgePresent: boolean
+  focused: boolean
+  failureStage: string | null
+  reasonCode: string | null
+}
+
 export interface CdpStatus {
+  runtime?: CdpRuntime
   available: boolean
   connected: boolean
   target_title: string | null
@@ -746,6 +759,7 @@ export interface DesktopClientState {
     owner: CdpPortOwner
     ownerProviderId: ProviderId | null
     targetTitle: string | null
+    runtime?: CdpRuntime
   }
   selection: ClientSelection
   discoveryIssues: Array<{ providerId: ProviderId | null; code: string; message: string }>
@@ -791,6 +805,7 @@ export interface CdpDiagnosticTarget {
   isAuxiliaryWindow: boolean
   isMainRenderer: boolean
   classification: CdpTargetClassification
+  runtime?: CdpRuntime
 }
 
 export interface CdpDiagnosticSnapshot {
@@ -812,6 +827,7 @@ export interface CdpDiagnosticSnapshot {
   cdpTargetCount: number
   discordTargetCount: number
   mainRendererFound: boolean
+  runtime?: CdpRuntime
   processes: CdpDiagnosticProcess[]
   targets: CdpDiagnosticTarget[]
 }

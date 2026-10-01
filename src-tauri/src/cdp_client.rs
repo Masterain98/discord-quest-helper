@@ -5,7 +5,7 @@
 
 use anyhow::{Context, Result};
 use discord_cdp_launch_core::{
-    is_discord_target, list_cdp_targets, pick_discord_target, CdpListError, CdpTarget,
+    is_discord_target, list_cdp_targets, CdpListError, CdpRuntime, CdpTarget,
 };
 use futures_util::{future::join_all, SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -31,6 +31,7 @@ pub struct CdpStatus {
     pub connected: bool,
     pub target_title: Option<String>,
     pub error: Option<String>,
+    pub runtime: CdpRuntime,
 }
 
 /// Result of executing JS on a specific CDP target.
@@ -168,29 +169,24 @@ const JS_GET_SUPER_PROPERTIES: &str = r#"
 
 /// Check if CDP port is available
 pub async fn check_cdp_available(port: u16) -> CdpStatus {
-    match get_cdp_targets(port).await {
-        Ok(targets) => {
-            if let Some(target) = pick_discord_target(&targets) {
-                CdpStatus {
-                    available: true,
-                    connected: target.web_socket_debugger_url.is_some(),
-                    target_title: Some(target.title.clone()),
-                    error: None,
-                }
-            } else {
-                CdpStatus {
-                    available: true,
-                    connected: false,
-                    target_title: None,
-                    error: Some("No Discord target found".to_string()),
-                }
-            }
-        }
-        Err(e) => CdpStatus {
+    match tauri::async_runtime::spawn_blocking(move || {
+        discord_cdp_launch_core::detailed_probe_cdp(port)
+    })
+    .await
+    {
+        Ok(probe) => CdpStatus {
+            available: probe.response_parseable,
+            connected: probe.selected_target.is_some(),
+            target_title: probe.selected_target.map(|t| t.title),
+            error: probe.runtime.reason_code.clone(),
+            runtime: probe.runtime,
+        },
+        Err(_) => CdpStatus {
             available: false,
             connected: false,
             target_title: None,
-            error: Some(e.to_string()),
+            error: Some("cdp_probe_failed".into()),
+            runtime: CdpRuntime::default(),
         },
     }
 }
@@ -205,6 +201,12 @@ const CDP_TARGET_LIST_MAX_DELAY_MS: u64 = 400;
 /// Windows RSTs (10054) and refused connections (10061) are retried.
 pub async fn wait_for_cdp_targets(port: u16) -> Result<Vec<CdpTarget>> {
     get_cdp_targets(port).await
+}
+
+pub fn error_is_target_invalidated(error: &anyhow::Error) -> bool {
+    error
+        .chain()
+        .any(|source| source.to_string().contains("cdp_target_invalidated"))
 }
 
 pub fn error_is_cdp_endpoint_failure(error: &anyhow::Error) -> bool {
@@ -262,12 +264,137 @@ fn select_discord_targets(targets: &[CdpTarget]) -> Vec<&CdpTarget> {
         .collect()
 }
 
-pub async fn get_primary_discord_target(port: u16) -> Result<CdpTarget> {
-    let targets = get_cdp_targets(port).await?;
+#[derive(Clone)]
+struct BoundDiscordTarget {
+    port: u16,
+    target: CdpTarget,
+    generation: String,
+}
 
-    pick_discord_target(&targets)
-        .cloned()
-        .context("No Discord target found")
+tokio::task_local! {
+    static TASK_TARGET: std::cell::RefCell<Option<BoundDiscordTarget>>;
+    static TASK_DOCUMENTS: std::cell::RefCell<std::collections::HashMap<String, String>>;
+}
+
+pub async fn with_pinned_discord_session<T, F: std::future::Future<Output = Result<T>>>(
+    future: F,
+) -> Result<T> {
+    TASK_TARGET
+        .scope(
+            std::cell::RefCell::new(None),
+            TASK_DOCUMENTS.scope(
+                std::cell::RefCell::new(std::collections::HashMap::new()),
+                async {
+                    tokio::select! {
+                        result = future => result,
+                        failure = watch_pinned_documents() => Err(failure),
+                    }
+                },
+            ),
+        )
+        .await
+}
+
+async fn watch_pinned_documents() -> anyhow::Error {
+    loop {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let bound = TASK_TARGET.with(|slot| slot.borrow().clone());
+        let Some(bound) = bound else {
+            continue;
+        };
+        if let Err(error) = get_primary_discord_target(bound.port).await {
+            return error;
+        }
+        let documents = TASK_DOCUMENTS.with(|slot| slot.borrow().clone());
+        for (ws_url, expected) in documents {
+            match execute_js_via_ws(&ws_url, "String(performance.timeOrigin)", false, 2).await {
+                Ok(actual) if actual == expected => {}
+                _ => {
+                    return anyhow::anyhow!(
+                        "cdp_target_invalidated: activity target closed or reloaded"
+                    )
+                }
+            }
+        }
+    }
+}
+
+pub async fn pin_discord_target(port: u16) -> Result<()> {
+    if TASK_TARGET
+        .try_with(|slot| slot.borrow().is_some())
+        .unwrap_or(false)
+    {
+        return Ok(());
+    }
+    let probe = tauri::async_runtime::spawn_blocking(move || {
+        discord_cdp_launch_core::detailed_probe_cdp(port)
+    })
+    .await?;
+    let target = probe.selected_target.context("cdp_runtime_unavailable")?;
+    let generation = probe
+        .runtime
+        .document_generation
+        .context("cdp_target_invalidated: missing document generation")?;
+    let _ = TASK_TARGET.try_with(|slot| {
+        *slot.borrow_mut() = Some(BoundDiscordTarget {
+            port,
+            target,
+            generation,
+        })
+    });
+    Ok(())
+}
+
+pub async fn get_primary_discord_target(port: u16) -> Result<CdpTarget> {
+    let bound = TASK_TARGET
+        .try_with(|slot| slot.borrow().clone())
+        .ok()
+        .flatten();
+    if let Some(bound) = bound {
+        if bound.port != port {
+            anyhow::bail!("cdp_target_invalidated: port changed");
+        }
+        // A missing generation is inconclusive (for example a busy renderer or
+        // handshake timeout). Retry the same target; never rediscover a replacement.
+        for attempt in 0..3 {
+            let target = bound.target.clone();
+            let runtime = tauri::async_runtime::spawn_blocking(move || {
+                discord_cdp_launch_core::verify_cdp_target(port, &target)
+            })
+            .await?;
+            if let Some(generation) = runtime.document_generation.as_deref() {
+                if generation != bound.generation.as_str() {
+                    anyhow::bail!("cdp_target_invalidated: document reloaded");
+                }
+                if runtime.runtime_status == discord_cdp_launch_core::CdpRuntimeStatus::Ready {
+                    return Ok(bound.target);
+                }
+            }
+            if attempt < 2 {
+                tokio::time::sleep(Duration::from_millis(250)).await;
+            }
+        }
+        anyhow::bail!("cdp_target_invalidated: bound target remained unavailable after retries");
+    }
+    let probe = tauri::async_runtime::spawn_blocking(move || {
+        discord_cdp_launch_core::detailed_probe_cdp(port)
+    })
+    .await?;
+    probe.selected_target.ok_or_else(|| {
+        anyhow::anyhow!(
+            "cdp_runtime_unavailable: {:?} ({})",
+            probe.runtime.runtime_status,
+            probe
+                .runtime
+                .reason_code
+                .unwrap_or_else(|| "no_candidate".into())
+        )
+    })
+}
+
+fn guard_document(code: &str, generation: &str) -> String {
+    format!("(() => {{ if (String(performance.timeOrigin) !== {}) throw new Error('cdp_target_invalidated'); return ({}); }})()",
+        serde_json::to_string(generation).unwrap(), code.trim().trim_end_matches(';'))
 }
 
 pub async fn navigate_primary_discord_target(
@@ -345,7 +472,18 @@ pub async fn execute_js_via_primary_discord_target(
         None,
     );
 
-    execute_js_via_ws(ws_url, js_code, await_promise, timeout_secs).await
+    let generation = TASK_TARGET
+        .try_with(|slot| slot.borrow().as_ref().map(|bound| bound.generation.clone()))
+        .ok()
+        .flatten();
+    let guarded = generation.map(|generation| guard_document(js_code, &generation));
+    execute_js_via_ws(
+        ws_url,
+        guarded.as_deref().unwrap_or(js_code),
+        await_promise,
+        timeout_secs,
+    )
+    .await
 }
 
 const JS_READ_RUNNING_GAMES: &str = r###"
@@ -554,7 +692,7 @@ pub async fn fetch_super_properties_via_cdp(port: u16) -> Result<CdpSuperPropert
         None,
     );
 
-    let target = pick_discord_target(&targets).context("No Discord target found")?;
+    let target = get_primary_discord_target(port).await?;
 
     let ws_url = target
         .web_socket_debugger_url
@@ -752,8 +890,7 @@ pub async fn capture_discord_headers_via_cdp(
         None,
     );
 
-    let targets = get_cdp_targets(port).await?;
-    let target = pick_discord_target(&targets).context("No Discord target found")?;
+    let target = get_primary_discord_target(port).await?;
     let ws_url = target
         .web_socket_debugger_url
         .as_ref()
@@ -1147,8 +1284,7 @@ pub async fn capture_discord_auth_via_cdp(
 ) -> Result<CapturedDiscordSession> {
     use crate::logger::{log, LogCategory, LogLevel};
 
-    let targets = get_cdp_targets(port).await?;
-    let target = pick_discord_target(&targets).context("No Discord target found")?;
+    let target = get_primary_discord_target(port).await?;
     let ws_url = target
         .web_socket_debugger_url
         .as_ref()
@@ -1269,7 +1405,15 @@ pub async fn execute_js_via_all_discord_targets(
 
     let targets = get_cdp_targets(port).await?;
 
-    let selected_targets = select_discord_targets(&targets);
+    let selected_targets: Vec<_> = select_discord_targets(&targets)
+        .into_iter()
+        .filter(|target| {
+            target
+                .web_socket_debugger_url
+                .as_deref()
+                .is_some_and(|url| discord_cdp_launch_core::is_loopback_cdp_websocket(port, url))
+        })
+        .collect();
 
     if selected_targets.is_empty() {
         anyhow::bail!("No CDP page targets found");
@@ -1480,6 +1624,30 @@ pub async fn execute_js_on_target(
     await_promise: bool,
     timeout_secs: u64,
 ) -> Result<String> {
+    let bound = TASK_TARGET
+        .try_with(|slot| slot.borrow().clone())
+        .ok()
+        .flatten();
+    if let Some(bound) = bound {
+        get_primary_discord_target(bound.port).await?;
+        let generation = TASK_DOCUMENTS.with(|slot| slot.borrow().get(ws_url).cloned());
+        let generation = match generation {
+            Some(value) => value,
+            None => {
+                let value =
+                    execute_js_via_ws(ws_url, "String(performance.timeOrigin)", false, 2).await?;
+                TASK_DOCUMENTS.with(|slot| slot.borrow_mut().insert(ws_url.into(), value.clone()));
+                value
+            }
+        };
+        return execute_js_via_ws(
+            ws_url,
+            &guard_document(js_code, &generation),
+            await_promise,
+            timeout_secs,
+        )
+        .await;
+    }
     execute_js_via_ws(ws_url, js_code, await_promise, timeout_secs).await
 }
 
@@ -1491,9 +1659,11 @@ async fn execute_js_via_ws(
 ) -> Result<String> {
     use crate::logger::{log, LogCategory, LogLevel};
 
-    let (ws_stream, _) = connect_async(ws_url)
-        .await
-        .context("Failed to connect to CDP WebSocket")?;
+    let (ws_stream, _) =
+        tokio::time::timeout(Duration::from_secs(timeout_secs), connect_async(ws_url))
+            .await
+            .context("CDP WebSocket connection timed out")?
+            .context("Failed to connect to CDP WebSocket")?;
     let (mut write, mut read) = ws_stream.split();
 
     let request = serde_json::json!({
@@ -1506,10 +1676,13 @@ async fn execute_js_via_ws(
         }
     });
 
-    write
-        .send(Message::Text(request.to_string().into()))
-        .await
-        .context("Failed to send CDP request")?;
+    tokio::time::timeout(
+        Duration::from_secs(timeout_secs),
+        write.send(Message::Text(request.to_string().into())),
+    )
+    .await
+    .context("CDP request send timed out")?
+    .context("Failed to send CDP request")?;
 
     let response = tokio::time::timeout(Duration::from_secs(timeout_secs), async {
         while let Some(msg) = read.next().await {
@@ -1521,6 +1694,14 @@ async fn execute_js_via_ws(
                         }
                     }
                 }
+                Ok(Message::Ping(payload)) => {
+                    write.send(Message::Pong(payload)).await?;
+                }
+                Ok(Message::Close(_)) => {
+                    return Err(anyhow::anyhow!(
+                        "cdp_target_invalidated: target closed during evaluation"
+                    ))
+                }
                 Ok(_) => continue,
                 Err(e) => return Err(anyhow::anyhow!("WebSocket error: {}", e)),
             }
@@ -1530,7 +1711,7 @@ async fn execute_js_via_ws(
     .await
     .context(format!("CDP request timed out ({}s)", timeout_secs))??;
 
-    let _ = write.close().await;
+    let _ = tokio::time::timeout(Duration::from_millis(200), write.close()).await;
 
     // Check for CDP-level errors (e.g., method not found, invalid params)
     if let Some(error) = response.get("error") {
@@ -1549,6 +1730,13 @@ async fn execute_js_via_ws(
         .get("result")
         .and_then(|r| r.get("exceptionDetails"))
     {
+        if exception
+            .pointer("/exception/description")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|description| description.contains("cdp_target_invalidated"))
+        {
+            anyhow::bail!("cdp_target_invalidated: document changed before execution");
+        }
         let text = exception
             .get("text")
             .and_then(|t| t.as_str())
@@ -1838,42 +2026,6 @@ mod tests {
     }
 
     #[test]
-    fn test_pick_discord_target() {
-        let targets = vec![
-            CdpTarget {
-                id: "1".to_string(),
-                target_type: "page".to_string(),
-                title: "Discord Updater".to_string(),
-                url: "about:blank".to_string(),
-                web_socket_debugger_url: Some("ws://...".to_string()),
-            },
-            CdpTarget {
-                id: "2".to_string(),
-                target_type: "page".to_string(),
-                title: "Discord".to_string(),
-                url: "https://discord.com/app".to_string(),
-                web_socket_debugger_url: Some("ws://...".to_string()),
-            },
-        ];
-
-        let picked = pick_discord_target(&targets);
-        assert!(picked.is_some());
-        assert_eq!(picked.unwrap().id, "2");
-    }
-
-    #[test]
-    fn test_pick_discord_target_skips_overlay_popout() {
-        let targets = vec![
-            mk_target("page", "Discord Overlay", "https://discord.com/popout"),
-            mk_target("page", "Friends", "https://discord.com/channels/@me"),
-        ];
-
-        let picked = pick_discord_target(&targets).unwrap();
-        assert_eq!(picked.title, "Friends");
-        assert!(picked.url.contains("/channels/"));
-    }
-
-    #[test]
     fn test_is_discord_target_domain_and_updater_filter() {
         let discord_app = mk_target("page", "Some Title", "https://discordapp.com/channels/@me");
         let discord_updater = mk_target("page", "Discord Updater", "about:blank");
@@ -1882,17 +2034,6 @@ mod tests {
         assert!(is_discord_target(&discord_app));
         assert!(!is_discord_target(&discord_updater));
         assert!(!is_discord_target(&worker));
-    }
-
-    #[test]
-    fn test_pick_discord_target_does_not_fallback_to_unrelated_page() {
-        let targets = vec![
-            mk_target("page", "Unrelated Page 1", "https://example.com/a"),
-            mk_target("page", "Unrelated Page 2", "https://example.com/b"),
-        ];
-
-        let picked = pick_discord_target(&targets);
-        assert!(picked.is_none());
     }
 
     #[test]
@@ -1946,7 +2087,6 @@ mod tests {
         assert_eq!(selected.len(), 2);
         assert!(selected.iter().any(|t| t.title == "Discord Overlay"));
         assert!(selected.iter().any(|t| t.title == "Friends"));
-        assert!(pick_discord_target(&targets).is_some_and(|t| t.title == "Friends"));
     }
 
     fn request_will_be_sent(request_id: &str, url: &str, authorization: Option<&str>) -> String {
@@ -2171,5 +2311,143 @@ mod tests {
         assert_eq!(cdp_target_list_retry_delay_ms(1), 200);
         assert_eq!(cdp_target_list_retry_delay_ms(2), 400);
         assert_eq!(cdp_target_list_retry_delay_ms(3), 400);
+    }
+
+    #[tokio::test]
+    async fn pinned_target_reload_is_terminal_without_rediscovery() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            let mut request = [0u8; 1024];
+            let count = stream.read(&mut request).unwrap();
+            assert!(count > 0);
+            let body = serde_json::json!([{"id":"pinned", "type":"page", "title":"Discord", "url":"https://discord.com/unknown-route",
+                "webSocketDebuggerUrl":format!("ws://127.0.0.1:{port}/devtools/page/pinned")}]).to_string();
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .unwrap();
+            drop(stream);
+            for generation in ["100", "100", "200"] {
+                let (stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(2)))
+                    .unwrap();
+                let mut socket = tokio_tungstenite::tungstenite::accept(stream).unwrap();
+                let request: serde_json::Value =
+                    serde_json::from_str(&socket.read().unwrap().into_text().unwrap()).unwrap();
+                assert_eq!(request["method"], "Runtime.evaluate");
+                socket.send(Message::Text(serde_json::json!({"id":1,"result":{"result":{"value":{
+                    "appRootPresent":true,"moduleLoaderPresent":true,"nativeBridgePresent":false,"focused":false,
+                    "loading":false,"documentGeneration":generation}}}}).to_string().into())).unwrap();
+                let _ = socket.read();
+            }
+        });
+        with_pinned_discord_session(async {
+            pin_discord_target(port).await.unwrap();
+            assert_eq!(get_primary_discord_target(port).await.unwrap().id, "pinned");
+            let error = get_primary_discord_target(port).await.unwrap_err();
+            assert!(error_is_target_invalidated(&error));
+            Ok(())
+        })
+        .await
+        .unwrap();
+        server.join().unwrap();
+    }
+
+    #[tokio::test]
+    // tungstenite's handshake callback requires an unboxed HTTP ErrorResponse.
+    #[allow(clippy::result_large_err)]
+    async fn pinned_target_retries_transient_failure_and_loading_without_rediscovery() {
+        for loading in [false, true] {
+            let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let server = std::thread::spawn(move || {
+                for attempt in 0..2 {
+                    let (stream, _) = listener.accept().unwrap();
+                    stream
+                        .set_read_timeout(Some(Duration::from_secs(2)))
+                        .unwrap();
+                    let mut socket = tokio_tungstenite::tungstenite::accept_hdr(
+                        stream,
+                        |request: &tokio_tungstenite::tungstenite::handshake::server::Request,
+                         response| {
+                            assert_eq!(request.uri().path(), "/devtools/page/pinned");
+                            Ok(response)
+                        },
+                    )
+                    .unwrap();
+                    let request: serde_json::Value =
+                        serde_json::from_str(&socket.read().unwrap().into_text().unwrap()).unwrap();
+                    assert_eq!(request["method"], "Runtime.evaluate");
+                    let reply = if attempt == 0 && !loading {
+                        serde_json::json!({"id":1,"error":{"code":-32000,"message":"temporary failure"}})
+                    } else {
+                        serde_json::json!({"id":1,"result":{"result":{"value":{
+                            "appRootPresent":true,"moduleLoaderPresent":attempt > 0,
+                            "nativeBridgePresent":false,"focused":false,"loading":attempt == 0,
+                            "documentGeneration":"100"}}}})
+                    };
+                    socket
+                        .send(Message::Text(reply.to_string().into()))
+                        .unwrap();
+                    let _ = socket.read();
+                }
+            });
+            let bound = BoundDiscordTarget {
+                port,
+                generation: "100".into(),
+                target: CdpTarget {
+                    id: "pinned".into(),
+                    target_type: "page".into(),
+                    title: "Discord".into(),
+                    url: "https://discord.com/unknown-route".into(),
+                    web_socket_debugger_url: Some(format!(
+                        "ws://127.0.0.1:{port}/devtools/page/pinned"
+                    )),
+                },
+            };
+            TASK_TARGET
+                .scope(std::cell::RefCell::new(Some(bound)), async {
+                    assert_eq!(get_primary_discord_target(port).await.unwrap().id, "pinned");
+                })
+                .await;
+            server.join().unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn monitor_stops_an_idle_task_when_its_target_closes() {
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        let result = with_pinned_discord_session(async {
+            TASK_TARGET.with(|slot| {
+                *slot.borrow_mut() = Some(BoundDiscordTarget {
+                    port,
+                    generation: "100".into(),
+                    target: CdpTarget {
+                        id: "closed".into(),
+                        target_type: "page".into(),
+                        title: "Discord".into(),
+                        url: "https://discord.com/unknown".into(),
+                        web_socket_debugger_url: Some(format!(
+                            "ws://127.0.0.1:{port}/devtools/page/closed"
+                        )),
+                    },
+                })
+            });
+            std::future::pending::<Result<()>>().await
+        })
+        .await;
+        assert!(error_is_target_invalidated(&result.unwrap_err()));
     }
 }

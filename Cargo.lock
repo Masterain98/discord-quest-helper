@@ -986,6 +986,8 @@ dependencies = [
  "serde",
  "serde_json",
  "sysinfo",
+ "tungstenite",
+ "url",
 ]
 
 [[package]]
