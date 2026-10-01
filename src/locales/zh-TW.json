@@ -25,6 +25,7 @@
     "cdp_status_starting": "已偵測到 CDP，Discord 正在啟動",
     "cdp_runtime_loading": "正在等待用戶端載入，請稍後重試。",
     "cdp_runtime_unavailable": "用戶端執行環境驗證失敗，請重試。",
+    "cdp_port_occupied": "CDP 連接埠 {port} 已被其他服務占用。請釋放連接埠或選擇其他連接埠。",
     "cdp_status_error": "狀態檢查失敗",
     "back_to_methods": "返回",
     "rescan": "重新掃描",

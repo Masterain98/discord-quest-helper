@@ -25,6 +25,7 @@
     "cdp_status_starting": "CDP ditemukan, Discord sedang dimulai",
     "cdp_runtime_loading": "Menunggu klien dimuat. Coba lagi sebentar lagi.",
     "cdp_runtime_unavailable": "Verifikasi lingkungan klien gagal. Silakan coba lagi.",
+    "cdp_port_occupied": "Port CDP {port} digunakan oleh layanan lain. Bebaskan port atau pilih port lain.",
     "cdp_status_error": "Pemeriksaan status gagal",
     "back_to_methods": "Kembali",
     "rescan": "Pindai lagi",

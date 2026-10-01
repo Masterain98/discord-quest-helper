@@ -43,6 +43,7 @@ import { clearCdpLaunchError, recordCdpLaunchError } from '@/composables/cdpDiag
 import { commandErrorMessage as errorDetail } from '@/utils/commandError'
 import {
   classifyCdpAvailability,
+  cdpLoginEndpointError,
   canBeginLogin,
   installedCdpLaunchTargets,
   presentAuthProgress,
@@ -384,10 +385,8 @@ async function launchOrRestartSelectedTarget(target: CdpLaunchTarget | null) {
   const snapshot = await clients.refresh(questsStore.cdpPort)
   if (!snapshot) throw new Error(clients.error.value ?? 'Desktop client state is unavailable')
   const selection = selectionForTarget(target)
-  if (snapshot.endpoint.status === 'cdpWithoutDiscordTarget' || snapshot.endpoint.status === 'occupiedNonCdp') {
-    throw new Error(t(snapshot.endpoint.runtime?.runtimeStatus === 'loading'
-      ? 'auth.cdp_runtime_loading' : 'auth.cdp_runtime_unavailable'))
-  }
+  const endpointError = cdpLoginEndpointError(snapshot)
+  if (endpointError) throw new Error(t(endpointError, { port: snapshot.endpoint.port }))
   if (selectionIsRunning(snapshot, selection)) {
     requestCdpRestart(target)
     return
@@ -410,7 +409,7 @@ async function launchOrRestartSelectedTarget(target: CdpLaunchTarget | null) {
       if (!launchCompleted) recordCdpLaunchError(launchError)
       throw launchError
     }
-    if (latest.endpoint.status === 'cdpWithoutDiscordTarget' || latest.endpoint.status === 'occupiedNonCdp') {
+    if (cdpLoginEndpointError(latest)) {
       recordCdpLaunchError(launchError)
       throw launchError
     }
@@ -439,9 +438,9 @@ async function handleCdpLogin() {
   try {
     const status = await refreshCdpStatus()
     const snapshot = clients.state.value
-    if (snapshot?.endpoint.status === 'cdpWithoutDiscordTarget' || snapshot?.endpoint.status === 'occupiedNonCdp') {
-      throw new Error(t(snapshot.endpoint.runtime?.runtimeStatus === 'loading'
-        ? 'auth.cdp_runtime_loading' : 'auth.cdp_runtime_unavailable'))
+    const endpointError = snapshot && cdpLoginEndpointError(snapshot)
+    if (endpointError && snapshot) {
+      throw new Error(t(endpointError, { port: snapshot.endpoint.port }))
     }
     if (status?.connected && snapshot) {
       const provider = selectionProvider(snapshot, snapshot.selection)

@@ -21,7 +21,8 @@ Discord web renderer with the same environment is not distinguished by this
 renderer probe alone; process/installation ownership remains a separate check.
 
 Qualified targets rank by native bridge, then focus, then target ID. One probe's
-verified target supplies its state and diagnostic classification. Each round has
+verified target supplies its state and diagnostic classification. Candidates are
+verified concurrently so stalled earlier targets cannot starve later renderers. Each round has
 a three-second deadline, and each target has at most 750 milliseconds including
 connection, handshake and I/O. Events and Ping frames may interleave with replies.
 Protocol failures and JavaScript exceptions return constant reason codes instead
@@ -46,7 +47,11 @@ Loading and failed verification show wait/retry guidance in all existing locales
 Only an explicit `loading` runtime establishes that the client is loading.
 `noCandidate` is shown as verification unavailable: an updater, an unrelated
 Chromium endpoint and an empty target list cannot be distinguished by that status.
-A reachable endpoint with an insufficient runtime does not open a restart dialog.
+An explicitly loading renderer may enter the existing manual restart confirmation
+when the endpoint owner matches a running, validated CDP-capable installation.
+Unknown owners and other insufficient runtime states still report verification
+unavailable. Non-CDP port occupation reports a port conflict before any launch or
+restart attempt.
 The debug view and sanitized export expose runtime capabilities; the export omits
 document generation and arbitrary extra runtime properties.
 
@@ -62,14 +67,21 @@ No administrator elevation or broader process termination was added.
 
 Quest module discovery checks only methods needed by the requested operation.
 Games do not require streaming methods, and video/PLAY_ACTIVITY do not require a
-game store. HTTP facade discovery uses structural inspection instead of a trial
-request. Discovery precedes initialization, retries at most three times and shares a
-two-second budget with initialization, producing `cdp_capability_missing` with
+game store. Stream operations require both streaming and companion-game methods
+before installing state, and both spoofs must succeed before polling. Startup
+failure triggers cleanup rather than silently continuing.
+HTTP facade discovery accepts concrete methods on the object or its prototypes,
+including accessor-backed functions; dynamic-method proxies and ambiguous matches
+are rejected without a trial request. Discovery precedes initialization, retries
+at most three times and shares a two-second budget with initialization, producing `cdp_capability_missing` with
 operation and missing method names. Structured quest errors remain readable by the
 existing frontend error callback. Extending a module cache preserves active patches
-and originals.
+and originals. The selected renderer is verified once before that two-second
+budget begins; both evaluations retain their document-generation guard.
 
 Tasks bind the verified target ID and document generation before initialization.
+Initial binding retries discovery at most three times with 250ms intervals to
+tolerate loading after warmup navigation; a bound task never discovers a replacement.
 Their independent monitor detects closure/reload during waits. Inconclusive probes
 retry the same target up to three times; a confirmed generation change stops
 immediately. Evaluations also guard the generation before executing. Activity
@@ -78,6 +90,10 @@ binding. Failure stops the task and triggers cleanup without selecting another
 renderer. Cleanup still visits Discord page targets, including auxiliary windows,
 and validates their loopback debugger URLs. Existing quest-specific warmup
 navigation remains separate from connection polling and readiness checks.
+SPA warmup requires an independent router location as well as the matching URL;
+`history.pushState` alone is not evidence of route success. Missing or failed
+signals fall through to router methods and then `Page.navigate`. A failed History
+attempt restores the original URL before trying the router methods.
 
 Activity SDK capability discovery also checks at most three times within two
 seconds. Its retries are spaced across that budget; the former 12-second discovery
@@ -188,3 +204,48 @@ waiting presentation hid non-Discord endpoints. The classifier and both login
 attempt messages now treat that status as verification unavailable. Regression
 cases cover empty target lists and unrelated Chromium targets; the explicit
 `loading` case still waits. These additional cases were not run locally.
+
+## PR #187 review follow-up — 2026-10-01 (Asia/Taipei)
+
+Retrieved one conversation comment, three review submissions and all nine inline
+threads. All nine threads were unresolved and current at the audited head
+`251d1f42ca3bbc7a7fe198af8f976eb1e23e6e3b`. Every inline finding was verified
+against that code; inherited/accessor facade rejection and URL-only navigation
+success were also reproduced by executing the existing scripts in isolation.
+
+| Review comment ID | Verified issue and fix |
+| --- | --- |
+| 4155989347 | Loading clients were blocked before recovery. Both login entry points now permit manual restart confirmation for an explicitly loading renderer with an identified, running, validated installation. Unknown endpoints remain unavailable. |
+| 4155989361 | Stream startup swallowed companion-game failures. Combined capability discovery now precedes both patches; any startup failure cleans up and exits before progress polling. |
+| 4155989368 | Sequential probes could exhaust the round budget before a ready later target. Scoped concurrent probes retain the shared three-second and per-target 750ms deadlines and deterministic ranking. |
+| 4155989376 | Stream polling verified the same target twice consecutively. One foreground verification remains before API polling. |
+| 4156017290 | Initial target binding failed after one loading probe. It now attempts discovery up to three times, 250ms apart; a bound task never discovers a replacement. |
+| 4156017323 | HTTP methods on prototypes or accessors were discarded. Structural descriptor inspection now accepts these forms while rejecting dynamic-only proxies and ambiguous candidates without HTTP trial requests. |
+| 4156017335 | History navigation checked only the URL changed by pushState. Independent router state is now required for every SPA success; failed History attempts restore the URL before fallbacks. |
+| 4156017348 | Renderer verification consumed the module discovery/initialization budget. One verification now precedes the shared two-second deadline, and both evaluations guard the same document generation. |
+| 4156017356 | A non-CDP port conflict appeared as a runtime failure. Both entry points now show a dedicated port-conflict message, translated in all 16 locales, before launch/restart. |
+
+The generic CodeRabbit docstring threshold is not a repository gate and prompted
+no broad documentation changes. Sourcery's size-limit notice, the empty Greptile
+review and CodeRabbit's summary add no separate code findings. At the user's
+request, no PR replies or thread-resolution mutations are part of this follow-up.
+
+Local validation after the fixes:
+
+- Frontend: 21 files, 136 tests passed; TypeScript/Vite production build passed
+  with the existing large-chunk warning. All locales passed with zero warnings.
+- Rust workspace: 262 tests passed, 11 live/environment tests ignored. New
+  fixtures cover slow earlier targets, bounded initial binding, startup rollback,
+  the module budget and document invalidation between discovery and installation.
+- Strict workspace Clippy, formatting, diff checks, Tauri-free core dependency
+  and runtime-identity checks passed; identity suites passed 14 tests with one
+  platform-specific case skipped.
+- Windows fixtures explicitly use blocking accepted sockets, read complete HTTP
+  requests and retain written HTTP responses briefly before releasing them, to
+  avoid connection-reset races during parallel tests. The reload fixture tests
+  foreground verification independently of the separately tested task monitor.
+
+No real Discord quest, client restart or account operation was performed. macOS
+and Linux validation remains with the existing remote CI matrix. The SPA fallback
+may use full-page navigation when a client exposes no independent router location;
+fixture success does not establish live routing or heartbeat behavior.

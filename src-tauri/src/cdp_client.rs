@@ -319,6 +319,11 @@ async fn watch_pinned_documents() -> anyhow::Error {
     }
 }
 
+pub(crate) struct VerifiedDiscordTarget {
+    pub(crate) target: CdpTarget,
+    generation: String,
+}
+
 pub async fn pin_discord_target(port: u16) -> Result<()> {
     if TASK_TARGET
         .try_with(|slot| slot.borrow().is_some())
@@ -326,26 +331,44 @@ pub async fn pin_discord_target(port: u16) -> Result<()> {
     {
         return Ok(());
     }
-    let probe = tauri::async_runtime::spawn_blocking(move || {
-        discord_cdp_launch_core::detailed_probe_cdp(port)
-    })
-    .await?;
-    let target = probe.selected_target.context("cdp_runtime_unavailable")?;
-    let generation = probe
-        .runtime
-        .document_generation
-        .context("cdp_target_invalidated: missing document generation")?;
-    let _ = TASK_TARGET.try_with(|slot| {
-        *slot.borrow_mut() = Some(BoundDiscordTarget {
-            port,
-            target,
-            generation,
+    let mut last_runtime = CdpRuntime::default();
+    for attempt in 0..3 {
+        let probe = tauri::async_runtime::spawn_blocking(move || {
+            discord_cdp_launch_core::detailed_probe_cdp(port)
         })
-    });
-    Ok(())
+        .await?;
+        if let (Some(target), Some(generation)) = (
+            probe.selected_target,
+            probe.runtime.document_generation.clone(),
+        ) {
+            let _ = TASK_TARGET.try_with(|slot| {
+                *slot.borrow_mut() = Some(BoundDiscordTarget {
+                    port,
+                    target,
+                    generation,
+                })
+            });
+            return Ok(());
+        }
+        last_runtime = probe.runtime;
+        if attempt < 2 {
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
+    }
+    anyhow::bail!(
+        "cdp_runtime_unavailable: {:?} ({})",
+        last_runtime.runtime_status,
+        last_runtime
+            .reason_code
+            .unwrap_or_else(|| "no_candidate".into())
+    )
 }
 
 pub async fn get_primary_discord_target(port: u16) -> Result<CdpTarget> {
+    Ok(verify_primary_discord_target(port).await?.target)
+}
+
+pub(crate) async fn verify_primary_discord_target(port: u16) -> Result<VerifiedDiscordTarget> {
     let bound = TASK_TARGET
         .try_with(|slot| slot.borrow().clone())
         .ok()
@@ -367,7 +390,10 @@ pub async fn get_primary_discord_target(port: u16) -> Result<CdpTarget> {
                     anyhow::bail!("cdp_target_invalidated: document reloaded");
                 }
                 if runtime.runtime_status == discord_cdp_launch_core::CdpRuntimeStatus::Ready {
-                    return Ok(bound.target);
+                    return Ok(VerifiedDiscordTarget {
+                        target: bound.target,
+                        generation: bound.generation,
+                    });
                 }
             }
             if attempt < 2 {
@@ -380,7 +406,7 @@ pub async fn get_primary_discord_target(port: u16) -> Result<CdpTarget> {
         discord_cdp_launch_core::detailed_probe_cdp(port)
     })
     .await?;
-    probe.selected_target.ok_or_else(|| {
+    let target = probe.selected_target.ok_or_else(|| {
         anyhow::anyhow!(
             "cdp_runtime_unavailable: {:?} ({})",
             probe.runtime.runtime_status,
@@ -389,7 +415,12 @@ pub async fn get_primary_discord_target(port: u16) -> Result<CdpTarget> {
                 .reason_code
                 .unwrap_or_else(|| "no_candidate".into())
         )
-    })
+    })?;
+    let generation = probe
+        .runtime
+        .document_generation
+        .context("cdp_runtime_unavailable: missing document generation")?;
+    Ok(VerifiedDiscordTarget { target, generation })
 }
 
 fn guard_document(code: &str, generation: &str) -> String {
@@ -451,9 +482,20 @@ pub async fn execute_js_via_primary_discord_target(
     await_promise: bool,
     timeout_secs: u64,
 ) -> Result<String> {
-    use crate::logger::{log, LogCategory, LogLevel};
+    let verified = verify_primary_discord_target(port).await?;
+    execute_js_on_verified_discord_target(&verified, js_code, await_promise, timeout_secs).await
+}
 
-    let target = get_primary_discord_target(port).await?;
+/// Execute against an already verified renderer, guarding its document before
+/// evaluation. Callers can share one verification across a bounded operation.
+pub(crate) async fn execute_js_on_verified_discord_target(
+    verified: &VerifiedDiscordTarget,
+    js_code: &str,
+    await_promise: bool,
+    timeout_secs: u64,
+) -> Result<String> {
+    use crate::logger::{log, LogCategory, LogLevel};
+    let target = &verified.target;
     let ws_url = target
         .web_socket_debugger_url
         .as_ref()
@@ -472,18 +514,8 @@ pub async fn execute_js_via_primary_discord_target(
         None,
     );
 
-    let generation = TASK_TARGET
-        .try_with(|slot| slot.borrow().as_ref().map(|bound| bound.generation.clone()))
-        .ok()
-        .flatten();
-    let guarded = generation.map(|generation| guard_document(js_code, &generation));
-    execute_js_via_ws(
-        ws_url,
-        guarded.as_deref().unwrap_or(js_code),
-        await_promise,
-        timeout_secs,
-    )
-    .await
+    let guarded = guard_document(js_code, &verified.generation);
+    execute_js_via_ws(ws_url, &guarded, await_promise, timeout_secs).await
 }
 
 const JS_READ_RUNNING_GAMES: &str = r###"
@@ -1987,6 +2019,19 @@ async fn bring_target_to_front_via_ws(ws_url: &str, timeout_secs: u64) -> Result
 }
 
 #[cfg(test)]
+pub(crate) fn read_fixture_http_request(stream: &mut std::net::TcpStream) -> Vec<u8> {
+    use std::io::Read;
+    let mut request = Vec::new();
+    let mut buffer = [0u8; 1024];
+    while !request.ends_with(b"\r\n\r\n") {
+        let count = stream.read(&mut buffer).unwrap();
+        assert!(count > 0 && request.len() + count <= 8192);
+        request.extend_from_slice(&buffer[..count]);
+    }
+    request
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -2314,8 +2359,88 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn initial_target_binding_retries_loading_and_stops_after_three_attempts() {
+        use std::io::Write;
+        for stays_loading in [false, true] {
+            let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let server = std::thread::spawn(move || {
+                let attempts = if stays_loading { 3 } else { 2 };
+                for attempt in 0..attempts {
+                    let (mut http, _) = listener.accept().unwrap();
+                    http.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+                    let request = read_fixture_http_request(&mut http);
+                    assert!(String::from_utf8_lossy(&request).starts_with("GET /json"));
+                    let body = serde_json::json!([{"id":"initial", "type":"page", "title":"Discord",
+                        "url":"https://discord.com/channels/@me",
+                        "webSocketDebuggerUrl":format!("ws://127.0.0.1:{port}/devtools/page/initial")}]).to_string();
+                    http.write_all(
+                        format!(
+                            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+                            body.len(),
+                            body
+                        )
+                        .as_bytes(),
+                    )
+                    .unwrap();
+                    // Windows may reset a just-written fixture connection before
+                    // the peer receives the body. Retain it without delaying WS accept.
+                    std::thread::spawn(move || {
+                        std::thread::sleep(Duration::from_millis(400));
+                        drop(http);
+                    });
+                    let (stream, _) = listener.accept().unwrap();
+                    stream
+                        .set_read_timeout(Some(Duration::from_secs(2)))
+                        .unwrap();
+                    let mut socket = tokio_tungstenite::tungstenite::accept(stream).unwrap();
+                    let _ = socket.read().unwrap();
+                    let loading = stays_loading || attempt == 0;
+                    socket
+                        .send(Message::Text(
+                            serde_json::json!({"id":1,"result":{"result":{"value":{
+                        "appRootPresent":true,"moduleLoaderPresent":!loading,"loading":loading,
+                        "nativeBridgePresent":false,"focused":false,"documentGeneration":"100"}}}})
+                            .to_string()
+                            .into(),
+                        ))
+                        .unwrap();
+                    let _ = socket.read();
+                }
+            });
+            TASK_TARGET
+                .scope(std::cell::RefCell::new(None), async {
+                    let result = pin_discord_target(port).await;
+                    if stays_loading {
+                        assert!(result
+                            .unwrap_err()
+                            .to_string()
+                            .contains("cdp_runtime_unavailable"));
+                        assert!(TASK_TARGET.with(|slot| slot.borrow().is_none()));
+                    } else {
+                        result.unwrap();
+                        assert_eq!(
+                            TASK_TARGET.with(|slot| slot
+                                .borrow()
+                                .as_ref()
+                                .unwrap()
+                                .target
+                                .id
+                                .clone()),
+                            "initial"
+                        );
+                        // Once bound, a second pin never discovers a replacement.
+                        pin_discord_target(port).await.unwrap();
+                    }
+                })
+                .await;
+            server.join().unwrap();
+        }
+    }
+
+    #[tokio::test]
     async fn pinned_target_reload_is_terminal_without_rediscovery() {
-        use std::io::{Read, Write};
+        use std::io::Write;
         let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
         let port = listener.local_addr().unwrap().port();
         let server = std::thread::spawn(move || {
@@ -2323,19 +2448,23 @@ mod tests {
             stream
                 .set_read_timeout(Some(Duration::from_secs(2)))
                 .unwrap();
-            let mut request = [0u8; 1024];
-            let count = stream.read(&mut request).unwrap();
-            assert!(count > 0);
+            read_fixture_http_request(&mut stream);
             let body = serde_json::json!([{"id":"pinned", "type":"page", "title":"Discord", "url":"https://discord.com/unknown-route",
                 "webSocketDebuggerUrl":format!("ws://127.0.0.1:{port}/devtools/page/pinned")}]).to_string();
-            write!(
-                stream,
-                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
-                body.len(),
-                body
-            )
-            .unwrap();
-            drop(stream);
+            stream
+                .write_all(
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+                        body.len(),
+                        body
+                    )
+                    .as_bytes(),
+                )
+                .unwrap();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(400));
+                drop(stream);
+            });
             for generation in ["100", "100", "200"] {
                 let (stream, _) = listener.accept().unwrap();
                 stream
@@ -2351,15 +2480,16 @@ mod tests {
                 let _ = socket.read();
             }
         });
-        with_pinned_discord_session(async {
-            pin_discord_target(port).await.unwrap();
-            assert_eq!(get_primary_discord_target(port).await.unwrap().id, "pinned");
-            let error = get_primary_discord_target(port).await.unwrap_err();
-            assert!(error_is_target_invalidated(&error));
-            Ok(())
-        })
-        .await
-        .unwrap();
+        // This fixture counts foreground probes; keep the independent periodic
+        // monitor out of that sequence (it has its own closure test below).
+        TASK_TARGET
+            .scope(std::cell::RefCell::new(None), async {
+                pin_discord_target(port).await.unwrap();
+                assert_eq!(get_primary_discord_target(port).await.unwrap().id, "pinned");
+                let error = get_primary_discord_target(port).await.unwrap_err();
+                assert!(error_is_target_invalidated(&error));
+            })
+            .await;
         server.join().unwrap();
     }
 

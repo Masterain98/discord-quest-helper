@@ -77,26 +77,34 @@ fn serve_once(response: Option<&'static str>, delay: Duration) -> u16 {
                     drop(stream);
                 });
             } else {
-                let mut target_id = String::new();
-                let socket = tungstenite::accept_hdr(
-                    stream,
-                    |req: &tungstenite::handshake::server::Request, response| {
-                        target_id = req
-                            .uri()
-                            .path()
-                            .rsplit('/')
-                            .next()
-                            .unwrap_or_default()
-                            .into();
-                        Ok(response)
-                    },
-                );
-                if let Ok(mut socket) = socket {
-                    let _ = socket.read();
-                    let reply = serde_json::json!({"id":1,"result":{"result":{"value": capabilities.get(&target_id)}}});
-                    let _ = socket.send(tungstenite::Message::Text(reply.to_string().into()));
-                    let _ = socket.read();
-                }
+                let capabilities = capabilities.clone();
+                std::thread::spawn(move || {
+                    let mut target_id = String::new();
+                    let socket = tungstenite::accept_hdr(
+                        stream,
+                        |req: &tungstenite::handshake::server::Request, response| {
+                            target_id = req
+                                .uri()
+                                .path()
+                                .rsplit('/')
+                                .next()
+                                .unwrap_or_default()
+                                .into();
+                            Ok(response)
+                        },
+                    );
+                    if let Ok(mut socket) = socket {
+                        let _ = socket.read();
+                        let runtime = capabilities.get(&target_id);
+                        if let Some(delay) = runtime.and_then(|value| value["delayMs"].as_u64()) {
+                            std::thread::sleep(Duration::from_millis(delay));
+                        }
+                        let reply =
+                            serde_json::json!({"id":1,"result":{"result":{"value":runtime}}});
+                        let _ = socket.send(tungstenite::Message::Text(reply.to_string().into()));
+                        let _ = socket.read();
+                    }
+                });
             }
         }
     });
@@ -438,6 +446,39 @@ fn complete_content_length_does_not_wait_for_connection_close() {
         started.elapsed() < Duration::from_secs(1),
         "probe waited for the server to close the connection"
     );
+}
+
+#[test]
+fn stalled_candidates_cannot_starve_a_later_ready_renderer() {
+    let _guard = serialize_socket_test();
+    let targets: Vec<_> = (0..6)
+        .map(|id| {
+            serde_json::json!({
+                "id":id.to_string(), "type":"page", "title":"Discord",
+                "url":"https://discord.com/channels/@me", "webSocketDebuggerUrl":"ws://placeholder",
+                "testRuntime":{"appRootPresent":true,"moduleLoaderPresent":true,
+                    "nativeBridgePresent":false,"focused":false,"loading":false,
+                    "documentGeneration":"100","delayMs":if id < 5 { 900 } else { 0 }}
+            })
+        })
+        .collect();
+    let body = serde_json::to_string(&targets).unwrap();
+    let port = serve_once(
+        Some(leaked_response(response_owned("200 OK", &body))),
+        Duration::ZERO,
+    );
+    let started = Instant::now();
+    let probe = detailed_probe_cdp(port);
+    assert_eq!(probe.selected_target.unwrap().id, "5");
+    assert_eq!(
+        probe
+            .targets
+            .iter()
+            .filter(|target| target.is_main_renderer)
+            .count(),
+        1
+    );
+    assert!(started.elapsed() < Duration::from_secs(3));
 }
 
 #[test]

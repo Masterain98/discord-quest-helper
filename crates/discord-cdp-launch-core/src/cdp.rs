@@ -310,15 +310,25 @@ fn detailed_probe_with_timeouts(
                 .filter(|t| is_discord_target(t))
                 .collect();
             candidates.sort_by(|a, b| a.id.cmp(&b.id));
-            let runtimes: std::collections::HashMap<_, _> = candidates
-                .iter()
-                .map(|target| {
-                    (
-                        target.id.clone(),
-                        crate::runtime::verify(port, target, deadline),
-                    )
-                })
-                .collect();
+            // Start every candidate within the same round budget. A stalled
+            // earlier renderer must not prevent a later ready one being probed.
+            let runtimes: std::collections::HashMap<_, _> = std::thread::scope(|scope| {
+                let probes: Vec<_> = candidates
+                    .iter()
+                    .map(|target| {
+                        scope.spawn(move || {
+                            (
+                                target.id.clone(),
+                                crate::runtime::verify(port, target, deadline),
+                            )
+                        })
+                    })
+                    .collect();
+                probes
+                    .into_iter()
+                    .map(|probe| probe.join().unwrap())
+                    .collect()
+            });
             let selected = candidates
                 .iter()
                 .filter(|target| {

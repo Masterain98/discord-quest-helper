@@ -25,6 +25,7 @@
     "cdp_status_starting": "Wykryto CDP, Discord się uruchamia",
     "cdp_runtime_loading": "Oczekiwanie na załadowanie klienta. Spróbuj ponownie za chwilę.",
     "cdp_runtime_unavailable": "Weryfikacja środowiska klienta nie powiodła się. Spróbuj ponownie.",
+    "cdp_port_occupied": "Port CDP {port} jest zajęty przez inną usługę. Zwolnij port lub wybierz inny.",
     "cdp_status_error": "Sprawdzanie stanu nie powiodło się",
     "back_to_methods": "Wstecz",
     "rescan": "Skanuj ponownie",

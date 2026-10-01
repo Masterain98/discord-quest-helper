@@ -9,6 +9,7 @@ import type {
 import {
   canBeginLogin,
   classifyCdpAvailability,
+  cdpLoginEndpointError,
   findCurrentCdpOwnerSession,
   hasUnchanneledOfficialMacInstallation,
   installedCdpLaunchTargets,
@@ -317,6 +318,53 @@ describe('CDP launch target selection', () => {
     expect(shouldAskCdpLaunchTarget(false, ['stable', 'canary', 'vesktop'])).toBe(true)
   })
 
+})
+
+describe('CDP endpoint recovery', () => {
+  function snapshot(): DesktopClientState {
+    return {
+      endpoint: { port: 9223, status: 'cdpWithoutDiscordTarget', owner: 'official',
+        ownerProviderId: 'discord.official', targetTitle: 'Discord',
+        runtime: { runtimeStatus: 'loading' } },
+      processes: [{ providerId: 'discord.official', installationId: 'stable', running: true }],
+      installations: [{ id: 'stable', providerId: 'discord.official', validation: 'valid',
+        capabilities: { cdp: true } }],
+    } as DesktopClientState
+  }
+
+  it('allows an identified loading client to reach manual recovery', () => {
+    expect(cdpLoginEndpointError(snapshot())).toBeNull()
+  })
+
+  it('keeps unknown, stopped and mismatched loading clients unavailable', () => {
+    const unknown = snapshot()
+    unknown.endpoint.ownerProviderId = null
+    expect(cdpLoginEndpointError(unknown)).toBe('auth.cdp_runtime_loading')
+    const stopped = snapshot()
+    stopped.processes[0].running = false
+    expect(cdpLoginEndpointError(stopped)).toBe('auth.cdp_runtime_loading')
+    const mismatched = snapshot()
+    mismatched.processes[0].installationId = 'unknown'
+    expect(cdpLoginEndpointError(mismatched)).toBe('auth.cdp_runtime_loading')
+  })
+
+  it('does not recover empty or unrelated CDP endpoints even with a known process', () => {
+    const state = snapshot()
+    state.endpoint.runtime!.runtimeStatus = 'noCandidate'
+    expect(cdpLoginEndpointError(state)).toBe('auth.cdp_runtime_unavailable')
+  })
+
+  it('reports a port conflict regardless of runtime and process state', () => {
+    const state = snapshot()
+    state.endpoint.status = 'occupiedNonCdp'
+    expect(cdpLoginEndpointError(state)).toBe('auth.cdp_port_occupied')
+  })
+
+  it.each(['discordReady', 'unreachable'] as const)('allows existing %s handling', status => {
+    const state = snapshot()
+    state.endpoint.status = status
+    expect(cdpLoginEndpointError(state)).toBeNull()
+  })
 })
 
 describe('login operation gate', () => {

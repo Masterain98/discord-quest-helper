@@ -20,6 +20,25 @@ async function discover(required, options = { stream: false, game: true, discove
     decoy: { get: () => { requests++; throw new Error('wrong facade') }, post: () => {} },
     api: Object.fromEntries(['get', 'post', 'put', 'patch', 'del'].map(name => [name, () => { requests++ }])),
   }
+  if (options.apiShape === 'inherited') modules.api = Object.create(modules.api)
+  if (options.apiShape === 'accessor') {
+    modules.api = Object.defineProperties({}, Object.fromEntries(Object.entries(modules.api)
+      .map(([name, method]) => [name, { get: () => method, enumerable: true }])))
+  }
+  if (options.apiShape === 'throwingAccessor') {
+    Object.defineProperty(modules.api, 'put', { get: () => { throw new Error('unavailable') } })
+  }
+  if (options.apiShape === 'proxy') {
+    modules.api = proxyFacade()
+  }
+  if (options.extraApi) modules.otherApi = { ...modules.api }
+  if (options.proxyDecoy) modules.proxy = proxyFacade()
+  function proxyFacade() {
+    return new Proxy({}, { get: (_, name) => () => {
+      if (['get', 'post', 'put', 'patch', 'del'].includes(name)) requests++
+      return { locale: 'en' }
+    } })
+  }
   if (options.game) modules.game = { getRunningGames: () => [], getGameForPID: () => null }
   if (options.stream) modules.streaming = new Streaming()
   const window = options.window ?? {}
@@ -32,6 +51,27 @@ async function discover(required, options = { stream: false, game: true, discove
 }
 
 describe('on-demand CDP module discovery', () => {
+  const video = [['api', 'get'], ['api', 'post'], ['QuestsStore', 'getQuest']]
+  it.each(['inherited', 'accessor'])('accepts %s HTTP methods without business requests', async apiShape => {
+    const { result, requests } = await discover(video, { apiShape, proxyDecoy: true, discoverOnly: true })
+    expect(result.success).toBe(true)
+    expect(requests).toBe(0)
+  })
+  it.each(['proxy', 'throwingAccessor'])('rejects a %s facade without sending requests', async apiShape => {
+    const { result, requests } = await discover(video, { apiShape, discoverOnly: true })
+    expect(result.missing).toEqual(['api.get', 'api.post'])
+    expect(requests).toBe(0)
+  })
+  it('rejects ambiguous concrete facades', async () => {
+    const { result, requests } = await discover(video, { extraApi: true, discoverOnly: true })
+    expect(result.success).toBe(false)
+    expect(requests).toBe(0)
+  })
+  it('discovers stream and companion game capabilities together before installing state', async () => {
+    const { result, window } = await discover([...stream, ...game], { stream: true, game: false, discoverOnly: false })
+    expect(result.missing).toEqual(['RunningGameStore.getRunningGames', 'RunningGameStore.getGameForPID'])
+    expect(window.__dqh_cdp).toBeUndefined()
+  })
   it('permits games without a streaming module and discovery installs no state', async () => {
     const result = await discover(game)
     expect(result.result.success).toBe(true)

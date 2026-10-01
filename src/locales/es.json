@@ -25,6 +25,7 @@
     "cdp_status_starting": "CDP detectado, Discord se está iniciando",
     "cdp_runtime_loading": "Esperando a que se cargue el cliente. Vuelve a intentarlo en breve.",
     "cdp_runtime_unavailable": "Falló la verificación del cliente. Vuelve a intentarlo.",
+    "cdp_port_occupied": "Otro servicio está usando el puerto CDP {port}. Libera el puerto o elige otro.",
     "cdp_status_error": "Falló la comprobación del estado",
     "back_to_methods": "Volver",
     "rescan": "Buscar de nuevo",

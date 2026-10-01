@@ -124,10 +124,23 @@ const JS_INIT_QUEST_MODULES: &str = r#"
 
         // Structural discovery never sends an API request. Reject translation
         // proxies exposing arbitrary methods; accept one unambiguous HTTP facade.
-        const apiMatches = [...new Set(apiCandidates)].filter(candidate =>
-            !Object.hasOwn(candidate, "getRunningGames") &&
-            ["get", "post", "put", "patch", "del"].every(name =>
-                typeof Object.getOwnPropertyDescriptor(candidate, name)?.value === "function"));
+        function hasConcreteMethod(candidate, name) {
+            const seen = new Set();
+            for (let owner = candidate; owner && !seen.has(owner); owner = Object.getPrototypeOf(owner)) {
+                seen.add(owner);
+                const descriptor = Object.getOwnPropertyDescriptor(owner, name);
+                if (descriptor) {
+                    return typeof (descriptor.get ? Reflect.get(candidate, name) : descriptor.value) === "function";
+                }
+            }
+            return false;
+        }
+        const apiMatches = [...new Set(apiCandidates)].filter(candidate => {
+            try {
+                return !Object.hasOwn(candidate, "getRunningGames") &&
+                    ["get", "post", "put", "patch", "del"].every(name => hasConcreteMethod(candidate, name));
+            } catch (_) { return false; }
+        });
         modules.api = apiMatches.length === 1 ? apiMatches[0] : null;
         const missing = required.filter(([name, method]) => typeof modules[name]?.[method] !== "function")
             .map(([name, method]) => name + "." + method);
@@ -1384,45 +1397,65 @@ fn js_warmup_quest_route(plan: &QuestRouteWarmupPlan) -> String {
             return null;
         }}
 
-        async function waitForPath(expectedPath, timeoutMs) {{
+        const router = findRouter();
+        function routerPath() {{
+            try {{
+                const location = typeof router?.getLocation === "function" ? router.getLocation()
+                    : router?.location ?? router?.getState?.()?.location;
+                // Window.location only reflects pushState, not a committed SPA route.
+                if (!location || location === window.location || typeof location.pathname !== "string") return null;
+                return location.pathname + (location.search || "") + (location.hash || "");
+            }} catch (_) {{ return null; }}
+        }}
+
+        async function waitForRoute(expectedPath, timeoutMs) {{
+            if (routerPath() === null) return false;
             const start = Date.now();
             while (Date.now() - start < timeoutMs) {{
-                if (currentPath() === expectedPath) return true;
+                if (currentPath() === expectedPath && routerPath() === expectedPath) return true;
                 await sleep(50);
             }}
-            return currentPath() === expectedPath;
+            return currentPath() === expectedPath && routerPath() === expectedPath;
         }}
 
         async function navigateWithinApp(targetUrl) {{
             const targetPath = pathFor(targetUrl);
             const failures = [];
-            if (currentPath() === targetPath) {{
+            if (currentPath() === targetPath && routerPath() === targetPath) {{
                 return {{ success: true, method: "already-there", targetPath, failures }};
             }}
 
-            // Discord's current router exports may expose transition methods that
-            // resolve without changing routes. Trying each one costs up to 7.5s
-            // before reaching this History API fallback. The fallback is also the
-            // only method observed to work on the current Discord client.
+            // Keep the fast History API path only when independent router state
+            // can confirm that Discord actually handled the navigation.
+            const originalPath = currentPath();
+            const originalState = history.state;
+            let historyChanged = false;
             try {{
-                history.pushState(history.state, "", targetPath);
-                window.dispatchEvent(new PopStateEvent("popstate", {{ state: history.state }}));
-                window.dispatchEvent(new Event("locationchange"));
-                document.dispatchEvent(new Event("locationchange"));
-                if (await waitForPath(targetPath, 1200)) {{
-                    return {{ success: true, method: "history.pushState", targetPath, failures }};
+                if (routerPath() !== null) {{
+                    history.pushState(history.state, "", targetPath);
+                    historyChanged = true;
+                    window.dispatchEvent(new PopStateEvent("popstate", {{ state: history.state }}));
+                    window.dispatchEvent(new Event("locationchange"));
+                    document.dispatchEvent(new Event("locationchange"));
+                    if (await waitForRoute(targetPath, 1200)) {{
+                        return {{ success: true, method: "history.pushState", targetPath, failures }};
+                    }}
+                    failures.push("history.pushState:no-route-change");
+                }} else {{
+                    failures.push("history.pushState:no-route-signal");
                 }}
-                failures.push("history.pushState:no-route-change");
             }} catch (e) {{
                 failures.push("history.pushState:" + String(e));
             }}
+            if (historyChanged) {{
+                history.replaceState(originalState, "", originalPath);
+            }}
 
-            const router = findRouter();
             if (router) {{
                 if (typeof router.transitionTo === "function") {{
                     try {{
                         await Promise.resolve(router.transitionTo(targetPath));
-                        if (await waitForPath(targetPath, 2500)) {{
+                        if (await waitForRoute(targetPath, 2500)) {{
                             return {{ success: true, method: "router.transitionTo", targetPath, failures }};
                         }}
                         failures.push("router.transitionTo:no-route-change");
@@ -1434,7 +1467,7 @@ fn js_warmup_quest_route(plan: &QuestRouteWarmupPlan) -> String {
                 if (typeof router.replaceWith === "function") {{
                     try {{
                         await Promise.resolve(router.replaceWith(targetPath));
-                        if (await waitForPath(targetPath, 2500)) {{
+                        if (await waitForRoute(targetPath, 2500)) {{
                             return {{ success: true, method: "router.replaceWith", targetPath, failures }};
                         }}
                         failures.push("router.replaceWith:no-route-change");
@@ -1446,7 +1479,7 @@ fn js_warmup_quest_route(plan: &QuestRouteWarmupPlan) -> String {
                 if (typeof router.navigate === "function") {{
                     try {{
                         await Promise.resolve(router.navigate(targetPath));
-                        if (await waitForPath(targetPath, 2500)) {{
+                        if (await waitForRoute(targetPath, 2500)) {{
                             return {{ success: true, method: "router.navigate", targetPath, failures }};
                         }}
                         failures.push("router.navigate:no-route-change");
@@ -1829,6 +1862,8 @@ fn module_requirements(operation: &str) -> Vec<(&'static str, &'static str)> {
             ("FluxDispatcher", "dispatch"),
             ("FluxDispatcher", "subscribe"),
             ("FluxDispatcher", "unsubscribe"),
+            ("RunningGameStore", "getRunningGames"),
+            ("RunningGameStore", "getGameForPID"),
         ],
         _ => {
             let mut requirements = vec![
@@ -1859,13 +1894,14 @@ fn module_script(operation: &str, discover_only: bool) -> String {
 }
 
 async fn initialize_modules(port: u16, operation: &str) -> Result<()> {
+    let verified = cdp_client::verify_primary_discord_target(port).await?;
     let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
     // Discover first; no cache or client state is installed until all required methods exist.
     for attempt in 0..3 {
         let result = tokio::time::timeout_at(
             deadline,
-            cdp_client::execute_js_via_primary_discord_target(
-                port,
+            cdp_client::execute_js_on_verified_discord_target(
+                &verified,
                 &module_script(operation, true),
                 true,
                 2,
@@ -1882,8 +1918,8 @@ async fn initialize_modules(port: u16, operation: &str) -> Result<()> {
         if parsed["success"] == true {
             let raw = tokio::time::timeout_at(
                 deadline,
-                cdp_client::execute_js_via_primary_discord_target(
-                    port,
+                cdp_client::execute_js_on_verified_discord_target(
+                    &verified,
                     &with_bridge(&module_script(operation, false)),
                     true,
                     2,
@@ -2618,9 +2654,37 @@ pub async fn complete_play_quest_via_cdp(
     }
 }
 
-/// Complete a STREAM_ON_DESKTOP quest via CDP.
-///
-/// Similar to play quest but spoofs ApplicationStreamingStore.
+async fn cdp_start_stream_spoof(port: u16, app_id: &str) -> Result<CdpJsonExecutionSummary> {
+    let result = async {
+        cdp_prepare_quest_modules(port, "stream quest").await?;
+        let stream = cdp_execute_json_on_task_target(
+            port,
+            &js_spoof_stream(app_id),
+            false,
+            10,
+            "stream quest spoof",
+        )
+        .await?;
+        log_partial_target_failures("stream quest spoof", &stream.target_failures);
+        let game = cdp_execute_json_on_task_target(
+            port,
+            &js_spoof_play_game(app_id, "StreamedApp"),
+            true,
+            15,
+            "stream companion game spoof",
+        )
+        .await?;
+        log_partial_target_failures("stream companion game spoof", &game.target_failures);
+        Ok(stream)
+    }
+    .await;
+    if result.is_err() {
+        cdp_cleanup_after_stop(port, "stream quest startup failed", false).await;
+    }
+    result
+}
+
+/// Complete a STREAM_ON_DESKTOP quest with streaming metadata and a companion game.
 #[allow(clippy::too_many_arguments)]
 pub async fn complete_stream_quest_via_cdp(
     port: u16,
@@ -2644,48 +2708,18 @@ pub async fn complete_stream_quest_via_cdp(
     // Defensive pre-cleanup: ensure previous spoof state is removed before applying new patches.
     cdp_cleanup_best_effort(port).await;
     cdp_warmup_quest_route(port).await;
-    cdp_prepare_quest_modules(port, "stream quest").await?;
-
-    // 2. Spoof streaming metadata
-    let js = js_spoof_stream(&app_id);
-    let stream_summary =
-        match cdp_execute_json_on_task_target(port, &js, false, 10, "stream quest spoof").await {
-            Ok(summary) => summary,
-            Err(err) => {
-                cdp_cleanup_after_stop(port, "stream quest spoof failed", false).await;
-                return Err(err);
-            }
-        };
-
-    log_partial_target_failures("stream quest spoof", &stream_summary.target_failures);
-
-    // Also spoof running game (stream quests also need the game running)
-    let js_game = js_spoof_play_game(&app_id, "StreamedApp");
-    if initialize_modules(port, "manual game simulation")
-        .await
-        .is_ok()
-    {
-        if let Ok(game_summary) =
-            cdp_execute_json_on_task_target(port, &js_game, true, 15, "stream companion game spoof")
-                .await
-        {
-            log_partial_target_failures(
-                "stream companion game spoof",
-                &game_summary.target_failures,
-            );
-        }
-
-        log(
-            LogLevel::Info,
-            LogCategory::TokenExtraction,
-            &format!(
-                "CDP: Stream spoofed successfully on {}/{} target(s). Polling progress...",
-                stream_summary.successful_results.len(),
-                stream_summary.total_targets
-            ),
-            None,
-        );
-    }
+    // Both patches are required; startup errors clean up and never reach polling.
+    let stream_summary = cdp_start_stream_spoof(port, &app_id).await?;
+    log(
+        LogLevel::Info,
+        LogCategory::TokenExtraction,
+        &format!(
+            "CDP: Stream spoofed successfully on {}/{} target(s). Polling progress...",
+            stream_summary.successful_results.len(),
+            stream_summary.total_targets
+        ),
+        None,
+    );
 
     // 3. Poll progress using Rust API client (reliable) with CDP fallback
     let poll_interval = Duration::from_secs(20);
@@ -2706,8 +2740,6 @@ pub async fn complete_stream_quest_via_cdp(
                 return Ok(());
             }
         }
-
-        cdp_client::get_primary_discord_target(port).await?;
 
         // Primary: poll via Rust API client
         cdp_client::get_primary_discord_target(port).await?;
@@ -4187,6 +4219,183 @@ mod tests {
 
     use super::*;
 
+    struct FakeQuestCdp {
+        port: u16,
+        stopped: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        server: Option<std::thread::JoinHandle<()>>,
+    }
+
+    impl FakeQuestCdp {
+        fn start(mut evaluate: impl FnMut(&str) -> serde_json::Value + Send + 'static) -> Self {
+            use std::io::Write;
+            let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+            listener.set_nonblocking(true).unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let stopped = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let stop = stopped.clone();
+            let server = std::thread::spawn(move || {
+                while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                    let Ok((mut stream, _)) = listener.accept() else {
+                        std::thread::sleep(Duration::from_millis(2));
+                        continue;
+                    };
+                    stream.set_nonblocking(false).unwrap();
+                    stream
+                        .set_read_timeout(Some(Duration::from_secs(3)))
+                        .unwrap();
+                    let mut request = [0u8; 1024];
+                    let size = stream.peek(&mut request).unwrap();
+                    if String::from_utf8_lossy(&request[..size]).starts_with("GET /json") {
+                        cdp_client::read_fixture_http_request(&mut stream);
+                        let body = serde_json::json!([{"id":"quest", "type":"page", "title":"Discord",
+                            "url":"https://discord.com/channels/@me",
+                            "webSocketDebuggerUrl":format!("ws://127.0.0.1:{port}/devtools/page/quest")}]).to_string();
+                        stream
+                            .write_all(
+                                format!(
+                                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+                                    body.len(),
+                                    body
+                                )
+                                .as_bytes(),
+                            )
+                            .unwrap();
+                        std::thread::spawn(move || {
+                            std::thread::sleep(Duration::from_millis(400));
+                            drop(stream);
+                        });
+                    } else {
+                        let mut socket = tokio_tungstenite::tungstenite::accept(stream).unwrap();
+                        let request: serde_json::Value =
+                            serde_json::from_str(&socket.read().unwrap().into_text().unwrap())
+                                .unwrap();
+                        let reply = evaluate(request["params"]["expression"].as_str().unwrap());
+                        socket
+                            .send(tokio_tungstenite::tungstenite::Message::Text(
+                                reply.to_string().into(),
+                            ))
+                            .unwrap();
+                        let _ = socket.read();
+                    }
+                }
+            });
+            Self {
+                port,
+                stopped,
+                server: Some(server),
+            }
+        }
+    }
+
+    impl Drop for FakeQuestCdp {
+        fn drop(&mut self) {
+            self.stopped
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+            let result = self.server.take().unwrap().join();
+            if !std::thread::panicking() {
+                result.unwrap();
+            }
+        }
+    }
+
+    fn fake_runtime_reply() -> serde_json::Value {
+        serde_json::json!({"id":1,"result":{"result":{"value":{
+            "appRootPresent":true,"moduleLoaderPresent":true,"loading":false,
+            "nativeBridgePresent":false,"focused":false,"documentGeneration":"100"}}}})
+    }
+
+    fn fake_script_reply(value: serde_json::Value) -> serde_json::Value {
+        serde_json::json!({"id":1,"result":{"result":{"value":value.to_string()}}})
+    }
+
+    #[tokio::test]
+    async fn module_budget_excludes_verification_and_both_scripts_guard_the_document() {
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let requests = seen.clone();
+        let server = FakeQuestCdp::start(move |expression| {
+            if expression.contains("moduleLoaderPresent:") {
+                requests.lock().unwrap().push("verify");
+                std::thread::sleep(Duration::from_millis(600));
+                fake_runtime_reply()
+            } else {
+                assert!(expression.contains("String(performance.timeOrigin) !== \"100\""));
+                requests.lock().unwrap().push("script");
+                std::thread::sleep(Duration::from_millis(650));
+                fake_script_reply(serde_json::json!({"success":true}))
+            }
+        });
+        initialize_modules(server.port, "video quest")
+            .await
+            .unwrap();
+        assert_eq!(*seen.lock().unwrap(), ["verify", "script", "script"]);
+    }
+
+    #[tokio::test]
+    async fn document_reload_between_discovery_and_installation_is_terminal() {
+        let mut discovered = false;
+        let server = FakeQuestCdp::start(move |expression| {
+            if expression.contains("moduleLoaderPresent:") {
+                return fake_runtime_reply();
+            }
+            assert!(expression.contains("String(performance.timeOrigin) !== \"100\""));
+            if !discovered {
+                discovered = true;
+                fake_script_reply(serde_json::json!({"success":true}))
+            } else {
+                serde_json::json!({"id":1,"result":{"exceptionDetails":{
+                    "exception":{"description":"Error: cdp_target_invalidated"}}}})
+            }
+        });
+        let error = initialize_modules(server.port, "video quest")
+            .await
+            .unwrap_err();
+        assert!(cdp_client::error_is_target_invalidated(&error));
+    }
+
+    #[tokio::test]
+    async fn stream_startup_failure_cleans_up_and_does_not_poll() {
+        for missing_game in [false, true] {
+            let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+            let requests = seen.clone();
+            let server = FakeQuestCdp::start(move |expression| {
+                if expression.contains("moduleLoaderPresent:") {
+                    return fake_runtime_reply();
+                }
+                if expression.contains("const DQH_INIT_VERSION") {
+                    requests.lock().unwrap().push("modules");
+                    assert!(expression.contains("[\"RunningGameStore\",\"getRunningGames\"]"));
+                    if missing_game {
+                        return fake_script_reply(serde_json::json!({"success":false,
+                            "missing":["RunningGameStore.getRunningGames"]}));
+                    }
+                } else if expression.contains("getStreamerActiveStreamMetadata = () =>") {
+                    requests.lock().unwrap().push("stream");
+                } else if expression.contains("StreamedApp") {
+                    requests.lock().unwrap().push("game");
+                    return fake_script_reply(
+                        serde_json::json!({"success":false,"error":"companion spoof failed"}),
+                    );
+                } else if expression.contains("let dqhPresent = false") {
+                    requests.lock().unwrap().push("verify-cleanup");
+                } else if expression.contains("awaitedObserverRefresh") {
+                    requests.lock().unwrap().push("cleanup");
+                } else {
+                    panic!("unexpected startup or polling expression");
+                }
+                fake_script_reply(serde_json::json!({"success":true,"dqhPresent":false,
+                    "spoofActive":false,"fakeGamePresent":false,"hasDispatchHook":false,
+                    "broadPatchCount":0,"observerHook":false,"fakeInRunningGames":false,"debugGamePresent":false}))
+            });
+            let result = cdp_start_stream_spoof(server.port, "123").await;
+            assert!(result.is_err());
+            let requests = seen.lock().unwrap();
+            assert!(requests.contains(&"cleanup"));
+            assert!(requests.contains(&"verify-cleanup"));
+            assert_eq!(requests.contains(&"stream"), !missing_game);
+            assert_eq!(requests.contains(&"game"), !missing_game);
+        }
+    }
+
     #[test]
     fn module_init_errors_do_not_hide_cdp_endpoint_resets() {
         let endpoint = map_quest_module_init_error(
@@ -4310,7 +4519,7 @@ mod tests {
             .find("history.pushState(history.state, \"\", targetPath)")
             .expect("History API navigation should be present");
         let router_fallback = js
-            .find("const router = findRouter()")
+            .find("await Promise.resolve(router.transitionTo(targetPath))")
             .expect("router fallback should remain available");
 
         assert!(

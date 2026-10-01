@@ -25,6 +25,7 @@
     "cdp_status_starting": "CDP を検出しました。Discord を起動しています",
     "cdp_runtime_loading": "クライアントの読み込みを待っています。しばらくしてから再試行してください。",
     "cdp_runtime_unavailable": "クライアントの実行環境を確認できませんでした。再試行してください。",
+    "cdp_port_occupied": "CDP ポート {port} は別のサービスが使用しています。ポートを解放するか、別のポートを選択してください。",
     "cdp_status_error": "状態の確認に失敗しました",
     "back_to_methods": "戻る",
     "rescan": "再スキャン",
