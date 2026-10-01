@@ -10,7 +10,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 use std::time::{Duration, Instant};
 
 const MAX_HTTP_RESPONSE_BYTES: usize = 1024 * 1024;
-const MAX_RUNTIME_CANDIDATES: usize = 32;
+const MAX_RUNTIME_WORKERS: usize = 32;
 
 fn probe_worker_failure(reason: &str) -> crate::CdpRuntime {
     crate::CdpRuntime {
@@ -320,48 +320,9 @@ fn detailed_probe_with_timeouts(
                 .filter(|t| is_discord_target(t))
                 .collect();
             candidates.sort_by(|a, b| a.id.cmp(&b.id));
-            // Start every candidate within the same round budget. A stalled
-            // earlier renderer must not prevent a later ready one being probed.
-            // Reject oversized lists rather than silently skipping later targets.
-            // The response byte limit alone still permits thousands of candidates.
-            let runtimes: std::collections::HashMap<_, _> =
-                if candidates.len() > MAX_RUNTIME_CANDIDATES {
-                    candidates
-                        .iter()
-                        .map(|target| {
-                            (
-                                target.id.clone(),
-                                probe_worker_failure("candidate_limit_exceeded"),
-                            )
-                        })
-                        .collect()
-                } else {
-                    std::thread::scope(|scope| {
-                        let probes: Vec<_> = candidates
-                            .iter()
-                            .map(|target| {
-                                (
-                                    target.id.clone(),
-                                    std::thread::Builder::new().spawn_scoped(scope, move || {
-                                        crate::runtime::verify(port, target, deadline)
-                                    }),
-                                )
-                            })
-                            .collect();
-                        probes
-                            .into_iter()
-                            .map(|(id, probe)| {
-                                let runtime = match probe {
-                                    Ok(probe) => probe.join().unwrap_or_else(|_| {
-                                        probe_worker_failure("probe_worker_panicked")
-                                    }),
-                                    Err(_) => probe_worker_failure("probe_worker_unavailable"),
-                                };
-                                (id, runtime)
-                            })
-                            .collect()
-                    })
-                };
+            let runtimes = verify_candidates(&candidates, deadline, |target, deadline| {
+                crate::runtime::verify(port, target, deadline)
+            });
             let selected = candidates
                 .iter()
                 .filter(|target| {
@@ -425,6 +386,66 @@ fn detailed_probe_with_timeouts(
             selected_target: None,
         },
     }
+}
+
+fn verify_candidates(
+    candidates: &[&CdpTarget],
+    deadline: Instant,
+    verify: impl Fn(&CdpTarget, Instant) -> crate::CdpRuntime + Sync,
+) -> std::collections::HashMap<String, crate::CdpRuntime> {
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Mutex,
+    };
+
+    // Bound concurrency, not the number of legitimate popouts. Each worker
+    // keeps taking queued candidates until the shared round deadline expires.
+    let next = AtomicUsize::new(0);
+    let runtimes = Mutex::new(std::collections::HashMap::new());
+    let worker_failure = std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..candidates.len().min(MAX_RUNTIME_WORKERS))
+            .map(|_| {
+                std::thread::Builder::new().spawn_scoped(scope, || {
+                    while Instant::now() < deadline {
+                        let index = next.fetch_add(1, Ordering::Relaxed);
+                        let Some(target) = candidates.get(index) else {
+                            break;
+                        };
+                        let runtime = verify(target, deadline);
+                        runtimes
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner())
+                            .insert(target.id.clone(), runtime);
+                    }
+                })
+            })
+            .collect();
+        let mut failure = None;
+        for worker in workers {
+            match worker {
+                Ok(worker) => {
+                    if worker.join().is_err() {
+                        failure = Some("probe_worker_panicked");
+                    }
+                }
+                Err(_) => {
+                    failure = Some("probe_worker_unavailable");
+                }
+            }
+        }
+        failure
+    });
+    let mut runtimes = runtimes
+        .into_inner()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    // Keep explicit diagnostics for unprocessed candidates; completed ready
+    // results remain eligible even if other workers fail or time runs out.
+    for target in candidates {
+        runtimes.entry(target.id.clone()).or_insert_with(|| {
+            probe_worker_failure(worker_failure.unwrap_or("probe_round_deadline"))
+        });
+    }
+    runtimes
 }
 
 fn http_status(response: &[u8]) -> Option<u16> {
@@ -655,6 +676,67 @@ mod tests {
             body.len()
         )
         .into_bytes()
+    }
+
+    #[test]
+    fn candidate_queue_probes_all_entries_with_a_bounded_worker_count() {
+        let targets: Vec<_> = (0..96)
+            .map(|id| target(&id.to_string(), "Discord", "https://discord.com/app"))
+            .collect();
+        let candidates: Vec<_> = targets.iter().collect();
+        let threads = std::sync::Mutex::new(std::collections::HashSet::new());
+        let runtimes = verify_candidates(
+            &candidates,
+            Instant::now() + Duration::from_secs(3),
+            |_, _| {
+                threads.lock().unwrap().insert(std::thread::current().id());
+                crate::CdpRuntime {
+                    runtime_status: crate::CdpRuntimeStatus::Ready,
+                    ..Default::default()
+                }
+            },
+        );
+        assert_eq!(runtimes.len(), targets.len());
+        assert!(runtimes
+            .values()
+            .all(|runtime| runtime.runtime_status == crate::CdpRuntimeStatus::Ready));
+        assert!(threads.into_inner().unwrap().len() <= MAX_RUNTIME_WORKERS);
+    }
+
+    #[test]
+    fn expired_round_marks_unprocessed_candidates_without_probing() {
+        let target = target("a", "Discord", "https://discord.com/app");
+        let runtimes = verify_candidates(&[&target], Instant::now(), |_, _| {
+            panic!("expired round was probed")
+        });
+        assert_eq!(
+            runtimes["a"].reason_code.as_deref(),
+            Some("probe_round_deadline")
+        );
+    }
+
+    #[test]
+    fn worker_panic_does_not_discard_other_ready_results() {
+        let failed = target("a", "Discord", "https://discord.com/app");
+        let ready = target("b", "Discord", "https://discord.com/app");
+        let runtimes = verify_candidates(
+            &[&failed, &ready],
+            Instant::now() + Duration::from_secs(3),
+            |target, _| {
+                if target.id == "a" {
+                    panic!("fixture worker failure");
+                }
+                crate::CdpRuntime {
+                    runtime_status: crate::CdpRuntimeStatus::Ready,
+                    ..Default::default()
+                }
+            },
+        );
+        assert_eq!(
+            runtimes["a"].reason_code.as_deref(),
+            Some("probe_worker_panicked")
+        );
+        assert_eq!(runtimes["b"].runtime_status, crate::CdpRuntimeStatus::Ready);
     }
 
     #[test]

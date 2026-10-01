@@ -25,9 +25,11 @@ verified target supplies its state and diagnostic classification. Candidates are
 verified concurrently so stalled earlier targets cannot starve later renderers. Each round has
 a three-second deadline, and each target has at most 750 milliseconds including
 connection, handshake and I/O. Events and Ping frames may interleave with replies.
-Lists exceeding 32 Discord candidates fail before any probe thread is created,
-with `candidate_limit_exceeded`; no partial selection hides omitted candidates.
-Thread creation failures and worker panics become diagnostic probe failures.
+Up to 32 probe workers take candidates from a shared queue; having more pages
+does not reject the endpoint. Workers stop taking entries at the round deadline,
+and unprocessed candidates receive `probe_round_deadline` diagnostics. Thread
+creation failures and worker panics become diagnostic probe failures; ready
+results from other workers remain eligible for selection.
 Protocol failures and JavaScript exceptions return constant reason codes instead
 of arbitrary remote error text. Every path releases its connection.
 
@@ -297,3 +299,26 @@ router methods without state, no-op methods, History URL-only changes, aliased
 Window.location and contradictory router state. Oversized-list regression asserts
 no probe socket is opened. No PR reply, thread mutation or real Discord operation
 was performed. Cross-platform confirmation comes from the new remote CI run.
+
+## PR #187 candidate queue follow-up — 2026-10-01
+
+Greptile comment `4156949973` is valid at
+`a62d934ccf65ec239ef6b82b74fd7c434ba98ff4`: rejecting every list above 32
+candidates can hide a ready main renderer among legitimate popout windows. The
+second-round candidate cap was too restrictive. It is now a concurrency limit:
+at most 32 native workers drain the entire queue until the shared three-second
+deadline. Per-target verification still has a 750ms cap, and completed results
+retain native-bridge/focus/ID ranking. Worker failures do not discard successful
+results. A finite deadline can still leave entries unprocessed in a sufficiently
+large, slow list; these entries have explicit diagnostics rather than causing
+all candidates to be rejected upfront.
+
+Regression fixtures find the last ready renderer among 40 pages, reach a ready
+33rd candidate after an entire 32-worker batch stalls, verify all 96 queued
+entries with no more than 32 worker threads, and preserve ready results when
+another worker panics. An expired-round case confirms no late probes run.
+The previous commit's Windows, macOS and Linux push/PR CI matrices passed,
+including the formerly failing macOS budget test. No PR reply, thread-resolution
+mutation or real Discord operation is part of this follow-up.
+Local validation passed: 267 Rust workspace tests, 11 live/environment tests
+ignored, strict workspace Clippy, formatting, dependency boundary and diff checks.

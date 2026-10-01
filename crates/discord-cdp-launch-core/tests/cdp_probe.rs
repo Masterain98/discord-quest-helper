@@ -451,14 +451,49 @@ fn complete_content_length_does_not_wait_for_connection_close() {
 #[test]
 fn stalled_candidates_cannot_starve_a_later_ready_renderer() {
     let _guard = serialize_socket_test();
-    let targets: Vec<_> = (0..6)
+    for stalled in [5, 32] {
+        let targets: Vec<_> = (0..=stalled)
         .map(|id| {
             serde_json::json!({
-                "id":id.to_string(), "type":"page", "title":"Discord",
+                "id":format!("{id:03}"), "type":"page", "title":"Discord",
                 "url":"https://discord.com/channels/@me", "webSocketDebuggerUrl":"ws://placeholder",
                 "testRuntime":{"appRootPresent":true,"moduleLoaderPresent":true,
                     "nativeBridgePresent":false,"focused":false,"loading":false,
-                    "documentGeneration":"100","delayMs":if id < 5 { 900 } else { 0 }}
+                    "documentGeneration":"100","delayMs":if id < stalled { 900 } else { 0 }}
+            })
+        })
+        .collect();
+        let body = serde_json::to_string(&targets).unwrap();
+        let port = serve_once(
+            Some(leaked_response(response_owned("200 OK", &body))),
+            Duration::ZERO,
+        );
+        let started = Instant::now();
+        let probe = detailed_probe_cdp(port);
+        assert_eq!(probe.selected_target.unwrap().id, format!("{stalled:03}"));
+        assert_eq!(
+            probe
+                .targets
+                .iter()
+                .filter(|target| target.is_main_renderer)
+                .count(),
+            1
+        );
+        assert!(started.elapsed() < Duration::from_secs(3));
+    }
+}
+
+#[test]
+fn large_candidate_lists_keep_a_ready_renderer_after_the_first_worker_batch() {
+    let _guard = serialize_socket_test();
+    let targets: Vec<_> = (0..40)
+        .map(|id| {
+            serde_json::json!({
+                "id":format!("{id:03}"), "type":"page", "title":"Discord",
+                "url":"https://discord.com/channels/@me", "webSocketDebuggerUrl":"ws://placeholder",
+                "testRuntime":{"appRootPresent":id == 39,"moduleLoaderPresent":id == 39,
+                    "nativeBridgePresent":false,"focused":false,"loading":id != 39,
+                    "documentGeneration":"100"}
             })
         })
         .collect();
@@ -467,9 +502,19 @@ fn stalled_candidates_cannot_starve_a_later_ready_renderer() {
         Some(leaked_response(response_owned("200 OK", &body))),
         Duration::ZERO,
     );
-    let started = Instant::now();
     let probe = detailed_probe_cdp(port);
-    assert_eq!(probe.selected_target.unwrap().id, "5");
+    assert_eq!(probe.selected_target.unwrap().id, "039");
+    assert!(matches!(probe.status, CdpProbeStatus::DiscordReady { .. }));
+    assert_eq!(probe.targets.len(), 40);
+    assert_eq!(
+        probe
+            .targets
+            .iter()
+            .filter(|target| target.runtime.runtime_status
+                == discord_cdp_launch_core::CdpRuntimeStatus::Loading)
+            .count(),
+        39
+    );
     assert_eq!(
         probe
             .targets
@@ -478,68 +523,6 @@ fn stalled_candidates_cannot_starve_a_later_ready_renderer() {
             .count(),
         1
     );
-    assert!(started.elapsed() < Duration::from_secs(3));
-}
-
-#[test]
-fn oversized_candidate_lists_fail_before_opening_any_probe_socket() {
-    let _guard = serialize_socket_test();
-    let targets: Vec<_> = (0..33)
-        .map(|id| {
-            serde_json::json!({
-                "id":id.to_string(), "type":"page", "title":"Discord",
-                "url":"https://discord.com/channels/@me", "webSocketDebuggerUrl":"ws://placeholder"
-            })
-        })
-        .collect();
-    let body = serde_json::to_string(&targets).unwrap();
-    let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-    let port = listener.local_addr().unwrap().port();
-    listener.set_nonblocking(true).unwrap();
-    let server = std::thread::spawn(move || {
-        let deadline = Instant::now() + Duration::from_secs(3);
-        let mut stream = loop {
-            match listener.accept() {
-                Ok((stream, _)) => break stream,
-                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                    assert!(Instant::now() < deadline);
-                    std::thread::sleep(Duration::from_millis(2));
-                }
-                Err(error) => panic!("{error}"),
-            }
-        };
-        stream.set_nonblocking(false).unwrap();
-        stream
-            .set_read_timeout(Some(Duration::from_secs(1)))
-            .unwrap();
-        let mut request = Vec::new();
-        while !request.ends_with(b"\r\n\r\n") {
-            let mut byte = [0];
-            stream.read_exact(&mut byte).unwrap();
-            request.push(byte[0]);
-        }
-        stream
-            .write_all(response_owned("200 OK", &body).as_bytes())
-            .unwrap();
-        std::thread::sleep(Duration::from_millis(400));
-        assert!(
-            matches!(listener.accept(), Err(error) if error.kind() == std::io::ErrorKind::WouldBlock),
-            "an oversized list must not create probe connections"
-        );
-    });
-    let probe = detailed_probe_cdp(port);
-    assert!(probe.selected_target.is_none());
-    assert_eq!(probe.status, CdpProbeStatus::CdpWithoutDiscordTarget);
-    assert_eq!(
-        probe.runtime.reason_code.as_deref(),
-        Some("candidate_limit_exceeded")
-    );
-    assert_eq!(probe.targets.len(), 33);
-    assert!(probe
-        .targets
-        .iter()
-        .all(|target| target.runtime.reason_code.as_deref() == Some("candidate_limit_exceeded")));
-    server.join().unwrap();
 }
 
 #[test]
