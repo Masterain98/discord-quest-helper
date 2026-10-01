@@ -1,21 +1,11 @@
 ## ✨ What's Changed
 
-### Hotfix 0.10.6
-
-- Fixed game type quests not promoted in CDP mode
-
-### Updates for 0.10.5
-
-1. Added Game Idle mode, which automatically rotates through available games with configurable play and rest periods. Choose between process and CDP simulation modes, manage the upcoming queue, and stop the session whenever you like.
-2. Added persistent game simulation history. Play time is recorded per game and account, so your totals remain available after restarting the app.
-3. Redesigned Game Idle startup as an immersive session view, with clearer startup and playback status, a live queue, and controls for upcoming games.
-4. Unified the simulation directory used by manual and CDP game simulation. Choose a custom directory in settings, then use it consistently across both modes.
-5. Kept activity timing preferences between launches and moved them into Quest Behavior settings for easier access.
-6. Improved Windows runtime handling with a persistent WebView profile and safer cleanup of temporary stealth runtime files. Debug mode now uses a shared setting utility and remains consistent across the app.
-7. Added detailed CDP launch diagnostics to help identify client, process, connection, and startup problems. Review or copy diagnostic details from the app when troubleshooting.
-8. Refreshed the fallback Discord client metadata used when the app cannot retrieve current client information.
-9. Bumped default client config:
-    - client version to `1.0.9259`
-    - Electron version to `42.11.4`
-    - default client build number to `621195`
-    - native build number to `91497`
+1. Improved Discord compatibility and CDP connection reliability, with more accurate client detection and clearer login and connection errors.
+2. Reduced waiting when starting game quests, with fewer unnecessary page switches in Discord.
+3. Fixed quest cards disappearing when starting a quest or refreshing the list, and added smoother status transitions.
+4. Quests now stop cleanly if the Discord page they use closes or reloads, and returning Discord to normal mode is more reliable.
+5. Bumped default client config:
+    - client version to `1.0.9260`
+    - Electron version to `42.11.8`
+    - default client build number to `625378`
+    - native build number to `92473`
