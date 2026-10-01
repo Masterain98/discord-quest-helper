@@ -6,14 +6,15 @@ mod model;
 mod platform;
 mod processes;
 mod provider;
+mod runtime;
 mod supervisor;
 mod vesktop;
 
 pub use cdp::{
     classify_cdp_target, detailed_probe_cdp, is_discord_auxiliary_page,
     is_discord_auxiliary_window, is_discord_target, is_transient_cdp_io_error, list_cdp_targets,
-    list_cdp_targets_with_timeouts, parse_cdp_targets_http_response, pick_discord_target,
-    probe_cdp, CdpListError, CdpProbe, StdCdpProbe,
+    list_cdp_targets_with_timeouts, parse_cdp_targets_http_response, probe_cdp, CdpListError,
+    CdpProbe, StdCdpProbe,
 };
 pub use channel::{parse_discord_channel, DiscordChannel};
 pub use error::LaunchError;
@@ -24,11 +25,12 @@ pub use launcher::{
 };
 pub use model::{
     CdpDiagnosticProcess, CdpDiagnosticTarget, CdpPortOwner, CdpProbeObservation, CdpProbeStatus,
-    CdpTarget, CdpTargetClassification, ClientCapabilities, ClientInstallation, DesktopCdpSession,
-    DesktopClientPreference, DetailedCdpProbeResult, DiscordInstall, DiscordLaunchMode,
-    DiscoverySource, InstallationId, LaunchOptions, LaunchOutcome, LaunchResult, LaunchSelector,
-    LaunchTarget, LinuxDesktopProxySettings, ProviderId, RestoreFailure, RestoreResult,
-    RunningCdpSession, SessionOwnership, ValidationState, VariantId, DEFAULT_CDP_PORT,
+    CdpRuntime, CdpRuntimeStatus, CdpTarget, CdpTargetClassification, ClientCapabilities,
+    ClientInstallation, DesktopCdpSession, DesktopClientPreference, DetailedCdpProbeResult,
+    DiscordInstall, DiscordLaunchMode, DiscoverySource, InstallationId, LaunchOptions,
+    LaunchOutcome, LaunchResult, LaunchSelector, LaunchTarget, LinuxDesktopProxySettings,
+    ProviderId, RestoreFailure, RestoreResult, RunningCdpSession, SessionOwnership,
+    ValidationState, VariantId, DEFAULT_CDP_PORT,
 };
 pub use platform::SystemPlatform;
 pub use processes::{
@@ -45,6 +47,17 @@ pub use provider::{
     DesktopClientProvider,
 };
 pub use supervisor::ProcessSupervisor;
+/// Validate discovery-provided debugger URLs without DNS, proxies, or credentials.
+pub fn is_loopback_cdp_websocket(port: u16, ws_url: &str) -> bool {
+    runtime::is_loopback_websocket(port, ws_url)
+}
+pub fn verify_cdp_target(port: u16, target: &CdpTarget) -> CdpRuntime {
+    runtime::verify(
+        port,
+        target,
+        std::time::Instant::now() + std::time::Duration::from_millis(750),
+    )
+}
 pub use vesktop::{
     cdp_ready_matches_preference, discover_linux_vesktop_install_in,
     discover_macos_vesktop_install_in, discover_windows_vesktop_install_in, find_vesktop_install,

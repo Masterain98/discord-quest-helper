@@ -59,6 +59,9 @@ export function classifyCdpAvailability(
 ): CdpAvailability {
   if (checking && !status) return 'checking'
   if (probeFailed) return 'error'
+  // No candidate is inconclusive about startup: unrelated CDP endpoints and
+  // empty target lists have this status too. Only explicit loading is a wait state.
+  if (status?.runtime && ['probeFailed', 'unsupported', 'noCandidate'].includes(status.runtime.runtimeStatus) && status.available) return 'error'
   if (status?.connected) return 'ready'
   if (status?.available) return 'starting'
   return 'offline'
@@ -70,6 +73,23 @@ export function shouldPollCdp(options: {
   visible: boolean
 }): boolean {
   return !options.busy && !options.authenticated && options.visible
+}
+
+export function cdpLoginEndpointError(snapshot: DesktopClientState): string | null {
+  if (snapshot.endpoint.status === 'occupiedNonCdp') return 'auth.cdp_port_occupied'
+  if (snapshot.endpoint.status !== 'cdpWithoutDiscordTarget') return null
+  const loading = snapshot.endpoint.runtime?.runtimeStatus === 'loading'
+  const owner = snapshot.endpoint.ownerProviderId
+  const knownOwner = owner && snapshot.processes.some(process => (
+    process.running && process.providerId === owner
+    && snapshot.installations.some(installation => (
+      installation.id === process.installationId
+      && installation.providerId === owner
+      && installation.validation === 'valid' && installation.capabilities.cdp
+    ))
+  ))
+  if (loading && knownOwner) return null
+  return loading ? 'auth.cdp_runtime_loading' : 'auth.cdp_runtime_unavailable'
 }
 
 export function canBeginLogin(activeMethod: LoginMethod | null, storeLoading: boolean): boolean {

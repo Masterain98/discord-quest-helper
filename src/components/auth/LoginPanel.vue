@@ -40,8 +40,10 @@ import {
 } from '@/api/tauri'
 import { desktopClientArgForProvider, useDesktopClientState } from '@/composables/desktopClientState'
 import { clearCdpLaunchError, recordCdpLaunchError } from '@/composables/cdpDiagnostics'
+import { commandErrorMessage as errorDetail } from '@/utils/commandError'
 import {
   classifyCdpAvailability,
+  cdpLoginEndpointError,
   canBeginLogin,
   installedCdpLaunchTargets,
   presentAuthProgress,
@@ -111,9 +113,9 @@ const cdpAvailability = computed(() => classifyCdpAvailability(
 const cdpStatusKey = computed(() => ({
   checking: 'settings.cdp_checking',
   ready: 'settings.cdp_connected',
-  starting: 'auth.cdp_status_starting',
+  starting: 'auth.cdp_runtime_loading',
   offline: 'settings.cdp_disconnected_short',
-  error: 'auth.cdp_status_error',
+  error: 'auth.cdp_runtime_unavailable',
 })[cdpAvailability.value])
 const usingVesktopCdp = computed(() => (
   usesVesktopForCdpLogin(desktopClients.value)
@@ -191,11 +193,6 @@ function handleBackendProgress(method: LoginMethod, event: AuthProgress) {
   setProgress(method, presentation.state, presentation.key, presentation.params)
 }
 
-function errorDetail(error: unknown): string {
-  if (error instanceof Error) return error.message
-  return String(error)
-}
-
 function begin(method: LoginMethod): boolean {
   if (!canBeginLogin(activeMethod.value, authStore.loading)) return false
   activeMethod.value = method
@@ -222,10 +219,11 @@ async function refreshCdpStatus(): Promise<CdpStatus | null> {
     desktopClients.value = inventoryFromState(snapshot)
     const ready = snapshot.endpoint.status === 'discordReady'
     const status: CdpStatus = {
-      available: ready,
+      available: ready || snapshot.endpoint.status === 'cdpWithoutDiscordTarget',
       connected: ready,
       target_title: snapshot.endpoint.targetTitle,
       error: ready ? null : snapshot.endpoint.status,
+      runtime: snapshot.endpoint.runtime,
     }
     cdpStatus.value = status
     questsStore.cdpAvailable = status.connected
@@ -387,6 +385,8 @@ async function launchOrRestartSelectedTarget(target: CdpLaunchTarget | null) {
   const snapshot = await clients.refresh(questsStore.cdpPort)
   if (!snapshot) throw new Error(clients.error.value ?? 'Desktop client state is unavailable')
   const selection = selectionForTarget(target)
+  const endpointError = cdpLoginEndpointError(snapshot)
+  if (endpointError) throw new Error(t(endpointError, { port: snapshot.endpoint.port }))
   if (selectionIsRunning(snapshot, selection)) {
     requestCdpRestart(target)
     return
@@ -407,6 +407,10 @@ async function launchOrRestartSelectedTarget(target: CdpLaunchTarget | null) {
     const latest = await clients.refresh(questsStore.cdpPort)
     if (!latest) {
       if (!launchCompleted) recordCdpLaunchError(launchError)
+      throw launchError
+    }
+    if (cdpLoginEndpointError(latest)) {
+      recordCdpLaunchError(launchError)
       throw launchError
     }
     if (latest.endpoint.status !== 'discordReady') {
@@ -434,6 +438,10 @@ async function handleCdpLogin() {
   try {
     const status = await refreshCdpStatus()
     const snapshot = clients.state.value
+    const endpointError = snapshot && cdpLoginEndpointError(snapshot)
+    if (endpointError && snapshot) {
+      throw new Error(t(endpointError, { port: snapshot.endpoint.port }))
+    }
     if (status?.connected && snapshot) {
       const provider = selectionProvider(snapshot, snapshot.selection)
       if (provider && snapshot.endpoint.ownerProviderId !== provider) {

@@ -14,6 +14,7 @@ import { useGameIdleStore } from './gameIdle'
 import { useI18n } from 'vue-i18n'
 import { useNow } from '@vueuse/core'
 import { getNitroOrbsClaim } from '@/utils/nitroOrbsCountdown'
+import { commandErrorMessage } from '@/utils/commandError'
 
 export const useAuthStore = defineStore('auth', () => {
   const { t } = useI18n()
@@ -64,7 +65,7 @@ export const useAuthStore = defineStore('auth', () => {
       return true
     } catch (e) {
       console.error('Auto detect failed:', e)
-      error.value = e instanceof Error ? e.message : String(e)
+      error.value = commandErrorMessage(e)
       return false
     } finally {
       loading.value = false
@@ -108,7 +109,7 @@ export const useAuthStore = defineStore('auth', () => {
 
       return true
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
+      error.value = commandErrorMessage(e)
       return false
     } finally {
       loading.value = false
@@ -148,7 +149,7 @@ export const useAuthStore = defineStore('auth', () => {
 
       return true
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
+      error.value = commandErrorMessage(e)
       return false
     } finally {
       loading.value = false
@@ -190,7 +191,7 @@ export const useAuthStore = defineStore('auth', () => {
       await useGameIdleStore().stopForAccountChange()
       await stopAllGameSimulations()
     } catch (cause) {
-      error.value = cause instanceof Error ? cause.message : String(cause)
+      error.value = commandErrorMessage(cause)
       return
     }
     try {
@@ -233,7 +234,7 @@ export const useAuthStore = defineStore('auth', () => {
       programRewardLoaded.value = true
     } catch (e) {
       if (requestRevision !== programRewardRequestRevision || token.value !== requestToken) return
-      programRewardError.value = e as string
+      programRewardError.value = commandErrorMessage(e)
       console.warn('Failed to fetch Nitro program reward:', e)
     } finally {
       if (requestRevision === programRewardRequestRevision && token.value === requestToken) {

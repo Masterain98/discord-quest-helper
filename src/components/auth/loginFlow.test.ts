@@ -9,6 +9,7 @@ import type {
 import {
   canBeginLogin,
   classifyCdpAvailability,
+  cdpLoginEndpointError,
   findCurrentCdpOwnerSession,
   hasUnchanneledOfficialMacInstallation,
   installedCdpLaunchTargets,
@@ -97,6 +98,32 @@ describe('CDP status and polling', () => {
     expect(classifyCdpAvailability(false, { ...offline, available: true, connected: true }, false)).toBe('ready')
     expect(classifyCdpAvailability(false, offline, false)).toBe('offline')
     expect(classifyCdpAvailability(false, null, true)).toBe('error')
+  })
+
+  it('separates loading and runtime failures from an offline debug endpoint', () => {
+    const runtime = { runtimeStatus: 'loading' as const, webSocketReachable: true, appRootPresent: true,
+      moduleLoaderPresent: false, nativeBridgePresent: false, focused: false, failureStage: null, reasonCode: null }
+    expect(classifyCdpAvailability(false, { ...offline, available: true, runtime }, false)).toBe('starting')
+    for (const runtimeStatus of ['probeFailed', 'unsupported'] as const) {
+      expect(classifyCdpAvailability(false, { ...offline, available: true, runtime: { ...runtime, runtimeStatus } }, false)).toBe('error')
+    }
+  })
+
+  it.each([
+    { description: 'empty target list', target_title: null },
+    { description: 'unrelated Chromium endpoint', target_title: 'Chromium' },
+  ])('reports $description as unavailable instead of loading', ({ target_title }) => {
+    expect(classifyCdpAvailability(false, {
+      available: true,
+      connected: false,
+      target_title,
+      error: 'cdpWithoutDiscordTarget',
+      runtime: {
+        runtimeStatus: 'noCandidate', webSocketReachable: false,
+        appRootPresent: false, moduleLoaderPresent: false, nativeBridgePresent: false,
+        focused: false, failureStage: null, reasonCode: null,
+      },
+    }, false)).toBe('error')
   })
 
   it('pauses polling while busy, authenticated, or hidden', () => {
@@ -291,6 +318,53 @@ describe('CDP launch target selection', () => {
     expect(shouldAskCdpLaunchTarget(false, ['stable', 'canary', 'vesktop'])).toBe(true)
   })
 
+})
+
+describe('CDP endpoint recovery', () => {
+  function snapshot(): DesktopClientState {
+    return {
+      endpoint: { port: 9223, status: 'cdpWithoutDiscordTarget', owner: 'official',
+        ownerProviderId: 'discord.official', targetTitle: 'Discord',
+        runtime: { runtimeStatus: 'loading' } },
+      processes: [{ providerId: 'discord.official', installationId: 'stable', running: true }],
+      installations: [{ id: 'stable', providerId: 'discord.official', validation: 'valid',
+        capabilities: { cdp: true } }],
+    } as DesktopClientState
+  }
+
+  it('allows an identified loading client to reach manual recovery', () => {
+    expect(cdpLoginEndpointError(snapshot())).toBeNull()
+  })
+
+  it('keeps unknown, stopped and mismatched loading clients unavailable', () => {
+    const unknown = snapshot()
+    unknown.endpoint.ownerProviderId = null
+    expect(cdpLoginEndpointError(unknown)).toBe('auth.cdp_runtime_loading')
+    const stopped = snapshot()
+    stopped.processes[0].running = false
+    expect(cdpLoginEndpointError(stopped)).toBe('auth.cdp_runtime_loading')
+    const mismatched = snapshot()
+    mismatched.processes[0].installationId = 'unknown'
+    expect(cdpLoginEndpointError(mismatched)).toBe('auth.cdp_runtime_loading')
+  })
+
+  it('does not recover empty or unrelated CDP endpoints even with a known process', () => {
+    const state = snapshot()
+    state.endpoint.runtime!.runtimeStatus = 'noCandidate'
+    expect(cdpLoginEndpointError(state)).toBe('auth.cdp_runtime_unavailable')
+  })
+
+  it('reports a port conflict regardless of runtime and process state', () => {
+    const state = snapshot()
+    state.endpoint.status = 'occupiedNonCdp'
+    expect(cdpLoginEndpointError(state)).toBe('auth.cdp_port_occupied')
+  })
+
+  it.each(['discordReady', 'unreachable'] as const)('allows existing %s handling', status => {
+    const state = snapshot()
+    state.endpoint.status = status
+    expect(cdpLoginEndpointError(state)).toBeNull()
+  })
 })
 
 describe('login operation gate', () => {

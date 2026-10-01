@@ -663,6 +663,11 @@ onMounted(() => {
               <div class="rounded border p-3"><div class="text-xs text-muted-foreground">Targets / Discord / main</div><code>{{ cdpDiagnostics.cdpTargetCount }} / {{ cdpDiagnostics.discordTargetCount }} / {{ cdpDiagnostics.mainRendererFound }}</code></div>
             </div>
 
+            <div v-if="cdpDiagnostics.runtime" class="rounded border p-3 text-xs">
+              <div class="font-medium">Runtime verification</div>
+              <code class="mt-2 block">{{ cdpDiagnostics.runtime.runtimeStatus }} · WebSocket: {{ cdpDiagnostics.runtime.webSocketReachable }} · App root: {{ cdpDiagnostics.runtime.appRootPresent }} · Module loader: {{ cdpDiagnostics.runtime.moduleLoaderPresent }} · Native bridge: {{ cdpDiagnostics.runtime.nativeBridgePresent }}</code>
+              <code v-if="cdpDiagnostics.runtime.failureStage || cdpDiagnostics.runtime.reasonCode" class="mt-1 block">{{ cdpDiagnostics.runtime.failureStage }} / {{ cdpDiagnostics.runtime.reasonCode }}</code>
+            </div>
             <div class="space-y-2">
               <div class="text-sm font-medium">Launch flags and processes</div>
               <div v-if="!cdpDiagnostics.processes.length" class="rounded bg-muted p-3 text-xs text-muted-foreground">No related Discord, Vesktop, or port-owning process found.</div>
@@ -682,6 +687,7 @@ onMounted(() => {
                 <div><span class="text-muted-foreground">Type</span><code class="block">{{ target.type }}</code></div>
                 <div><span class="text-muted-foreground">Title</span><code class="block break-all">{{ target.title || fallbackText }}</code></div>
                 <div><span class="text-muted-foreground">Classification</span><code class="block">{{ target.classification }}</code></div>
+                <div v-if="target.runtime"><span class="text-muted-foreground">Runtime</span><code class="block">{{ target.runtime.runtimeStatus }} / {{ target.runtime.reasonCode ?? 'ok' }}</code></div>
                 <div><span class="text-muted-foreground">Sanitized URL</span><code class="block break-all">{{ target.url || fallbackText }}</code></div>
               </div>
             </div>

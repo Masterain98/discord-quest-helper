@@ -33,6 +33,7 @@ const props = defineProps<{
   questType?: 'video' | 'stream' | 'activity'
   showDeveloperDetails?: boolean
   density?: 'compact' | 'comfortable'
+  busy?: boolean
 }>()
 
 const questsStore = useQuestsStore()
@@ -212,9 +213,11 @@ const activeTimeText = computed(() => {
 
 <template>
   <Card
+    :aria-busy="busy || undefined"
     :class="[
       'mb-4 overflow-hidden border-border/50 transition-all hover:shadow-md',
       density === 'compact' && 'hover:shadow-sm',
+      (busy || isActiveQuest) && 'border-primary/50',
     ]"
   >
     <!-- Quest Banner/Hero Image -->
@@ -270,9 +273,11 @@ const activeTimeText = computed(() => {
             <QuestTaskBadges v-if="density !== 'compact'" :quest="quest" />
           </div>
         </div>
-        <Badge variant="outline" :class="['whitespace-nowrap', statusClass]">
-           {{ statusLabel }}
-        </Badge>
+        <Transition name="quest-status" mode="out-in">
+          <Badge :key="statusLabel" variant="outline" :class="['whitespace-nowrap', statusClass]">
+            {{ statusLabel }}
+          </Badge>
+        </Transition>
       </div>
     </CardHeader>
     
@@ -438,9 +443,31 @@ const activeTimeText = computed(() => {
       <QuestDeveloperDetails v-if="showDeveloperDetails" :quest="quest" />
     </CardContent>
 
-    <CardFooter class="flex flex-wrap gap-2 justify-end pt-2">
+    <CardFooter class="flex min-h-[4.5rem] flex-wrap gap-2 justify-end pt-2">
       <slot name="actions"></slot>
     </CardFooter>
   </Card>
 </template>
+
+<style scoped>
+.quest-status-enter-active,
+.quest-status-leave-active {
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+.quest-status-enter-from,
+.quest-status-leave-to {
+  opacity: 0;
+  transform: translateY(3px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .quest-status-enter-active,
+  .quest-status-leave-active {
+    transition: none;
+  }
+  .quest-status-enter-from,
+  .quest-status-leave-to {
+    transform: none;
+  }
+}
+</style>
 
