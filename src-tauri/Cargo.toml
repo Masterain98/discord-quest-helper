@@ -75,6 +75,9 @@ pbkdf2 = "0.12"
 secret-service = { version = "5.1", default-features = false, features = ["rt-tokio-crypto-rust"] }
 sha1 = "0.10"
 
+[dev-dependencies]
+tokio = { version = "1", features = ["test-util"] }
+
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]

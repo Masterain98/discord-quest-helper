@@ -10,7 +10,7 @@ const code = template
   .replaceAll('{dwell_ms}', '1500').replaceAll('{restore_settle_ms}', '800')
   .replaceAll('{{', '{').replaceAll('}}', '}')
 
-async function warmup({ historyHandled = false, routeSignal = true, routerHandled = true, aliasWindow = false } = {}) {
+async function warmup({ historyHandled = false, routeSignal = true, routerHandled = true, aliasWindow = false, routerChangesUrl = true } = {}) {
   let elapsed = 0
   let url = new URL('https://discord.com/channels/@me')
   const calls = []
@@ -20,11 +20,11 @@ async function warmup({ historyHandled = false, routeSignal = true, routerHandle
   const router = {
     transitionTo(path) {
       calls.push(['router', path, url.pathname])
-      setUrl(path)
+      if (routerChangesUrl === true || routerChangesUrl === 'transitionTo') setUrl(path)
       if (routerHandled && routeSignal) router.location = aliasWindow ? location : new URL(url)
     },
-    replaceWith(path) { calls.push(['replace', path]); setUrl(path) },
-    navigate(path) { calls.push(['navigate', path]); setUrl(path) },
+    replaceWith(path) { calls.push(['replace', path]); if (routerChangesUrl === true || routerChangesUrl === 'replaceWith') setUrl(path) },
+    navigate(path) { calls.push(['navigate', path]); if (routerChangesUrl === true || routerChangesUrl === 'navigate') setUrl(path) },
   }
   if (routeSignal) router.location = aliasWindow ? location : new URL(url)
   const history = {
@@ -64,18 +64,36 @@ describe('verified SPA quest warmup', () => {
     expect(calls).toContainEqual(['router', '/quest-home', '/channels/@me'])
   })
 
-  it('reports failure so Page.navigate can run when no independent signal exists', async () => {
-    const { result, calls } = await warmup({ routeSignal: false })
+  it('accepts actual router transitions without a readable location and skips History API', async () => {
+    const { result, calls, finalPath } = await warmup({ routeSignal: false })
+    expect(result.success).toBe(true)
+    expect(result.warmupMethod).toBe('router.transitionTo')
+    expect(result.restoreMethod).toBe('router.transitionTo')
+    expect(calls.some(([method]) => method === 'history')).toBe(false)
+    expect(calls.map(([method]) => method)).toEqual(['router', 'router'])
+    expect(finalPath).toBe('/channels/@me')
+  })
+
+  it('falls back to Page.navigate when router methods do not change the URL and expose no state', async () => {
+    const { result, calls } = await warmup({ routeSignal: false, routerChangesUrl: false })
     expect(result.success).toBe(false)
     expect(result.details).toContain('history.pushState:no-route-signal')
-    expect(calls.some(([method]) => method === 'history')).toBe(false)
     expect(calls.map(([method]) => method)).toEqual(['router', 'replace', 'navigate'])
   })
 
-  it('rejects router state aliased to Window.location', async () => {
-    const { result } = await warmup({ aliasWindow: true })
-    expect(result.success).toBe(false)
-    expect(result.details).toContain('history.pushState:no-route-signal')
+  it.each(['replaceWith', 'navigate'])('accepts router.%s after earlier methods do nothing without state', async method => {
+    const { result, finalPath } = await warmup({ routeSignal: false, routerChangesUrl: method })
+    expect(result.success).toBe(true)
+    expect(result.warmupMethod).toBe(`router.${method}`)
+    expect(result.restoreMethod).toBe(`router.${method}`)
+    expect(finalPath).toBe('/channels/@me')
+  })
+
+  it('does not use state aliased to Window.location to authorize History API', async () => {
+    const { result, calls } = await warmup({ aliasWindow: true })
+    expect(result.success).toBe(true)
+    expect(result.warmupMethod).toBe('router.transitionTo')
+    expect(calls.some(([method]) => method === 'history')).toBe(false)
   })
 
   it('does not accept router methods that only change the URL', async () => {

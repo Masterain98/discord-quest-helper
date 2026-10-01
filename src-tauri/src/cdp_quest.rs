@@ -1408,14 +1408,21 @@ fn js_warmup_quest_route(plan: &QuestRouteWarmupPlan) -> String {
             }} catch (_) {{ return null; }}
         }}
 
-        async function waitForRoute(expectedPath, timeoutMs) {{
-            if (routerPath() === null) return false;
+        async function waitForRoute(expectedPath, timeoutMs, routerStartPath = null, requireState = true) {{
+            const confirmed = () => {{
+                if (currentPath() !== expectedPath) return false;
+                const route = routerPath();
+                if (route !== null) return route === expectedPath;
+                // A router method may commit navigation without exposing location.
+                // History API writes never qualify, nor does an unchanged URL.
+                return !requireState && routerStartPath !== null && routerStartPath !== expectedPath;
+            }};
             const start = Date.now();
             while (Date.now() - start < timeoutMs) {{
-                if (currentPath() === expectedPath && routerPath() === expectedPath) return true;
+                if (confirmed()) return true;
                 await sleep(50);
             }}
-            return currentPath() === expectedPath && routerPath() === expectedPath;
+            return confirmed();
         }}
 
         async function navigateWithinApp(targetUrl) {{
@@ -1454,8 +1461,10 @@ fn js_warmup_quest_route(plan: &QuestRouteWarmupPlan) -> String {
             if (router) {{
                 if (typeof router.transitionTo === "function") {{
                     try {{
+                        const beforePath = currentPath();
+                        const requireState = routerPath() !== null;
                         await Promise.resolve(router.transitionTo(targetPath));
-                        if (await waitForRoute(targetPath, 2500)) {{
+                        if (await waitForRoute(targetPath, 2500, beforePath, requireState)) {{
                             return {{ success: true, method: "router.transitionTo", targetPath, failures }};
                         }}
                         failures.push("router.transitionTo:no-route-change");
@@ -1466,8 +1475,10 @@ fn js_warmup_quest_route(plan: &QuestRouteWarmupPlan) -> String {
 
                 if (typeof router.replaceWith === "function") {{
                     try {{
+                        const beforePath = currentPath();
+                        const requireState = routerPath() !== null;
                         await Promise.resolve(router.replaceWith(targetPath));
-                        if (await waitForRoute(targetPath, 2500)) {{
+                        if (await waitForRoute(targetPath, 2500, beforePath, requireState)) {{
                             return {{ success: true, method: "router.replaceWith", targetPath, failures }};
                         }}
                         failures.push("router.replaceWith:no-route-change");
@@ -1478,8 +1489,10 @@ fn js_warmup_quest_route(plan: &QuestRouteWarmupPlan) -> String {
 
                 if (typeof router.navigate === "function") {{
                     try {{
+                        const beforePath = currentPath();
+                        const requireState = routerPath() !== null;
                         await Promise.resolve(router.navigate(targetPath));
-                        if (await waitForRoute(targetPath, 2500)) {{
+                        if (await waitForRoute(targetPath, 2500, beforePath, requireState)) {{
                             return {{ success: true, method: "router.navigate", targetPath, failures }};
                         }}
                         failures.push("router.navigate:no-route-change");
@@ -1591,14 +1604,15 @@ async fn cdp_execute_json_on_task_target(
     operation: &str,
 ) -> Result<CdpJsonExecutionSummary> {
     let rewritten = with_bridge(js_code);
-    let target = cdp_client::get_primary_discord_target(port).await?;
-    let raw = cdp_client::execute_js_via_primary_discord_target(
-        port,
+    let verified = cdp_client::verify_primary_discord_target(port).await?;
+    let raw = cdp_client::execute_js_on_verified_discord_target(
+        &verified,
         &rewritten,
         await_promise,
         timeout_secs,
     )
     .await?;
+    let target = verified.target;
     let results = vec![cdp_client::CdpTargetExecutionResult {
         target_title: target.title,
         target_url: target.url,
@@ -1894,36 +1908,40 @@ fn module_script(operation: &str, discover_only: bool) -> String {
 }
 
 async fn initialize_modules(port: u16, operation: &str) -> Result<()> {
-    let verified = cdp_client::verify_primary_discord_target(port).await?;
+    initialize_modules_with(
+        cdp_client::verify_primary_discord_target(port),
+        operation,
+        async |verified, script| {
+            cdp_client::execute_js_on_verified_discord_target(verified, &script, true, 2).await
+        },
+    )
+    .await
+}
+
+// Keep the budget policy separate from socket I/O so tests can use virtual time.
+async fn initialize_modules_with<T>(
+    verification: impl std::future::Future<Output = Result<T>>,
+    operation: &str,
+    mut execute: impl AsyncFnMut(&T, String) -> Result<String>,
+) -> Result<()> {
+    let verified = verification.await?;
     let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
     // Discover first; no cache or client state is installed until all required methods exist.
     for attempt in 0..3 {
-        let result = tokio::time::timeout_at(
-            deadline,
-            cdp_client::execute_js_on_verified_discord_target(
-                &verified,
-                &module_script(operation, true),
-                true,
-                2,
-            ),
-        )
-        .await
-        .map_err(|_| {
-            anyhow::Error::from(capability_error(
-                operation,
-                &serde_json::json!({"missing":["module_discovery_timeout"]}),
-            ))
-        })??;
+        let result =
+            tokio::time::timeout_at(deadline, execute(&verified, module_script(operation, true)))
+                .await
+                .map_err(|_| {
+                    anyhow::Error::from(capability_error(
+                        operation,
+                        &serde_json::json!({"missing":["module_discovery_timeout"]}),
+                    ))
+                })??;
         let parsed: serde_json::Value = serde_json::from_str(&result)?;
         if parsed["success"] == true {
             let raw = tokio::time::timeout_at(
                 deadline,
-                cdp_client::execute_js_on_verified_discord_target(
-                    &verified,
-                    &with_bridge(&module_script(operation, false)),
-                    true,
-                    2,
-                ),
+                execute(&verified, with_bridge(&module_script(operation, false))),
             )
             .await
             .map_err(|_| {
@@ -4308,26 +4326,63 @@ mod tests {
         serde_json::json!({"id":1,"result":{"result":{"value":value.to_string()}}})
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn module_budget_excludes_verification_and_is_shared_by_both_scripts() {
+        for script_delay_ms in [700, 1200] {
+            let start = tokio::time::Instant::now();
+            let mut scripts = Vec::new();
+            let result = initialize_modules_with(
+                async {
+                    sleep(Duration::from_secs(3)).await;
+                    Ok(())
+                },
+                "video quest",
+                async |_: &(), script: String| {
+                    scripts.push(script);
+                    sleep(Duration::from_millis(script_delay_ms)).await;
+                    Ok(serde_json::json!({"success":true}).to_string())
+                },
+            )
+            .await;
+            assert_eq!(scripts.len(), 2);
+            assert!(scripts[0].contains("const discoverOnly = true"));
+            assert!(scripts[1].contains("const discoverOnly = false"));
+            if script_delay_ms == 700 {
+                result.unwrap();
+                assert_eq!(start.elapsed(), Duration::from_millis(4400));
+            } else {
+                let error = result.unwrap_err();
+                assert!(error.to_string().contains("module_initialization_timeout"));
+                assert_eq!(start.elapsed(), Duration::from_secs(5));
+            }
+        }
+    }
+
     #[tokio::test]
-    async fn module_budget_excludes_verification_and_both_scripts_guard_the_document() {
+    async fn json_execution_verifies_once_and_guards_the_same_document() {
         let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let requests = seen.clone();
         let server = FakeQuestCdp::start(move |expression| {
             if expression.contains("moduleLoaderPresent:") {
                 requests.lock().unwrap().push("verify");
-                std::thread::sleep(Duration::from_millis(600));
                 fake_runtime_reply()
             } else {
                 assert!(expression.contains("String(performance.timeOrigin) !== \"100\""));
                 requests.lock().unwrap().push("script");
-                std::thread::sleep(Duration::from_millis(650));
                 fake_script_reply(serde_json::json!({"success":true}))
             }
         });
-        initialize_modules(server.port, "video quest")
-            .await
-            .unwrap();
-        assert_eq!(*seen.lock().unwrap(), ["verify", "script", "script"]);
+        let result = cdp_execute_json_on_task_target(
+            server.port,
+            "JSON.stringify({success:true})",
+            false,
+            2,
+            "test",
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.successful_results.len(), 1);
+        assert_eq!(*seen.lock().unwrap(), ["verify", "script"]);
     }
 
     #[tokio::test]

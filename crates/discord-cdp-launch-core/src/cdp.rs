@@ -10,6 +10,16 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 use std::time::{Duration, Instant};
 
 const MAX_HTTP_RESPONSE_BYTES: usize = 1024 * 1024;
+const MAX_RUNTIME_CANDIDATES: usize = 32;
+
+fn probe_worker_failure(reason: &str) -> crate::CdpRuntime {
+    crate::CdpRuntime {
+        runtime_status: crate::CdpRuntimeStatus::ProbeFailed,
+        failure_stage: Some("discovery".into()),
+        reason_code: Some(reason.into()),
+        ..Default::default()
+    }
+}
 
 pub(crate) fn port_is_listening(port: u16) -> bool {
     TcpStream::connect_timeout(
@@ -312,23 +322,46 @@ fn detailed_probe_with_timeouts(
             candidates.sort_by(|a, b| a.id.cmp(&b.id));
             // Start every candidate within the same round budget. A stalled
             // earlier renderer must not prevent a later ready one being probed.
-            let runtimes: std::collections::HashMap<_, _> = std::thread::scope(|scope| {
-                let probes: Vec<_> = candidates
-                    .iter()
-                    .map(|target| {
-                        scope.spawn(move || {
+            // Reject oversized lists rather than silently skipping later targets.
+            // The response byte limit alone still permits thousands of candidates.
+            let runtimes: std::collections::HashMap<_, _> =
+                if candidates.len() > MAX_RUNTIME_CANDIDATES {
+                    candidates
+                        .iter()
+                        .map(|target| {
                             (
                                 target.id.clone(),
-                                crate::runtime::verify(port, target, deadline),
+                                probe_worker_failure("candidate_limit_exceeded"),
                             )
                         })
+                        .collect()
+                } else {
+                    std::thread::scope(|scope| {
+                        let probes: Vec<_> = candidates
+                            .iter()
+                            .map(|target| {
+                                (
+                                    target.id.clone(),
+                                    std::thread::Builder::new().spawn_scoped(scope, move || {
+                                        crate::runtime::verify(port, target, deadline)
+                                    }),
+                                )
+                            })
+                            .collect();
+                        probes
+                            .into_iter()
+                            .map(|(id, probe)| {
+                                let runtime = match probe {
+                                    Ok(probe) => probe.join().unwrap_or_else(|_| {
+                                        probe_worker_failure("probe_worker_panicked")
+                                    }),
+                                    Err(_) => probe_worker_failure("probe_worker_unavailable"),
+                                };
+                                (id, runtime)
+                            })
+                            .collect()
                     })
-                    .collect();
-                probes
-                    .into_iter()
-                    .map(|probe| probe.join().unwrap())
-                    .collect()
-            });
+                };
             let selected = candidates
                 .iter()
                 .filter(|target| {

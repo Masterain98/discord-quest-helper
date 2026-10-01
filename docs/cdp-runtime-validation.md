@@ -25,6 +25,9 @@ verified target supplies its state and diagnostic classification. Candidates are
 verified concurrently so stalled earlier targets cannot starve later renderers. Each round has
 a three-second deadline, and each target has at most 750 milliseconds including
 connection, handshake and I/O. Events and Ping frames may interleave with replies.
+Lists exceeding 32 Discord candidates fail before any probe thread is created,
+with `candidate_limit_exceeded`; no partial selection hides omitted candidates.
+Thread creation failures and worker panics become diagnostic probe failures.
 Protocol failures and JavaScript exceptions return constant reason codes instead
 of arbitrary remote error text. Every path releases its connection.
 
@@ -90,10 +93,15 @@ binding. Failure stops the task and triggers cleanup without selecting another
 renderer. Cleanup still visits Discord page targets, including auxiliary windows,
 and validates their loopback debugger URLs. Existing quest-specific warmup
 navigation remains separate from connection polling and readiness checks.
-SPA warmup requires an independent router location as well as the matching URL;
-`history.pushState` alone is not evidence of route success. Missing or failed
-signals fall through to router methods and then `Page.navigate`. A failed History
-attempt restores the original URL before trying the router methods.
+History API warmup requires an independent router location as well as the matching
+URL; `history.pushState` alone is not evidence of route success. Without readable
+state, real router methods may confirm navigation by changing the URL from the
+path captured before their call to the requested path. If independent router
+state is available, it must match too; an absent or contradictory state cannot
+override that requirement. Failed methods fall through to `Page.navigate`. A
+failed History attempt restores the original URL before trying router methods.
+JSON task execution reuses one verified renderer and its document guard per call;
+the separate pinned-session monitor remains active.
 
 Activity SDK capability discovery also checks at most three times within two
 seconds. Its retries are spaced across that budget; the former 12-second discovery
@@ -249,3 +257,43 @@ No real Discord quest, client restart or account operation was performed. macOS
 and Linux validation remains with the existing remote CI matrix. The SPA fallback
 may use full-page navigation when a client exposes no independent router location;
 fixture success does not establish live routing or heartbeat behavior.
+
+## PR #187 second review and CI follow-up — 2026-10-01
+
+Refreshed all surfaces at `fae722d0a48405e1b899527114a2788a6e1850e8`:
+one conversation comment, five review submissions and ten inline threads, with
+all pagination exhausted. The original nine threads were already resolved by
+external actors. One new inline issue, one outside-diff finding in the latest
+review body, and one concrete concern in the updated conversation summary were
+valid:
+
+| Source | Finding and outcome |
+| --- | --- |
+| Greptile 4156530649 | A successful router transition without exposed location always failed verification. Real router methods now accept their own observed URL transition when state is unavailable. Synthetic History writes still require independent state, and readable contradictory state still fails. |
+| CodeRabbit review 5380708444, outside diff | JSON task execution verified its renderer twice. It now verifies once, executes on that target with its document-generation guard, and reports that same target in result metadata. |
+| CodeRabbit conversation 5932532363, architecture review | Unbounded candidate counts created unbounded native threads. A 32-candidate cap rejects oversized lists before opening probe sockets, retains diagnostics, and handles worker creation failures and panics. |
+
+The proposed cleanup-ownership redesign did not establish a regression introduced
+by this PR and remains outside this targeted fix. The docstring warning is still
+not a repository gate; Sourcery's size-limit notice adds no code finding.
+
+The macOS push CI run `36875539331`, job `110413885449`, failed in
+`module_budget_excludes_verification_and_both_scripts_guard_the_document` with
+`ProbeFailed (read_failed)` before module discovery. Its fixture delayed runtime
+verification by 600ms within the production 750ms cap. The test depended on real
+network scheduling headroom. Budget policy now has a virtual-clock regression:
+three seconds of verification are excluded, two 700ms scripts succeed, and two
+1200ms scripts time out at their shared two-second deadline. A separate socket
+regression verifies one probe per JSON execution and the document guard; the
+existing reload-between-discovery-and-installation regression still exercises
+both guarded module evaluations. Production timeouts and CI action refs are
+unchanged.
+
+Local validation: all 21 frontend files / 139 tests and the Rust workspace passed.
+Strict workspace Clippy, Rust formatting, TypeScript/Vite build, all locales,
+core dependency boundary, runtime-identity configuration and identity test suites
+passed. The existing Vite chunk warning remains. Routing fixtures cover all three
+router methods without state, no-op methods, History URL-only changes, aliased
+Window.location and contradictory router state. Oversized-list regression asserts
+no probe socket is opened. No PR reply, thread mutation or real Discord operation
+was performed. Cross-platform confirmation comes from the new remote CI run.

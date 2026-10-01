@@ -482,6 +482,67 @@ fn stalled_candidates_cannot_starve_a_later_ready_renderer() {
 }
 
 #[test]
+fn oversized_candidate_lists_fail_before_opening_any_probe_socket() {
+    let _guard = serialize_socket_test();
+    let targets: Vec<_> = (0..33)
+        .map(|id| {
+            serde_json::json!({
+                "id":id.to_string(), "type":"page", "title":"Discord",
+                "url":"https://discord.com/channels/@me", "webSocketDebuggerUrl":"ws://placeholder"
+            })
+        })
+        .collect();
+    let body = serde_json::to_string(&targets).unwrap();
+    let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let port = listener.local_addr().unwrap().port();
+    listener.set_nonblocking(true).unwrap();
+    let server = std::thread::spawn(move || {
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let mut stream = loop {
+            match listener.accept() {
+                Ok((stream, _)) => break stream,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    assert!(Instant::now() < deadline);
+                    std::thread::sleep(Duration::from_millis(2));
+                }
+                Err(error) => panic!("{error}"),
+            }
+        };
+        stream.set_nonblocking(false).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(1)))
+            .unwrap();
+        let mut request = Vec::new();
+        while !request.ends_with(b"\r\n\r\n") {
+            let mut byte = [0];
+            stream.read_exact(&mut byte).unwrap();
+            request.push(byte[0]);
+        }
+        stream
+            .write_all(response_owned("200 OK", &body).as_bytes())
+            .unwrap();
+        std::thread::sleep(Duration::from_millis(400));
+        assert!(
+            matches!(listener.accept(), Err(error) if error.kind() == std::io::ErrorKind::WouldBlock),
+            "an oversized list must not create probe connections"
+        );
+    });
+    let probe = detailed_probe_cdp(port);
+    assert!(probe.selected_target.is_none());
+    assert_eq!(probe.status, CdpProbeStatus::CdpWithoutDiscordTarget);
+    assert_eq!(
+        probe.runtime.reason_code.as_deref(),
+        Some("candidate_limit_exceeded")
+    );
+    assert_eq!(probe.targets.len(), 33);
+    assert!(probe
+        .targets
+        .iter()
+        .all(|target| target.runtime.reason_code.as_deref() == Some("candidate_limit_exceeded")));
+    server.join().unwrap();
+}
+
+#[test]
 fn same_url_is_selected_by_runtime_not_route_or_login() {
     let _guard = serialize_socket_test();
     let body = r#"[{"id":"overlay","type":"page","title":"Discord","url":"https://discord.com/future-route","webSocketDebuggerUrl":"ws://placeholder","testRuntime":{"appRootPresent":false,"moduleLoaderPresent":false,"nativeBridgePresent":true,"focused":true,"loading":false}}, {"id":"vesktop","type":"page","title":"Sign in","url":"https://discord.com/future-route","webSocketDebuggerUrl":"ws://placeholder","testRuntime":{"appRootPresent":true,"moduleLoaderPresent":true,"nativeBridgePresent":false,"focused":false,"loading":false,"documentGeneration":"100"}}]"#;
