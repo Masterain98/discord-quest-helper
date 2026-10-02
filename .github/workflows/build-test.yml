@@ -1,0 +1,157 @@
+name: Build test packages
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_TARGET_DIR: ${{ github.workspace }}/target
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }} test packages
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64
+            platform: windows-latest
+            cdp_target: x86_64-pc-windows-msvc
+            args: --bundles msi
+          - name: macOS ARM64
+            platform: macos-14
+            cdp_target: aarch64-apple-darwin
+            args: --no-sign --target aarch64-apple-darwin --bundles app,dmg
+          - name: Linux x64
+            platform: ubuntu-22.04
+            cdp_target: x86_64-unknown-linux-gnu
+            args: --bundles deb,appimage
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Read build version
+        id: version
+        shell: bash
+        run: |
+          version="$(tr -d '\r\n' < public/version.txt)"
+          if [[ -z "$version" ]]; then
+            echo "::error::public/version.txt is empty"
+            exit 1
+          fi
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: pnpm/action-setup@v6
+        name: Install pnpm
+        with:
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: pnpm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.platform == 'macos-14' && 'aarch64-apple-darwin' || '' }}
+
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            pkg-config \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            xdg-utils \
+            desktop-file-utils \
+            libfuse2
+
+      - name: Cache Rust dependencies
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: '. -> target'
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Sync build version
+        run: pnpm run sync-version
+
+      - name: Build frontend
+        run: pnpm run build
+
+      - name: Build runner sidecar
+        env:
+          TAURI_TARGET_TRIPLE: ${{ matrix.cdp_target }}
+        run: pnpm run build:runner
+
+      - name: Build Discord CDP launcher sidecar
+        env:
+          TAURI_TARGET_TRIPLE: ${{ matrix.cdp_target }}
+        run: pnpm run build:cdp-launcher
+
+      - name: Build Tauri packages
+        run: pnpm exec tauri build ${{ matrix.args }}
+
+      - name: Stage Windows portable package
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        env:
+          CDP_TARGET: ${{ matrix.cdp_target }}
+          BUILD_VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          $portableDir = 'build/windows-portable'
+          New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
+          Copy-Item 'target/release/discord-quest-helper.exe' "$portableDir/discord-quest-helper.exe"
+          Copy-Item "src-tauri/binaries/waybridge-$env:CDP_TARGET.exe" "$portableDir/waybridge.exe"
+          Compress-Archive -Path "$portableDir/*" -DestinationPath "build/discord-quest-helper-Windows-x64-$env:BUILD_VERSION-portable.zip" -Force
+
+      - name: Upload Windows portable package
+        if: matrix.platform == 'windows-latest'
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-windows-portable-${{ steps.version.outputs.value }}-${{ github.run_id }}
+          path: build/discord-quest-helper-Windows-x64-${{ steps.version.outputs.value }}-portable.zip
+          if-no-files-found: error
+
+      - name: Upload Windows MSI installer
+        if: matrix.platform == 'windows-latest'
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-windows-msi-${{ steps.version.outputs.value }}-${{ github.run_id }}
+          path: target/release/bundle/msi/*.msi
+          if-no-files-found: error
+
+      - name: Upload macOS ARM64 packages
+        if: matrix.platform == 'macos-14'
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-macos-arm64-${{ steps.version.outputs.value }}-${{ github.run_id }}
+          path: target/aarch64-apple-darwin/release/bundle/
+          if-no-files-found: error
+
+      - name: Upload Linux x64 packages
+        if: matrix.platform == 'ubuntu-22.04'
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-linux-x64-${{ steps.version.outputs.value }}-${{ github.run_id }}
+          path: |
+            target/release/bundle/deb/*.deb
+            target/release/bundle/appimage/*.AppImage
+          if-no-files-found: error
