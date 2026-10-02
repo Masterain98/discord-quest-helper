@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch, onUnmounted } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import type { Quest } from '@/api/tauri'
 import { useQuestsStore } from '@/stores/quests'
 import { useAuthStore } from '@/stores/auth'
@@ -100,18 +100,32 @@ const isClaimed = computed(() => isCompleted.value && !!props.quest.user_status?
 
 const hoverGlowKey = ref(0)
 const isHoverGlowPlaying = ref(false)
+const prefersReducedMotion = ref(false)
+let reducedMotionQuery: MediaQueryList | undefined
+
+function handleReducedMotionChange(event: MediaQueryListEvent) {
+  prefersReducedMotion.value = event.matches
+  if (event.matches) isHoverGlowPlaying.value = false
+}
+
+onMounted(() => {
+  reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
+  prefersReducedMotion.value = reducedMotionQuery.matches
+  reducedMotionQuery.addEventListener('change', handleReducedMotionChange)
+})
+
 watch([isActiveQuest, isCompleted], ([active, completed]) => {
   if (active || completed) isHoverGlowPlaying.value = false
 }, { immediate: true })
 
 function playHoverGlow() {
-  if (isActiveQuest.value || isCompleted.value) return
+  if (isActiveQuest.value || isCompleted.value || prefersReducedMotion.value) return
   hoverGlowKey.value += 1
   isHoverGlowPlaying.value = true
 }
 
 function finishHoverGlow(event: AnimationEvent) {
-  if (event.animationName === 'quest-card-glow-hover-fade') isHoverGlowPlaying.value = false
+  if (event.animationName.startsWith('quest-card-glow-hover-fade')) isHoverGlowPlaying.value = false
 }
 
 const statusLabel = computed(() => {
@@ -187,7 +201,10 @@ watch(progress, (next) => {
   }
   _raf = requestAnimationFrame(step)
 })
-onUnmounted(() => { if (_raf !== null) cancelAnimationFrame(_raf) })
+onUnmounted(() => {
+  reducedMotionQuery?.removeEventListener('change', handleReducedMotionChange)
+  if (_raf !== null) cancelAnimationFrame(_raf)
+})
 
 // Single-gradient progress bar style: true blue→green color blend, no transparency tricks
 const progressBarStyle = computed(() => {
