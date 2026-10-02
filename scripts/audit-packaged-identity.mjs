@@ -164,6 +164,24 @@ function filesWithSuffix(root, suffix) {
   return files;
 }
 
+// AppImages use the host Mesa/EGL stack. Bundling an older Wayland client
+// shadows its host counterpart and can abort WebKitWebProcess before rendering.
+// Inspect names as well as symlinks; do not follow links outside the AppDir.
+export function incompatibleAppImageLibraries(root) {
+  const libraries = [];
+  const visit = (directory) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) visit(path);
+      else if (/^libwayland-client\.so(?:\..*)?$/.test(entry.name)) {
+        libraries.push(relative(root, path));
+      }
+    }
+  };
+  visit(root);
+  return libraries.sort();
+}
+
 function parseDesktopEntry(path) {
   const fields = {};
   for (const line of readFileSync(path, 'utf8').split(/\r?\n/)) {
@@ -299,6 +317,11 @@ function auditLinux(path, kind) {
       && fields.StartupWMClass === IDENTITY.mainBinary
       && fields.Terminal === 'false');
     const violations = [];
+    if (kind === 'appimage' || kind === 'appdir') {
+      for (const library of incompatibleAppImageLibraries(root)) {
+        violations.push(`AppImage must use the host Wayland client library: ${library}`);
+      }
+    }
     if (!main) violations.push(`Linux payload must contain ${IDENTITY.mainBinary}`);
     if (!bridge) violations.push(`Linux payload must contain ${IDENTITY.bridgeBinary}`);
     if (internalTokenFiles.length) violations.push('executable filenames contain product tokens');
