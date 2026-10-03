@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -85,28 +86,48 @@ function writeMediaFixture(root) {
   }
 }
 
-function elfFixture(sectionTable = false) {
-  const bytes = Buffer.alloc(sectionTable ? 184 : 120);
+function elfFixture() {
+  // Explicit SHT_NULL avoids older readelf treating e_shnum=0 as an extended
+  // section count and reading the ELF header as section zero at e_shoff=0.
+  const bytes = Buffer.alloc(184);
   Buffer.from([0x7f, 0x45, 0x4c, 0x46, 2, 1, 1]).copy(bytes);
   bytes.writeUInt16LE(3, 16);
   bytes.writeUInt16LE(62, 18);
   bytes.writeUInt32LE(1, 20);
   bytes.writeBigUInt64LE(64n, 32);
+  bytes.writeBigUInt64LE(120n, 40);
   bytes.writeUInt16LE(64, 52);
   bytes.writeUInt16LE(56, 54);
   bytes.writeUInt16LE(1, 56);
   bytes.writeUInt16LE(64, 58);
+  bytes.writeUInt16LE(1, 60);
   bytes.writeUInt32LE(1, 64); // PT_LOAD
   bytes.writeUInt32LE(5, 68); // read + execute
   bytes.writeBigUInt64LE(BigInt(bytes.length), 96);
   bytes.writeBigUInt64LE(BigInt(bytes.length), 104);
   bytes.writeBigUInt64LE(4096n, 112);
-  if (sectionTable) {
-    bytes.writeBigUInt64LE(120n, 40);
-    bytes.writeUInt16LE(1, 60);
-  }
   return bytes;
 }
+
+test('synthetic ELF has a valid section table and truncated tables remain rejected', {
+  skip: process.platform !== 'linux' ? 'Linux readelf fixture' : false,
+}, (context) => {
+  const directory = mkdtempSync(join(tmpdir(), 'identity-elf-'));
+  context.after(() => rmSync(directory, { recursive: true, force: true }));
+  const path = join(directory, 'fixture.so');
+  const bytes = elfFixture();
+  writeFileSync(path, bytes);
+  const inspect = () => spawnSync('readelf', ['-W', '-h', '-l', '-d', '-V', path], {
+    encoding: 'utf8', env: { ...process.env, LC_ALL: 'C' },
+  });
+  const valid = inspect();
+  assert.equal(valid.status, 0, valid.error?.message ?? valid.stderr);
+  assert.equal(valid.stderr, '');
+  assert.match(valid.stdout, /^\s+LOAD\s/m);
+  writeFileSync(path, bytes.subarray(0, bytes.length - 1));
+  const invalid = inspect();
+  assert.ok(invalid.status !== 0 || invalid.stderr.trim(), 'truncated ELF section table must fail inspection');
+});
 
 function writeRuntimeFixture(root) {
   const files = {
@@ -235,7 +256,7 @@ test('Linux AppDir audit requires desktop integration with the neutral runtime',
   mkdirSync(iconDir, { recursive: true });
   const main = join(binDir, IDENTITY.mainBinary);
   const bridge = join(binDir, IDENTITY.bridgeBinary);
-  writeFileSync(main, Buffer.concat([elfFixture(), Buffer.from('embedded'), elfFixture(true)]));
+  writeFileSync(main, Buffer.concat([elfFixture(), Buffer.from('embedded'), elfFixture()]));
   writeFileSync(bridge, elfFixture());
   chmodSync(main, 0o755);
   chmodSync(bridge, 0o755);
@@ -261,13 +282,14 @@ Type=Application
     kind: 'appdir',
     sourceCommit: null,
   });
-  assert.equal(manifest.passed, true);
+  assert.equal(manifest.passed, true, JSON.stringify(manifest.violations, null, 2));
   assert.equal(manifest.mainBinary, IDENTITY.mainBinary);
   assert.equal(manifest.bridgeBinary, IDENTITY.bridgeBinary);
   assert.equal(manifest.hashes[IDENTITY.bridgeBinary].length, 64);
   renameSync(main, join(binDir, 'payload'));
   symlinkSync('payload', main);
-  assert.equal(auditArtifact({ platform: 'linux', sourceCommit: null, artifact: appDir }).passed, true);
+  const linkedManifest = auditArtifact({ platform: 'linux', sourceCommit: null, artifact: appDir });
+  assert.equal(linkedManifest.passed, true, JSON.stringify(linkedManifest.violations, null, 2));
   rmSync(main);
   renameSync(join(binDir, 'payload'), main);
 
