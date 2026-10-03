@@ -3,6 +3,7 @@ import { copyFileSync, writeFileSync, mkdirSync, existsSync, readFileSync } from
 import { join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import { recordSidecar } from './sidecar-provenance.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -33,6 +34,7 @@ const metadata = JSON.parse(execFileSync(
     'cargo',
     [
         'metadata',
+        '--locked',
         '--format-version', '1',
         '--no-deps',
         '--manifest-path', manifestPath,
@@ -49,6 +51,7 @@ console.log('🚀 Building simulated-game runtime...');
 try {
     execFileSync('cargo', [
         'build',
+        '--locked',
         '--manifest-path', manifestPath,
         '--package', 'discord-quest-runner',
         '--profile', 'sidecar-release',
@@ -65,6 +68,7 @@ try {
 
     console.log(`📦 Copying ${exeName} to src-tauri/data/...`);
     copyFileSync(sourceExe, destExe);
+    recordSidecar(rootDir, runnerBuildName, destExe, targetTriple, metadata, 'discord-quest-runner');
     if (targetTriple.includes('apple-darwin') && macosSigningEnabled) {
         execFileSync('/usr/bin/codesign', ['--force', '--sign', '-', destExe], { stdio: 'inherit' });
         execFileSync('/usr/bin/codesign', ['--verify', '--strict', '--verbose=2', destExe], { stdio: 'inherit' });

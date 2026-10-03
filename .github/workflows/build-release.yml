@@ -122,9 +122,13 @@ jobs:
             file \
             libxdo-dev \
             libssl-dev \
+            libnss3 \
             libayatana-appindicator3-dev \
             librsvg2-dev \
             patchelf \
+            binutils \
+            squashfs-tools \
+            python3 \
             xdg-utils \
             desktop-file-utils \
             xvfb \
@@ -162,6 +166,12 @@ jobs:
         with:
           workspaces: '. -> target'
     
+      - name: Validate Linux static ELF audit
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          python3 scripts/test_audit_linux_elf.py
+          node --test scripts/audit-packaged-identity.test.mjs
+
       - name: install frontend dependencies
         run: pnpm install --frozen-lockfile
 
@@ -188,10 +198,10 @@ jobs:
           cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 
       - name: Rust clippy
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
 
       - name: Rust tests
-        run: cargo test --workspace
+        run: cargo test --locked --workspace
 
       - name: Verify CDP core dependency boundary
         run: pnpm run check:cdp-core-deps
@@ -213,7 +223,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          args: ${{ matrix.args }}
+          args: ${{ matrix.args }} -- --locked
 
       - name: Verify unsigned macOS bundle identity and integrity
         if: matrix.platform == 'macos-15'
@@ -309,6 +319,7 @@ jobs:
           path: |
             target/release/bundle/deb/*.deb
             target/release/bundle/appimage/*.AppImage
+            build/*-provenance.json
             target/release/bundle/identity-manifest-linux-*.json
             target/release/bundle/identity-smoke-linux-*.json
 

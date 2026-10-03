@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { linuxElfContentHash } from './sidecar-provenance.mjs';
 
 import {
   auditArtifact,
+  APPIMAGE_MEDIA_FILES,
   containsProductToken,
   IDENTITY,
   incompatibleAppImageLibraries,
@@ -14,6 +16,8 @@ import {
   parseCodeIdentity,
   pngDimensions,
   relatedCodeIdentityViolations,
+  squashfsOffset,
+  sidecarProvenanceViolations,
   validateInternalName,
 } from './audit-packaged-identity.mjs';
 
@@ -73,21 +77,134 @@ test('AppImage audit detects Wayland client symlinks without following them', {
 });
 
 function writeMediaFixture(root) {
-  for (const file of [
-    'usr/lib/gstreamer-1.0/libgstapp.so',
-    'usr/lib/gstreamer-1.0/libgstautodetect.so',
-    'usr/lib/gstreamer-1.0/libgstcoreelements.so',
-    'usr/lib/gstreamer-1.0/libgstisomp4.so',
-    'usr/lib/gstreamer-1.0/libgstlibav.so',
-    'usr/lib/gstreamer-1.0/libgstplayback.so',
-    'usr/lib/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner',
-    'apprun-hooks/linuxdeploy-plugin-gstreamer.sh',
-  ]) {
+  for (const file of APPIMAGE_MEDIA_FILES) {
     const path = join(root, file);
     mkdirSync(join(path, '..'), { recursive: true });
-    writeFileSync(path, 'media fixture');
+    writeFileSync(path, file.endsWith('.sh') ? 'media fixture' : elfFixture());
+    chmodSync(path, 0o755);
   }
 }
+
+function elfFixture(sectionTable = false) {
+  const bytes = Buffer.alloc(sectionTable ? 184 : 120);
+  Buffer.from([0x7f, 0x45, 0x4c, 0x46, 2, 1, 1]).copy(bytes);
+  bytes.writeUInt16LE(3, 16);
+  bytes.writeUInt16LE(62, 18);
+  bytes.writeUInt32LE(1, 20);
+  bytes.writeBigUInt64LE(64n, 32);
+  bytes.writeUInt16LE(64, 52);
+  bytes.writeUInt16LE(56, 54);
+  bytes.writeUInt16LE(1, 56);
+  bytes.writeUInt16LE(64, 58);
+  bytes.writeUInt32LE(1, 64); // PT_LOAD
+  bytes.writeUInt32LE(5, 68); // read + execute
+  bytes.writeBigUInt64LE(BigInt(bytes.length), 96);
+  bytes.writeBigUInt64LE(BigInt(bytes.length), 104);
+  bytes.writeBigUInt64LE(4096n, 112);
+  if (sectionTable) {
+    bytes.writeBigUInt64LE(120n, 40);
+    bytes.writeUInt16LE(1, 60);
+  }
+  return bytes;
+}
+
+function writeRuntimeFixture(root) {
+  const files = {
+    'AppRun': '#!/bin/sh\nsource apprun-hooks/linuxdeploy-plugin-gstreamer.sh\nexec AppRun.wrapped\n',
+    'AppRun.wrapped': '#!/bin/sh\n# LD_LIBRARY_PATH=/usr/lib\n',
+    'apprun-hooks/linuxdeploy-plugin-gstreamer.sh': [
+      'export GST_PLUGIN_SYSTEM_PATH_1_0="${APPDIR}/usr/lib/gstreamer-1.0"',
+      'export GST_PLUGIN_PATH_1_0="${APPDIR}/usr/lib/gstreamer-1.0"',
+      'export GST_PLUGIN_SCANNER_1_0="${APPDIR}/usr/lib/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner"',
+    ].join('\n'),
+    'apprun-hooks/linuxdeploy-plugin-gtk.sh': [
+      'export GIO_MODULE_DIR="$APPDIR/usr/lib/gio/modules"',
+      'export GSETTINGS_SCHEMA_DIR="$APPDIR/usr/share/glib-2.0/schemas"',
+      'export GTK_IM_MODULE_FILE="$APPDIR/usr/lib/gtk-3.0/3.0.0/immodules.cache"',
+      'export GDK_PIXBUF_MODULE_FILE="$APPDIR/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache"',
+    ].join('\n'),
+    'usr/lib/gio/modules/libgiognutls.so': elfFixture(),
+    'usr/lib/gio/modules/giomodule.cache': 'libgiognutls.so: gio-tls-backend\n',
+    'usr/lib/gtk-3.0/3.0.0/immodules.cache': '# fixture\n',
+    'usr/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache': '# fixture\n',
+    'usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/WebKitWebProcess': elfFixture(),
+    'usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/WebKitNetworkProcess': elfFixture(),
+    'usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/injected-bundle/libwebkit2gtkinjectedbundle.so': elfFixture(),
+  };
+  mkdirSync(join(root, 'usr/share/glib-2.0/schemas'), { recursive: true });
+  for (const [file, content] of Object.entries(files)) {
+    const path = join(root, file);
+    mkdirSync(join(path, '..'), { recursive: true });
+    writeFileSync(path, content);
+    chmodSync(path, 0o755);
+  }
+}
+
+test('SquashFS extraction rejects false magic and ambiguous superblocks', () => {
+  const bytes = Buffer.alloc(256);
+  bytes.write('hsqs', 0);
+  bytes.write('hsqs', 100);
+  bytes.writeUInt32LE(131072, 112);
+  bytes.writeUInt16LE(1, 120);
+  bytes.writeUInt16LE(4, 128);
+  bytes.writeBigUInt64LE(96n, 140);
+  assert.equal(squashfsOffset(bytes), 100);
+  const ambiguous = Buffer.concat([bytes, bytes]);
+  assert.throws(() => squashfsOffset(ambiguous), /exactly one/);
+  assert.throws(() => squashfsOffset(Buffer.from('hsqs')), /exactly one/);
+});
+
+test('sidecar provenance rejects version, target, lockfile and source mismatches', () => {
+  const expected = { sourceCommit: 'fixture-commit', target: 'x86_64-unknown-linux-gnu',
+    cargoLockSha256: 'fixture-hash', applicationVersion: '0.10.7',
+    packageName: 'discord-quest-runner', packageVersion: '0.1.0' };
+  assert.deepEqual(sidecarProvenanceViolations(expected, expected), []);
+  for (const field of Object.keys(expected)) {
+    assert.deepEqual(sidecarProvenanceViolations({ ...expected, [field]: 'wrong' }, expected),
+      [`sidecar provenance mismatch: ${field}`]);
+  }
+});
+
+test('sidecar content digest tolerates loader metadata changes and detects code changes', () => {
+  const bytes = Buffer.alloc(512);
+  elfFixture().copy(bytes);
+  bytes.writeBigUInt64LE(256n, 40);
+  bytes.writeUInt16LE(4, 60);
+  bytes.writeUInt16LE(3, 62);
+  bytes.write('code', 128);
+  bytes.write('data', 132);
+  Buffer.from('\0.text\0.rodata\0.shstrtab\0').copy(bytes, 136);
+  for (const [index, name, offset, size] of [[1, 1, 128, 4], [2, 7, 132, 4], [3, 15, 136, 25]]) {
+    bytes.writeUInt32LE(name, 256 + index * 64);
+    bytes.writeBigUInt64LE(BigInt(offset), 256 + index * 64 + 24);
+    bytes.writeBigUInt64LE(BigInt(size), 256 + index * 64 + 32);
+  }
+  const original = linuxElfContentHash(bytes);
+  bytes[32] = 0; // changed program-header location, as a packager may rewrite
+  assert.equal(linuxElfContentHash(bytes), original);
+  bytes[128] ^= 1;
+  assert.notEqual(linuxElfContentHash(bytes), original);
+  assert.throws(() => linuxElfContentHash(bytes.subarray(0, 80)), /section table/);
+});
+
+test('media file checks accept internal links and reject escaped and broken links', {
+  skip: process.platform === 'win32' ? 'POSIX symlink fixture' : false,
+}, (context) => {
+  const root = mkdtempSync(join(tmpdir(), 'media-links-'));
+  context.after(() => rmSync(root, { recursive: true, force: true }));
+  writeMediaFixture(root);
+  const plugin = join(root, 'usr/lib/gstreamer-1.0/libgstapp.so');
+  rmSync(plugin);
+  writeFileSync(`${plugin}.1`, elfFixture());
+  symlinkSync('libgstapp.so.1', plugin);
+  assert.deepEqual(missingAppImageMediaFiles(root), []);
+  rmSync(plugin);
+  symlinkSync('/etc/passwd', plugin);
+  assert.ok(missingAppImageMediaFiles(root).includes('usr/lib/gstreamer-1.0/libgstapp.so'));
+  rmSync(plugin);
+  symlinkSync('missing.so', plugin);
+  assert.ok(missingAppImageMediaFiles(root).includes('usr/lib/gstreamer-1.0/libgstapp.so'));
+});
 
 test('AppImage media audit rejects core-only payloads and missing audio factories or scanner', (context) => {
   const root = mkdtempSync(join(tmpdir(), 'appimage-media-'));
@@ -106,7 +223,7 @@ test('AppImage media audit rejects core-only payloads and missing audio factorie
 });
 
 test('Linux AppDir audit requires desktop integration with the neutral runtime', {
-  skip: process.platform === 'win32' ? 'POSIX executable mode fixture' : false,
+  skip: process.platform !== 'linux' ? 'Linux readelf fixture' : false,
 }, (context) => {
   const appDir = mkdtempSync(join(tmpdir(), 'identity-appdir-'));
   context.after(() => rmSync(appDir, { recursive: true, force: true }));
@@ -118,8 +235,8 @@ test('Linux AppDir audit requires desktop integration with the neutral runtime',
   mkdirSync(iconDir, { recursive: true });
   const main = join(binDir, IDENTITY.mainBinary);
   const bridge = join(binDir, IDENTITY.bridgeBinary);
-  writeFileSync(main, 'fixture');
-  writeFileSync(bridge, 'fixture');
+  writeFileSync(main, Buffer.concat([elfFixture(), Buffer.from('embedded'), elfFixture(true)]));
+  writeFileSync(bridge, elfFixture());
   chmodSync(main, 0o755);
   chmodSync(bridge, 0o755);
   const pngHeader = Buffer.alloc(24);
@@ -136,27 +253,49 @@ Terminal=false
 Type=Application
 `);
   writeMediaFixture(appDir);
+  writeRuntimeFixture(appDir);
 
   const manifest = auditArtifact({
     platform: 'linux',
     artifact: appDir,
     kind: 'appdir',
+    sourceCommit: null,
   });
   assert.equal(manifest.passed, true);
   assert.equal(manifest.mainBinary, IDENTITY.mainBinary);
   assert.equal(manifest.bridgeBinary, IDENTITY.bridgeBinary);
   assert.equal(manifest.hashes[IDENTITY.bridgeBinary].length, 64);
+  renameSync(main, join(binDir, 'payload'));
+  symlinkSync('payload', main);
+  assert.equal(auditArtifact({ platform: 'linux', sourceCommit: null, artifact: appDir }).passed, true);
+  rmSync(main);
+  renameSync(join(binDir, 'payload'), main);
+
+  const scanner = join(appDir, 'usr/lib/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner');
+  chmodSync(scanner, 0o644);
+  assert.ok(auditArtifact({ platform: 'linux', sourceCommit: null, artifact: appDir }).violations.some((error) => error.includes('not executable')));
+  chmodSync(scanner, 0o755);
+  const hook = join(appDir, 'apprun-hooks/linuxdeploy-plugin-gstreamer.sh');
+  writeFileSync(hook, 'export GST_PLUGIN_PATH_1_0="/usr/lib/gstreamer-1.0"');
+  assert.ok(auditArtifact({ platform: 'linux', sourceCommit: null, artifact: appDir }).violations.some((error) => error.includes('incorrect media hook path')));
+  writeRuntimeFixture(appDir);
+  const wrongArchitecture = elfFixture();
+  wrongArchitecture.writeUInt16LE(183, 18);
+  writeFileSync(bridge, wrongArchitecture);
+  assert.ok(auditArtifact({ platform: 'linux', sourceCommit: null, artifact: appDir }).violations.some((error) => error.includes('wrong ELF architecture')));
+  writeFileSync(bridge, elfFixture());
 
   rmSync(join(appDir, 'usr/lib/gstreamer-1.0/libgstautodetect.so'));
-  const missingMedia = auditArtifact({ platform: 'linux', artifact: appDir, kind: 'appdir' });
+  const missingMedia = auditArtifact({ platform: 'linux', sourceCommit: null, artifact: appDir, kind: 'appdir' });
   assert.equal(missingMedia.passed, false);
   assert.ok(missingMedia.violations.some((violation) => violation.includes('libgstautodetect.so')));
   writeMediaFixture(appDir);
+  writeRuntimeFixture(appDir);
 
   const libraries = join(appDir, 'usr', 'lib');
   mkdirSync(libraries, { recursive: true });
   writeFileSync(join(libraries, 'libwayland-client.so.0'), 'incompatible library');
-  const incompatible = auditArtifact({ platform: 'linux', artifact: appDir, kind: 'appdir' });
+  const incompatible = auditArtifact({ platform: 'linux', sourceCommit: null, artifact: appDir, kind: 'appdir' });
   assert.equal(incompatible.passed, false);
   assert.ok(incompatible.violations.some((violation) => violation.includes('host Wayland client')));
 });

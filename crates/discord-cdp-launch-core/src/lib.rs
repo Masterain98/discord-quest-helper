@@ -2,6 +2,10 @@ mod cdp;
 mod channel;
 mod error;
 mod launcher;
+#[cfg(any(target_os = "linux", test))]
+mod linux_environment;
+#[cfg(target_os = "linux")]
+pub use linux_environment::linux_host_command;
 mod model;
 mod platform;
 mod processes;

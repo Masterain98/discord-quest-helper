@@ -292,7 +292,7 @@ fn flatpak_result(
 #[cfg(target_os = "linux")]
 pub(crate) fn flatpak_is_running(app_id: &str, command: Option<&str>) -> Result<bool, LaunchError> {
     let command = validated_flatpak_command(command)?;
-    let output = std::process::Command::new(command)
+    let output = crate::linux_host_command(command)
         .args(["ps", "--columns=application"])
         .output()
         .map_err(|source| LaunchError::ProcessInspection {
@@ -316,7 +316,7 @@ pub(crate) fn flatpak_is_running(
 #[cfg(target_os = "linux")]
 pub(crate) fn flatpak_kill(app_id: &str, command: Option<&str>) -> Result<(), LaunchError> {
     let command = validated_flatpak_command(command)?;
-    let output = std::process::Command::new(command)
+    let output = crate::linux_host_command(command)
         .args(["kill", app_id])
         .output()
         .map_err(|source| LaunchError::ProcessInspection {
@@ -345,7 +345,7 @@ pub(crate) fn flatpak_spawn(
     port: Option<u16>,
 ) -> Result<u32, LaunchError> {
     let command = validated_flatpak_command(command)?;
-    let mut process = std::process::Command::new(command);
+    let mut process = crate::linux_host_command(command);
     process.args(["run", app_id]);
     if let Some(port) = port {
         process.arg(format!("--remote-debugging-port={port}"));

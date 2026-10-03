@@ -487,7 +487,7 @@ fn installation_id_for_key(provider_id: &ProviderId, key: &str) -> InstallationI
 
 #[cfg(target_os = "linux")]
 fn flatpak_is_installed(app_id: &str) -> bool {
-    std::process::Command::new("flatpak")
+    crate::linux_host_command("flatpak")
         .args(["info", app_id])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())

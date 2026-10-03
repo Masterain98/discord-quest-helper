@@ -7,9 +7,21 @@
   "bundle": {
     "linux": {
       "appimage": {
-        "bundleMediaFramework": true
+        "bundleMediaFramework": true,
+        "files": {
+          "/usr/lib/libsoftokn3.so": "/usr/lib/x86_64-linux-gnu/libsoftokn3.so",
+          "/usr/lib/libfreeblpriv3.so": "/usr/lib/x86_64-linux-gnu/libfreeblpriv3.so"
+        }
       },
       "deb": {
+        "depends": [
+          "libssl3",
+          "ca-certificates",
+          "gstreamer1.0-plugins-base",
+          "gstreamer1.0-plugins-good",
+          "gstreamer1.0-plugins-bad",
+          "gstreamer1.0-libav"
+        ],
         "desktopTemplate": "linux/discord-quest-helper.desktop.hbs"
       }
     }

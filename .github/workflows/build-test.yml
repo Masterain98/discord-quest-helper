@@ -81,9 +81,13 @@ jobs:
             file \
             libxdo-dev \
             libssl-dev \
+            libnss3 \
             libayatana-appindicator3-dev \
             librsvg2-dev \
             patchelf \
+            binutils \
+            squashfs-tools \
+            python3 \
             xdg-utils \
             desktop-file-utils \
             libfuse2
@@ -92,6 +96,12 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: '. -> target'
+
+      - name: Validate Linux static ELF audit
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          python3 scripts/test_audit_linux_elf.py
+          node --test scripts/audit-packaged-identity.test.mjs
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
@@ -113,7 +123,7 @@ jobs:
         run: pnpm run build:cdp-launcher
 
       - name: Build Tauri packages
-        run: pnpm exec tauri build ${{ matrix.args }}
+        run: pnpm exec tauri build ${{ matrix.args }} -- --locked
 
       - name: Stage Windows portable package
         if: matrix.platform == 'windows-latest'
@@ -157,6 +167,11 @@ jobs:
           node scripts/audit-packaged-identity.mjs \
             --platform linux --artifact "$appimage" \
             --output target/release/bundle/identity-manifest-linux-appimage.json
+          deb="$(find target/release/bundle/deb -mindepth 1 -maxdepth 1 -type f -name '*.deb' -print -quit)"
+          test -n "$deb"
+          node scripts/audit-packaged-identity.mjs \
+            --platform linux --artifact "$deb" \
+            --output target/release/bundle/identity-manifest-linux-deb.json
           mkdir -p build
           tar -czf "build/discord-quest-helper-linux-x64-$BUILD_VERSION.AppImage.tar.gz" \
             -C "$appimage_dir" "$(basename "$appimage")"
@@ -193,6 +208,8 @@ jobs:
         with:
           name: test-linux-x64-${{ steps.version.outputs.value }}-${{ github.run_id }}
           path: |
+            target/release/bundle/identity-manifest-linux-*.json
+            build/*-provenance.json
             target/release/bundle/deb/*.deb
             build/discord-quest-helper-linux-x64-${{ steps.version.outputs.value }}.AppImage.tar.gz
           if-no-files-found: error

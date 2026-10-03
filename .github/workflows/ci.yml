@@ -76,9 +76,13 @@ jobs:
             file \
             libxdo-dev \
             libssl-dev \
+            libnss3 \
             libayatana-appindicator3-dev \
             librsvg2-dev \
             patchelf \
+            binutils \
+            squashfs-tools \
+            python3 \
             desktop-file-utils \
             xdg-utils \
             xvfb \
@@ -92,6 +96,12 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: '. -> target'
+
+      - name: Validate Linux static ELF audit
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          python3 scripts/test_audit_linux_elf.py
+          node --test scripts/audit-packaged-identity.test.mjs
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
@@ -119,10 +129,10 @@ jobs:
           cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 
       - name: Rust clippy
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
 
       - name: Rust tests
-        run: cargo test --workspace
+        run: cargo test --locked --workspace
 
       - name: Verify CDP core dependency boundary
         run: pnpm run check:cdp-core-deps
@@ -139,7 +149,7 @@ jobs:
 
       - name: Build Linux DEB and AppImage identity smoke artifacts
         if: matrix.platform == 'ubuntu-22.04'
-        run: pnpm exec tauri build --bundles deb,appimage
+        run: pnpm exec tauri build --bundles deb,appimage -- --locked
 
       - name: Audit and smoke-test Linux desktop identities
         if: matrix.platform == 'ubuntu-22.04'
@@ -174,7 +184,7 @@ jobs:
 
       - name: Build unsigned macOS app and DMG identity smoke artifacts
         if: matrix.platform == 'macos-15'
-        run: pnpm exec tauri build --no-sign --target ${{ matrix.cdp_target }} --bundles app,dmg
+        run: pnpm exec tauri build --no-sign --target ${{ matrix.cdp_target }} --bundles app,dmg -- --locked
 
       - name: Audit and smoke-test unsigned macOS bundle
         if: matrix.platform == 'macos-15'

@@ -393,7 +393,7 @@ fn process_is_alive(pid: u32) -> bool {
 }
 
 pub(crate) fn spawn(install: &DiscordInstall, mode: DiscordLaunchMode) -> Result<u32, LaunchError> {
-    let mut command = Command::new(&install.executable_path);
+    let mut command = crate::linux_host_command(&install.executable_path);
     apply_desktop_proxy_if_missing(&mut command);
     command
         .current_dir(&install.working_dir)
@@ -460,7 +460,7 @@ pub(crate) fn spawn_vesktop(
     install: &VesktopInstall,
     mode: DiscordLaunchMode,
 ) -> Result<u32, LaunchError> {
-    let mut command = Command::new(&install.executable_path);
+    let mut command = crate::linux_host_command(&install.executable_path);
     apply_desktop_proxy_if_missing(&mut command);
     command
         .current_dir(&install.working_dir)
@@ -576,7 +576,7 @@ fn parse_gvariant_string_list(value: &str) -> Option<String> {
 }
 
 fn gsettings_raw(schema: &str, key: &str) -> Option<String> {
-    let output = Command::new("gsettings")
+    let output = crate::linux_host_command("gsettings")
         .args(["get", schema, key])
         .output()
         .ok()?;
