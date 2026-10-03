@@ -15,7 +15,7 @@ importers:
         specifier: ^2.4.5
         version: 2.4.5
       '@tauri-apps/plugin-shell':
-        specifier: ^2.3.6
+        specifier: ^2.4.0
         version: 2.4.0
       '@vueuse/core':
         specifier: ^14.2.1
