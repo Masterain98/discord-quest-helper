@@ -72,7 +72,7 @@ jobs:
             x-target: 'win32-x64'
             cdp_target: 'x86_64-pc-windows-msvc'
             runner-ext: '.exe'
-          - platform: 'macos-14'  # Apple Silicon M1/M2 runner
+          - platform: 'macos-15'  # Apple Silicon runner
             args: '--no-sign --target aarch64-apple-darwin'
             x-target: 'darwin-arm64'
             cdp_target: 'aarch64-apple-darwin'
@@ -102,7 +102,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
-          targets: ${{ matrix.platform == 'macos-14' && 'aarch64-apple-darwin' || '' }}
+          targets: ${{ matrix.platform == 'macos-15' && 'aarch64-apple-darwin' || '' }}
 
       # Tauri 2 build dependencies for Debian/Ubuntu (WebKitGTK 4.1 baseline).
       - name: Install Linux dependencies
@@ -212,7 +212,7 @@ jobs:
           args: ${{ matrix.args }}
 
       - name: Verify unsigned macOS bundle identity and integrity
-        if: matrix.platform == 'macos-14'
+        if: matrix.platform == 'macos-15'
         shell: bash
         run: |
           app="$(find target/aarch64-apple-darwin/release/bundle/macos -maxdepth 1 -name '*.app' -type d | head -n 1)"
@@ -289,7 +289,7 @@ jobs:
 
       # Upload macOS artifact
       - name: Upload macOS artifact
-        if: matrix.platform == 'macos-14'
+        if: matrix.platform == 'macos-15'
         uses: actions/upload-artifact@v7
         with:
           name: tauri-macos-arm64-release

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch, onUnmounted } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import type { Quest } from '@/api/tauri'
 import { useQuestsStore } from '@/stores/quests'
 import { useAuthStore } from '@/stores/auth'
@@ -98,6 +98,36 @@ const isCompleted = computed(() => !!props.quest.user_status?.completed_at)
 const isPendingClaim = computed(() => isCompleted.value && !props.quest.user_status?.claimed_at)
 const isClaimed = computed(() => isCompleted.value && !!props.quest.user_status?.claimed_at)
 
+const hoverGlowKey = ref(0)
+const isHoverGlowPlaying = ref(false)
+const prefersReducedMotion = ref(false)
+let reducedMotionQuery: MediaQueryList | undefined
+
+function handleReducedMotionChange(event: MediaQueryListEvent) {
+  prefersReducedMotion.value = event.matches
+  if (event.matches) isHoverGlowPlaying.value = false
+}
+
+onMounted(() => {
+  reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
+  prefersReducedMotion.value = reducedMotionQuery.matches
+  reducedMotionQuery.addEventListener('change', handleReducedMotionChange)
+})
+
+watch([isActiveQuest, isCompleted], ([active, completed]) => {
+  if (active || completed) isHoverGlowPlaying.value = false
+}, { immediate: true })
+
+function playHoverGlow() {
+  if (isActiveQuest.value || isCompleted.value || prefersReducedMotion.value) return
+  hoverGlowKey.value += 1
+  isHoverGlowPlaying.value = true
+}
+
+function finishHoverGlow(event: AnimationEvent) {
+  if (event.animationName.startsWith('quest-card-glow-hover-fade')) isHoverGlowPlaying.value = false
+}
+
 const statusLabel = computed(() => {
   if (isNotAccepted.value) return t('filter.not_accepted')
   if (isPendingClaim.value) return t('filter.pending_claim')
@@ -171,7 +201,10 @@ watch(progress, (next) => {
   }
   _raf = requestAnimationFrame(step)
 })
-onUnmounted(() => { if (_raf !== null) cancelAnimationFrame(_raf) })
+onUnmounted(() => {
+  reducedMotionQuery?.removeEventListener('change', handleReducedMotionChange)
+  if (_raf !== null) cancelAnimationFrame(_raf)
+})
 
 // Single-gradient progress bar style: true blue→green color blend, no transparency tricks
 const progressBarStyle = computed(() => {
@@ -212,14 +245,28 @@ const activeTimeText = computed(() => {
 </script>
 
 <template>
-  <Card
-    :aria-busy="busy || undefined"
-    :class="[
-      'mb-4 overflow-hidden border-border/50 transition-all hover:shadow-md',
-      density === 'compact' && 'hover:shadow-sm',
-      (busy || isActiveQuest) && 'border-primary/50',
-    ]"
+  <div
+    class="quest-card-shell"
+    @mouseenter="playHoverGlow"
+    :class="{
+      'quest-card-shell--hover': isHoverGlowPlaying,
+      'quest-card-shell--active': isActiveQuest && !isCompleted,
+    }"
   >
+    <span
+      :key="hoverGlowKey"
+      class="quest-card-glow"
+      aria-hidden="true"
+      @animationend="finishHoverGlow"
+    />
+    <Card
+      :aria-busy="busy || undefined"
+      :class="[
+        'relative z-10 mb-0 overflow-hidden border-border/50 transition-all hover:shadow-md',
+        density === 'compact' && 'hover:shadow-sm',
+        (busy || isActiveQuest) && 'border-primary/50',
+      ]"
+    >
     <!-- Quest Banner/Hero Image -->
     <div
       v-if="quest.config.assets?.hero"
@@ -446,7 +493,8 @@ const activeTimeText = computed(() => {
     <CardFooter class="flex min-h-[4.5rem] flex-wrap gap-2 justify-end pt-2">
       <slot name="actions"></slot>
     </CardFooter>
-  </Card>
+    </Card>
+  </div>
 </template>
 
 <style scoped>
@@ -467,6 +515,80 @@ const activeTimeText = computed(() => {
   .quest-status-enter-from,
   .quest-status-leave-to {
     transform: none;
+  }
+}
+
+@property --quest-glow-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes quest-card-glow-hover-fade {
+  0% {
+    opacity: 0;
+  }
+  8% { opacity: 0.9; }
+  78% { opacity: 0.9; }
+  100% { opacity: 0; }
+}
+
+@keyframes quest-card-glow-cycle {
+  from { --quest-glow-angle: 0deg; }
+  to { --quest-glow-angle: 360deg; }
+}
+
+.quest-card-shell {
+  position: relative;
+  isolation: isolate;
+  margin-bottom: 1rem;
+}
+
+.quest-card-glow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.quest-card-glow::before {
+  position: absolute;
+  inset: -6px;
+  border-radius: calc(0.5rem + 6px);
+  background: conic-gradient(
+    from var(--quest-glow-angle, 0deg),
+    #38bdf8 0deg,
+    #818cf8 90deg,
+    #e879f9 180deg,
+    #fb923c 270deg,
+    #38bdf8 360deg
+  );
+  content: '';
+  filter: blur(18px) hue-rotate(10deg);
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  animation: none;
+}
+
+.quest-card-shell--hover .quest-card-glow::before {
+  animation:
+    quest-card-glow-cycle 4s linear 1,
+    quest-card-glow-hover-fade 4s ease-in-out 1 forwards;
+}
+
+.quest-card-shell--active .quest-card-glow::before {
+  opacity: 0.72;
+  animation: quest-card-glow-cycle 4s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .quest-card-shell--hover .quest-card-glow::before {
+    animation: none;
+    opacity: 0;
+  }
+
+  .quest-card-shell--active .quest-card-glow::before {
+    animation: none;
+    opacity: 0.72;
   }
 }
 </style>
