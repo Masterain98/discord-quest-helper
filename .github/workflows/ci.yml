@@ -32,7 +32,7 @@ jobs:
         include:
           - platform: 'windows-latest'
             cdp_target: 'x86_64-pc-windows-msvc'
-          - platform: 'macos-14' # Apple Silicon
+          - platform: 'macos-15' # Apple Silicon
             cdp_target: 'aarch64-apple-darwin'
           - platform: 'ubuntu-22.04'
             cdp_target: 'x86_64-unknown-linux-gnu'
@@ -57,7 +57,7 @@ jobs:
         with:
           toolchain: stable
           components: clippy, rustfmt
-          targets: ${{ matrix.platform == 'macos-14' && 'aarch64-apple-darwin' || '' }}
+          targets: ${{ matrix.platform == 'macos-15' && 'aarch64-apple-darwin' || '' }}
 
       # Tauri 2 build dependencies for Debian/Ubuntu (WebKitGTK 4.1 baseline).
       - name: Install Linux dependencies
@@ -169,11 +169,11 @@ jobs:
             target/release/bundle/identity-smoke-linux-appimage-wayland.json
 
       - name: Build unsigned macOS app and DMG identity smoke artifacts
-        if: matrix.platform == 'macos-14'
+        if: matrix.platform == 'macos-15'
         run: pnpm exec tauri build --no-sign --target ${{ matrix.cdp_target }} --bundles app,dmg
 
       - name: Audit and smoke-test unsigned macOS bundle
-        if: matrix.platform == 'macos-14'
+        if: matrix.platform == 'macos-15'
         shell: bash
         run: |
           app="$(find target/${{ matrix.cdp_target }}/release/bundle/macos -maxdepth 1 -name '*.app' -type d | head -n 1)"
@@ -191,7 +191,7 @@ jobs:
             target/${{ matrix.cdp_target }}/release/bundle/identity-smoke-macos-renamed.json
 
       - name: Upload desktop identity manifests
-        if: matrix.platform == 'ubuntu-22.04' || matrix.platform == 'macos-14'
+        if: matrix.platform == 'ubuntu-22.04' || matrix.platform == 'macos-15'
         uses: actions/upload-artifact@v7
         with:
           name: runtime-identity-${{ matrix.cdp_target }}

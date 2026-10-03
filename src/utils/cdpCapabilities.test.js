@@ -33,6 +33,11 @@ async function discover(required, options = { stream: false, game: true, discove
   }
   if (options.extraApi) modules.otherApi = { ...modules.api }
   if (options.proxyDecoy) modules.proxy = proxyFacade()
+  // Discord also caches a callable low-level HTTP library as a root export.
+  // It takes URL strings rather than the authenticated facade's options object.
+  const rawHttp = Object.assign(function request() { requests++ },
+    Object.fromEntries(['get', 'post', 'put', 'patch', 'del'].map(name => [name, () => { requests++ }])))
+  if (options.rawHttpOnly) delete modules.api
   function proxyFacade() {
     return new Proxy({}, { get: (_, name) => () => {
       if (['get', 'post', 'put', 'patch', 'del'].includes(name)) requests++
@@ -43,17 +48,32 @@ async function discover(required, options = { stream: false, game: true, discove
   if (options.stream) modules.streaming = new Streaming()
   const window = options.window ?? {}
   const chunks = []
-  chunks.push = () => ({ c: { one: { exports: modules } } })
+  chunks.push = () => ({ c: {
+    ...(options.rawHttp || options.rawHttpOnly ? { raw: { exports: rawHttp } } : {}),
+    one: { exports: modules },
+  } })
   const code = script.replace('__DQH_REQUIRED__', JSON.stringify(required))
     .replace('__DQH_DISCOVER_ONLY__', String(options.discoverOnly))
   const result = JSON.parse(await runInNewContext(code, { window, webpackChunkdiscord_app: chunks }))
-  return { result, window, requests }
+  return { result, window, requests, api: modules.api }
 }
 
 describe('on-demand CDP module discovery', () => {
   const video = [['api', 'get'], ['api', 'post'], ['QuestsStore', 'getQuest']]
+  it.each([true, false])('ignores the callable HTTP root export (discoverOnly=%s)', async discoverOnly => {
+    const { result, window, requests, api } = await discover(video, { rawHttp: true, discoverOnly })
+    expect(result.success).toBe(true)
+    expect(requests).toBe(0)
+    if (discoverOnly) expect(window.__dqh_cdp).toBeUndefined()
+    else expect(window.__dqh_cdp.api).toBe(api)
+  })
+  it('does not mistake a low-level HTTP library for the Discord API when the facade is absent', async () => {
+    const { result, requests } = await discover(video, { rawHttpOnly: true, discoverOnly: true })
+    expect(result.missing).toEqual(['api.get', 'api.post'])
+    expect(requests).toBe(0)
+  })
   it.each(['inherited', 'accessor'])('accepts %s HTTP methods without business requests', async apiShape => {
-    const { result, requests } = await discover(video, { apiShape, proxyDecoy: true, discoverOnly: true })
+    const { result, requests } = await discover(video, { apiShape, rawHttp: true, proxyDecoy: true, discoverOnly: true })
     expect(result.success).toBe(true)
     expect(requests).toBe(0)
   })
