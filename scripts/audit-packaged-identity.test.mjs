@@ -9,6 +9,7 @@ import {
   containsProductToken,
   IDENTITY,
   incompatibleAppImageLibraries,
+  missingAppImageMediaFiles,
   MACOS_SIGNING_ENABLED,
   parseCodeIdentity,
   pngDimensions,
@@ -71,6 +72,39 @@ test('AppImage audit detects Wayland client symlinks without following them', {
   assert.deepEqual(incompatibleAppImageLibraries(root), ['libwayland-client.so.0']);
 });
 
+function writeMediaFixture(root) {
+  for (const file of [
+    'usr/lib/gstreamer-1.0/libgstapp.so',
+    'usr/lib/gstreamer-1.0/libgstautodetect.so',
+    'usr/lib/gstreamer-1.0/libgstcoreelements.so',
+    'usr/lib/gstreamer-1.0/libgstisomp4.so',
+    'usr/lib/gstreamer-1.0/libgstlibav.so',
+    'usr/lib/gstreamer-1.0/libgstplayback.so',
+    'usr/lib/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner',
+    'apprun-hooks/linuxdeploy-plugin-gstreamer.sh',
+  ]) {
+    const path = join(root, file);
+    mkdirSync(join(path, '..'), { recursive: true });
+    writeFileSync(path, 'media fixture');
+  }
+}
+
+test('AppImage media audit rejects core-only payloads and missing audio factories or scanner', (context) => {
+  const root = mkdtempSync(join(tmpdir(), 'appimage-media-'));
+  context.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, 'usr', 'lib'), { recursive: true });
+  writeFileSync(join(root, 'usr', 'lib', 'libgstreamer-1.0.so.0'), 'core library');
+  assert.ok(missingAppImageMediaFiles(root).includes('usr/lib/gstreamer-1.0/libgstautodetect.so'));
+  writeMediaFixture(root);
+  assert.deepEqual(missingAppImageMediaFiles(root), []);
+  rmSync(join(root, 'usr/lib/gstreamer-1.0/libgstautodetect.so'));
+  writeFileSync(join(root, 'usr/lib/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner'), '');
+  assert.deepEqual(missingAppImageMediaFiles(root), [
+    'usr/lib/gstreamer-1.0/libgstautodetect.so',
+    'usr/lib/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner',
+  ]);
+});
+
 test('Linux AppDir audit requires desktop integration with the neutral runtime', {
   skip: process.platform === 'win32' ? 'POSIX executable mode fixture' : false,
 }, (context) => {
@@ -101,6 +135,7 @@ StartupWMClass=meridian
 Terminal=false
 Type=Application
 `);
+  writeMediaFixture(appDir);
 
   const manifest = auditArtifact({
     platform: 'linux',
@@ -111,6 +146,12 @@ Type=Application
   assert.equal(manifest.mainBinary, IDENTITY.mainBinary);
   assert.equal(manifest.bridgeBinary, IDENTITY.bridgeBinary);
   assert.equal(manifest.hashes[IDENTITY.bridgeBinary].length, 64);
+
+  rmSync(join(appDir, 'usr/lib/gstreamer-1.0/libgstautodetect.so'));
+  const missingMedia = auditArtifact({ platform: 'linux', artifact: appDir, kind: 'appdir' });
+  assert.equal(missingMedia.passed, false);
+  assert.ok(missingMedia.violations.some((violation) => violation.includes('libgstautodetect.so')));
+  writeMediaFixture(appDir);
 
   const libraries = join(appDir, 'usr', 'lib');
   mkdirSync(libraries, { recursive: true });

@@ -6,6 +6,9 @@
   },
   "bundle": {
     "linux": {
+      "appimage": {
+        "bundleMediaFramework": true
+      },
       "deb": {
         "desktopTemplate": "linux/discord-quest-helper.desktop.hbs"
       }

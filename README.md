@@ -61,6 +61,8 @@ chmod +x discord-quest-helper-Linux-x86_64-<version>.AppImage
 ./discord-quest-helper-Linux-x86_64-<version>.AppImage
 ```
 
+If an older AppImage becomes blank after login and logs `GStreamer element autoaudiosink not found`, see [Linux AppImage troubleshooting](docs/linux-appimage-compatibility.md). Rebuilt packages include the media plugins used by animated reward previews.
+
 > [!NOTE]
 > Release binaries are built and published by GitHub Actions from the repository source. Linux release packages target x86_64; macOS releases currently target Apple Silicon.
 

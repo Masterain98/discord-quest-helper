@@ -70,6 +70,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
+            gstreamer1.0-plugins-bad \
+            gstreamer1.0-libav \
             build-essential \
             pkg-config \
             curl \
@@ -150,6 +154,9 @@ jobs:
             echo "::error::No AppImage found in $appimage_dir"
             exit 1
           fi
+          node scripts/audit-packaged-identity.mjs \
+            --platform linux --artifact "$appimage" \
+            --output target/release/bundle/identity-manifest-linux-appimage.json
           mkdir -p build
           tar -czf "build/discord-quest-helper-linux-x64-$BUILD_VERSION.AppImage.tar.gz" \
             -C "$appimage_dir" "$(basename "$appimage")"

@@ -182,6 +182,26 @@ export function incompatibleAppImageLibraries(root) {
   return libraries.sort();
 }
 
+// WebKit creates a GStreamer pipeline even for muted MP4 reward previews.
+// The shared libraries alone are insufficient: bundle the element factories,
+// scanner and AppRun hook from Tauri's GStreamer linuxdeploy plugin as well.
+export function missingAppImageMediaFiles(root) {
+  const required = [
+    'usr/lib/gstreamer-1.0/libgstapp.so',
+    'usr/lib/gstreamer-1.0/libgstautodetect.so',
+    'usr/lib/gstreamer-1.0/libgstcoreelements.so',
+    'usr/lib/gstreamer-1.0/libgstisomp4.so',
+    'usr/lib/gstreamer-1.0/libgstlibav.so',
+    'usr/lib/gstreamer-1.0/libgstplayback.so',
+    'usr/lib/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner',
+    'apprun-hooks/linuxdeploy-plugin-gstreamer.sh',
+  ];
+  return required.filter((file) => {
+    const path = join(root, file);
+    return !existsSync(path) || !lstatSync(path).isFile() || statSync(path).size === 0;
+  });
+}
+
 function parseDesktopEntry(path) {
   const fields = {};
   for (const line of readFileSync(path, 'utf8').split(/\r?\n/)) {
@@ -320,6 +340,9 @@ function auditLinux(path, kind) {
     if (kind === 'appimage' || kind === 'appdir') {
       for (const library of incompatibleAppImageLibraries(root)) {
         violations.push(`AppImage must use the host Wayland client library: ${library}`);
+      }
+      for (const file of missingAppImageMediaFiles(root)) {
+        violations.push(`AppImage media framework is incomplete: missing ${file}`);
       }
     }
     if (!main) violations.push(`Linux payload must contain ${IDENTITY.mainBinary}`);
