@@ -100,6 +100,7 @@ jobs:
       - name: Validate Linux static ELF audit
         if: matrix.platform == 'ubuntu-22.04'
         run: |
+          node scripts/check-linux-bundle-inputs.mjs
           python3 scripts/test_audit_linux_elf.py
           node --test scripts/audit-packaged-identity.test.mjs
 

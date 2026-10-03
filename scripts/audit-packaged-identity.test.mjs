@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { linuxElfContentHash } from './sidecar-provenance.mjs';
+import { linuxBundleInputViolations } from './check-linux-bundle-inputs.mjs';
 
 import {
   auditArtifact,
@@ -108,6 +109,55 @@ function elfFixture() {
   bytes.writeBigUInt64LE(4096n, 112);
   return bytes;
 }
+
+test('Linux bundle inputs match the Ubuntu 22.04 NSS package layout', (context) => {
+  const root = mkdtempSync(join(tmpdir(), 'identity-bundle-inputs-'));
+  context.after(() => rmSync(root, { recursive: true, force: true }));
+  const config = JSON.parse(readFileSync(new URL('../src-tauri/tauri.linux.conf.json', import.meta.url), 'utf8'));
+  // Paths verified against the actual Jammy libnss3 package, not derived from config.
+  for (const source of ['usr/lib/x86_64-linux-gnu/nss/libsoftokn3.so', 'usr/lib/x86_64-linux-gnu/libfreeblpriv3.so']) {
+    const path = join(root, source);
+    mkdirSync(join(path, '..'), { recursive: true });
+    writeFileSync(path, elfFixture());
+  }
+  assert.deepEqual(linuxBundleInputViolations(config, { sourceRoot: root }), []);
+  config.bundle.linux.appimage.files['/usr/lib/libsoftokn3.so'] = '/usr/lib/x86_64-linux-gnu/libsoftokn3.so';
+  assert.match(linuxBundleInputViolations(config, { sourceRoot: root })[0], /libsoftokn3\.so.*ENOENT/);
+});
+
+test('Linux bundle input check rejects missing, empty, non-ELF and wrong-architecture libraries', (context) => {
+  const root = mkdtempSync(join(tmpdir(), 'identity-bundle-inputs-'));
+  context.after(() => rmSync(root, { recursive: true, force: true }));
+  const config = { bundle: { linux: { appimage: { files: { '/usr/lib/fixture.so': '/fixture.so' } } } } };
+  const check = () => linuxBundleInputViolations(config, { sourceRoot: root });
+  assert.match(check()[0], /ENOENT/);
+  writeFileSync(join(root, 'fixture.so'), '');
+  assert.match(check()[0], /nonempty regular file/);
+  writeFileSync(join(root, 'fixture.so'), 'not ELF');
+  assert.match(check()[0], /x86_64 ELF64/);
+  const bytes = elfFixture();
+  bytes.writeUInt16LE(183, 18);
+  writeFileSync(join(root, 'fixture.so'), bytes);
+  assert.match(check()[0], /x86_64 ELF64/);
+  writeFileSync(join(root, 'fixture.so'), elfFixture());
+  assert.deepEqual(check(), []);
+  rmSync(join(root, 'fixture.so'));
+  mkdirSync(join(root, 'fixture.so'));
+  assert.match(check()[0], /nonempty regular file/);
+});
+
+test('Linux bundle input check accepts distro library links and rejects broken links', {
+  skip: process.platform === 'win32' ? 'POSIX symlink fixture' : false,
+}, (context) => {
+  const root = mkdtempSync(join(tmpdir(), 'identity-bundle-inputs-'));
+  context.after(() => rmSync(root, { recursive: true, force: true }));
+  const config = { bundle: { linux: { appimage: { files: { '/usr/lib/fixture.so': '/fixture.so' } } } } };
+  writeFileSync(join(root, 'payload'), elfFixture());
+  symlinkSync('payload', join(root, 'fixture.so'));
+  assert.deepEqual(linuxBundleInputViolations(config, { sourceRoot: root }), []);
+  rmSync(join(root, 'payload'));
+  assert.match(linuxBundleInputViolations(config, { sourceRoot: root })[0], /ENOENT/);
+});
 
 test('synthetic ELF has a valid section table and truncated tables remain rejected', {
   skip: process.platform !== 'linux' ? 'Linux readelf fixture' : false,
