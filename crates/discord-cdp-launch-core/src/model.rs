@@ -266,6 +266,7 @@ pub struct LaunchResult {
     pub launched_path: PathBuf,
     pub channel: DiscordChannel,
     pub port: u16,
+    /// PID of the launched client when the platform provides one.
     pub pid: Option<u32>,
     pub cdp_connected: bool,
     pub provider_id: ProviderId,

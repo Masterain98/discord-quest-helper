@@ -50,9 +50,9 @@ impl PlatformBackend for FakePlatform {
         &self,
         _install: &DiscordInstall,
         _mode: DiscordLaunchMode,
-    ) -> Result<u32, LaunchError> {
+    ) -> Result<Option<u32>, LaunchError> {
         self.spawn_count.fetch_add(1, Ordering::SeqCst);
-        Ok(4242)
+        Ok(Some(4242))
     }
 }
 

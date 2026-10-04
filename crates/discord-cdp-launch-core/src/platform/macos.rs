@@ -94,7 +94,10 @@ pub(crate) fn terminate(channel: Option<DiscordChannel>) -> Result<(), LaunchErr
     first_error.map_or(Ok(()), Err)
 }
 
-pub(crate) fn spawn(install: &DiscordInstall, mode: DiscordLaunchMode) -> Result<u32, LaunchError> {
+pub(crate) fn spawn(
+    install: &DiscordInstall,
+    mode: DiscordLaunchMode,
+) -> Result<Option<u32>, LaunchError> {
     let bundle_path = macos_app_bundle_path(&install.executable_path);
     if let Some(bundle_path) = bundle_path {
         let mut command = Command::new("/usr/bin/open");
@@ -105,11 +108,10 @@ pub(crate) fn spawn(install: &DiscordInstall, mode: DiscordLaunchMode) -> Result
         return command
             .spawn()
             .map(|mut child| {
-                let pid = child.id();
                 std::thread::spawn(move || {
                     let _ = child.wait();
                 });
-                pid
+                None
             })
             .map_err(|source| LaunchError::SpawnFailed {
                 path: bundle_path.to_path_buf(),
@@ -130,7 +132,7 @@ pub(crate) fn spawn(install: &DiscordInstall, mode: DiscordLaunchMode) -> Result
             std::thread::spawn(move || {
                 let _ = child.wait();
             });
-            pid
+            Some(pid)
         })
         .map_err(|source| LaunchError::SpawnFailed {
             path: install.executable_path.clone(),
