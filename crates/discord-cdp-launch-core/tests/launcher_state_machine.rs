@@ -14,6 +14,7 @@ struct FakePlatform {
     running: Mutex<VecDeque<bool>>,
     terminate_count: AtomicUsize,
     spawn_count: AtomicUsize,
+    spawn_pid: Option<u32>,
 }
 
 impl FakePlatform {
@@ -23,7 +24,13 @@ impl FakePlatform {
             running: Mutex::new(running.iter().copied().collect()),
             terminate_count: AtomicUsize::new(0),
             spawn_count: AtomicUsize::new(0),
+            spawn_pid: Some(4242),
         }
+    }
+
+    fn with_spawn_pid(mut self, pid: Option<u32>) -> Self {
+        self.spawn_pid = pid;
+        self
     }
 }
 
@@ -52,7 +59,7 @@ impl PlatformBackend for FakePlatform {
         _mode: DiscordLaunchMode,
     ) -> Result<Option<u32>, LaunchError> {
         self.spawn_count.fetch_add(1, Ordering::SeqCst);
-        Ok(Some(4242))
+        Ok(self.spawn_pid)
     }
 }
 
@@ -254,6 +261,42 @@ fn spawn_waits_until_discord_target_is_ready() {
     let result = launch_with_backends(patient_options(), &platform, &probe).unwrap();
     assert!(result.cdp_connected);
     assert_eq!(result.pid, Some(4242));
+}
+
+#[test]
+fn spawn_without_pid_preserves_none_when_waiting_for_cdp() {
+    let platform =
+        FakePlatform::new(vec![install(DiscordChannel::Stable)], &[false]).with_spawn_pid(None);
+    let probe = FakeProbe::new(vec![
+        CdpProbeStatus::Unreachable,
+        CdpProbeStatus::Unreachable,
+        CdpProbeStatus::DiscordReady {
+            target_title: Some("Discord".to_string()),
+        },
+    ]);
+
+    let result = launch_with_backends(patient_options(), &platform, &probe).unwrap();
+
+    assert_eq!(result.outcome, LaunchOutcome::Spawned);
+    assert!(result.cdp_connected);
+    assert_eq!(result.pid, None);
+}
+
+#[test]
+fn spawn_without_pid_preserves_none_without_waiting_for_cdp() {
+    let platform =
+        FakePlatform::new(vec![install(DiscordChannel::Stable)], &[false]).with_spawn_pid(None);
+    let probe = FakeProbe::new(vec![CdpProbeStatus::Unreachable]);
+    let options = LaunchOptions {
+        wait_for_cdp: false,
+        ..patient_options()
+    };
+
+    let result = launch_with_backends(options, &platform, &probe).unwrap();
+
+    assert_eq!(result.outcome, LaunchOutcome::Spawned);
+    assert!(!result.cdp_connected);
+    assert_eq!(result.pid, None);
 }
 
 #[test]

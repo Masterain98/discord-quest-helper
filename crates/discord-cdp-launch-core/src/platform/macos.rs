@@ -101,22 +101,26 @@ pub(crate) fn spawn(
     let bundle_path = macos_app_bundle_path(&install.executable_path);
     if let Some(bundle_path) = bundle_path {
         let mut command = Command::new("/usr/bin/open");
-        command
-            .args(macos_bundle_launch_args(bundle_path, mode))
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
-        return command
-            .spawn()
-            .map(|mut child| {
-                std::thread::spawn(move || {
-                    let _ = child.wait();
-                });
-                None
-            })
+        command.args(macos_bundle_launch_args(bundle_path, mode));
+        let output = command
+            .output()
             .map_err(|source| LaunchError::SpawnFailed {
                 path: bundle_path.to_path_buf(),
                 source,
+            })?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            let details = if stderr.is_empty() {
+                format!("Launch Services exited with {}", output.status)
+            } else {
+                format!("Launch Services exited with {}: {stderr}", output.status)
+            };
+            return Err(LaunchError::ProcessTermination {
+                process: "/usr/bin/open".to_string(),
+                details,
             });
+        }
+        return Ok(None);
     }
 
     let mut command = Command::new(&install.executable_path);
