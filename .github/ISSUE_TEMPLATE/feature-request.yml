@@ -1,0 +1,54 @@
+name: Feature request
+description: Suggest a feature or improvement for Discord Quest Helper.
+title: "[Feature] "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Tell us what you want to achieve and how the app could help.
+        Report broken or unexpected behavior using the **Bug report** form.
+
+  - type: checkboxes
+    id: existing-issues
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and could not find the same request.
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What are you trying to do? Explain who would benefit and give a concrete example.
+      placeholder: When I ..., I have to ..., which makes it difficult to ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed behavior
+      description: Describe how you would like the app to work and where you would expect to find this feature.
+      placeholder: I would like to ... so that ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platforms
+    attributes:
+      label: Relevant platforms
+      description: Select any platforms relevant to your request, if applicable.
+      multiple: true
+      options:
+        - Windows
+        - macOS
+        - Linux
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives or workarounds
+      description: Have you tried another approach or considered a different solution?
+      placeholder: I currently work around this by ...

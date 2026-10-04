@@ -1,0 +1,108 @@
+name: Bug report
+description: Report something that is not working as expected in Discord Quest Helper.
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please include enough detail for us to reproduce the problem.
+        If possible, try the latest release before reporting and mention whether the problem still occurs.
+        **Never share Discord tokens, passwords, cookies, or other credentials.** Review logs and screenshots for personal information before posting.
+
+  - type: checkboxes
+    id: existing-issues
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and could not find a report of the same problem.
+          required: true
+
+  - type: textarea
+    id: actual-behavior
+    attributes:
+      label: What went wrong?
+      description: Describe what happened and include the exact visible error message, if any.
+      placeholder: When I ..., the app ...
+    validations:
+      required: true
+
+  - type: input
+    id: app-version
+    attributes:
+      label: App version
+      description: Find the version in Settings or Title. For a source build, include the commit or branch if known.
+      placeholder: e.g. 0.10.7 / commit 3ca12a6
+    validations:
+      required: true
+
+  - type: dropdown
+    id: operating-system
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - Other (describe below)
+    validations:
+      required: true
+
+  - type: input
+    id: system-details
+    attributes:
+      label: System version and architecture
+      description: For Linux, include your distribution and version. Mention your desktop environment if the issue concerns the app window.
+      placeholder: e.g. Windows 11 24H2 x64, macOS 15 arm64, or Ubuntu 24.04 x64 / GNOME
+    validations:
+      required: true
+
+  - type: dropdown
+    id: installation
+    attributes:
+      label: Installation method
+      options:
+        - Windows installer (MSI)
+        - Windows portable (ZIP)
+        - macOS (DMG)
+        - Linux (AppImage)
+        - Linux (DEB)
+        - Built from source
+        - Other / Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: discord-client
+    attributes:
+      label: Discord client
+      description: If relevant, include the client name, channel, and version. Mention any custom or portable installation.
+      placeholder: e.g. Discord Stable, Discord PTB, Discord Canary, or Vesktop (version)
+
+  - type: textarea
+    id: steps-to-reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Include the smallest set of steps that reproduces the problem and how often it occurs. For quest issues, include the quest name and type; for login issues, include the login method.
+      placeholder: |
+        1. Open ...
+        2. Select ...
+        3. Click ...
+        The problem happens every time / sometimes / only once.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen after following those steps?
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: If the app opens, reproduce the problem and use Settings > Diagnostics > Export Logs during the same session. Paste relevant lines here or attach the exported file in the next field. Remove credentials and personal information first.
+      render: text
