@@ -44,7 +44,7 @@ const CDP_CLEANUP_VERIFY_TIMEOUT_SECS: u64 = 10;
 const JS_INIT_QUEST_MODULES: &str = r#"
 (async () => {
     try {
-        const DQH_INIT_VERSION = 8;
+        const DQH_INIT_VERSION = 9;
         const required = __DQH_REQUIRED__;
         const discoverOnly = __DQH_DISCOVER_ONLY__;
         let wpRequire = webpackChunkdiscord_app.push([[Symbol()], {}, r => r]);
@@ -99,16 +99,18 @@ const JS_INIT_QUEST_MODULES: &str = r#"
                         }
 
                         // Native utils wrapper used by RunningGameStore to register
-                        // setObservedGamesCallback. Unique vs i18n decoys because it
-                        // also exposes getDiscordUtils + setGameCandidateOverrides.
-                        if (!modules.NativeUtils && typeof val?.getDiscordUtils === "function" && typeof val?.setObservedGamesCallback === "function" && typeof val?.setGameCandidateOverrides === "function") {
+                        // setObservedGamesCallback. Translation proxies also expose
+                        // these names, but claim an own getRunningGames property;
+                        // the native wrapper does not (same exclusion as HTTP).
+                        if (!modules.NativeUtils && !Object.hasOwn(val, "getRunningGames") && typeof val?.getDiscordUtils === "function" && typeof val?.setObservedGamesCallback === "function" && typeof val?.setGameCandidateOverrides === "function") {
                             modules.NativeUtils = val;
                         }
 
-                        // DetectableGameStore: getGameByExecutable distinguishes the
-                        // real module from i18n getDetectableGame decoys.
+                        // Translation exports synthesize ALL of these methods, even
+                        // through property descriptors. Only the real store exposes
+                        // an Array via its games getter; never call a games function.
                         if (!modules.DetectableGameStore && typeof val?.getDetectableGame === "function" && typeof val?.getGameByExecutable === "function" && typeof val?.findGame === "function") {
-                            modules.DetectableGameStore = val;
+                            if (Array.isArray(val.games)) modules.DetectableGameStore = val;
                         }
 
                         // Collect API candidates: any module with get + post functions
@@ -407,14 +409,18 @@ fn js_spoof_play_game_for(
         function detectableGamesPayload() {{
             const store = dqh.DetectableGameStore;
             if (!store) return [];
-            let raw = store.games;
-            if (typeof raw === "function") {{
-                try {{ raw = store.games(); }} catch(e) {{ return []; }}
-            }}
-            if (raw && typeof raw.values === "function") return Array.from(raw.values());
-            if (Array.isArray(raw)) return raw;
-            if (raw && typeof raw === "object") return Object.values(raw);
-            return [];
+            const raw = store.games;
+            // GAMES_DATABASE_UPDATE is persisted by Discord. A malformed row is
+            // inserted before its name is read, breaking every subsequent boot.
+            // Fail closed for the whole payload, including cached/legacy bridges.
+            if (!Array.isArray(raw) || !raw.every(game => game &&
+                typeof game.id === "string" && typeof game.name === "string" &&
+                Array.isArray(game.executables) && game.executables.every(exe =>
+                    exe && typeof exe.name === "string" && typeof exe.os === "string") &&
+                Array.isArray(game.aliases) && game.aliases.every(alias => typeof alias === "string") &&
+                Array.isArray(game.thirdPartySkus))) return [];
+            // The event consumes API names, whereas the store uses camelCase.
+            return raw.map(game => ({{ ...game, third_party_skus: game.thirdPartySkus }}));
         }}
         function reregisterObserver() {{
             try {{
@@ -1053,19 +1059,15 @@ const JS_CLEANUP_SPOOF: &str = r#"
             ));
         }
         function detectableGamesPayload(dqh) {
-            if (Array.isArray(dqh._detectableGamesPayload) && dqh._detectableGamesPayload.length) {
-                return dqh._detectableGamesPayload;
-            }
             const store = dqh.DetectableGameStore;
-            if (!store) return [];
-            let raw = store.games;
-            if (typeof raw === "function") {
-                try { raw = store.games(); } catch(e) { return []; }
-            }
-            if (raw && typeof raw.values === "function") return Array.from(raw.values());
-            if (Array.isArray(raw)) return raw;
-            if (raw && typeof raw === "object") return Object.values(raw);
-            return [];
+            const raw = store ? store.games : dqh._detectableGamesPayload;
+            if (!Array.isArray(raw) || !raw.every(game => game &&
+                typeof game.id === "string" && typeof game.name === "string" &&
+                Array.isArray(game.executables) && game.executables.every(exe =>
+                    exe && typeof exe.name === "string" && typeof exe.os === "string") &&
+                Array.isArray(game.aliases) && game.aliases.every(alias => typeof alias === "string") &&
+                Array.isArray(game.thirdPartySkus))) return [];
+            return raw.map(game => ({ ...game, third_party_skus: game.thirdPartySkus }));
         }
         async function cleanupOne(dqh, name) {
             dqh._spoofActive = false;
@@ -4788,7 +4790,7 @@ mod tests {
         assert!(JS_VERIFY_CLEANUP_STATE.contains("const val = exp[key];"));
         assert!(JS_INIT_QUEST_MODULES.contains("NativeUtils"));
         assert!(JS_INIT_QUEST_MODULES.contains("DetectableGameStore"));
-        assert!(JS_INIT_QUEST_MODULES.contains("const DQH_INIT_VERSION = 8"));
+        assert!(JS_INIT_QUEST_MODULES.contains("const DQH_INIT_VERSION = 9"));
     }
 
     fn snapshot_game_by_id<'a>(

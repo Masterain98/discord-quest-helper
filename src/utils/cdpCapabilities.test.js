@@ -20,6 +20,18 @@ async function discover(required, options = { stream: false, game: true, discove
     decoy: { get: () => { requests++; throw new Error('wrong facade') }, post: () => {} },
     api: Object.fromEntries(['get', 'post', 'put', 'patch', 'del'].map(name => [name, () => { requests++ }])),
   }
+  if (options.detectableDecoy) {
+    modules.detectableDecoy = new Proxy({}, {
+      get: () => () => ({ locale: 'en', ast: [] }),
+      getOwnPropertyDescriptor: () => ({ configurable: true, value: () => ({ locale: 'en', ast: [] }) }),
+    })
+  }
+  if (options.detectableStore) modules.detectableStore = {
+    games: [], getDetectableGame() {}, getGameByExecutable() {}, findGame() {},
+  }
+  if (options.detectableStore) modules.nativeUtils = {
+    getDiscordUtils() {}, setObservedGamesCallback() {}, setGameCandidateOverrides() {},
+  }
   if (options.apiShape === 'inherited') modules.api = Object.create(modules.api)
   if (options.apiShape === 'accessor') {
     modules.api = Object.defineProperties({}, Object.fromEntries(Object.entries(modules.api)
@@ -55,10 +67,18 @@ async function discover(required, options = { stream: false, game: true, discove
   const code = script.replace('__DQH_REQUIRED__', JSON.stringify(required))
     .replace('__DQH_DISCOVER_ONLY__', String(options.discoverOnly))
   const result = JSON.parse(await runInNewContext(code, { window, webpackChunkdiscord_app: chunks }))
-  return { result, window, requests, api: modules.api }
+  return { result, window, requests, api: modules.api, detectableStore: modules.detectableStore, nativeUtils: modules.nativeUtils }
 }
 
 describe('on-demand CDP module discovery', () => {
+  it.each([true, false])('rejects translation game databases (real store present=%s)', async detectableStore => {
+    const result = await discover(game, {
+      game: true, discoverOnly: false, detectableDecoy: true, detectableStore,
+    })
+    expect(result.result.success).toBe(true)
+    expect(result.window.__dqh_cdp.DetectableGameStore).toBe(result.detectableStore ?? null)
+    expect(result.window.__dqh_cdp.NativeUtils).toBe(result.nativeUtils ?? null)
+  })
   const video = [['api', 'get'], ['api', 'post'], ['QuestsStore', 'getQuest']]
   it.each([true, false])('ignores the callable HTTP root export (discoverOnly=%s)', async discoverOnly => {
     const { result, window, requests, api } = await discover(video, { rawHttp: true, discoverOnly })
