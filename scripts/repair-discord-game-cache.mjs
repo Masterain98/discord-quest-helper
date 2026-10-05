@@ -36,6 +36,30 @@ export function recoveryExpression(apply = false, expected = null) {
   }})(${JSON.stringify(apply)}, ${JSON.stringify(expected)})`
 }
 
+export function isRecoveryTarget(target, port) {
+  try {
+    const url = new URL(target.url)
+    const ws = new URL(target.webSocketDebuggerUrl)
+    return target.type === 'page' && url.protocol === 'https:' &&
+      ['discord.com', 'discordapp.com'].includes(url.hostname) &&
+      /^\/(app|channels|quest-home|store|shop)(\/|$)/.test(url.pathname) &&
+      ws.protocol === 'ws:' && ws.hostname === '127.0.0.1' && Number(ws.port) === port &&
+      !ws.username && !ws.password && !ws.search && !ws.hash && ws.pathname.startsWith('/devtools/page/')
+  } catch { return false }
+}
+
+export function dispatchCdpResponse(data, pending) {
+  let response
+  try { response = JSON.parse(data) } catch { return false }
+  if (!response || !Number.isSafeInteger(response.id) || response.id <= 0 || !pending.has(response.id)) {
+    return false
+  }
+  const handler = pending.get(response.id)
+  if (typeof handler !== 'function') return false
+  handler(response)
+  return true
+}
+
 async function main() {
   const args = process.argv.slice(2)
   if (args.some(arg => arg !== '--apply' && !/^--port=\d+$/.test(arg))) {
@@ -45,25 +69,12 @@ async function main() {
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw Error('Invalid CDP port')
   const response = await fetch(`http://127.0.0.1:${port}/json`, { signal: AbortSignal.timeout(5000) })
   if (!response.ok) throw Error(`CDP returned HTTP ${response.status}`)
-  const targets = (await response.json()).filter(target => {
-    try {
-      const url = new URL(target.url)
-      const ws = new URL(target.webSocketDebuggerUrl)
-      return target.type === 'page' && url.protocol === 'https:' &&
-        ['discord.com', 'discordapp.com'].includes(url.hostname) &&
-        /^\/(app|channels|quest-home)(\/|$)/.test(url.pathname) &&
-        ws.protocol === 'ws:' && ws.hostname === '127.0.0.1' && Number(ws.port) === port &&
-        !ws.username && !ws.password && !ws.search && !ws.hash && ws.pathname.startsWith('/devtools/page/')
-    } catch { return false }
-  })
+  const targets = (await response.json()).filter(target => isRecoveryTarget(target, port))
   if (targets.length !== 1) throw Error(`Expected one main Discord renderer; found ${targets.length}`)
   const ws = new WebSocket(targets[0].webSocketDebuggerUrl)
   const pending = new Map()
   let nextId = 0
-  ws.addEventListener('message', event => {
-    const response = JSON.parse(event.data)
-    pending.get(response.id)?.(response)
-  })
+  ws.addEventListener('message', event => { dispatchCdpResponse(event.data, pending) })
   const evaluate = expression => new Promise((resolve, reject) => {
     const id = ++nextId
     const timer = setTimeout(() => { pending.delete(id); reject(Error('CDP evaluation timed out')) }, 15000)
@@ -72,7 +83,9 @@ async function main() {
       pending.delete(id)
       const error = response.error?.message ?? response.result?.exceptionDetails?.exception?.description
       if (error) reject(Error(error))
-      else resolve(response.result.result.value)
+      else if (!response.result?.result || !Object.hasOwn(response.result.result, 'value')) {
+        reject(Error('Invalid CDP evaluation response'))
+      } else resolve(response.result.result.value)
     })
     ws.send(JSON.stringify({ id, method: 'Runtime.evaluate', params: {
       expression, returnByValue: true, awaitPromise: true,

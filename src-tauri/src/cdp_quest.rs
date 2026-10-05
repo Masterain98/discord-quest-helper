@@ -2092,8 +2092,10 @@ fn log_cdp_cleanup_failure(context: &str, err: &anyhow::Error) {
     );
 }
 
-async fn cdp_cleanup_best_effort(port: u16) {
-    let _ = cdp_cleanup_with_attempts(port, CDP_CLEANUP_ATTEMPTS).await;
+async fn cdp_cleanup_before_init(port: u16) -> Result<()> {
+    cdp_cleanup_with_attempts(port, CDP_CLEANUP_ATTEMPTS)
+        .await
+        .context("Failed to clear existing CDP spoof state before initialization")
 }
 
 pub(crate) async fn cdp_cleanup_after_stop(port: u16, context: &str, cancelled: bool) {
@@ -2521,7 +2523,7 @@ pub async fn complete_play_quest_via_cdp(
 
     // Defensive pre-cleanup: prevent stale spoof state from a previous run from leaking
     // into the new quest session.
-    cdp_cleanup_best_effort(port).await;
+    cdp_cleanup_before_init(port).await?;
     cdp_warmup_quest_route(port).await;
     cdp_prepare_quest_modules(port, "play quest").await?;
 
@@ -2730,7 +2732,7 @@ pub async fn complete_stream_quest_via_cdp(
     );
 
     // Defensive pre-cleanup: ensure previous spoof state is removed before applying new patches.
-    cdp_cleanup_best_effort(port).await;
+    cdp_cleanup_before_init(port).await?;
     cdp_warmup_quest_route(port).await;
     // Both patches are required; startup errors clean up and never reach polling.
     let stream_summary = cdp_start_stream_spoof(port, &app_id).await?;
@@ -2869,7 +2871,7 @@ pub async fn complete_video_quest_via_cdp(
     );
 
     // Defensive pre-cleanup for cross-quest consistency.
-    cdp_cleanup_best_effort(port).await;
+    cdp_cleanup_before_init(port).await?;
     cdp_warmup_quest_route(port).await;
     cdp_prepare_quest_modules(port, "video quest").await?;
 
@@ -3704,7 +3706,7 @@ pub async fn complete_play_activity_via_cdp(
         anyhow::bail!("PLAY_ACTIVITY intervals must be greater than zero");
     }
 
-    cdp_cleanup_best_effort(port).await;
+    cdp_cleanup_before_init(port).await?;
     cdp_warmup_quest_route(port).await;
     if let Err(error) = cdp_prepare_quest_modules_on_primary(port, "PLAY_ACTIVITY").await {
         cdp_cleanup_after_stop(port, "PLAY_ACTIVITY init failed", false).await;
@@ -4330,6 +4332,43 @@ mod tests {
 
     fn fake_script_reply(value: serde_json::Value) -> serde_json::Value {
         serde_json::json!({"id":1,"result":{"result":{"value":value.to_string()}}})
+    }
+
+    #[tokio::test]
+    async fn pre_init_cleanup_retries_and_refuses_residual_spoof_state() {
+        for clean_on_attempt in [Some(2), None] {
+            let counts = std::sync::Arc::new(std::sync::Mutex::new((0u32, 0u32)));
+            let requests = counts.clone();
+            let server = FakeQuestCdp::start(move |expression| {
+                let mut counts = requests.lock().unwrap();
+                if expression.contains("awaitedObserverRefresh") {
+                    counts.0 += 1;
+                    fake_script_reply(serde_json::json!({"success":true}))
+                } else if expression.contains("let dqhPresent = false") {
+                    counts.1 += 1;
+                    let dirty = clean_on_attempt.is_none_or(|attempt| counts.0 < attempt);
+                    fake_script_reply(serde_json::json!({"success":true,"dqhPresent":dirty,
+                        "spoofActive":dirty,"fakeGamePresent":dirty,"hasDispatchHook":dirty,
+                        "broadPatchCount":0,"observerHook":false,
+                        "fakeInRunningGames":dirty,"debugGamePresent":false}))
+                } else {
+                    panic!("initialization must not run during pre-cleanup");
+                }
+            });
+            let result = cdp_cleanup_before_init(server.port).await;
+            let expected_attempts = clean_on_attempt.unwrap_or(CDP_CLEANUP_ATTEMPTS);
+            assert_eq!(
+                *counts.lock().unwrap(),
+                (expected_attempts, expected_attempts)
+            );
+            if clean_on_attempt.is_some() {
+                result.unwrap();
+            } else {
+                let error = format!("{:#}", result.unwrap_err());
+                assert!(error.contains("before initialization"));
+                assert!(error.contains("spoof may still be active"));
+            }
+        }
     }
 
     #[tokio::test(start_paused = true)]
