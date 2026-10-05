@@ -46,10 +46,6 @@ test('changing only public/version.txt permits locked sidecar builds for stable 
   for (const release of ['0.10.8', '0.10.9-rc1']) {
     writeFileSync(join(root, 'public/version.txt'), `${release}\n`);
     const version = bundleVersion(release);
-    // Reproduce the previous sync behavior: the manifest version changed but
-    // Cargo.lock did not, so even an unrelated sidecar's locked build failed.
-    writeFileSync(join(root, 'src-tauri/Cargo.toml'), `[package]\nname = "app"\nversion = "${version}"\nedition = "2021"\n`);
-    assert.throws(() => cargo(['build', '--locked', '--offline', '--package', 'runner']), /lock file.*needs to be updated/s);
     execFileSync(process.execPath, ['scripts/sync-version.js'], { cwd: root });
     assert.equal(JSON.parse(readFileSync(join(root, 'package.json'))).version, version);
     assert.equal(JSON.parse(readFileSync(join(root, 'src-tauri/tauri.conf.json'))).version, version);

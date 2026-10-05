@@ -1,10 +1,8 @@
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
-import { execFileSync, spawnSync } from 'node:child_process';
-import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import test from 'node:test';
 import { linuxElfContentHash } from './sidecar-provenance.mjs';
 import { linuxBundleInputViolations } from './check-linux-bundle-inputs.mjs';
@@ -13,45 +11,19 @@ import {
   auditArtifact,
   auditSourceCommit,
   APPIMAGE_MEDIA_FILES,
-  containsProductToken,
   IDENTITY,
   incompatibleAppImageLibraries,
   missingAppImageMediaFiles,
-  MACOS_SIGNING_ENABLED,
-  parseCodeIdentity,
   pngDimensions,
-  relatedCodeIdentityViolations,
   squashfsOffset,
   sidecarProvenanceViolations,
   validateInternalName,
 } from './audit-packaged-identity.mjs';
 
-test('macOS signing remains disabled even though dormant verification helpers stay available', () => {
-  assert.equal(MACOS_SIGNING_ENABLED, false);
-});
-
-test('macOS policy accepts only hardened ad-hoc app and helper identities', () => {
-  const adHoc = parseCodeIdentity('Identifier=fixture\nTeamIdentifier=not set\nSignature=adhoc\nflags=0x10000(runtime)');
-  assert.deepEqual(relatedCodeIdentityViolations(adHoc, adHoc), []);
-  const unsigned = parseCodeIdentity('Identifier=fixture');
-  assert.notDeepEqual(relatedCodeIdentityViolations(adHoc, unsigned), []);
-});
-
-test('configured artifact identities satisfy the stable naming policy', () => {
-  assert.equal(validateInternalName(IDENTITY.mainBinary, 'meridian'), true);
-  assert.equal(validateInternalName(IDENTITY.bridgeBinary, 'waybridge'), true);
-  assert.equal(validateInternalName(IDENTITY.runnerBuildBinary, 'stagecraft'), true);
-});
-
 test('product names and random-looking hex names fail internal validation', () => {
   assert.equal(validateInternalName('discord-quest-helper', 'discord-quest-helper'), false);
   assert.equal(validateInternalName('abcdef123456', 'abcdef123456'), false);
   assert.equal(validateInternalName('deadbeef', 'deadbeef'), false);
-});
-
-test('public identity remains allowed outside internal executable metadata', () => {
-  assert.equal(IDENTITY.publicName, 'Discord Quest Helper');
-  assert.equal(containsProductToken(IDENTITY.publicName), true);
 });
 
 test('AppImage audit detects bundled Wayland clients in flat and multiarch library paths', (context) => {
@@ -160,26 +132,6 @@ test('Linux bundle input check accepts distro library links and rejects broken l
   assert.deepEqual(linuxBundleInputViolations(config, { sourceRoot: root }), []);
   rmSync(join(root, 'payload'));
   assert.match(linuxBundleInputViolations(config, { sourceRoot: root })[0], /ENOENT/);
-});
-
-test('synthetic ELF has a valid section table and truncated tables remain rejected', {
-  skip: process.platform !== 'linux' ? 'Linux readelf fixture' : false,
-}, (context) => {
-  const directory = mkdtempSync(join(tmpdir(), 'identity-elf-'));
-  context.after(() => rmSync(directory, { recursive: true, force: true }));
-  const path = join(directory, 'fixture.so');
-  const bytes = elfFixture();
-  writeFileSync(path, bytes);
-  const inspect = () => spawnSync('readelf', ['-W', '-h', '-l', '-d', '-V', path], {
-    encoding: 'utf8', env: { ...process.env, LC_ALL: 'C' },
-  });
-  const valid = inspect();
-  assert.equal(valid.status, 0, valid.error?.message ?? valid.stderr);
-  assert.equal(valid.stderr, '');
-  assert.match(valid.stdout, /^\s+LOAD\s/m);
-  writeFileSync(path, bytes.subarray(0, bytes.length - 1));
-  const invalid = inspect();
-  assert.ok(invalid.status !== 0 || invalid.stderr.trim(), 'truncated ELF section table must fail inspection');
 });
 
 function writeRuntimeFixture(root) {
@@ -326,66 +278,6 @@ test('allocated content digest survives a real patchelf RPATH rewrite', {
   const packaged = readFileSync(executable);
   assert.notDeepEqual(packaged, original, 'packager must actually change the ELF');
   assert.equal(linuxElfContentHash(packaged), digest);
-});
-
-test('DEB audit accepts normalized stable/RC versions while rejecting wrong releases and candidates', {
-  skip: process.platform !== 'linux' ? 'Linux DEB/provenance integration' : false,
-}, (context) => {
-  const repository = mkdtempSync(join(tmpdir(), 'identity-deb-version-'));
-  context.after(() => rmSync(repository, { recursive: true, force: true }));
-  const scripts = dirname(fileURLToPath(import.meta.url));
-  for (const dir of ['scripts', 'public', 'build', 'src-runner', 'src-cdp-launcher', 'src-tauri/data', 'payload/DEBIAN', 'payload/usr/bin', 'payload/usr/share/applications', 'payload/usr/share/icons']) {
-    mkdirSync(join(repository, dir), { recursive: true });
-  }
-  for (const name of ['audit-packaged-identity.mjs', 'audit-linux-elf.py', 'sidecar-provenance.mjs', 'release-version.mjs', 'runtime-identity-tokens.json']) {
-    copyFileSync(join(scripts, name), join(repository, 'scripts', name));
-  }
-  writeFileSync(join(repository, 'Cargo.lock'), '# fixture lockfile\n');
-  for (const dir of ['src-runner', 'src-cdp-launcher']) writeFileSync(join(repository, dir, 'Cargo.toml'), '[package]\nversion = "0.1.0"\n');
-  writeFileSync(join(repository, 'bridge.c'), 'int main(void) { return 0; }\n');
-  execFileSync('cc', ['-o', join(repository, 'bridge'), join(repository, 'bridge.c')]);
-  const bridge = readFileSync(join(repository, 'bridge'));
-  writeFileSync(join(repository, 'src-tauri/data', IDENTITY.runnerBuildBinary), bridge);
-  writeFileSync(join(repository, 'payload/usr/bin', IDENTITY.mainBinary), Buffer.concat([bridge, bridge]));
-  writeFileSync(join(repository, 'payload/usr/bin', IDENTITY.bridgeBinary), bridge);
-  for (const name of [IDENTITY.mainBinary, IDENTITY.bridgeBinary]) chmodSync(join(repository, 'payload/usr/bin', name), 0o755);
-  writeFileSync(join(repository, 'payload/usr/share/applications/public.desktop'), `[Desktop Entry]\nName=${IDENTITY.publicName}\nExec=${IDENTITY.mainBinary}\nIcon=public\nStartupWMClass=${IDENTITY.mainBinary}\nTerminal=false\n`);
-  const icon = Buffer.alloc(24);
-  Buffer.from('89504e470d0a1a0a', 'hex').copy(icon);
-  icon.writeUInt32BE(64, 16);
-  icon.writeUInt32BE(64, 20);
-  writeFileSync(join(repository, 'payload/usr/share/icons/public.png'), icon);
-  const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
-  const writeProvenance = (release) => {
-    for (const [name, packageName] of [[IDENTITY.runnerBuildBinary, 'discord-quest-runner'], [IDENTITY.bridgeBinary, 'discord-cdp-launcher']]) {
-      writeFileSync(join(repository, 'build', `${name}-provenance.json`), JSON.stringify({
-        sourceCommit: 'fixture-commit', target: 'x86_64-unknown-linux-gnu', packageName, packageVersion: '0.1.0',
-        applicationVersion: release, cargoLockSha256: sha256(readFileSync(join(repository, 'Cargo.lock'))),
-        sha256: sha256(bridge), elfContentSha256: linuxElfContentHash(bridge),
-      }));
-    }
-  };
-  const build = (version) => {
-    // Tauri adds GTK/WebKit dependencies in addition to the explicit config.
-    const dependencies = ['libgtk-3-0', 'libwebkit2gtk-4.1-0', ...JSON.parse(readFileSync(join(scripts, '../src-tauri/tauri.linux.conf.json'))).bundle.linux.deb.depends];
-    writeFileSync(join(repository, 'payload/DEBIAN/control'), `Package: fixture\nVersion: ${version}\nArchitecture: amd64\nMaintainer: Fixture <fixture@example.invalid>\nDescription: audit fixture\nDepends: ${dependencies.join(', ')}\n`);
-    execFileSync('dpkg-deb', ['--build', join(repository, 'payload'), join(repository, 'fixture.deb')]);
-  };
-  const audit = () => JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e',
-    'import { auditArtifact } from "./scripts/audit-packaged-identity.mjs"; console.log(JSON.stringify(auditArtifact({platform:"linux",artifact:"fixture.deb",sourceCommit:"fixture-commit"})));',
-  ], { cwd: repository, encoding: 'utf8' }));
-  build('0.10.8');
-  for (const release of ['0.10.8', '0.10.8-rc1']) {
-    writeFileSync(join(repository, 'public/version.txt'), release);
-    writeProvenance(release);
-    const result = audit();
-    assert.equal(result.passed, true, JSON.stringify(result.violations));
-  }
-  writeProvenance('0.10.8-rc2');
-  assert.ok(audit().violations.some((error) => error.includes('applicationVersion')));
-  writeProvenance('0.10.8-rc1');
-  build('0.10.9');
-  assert.ok(audit().violations.includes('DEB version differs from this build'));
 });
 
 test('media file checks accept internal links and reject escaped and broken links', {

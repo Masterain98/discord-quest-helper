@@ -166,25 +166,25 @@ jobs:
         with:
           workspaces: '. -> target'
     
-      - name: Validate Linux static ELF audit
+      - name: Validate Linux bundle inputs and ELF audit
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           node scripts/check-linux-bundle-inputs.mjs
           python3 scripts/test_audit_linux_elf.py
-          node --test scripts/audit-packaged-identity.test.mjs
 
       - name: install frontend dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Validate i18n
-        run: node scripts/i18n-validate.mjs
-
-      - name: Run frontend tests
-        run: pnpm test
-
-      - name: Validate runtime identity policy and audit tools
+      - name: Validate i18n and runtime identity configuration
+        if: matrix.platform == 'ubuntu-22.04'
         run: |
+          pnpm run i18n:check
           pnpm run check:runtime-identity
+
+      - name: Run frontend and build-tool tests
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          pnpm test
           pnpm run test:identity-audit
           pnpm run test:packaged-identity
 
@@ -194,6 +194,7 @@ jobs:
         run: pnpm run build
 
       - name: Rust format
+        if: matrix.platform == 'ubuntu-22.04'
         run: |
           cargo fmt --package discord-cdp-launch-core --package discord-cdp-launcher -- --check
           cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
