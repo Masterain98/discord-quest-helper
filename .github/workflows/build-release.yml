@@ -111,6 +111,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
+            gstreamer1.0-plugins-bad \
+            gstreamer1.0-libav \
             build-essential \
             pkg-config \
             curl \
@@ -118,9 +122,13 @@ jobs:
             file \
             libxdo-dev \
             libssl-dev \
+            libnss3 \
             libayatana-appindicator3-dev \
             librsvg2-dev \
             patchelf \
+            binutils \
+            squashfs-tools \
+            python3 \
             xdg-utils \
             desktop-file-utils \
             xvfb \
@@ -158,18 +166,25 @@ jobs:
         with:
           workspaces: '. -> target'
     
+      - name: Validate Linux bundle inputs and ELF audit
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          node scripts/check-linux-bundle-inputs.mjs
+          python3 scripts/test_audit_linux_elf.py
+
       - name: install frontend dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Validate i18n
-        run: node scripts/i18n-validate.mjs
-
-      - name: Run frontend tests
-        run: pnpm test
-
-      - name: Validate runtime identity policy and audit tools
+      - name: Validate i18n and runtime identity configuration
+        if: matrix.platform == 'ubuntu-22.04'
         run: |
+          pnpm run i18n:check
           pnpm run check:runtime-identity
+
+      - name: Run frontend and build-tool tests
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          pnpm test
           pnpm run test:identity-audit
           pnpm run test:packaged-identity
 
@@ -179,15 +194,16 @@ jobs:
         run: pnpm run build
 
       - name: Rust format
+        if: matrix.platform == 'ubuntu-22.04'
         run: |
           cargo fmt --package discord-cdp-launch-core --package discord-cdp-launcher -- --check
           cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 
       - name: Rust clippy
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
 
       - name: Rust tests
-        run: cargo test --workspace
+        run: cargo test --locked --workspace
 
       - name: Verify CDP core dependency boundary
         run: pnpm run check:cdp-core-deps
@@ -209,7 +225,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          args: ${{ matrix.args }}
+          args: ${{ matrix.args }} -- --locked
 
       - name: Verify unsigned macOS bundle identity and integrity
         if: matrix.platform == 'macos-15'
@@ -305,6 +321,7 @@ jobs:
           path: |
             target/release/bundle/deb/*.deb
             target/release/bundle/appimage/*.AppImage
+            build/*-provenance.json
             target/release/bundle/identity-manifest-linux-*.json
             target/release/bundle/identity-smoke-linux-*.json
 

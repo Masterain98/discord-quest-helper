@@ -7,6 +7,7 @@ import {
   lstatSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   readdirSync,
   rmSync,
   statSync,
@@ -15,6 +16,8 @@ import {
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { linuxElfContentHash } from './sidecar-provenance.mjs';
+import { bundleVersion } from './release-version.mjs';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const POLICY = JSON.parse(readFileSync(join(SCRIPT_DIR, 'runtime-identity-tokens.json'), 'utf8'));
@@ -137,12 +140,22 @@ function plistValue(app, key) {
   }
 }
 
-function executableFiles(root) {
+function executableFiles(root, includeInternalLinks = false) {
   const files = [];
   const visit = (directory) => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const path = join(directory, entry.name);
-      if (entry.isSymbolicLink()) continue;
+      if (entry.isSymbolicLink()) {
+        if (includeInternalLinks) {
+          try {
+            const target = realpathSync(path);
+            const inside = relative(realpathSync(root), target);
+            if (!inside.startsWith('..') && !inside.startsWith('/')
+              && statSync(target).isFile() && (statSync(target).mode & 0o111) !== 0) files.push(path);
+          } catch { /* The Linux payload audit reports broken/escaped links. */ }
+        }
+        continue;
+      }
       if (entry.isDirectory()) visit(path);
       else if (entry.isFile() && (statSync(path).mode & 0o111) !== 0) files.push(path);
     }
@@ -162,6 +175,57 @@ function filesWithSuffix(root, suffix) {
   };
   visit(root);
   return files;
+}
+
+// AppImages use the host Mesa/EGL stack. Bundling an older Wayland client
+// shadows its host counterpart and can abort WebKitWebProcess before rendering.
+// Inspect names as well as symlinks; do not follow links outside the AppDir.
+export function incompatibleAppImageLibraries(root) {
+  const libraries = [];
+  const visit = (directory) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) visit(path);
+      else if (/^libwayland-client\.so(?:\..*)?$/.test(entry.name)) {
+        libraries.push(relative(root, path));
+      }
+    }
+  };
+  visit(root);
+  return libraries.sort();
+}
+
+// WebKit creates a GStreamer pipeline even for muted MP4 reward previews.
+// The shared libraries alone are insufficient: bundle the element factories,
+// scanner and AppRun hook from Tauri's GStreamer linuxdeploy plugin as well.
+export const APPIMAGE_MEDIA_FILES = Object.freeze([
+    'usr/lib/gstreamer-1.0/libgstapp.so',
+    'usr/lib/gstreamer-1.0/libgstautodetect.so',
+    'usr/lib/gstreamer-1.0/libgstcoreelements.so',
+    'usr/lib/gstreamer-1.0/libgstisomp4.so',
+    'usr/lib/gstreamer-1.0/libgstlibav.so',
+    'usr/lib/gstreamer-1.0/libgstplayback.so',
+    'usr/lib/gstreamer-1.0/libgsttypefindfunctions.so',
+    'usr/lib/gstreamer-1.0/libgstvideoparsersbad.so',
+    'usr/lib/gstreamer-1.0/libgstvideoconvert.so',
+    'usr/lib/gstreamer-1.0/libgstaudioconvert.so',
+    'usr/lib/gstreamer-1.0/libgstaudioresample.so',
+    'usr/lib/gstreamer-1.0/libgstvolume.so',
+    'usr/lib/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner',
+    'apprun-hooks/linuxdeploy-plugin-gstreamer.sh',
+]);
+
+export function missingAppImageMediaFiles(root) {
+  return APPIMAGE_MEDIA_FILES.filter((file) => {
+    const path = join(root, file);
+    try {
+      const target = realpathSync(path);
+      const inside = relative(realpathSync(root), target);
+      return inside.startsWith('..') || inside.startsWith('/') || !statSync(target).isFile() || statSync(target).size === 0;
+    } catch {
+      return true;
+    }
+  });
 }
 
 function parseDesktopEntry(path) {
@@ -264,6 +328,23 @@ function detectLinuxKind(path, requested) {
   throw new Error('Could not determine Linux artifact kind');
 }
 
+export function squashfsOffset(bytes) {
+  // AppImage runtimes can contain the magic string before the actual superblock.
+  // Validate the v4 superblock, compression, block size and filesystem bounds.
+  const candidates = [];
+  for (let offset = bytes.indexOf('hsqs'); offset >= 0; offset = bytes.indexOf('hsqs', offset + 4)) {
+    if (offset + 96 > bytes.length) continue;
+    const blockSize = bytes.readUInt32LE(offset + 12);
+    const used = bytes.readBigUInt64LE(offset + 40);
+    if (bytes.readUInt16LE(offset + 28) === 4 && bytes.readUInt16LE(offset + 30) === 0
+      && bytes.readUInt16LE(offset + 20) >= 1 && bytes.readUInt16LE(offset + 20) <= 6
+      && blockSize >= 4096 && blockSize <= 1048576 && (blockSize & (blockSize - 1)) === 0
+      && used >= 96n && BigInt(offset) + used <= BigInt(bytes.length)) candidates.push(offset);
+  }
+  if (candidates.length !== 1) throw new Error('Expected exactly one valid SquashFS v4 superblock');
+  return candidates[0];
+}
+
 function extractLinuxArtifact(path, kind, directory) {
   if (kind === 'appdir') return path;
   if (kind === 'deb') {
@@ -271,17 +352,28 @@ function extractLinuxArtifact(path, kind, directory) {
     return directory;
   }
   if (kind === 'appimage') {
-    execFileSync(path, ['--appimage-extract'], { cwd: directory, stdio: 'inherit' });
-    return join(directory, 'squashfs-root');
+    const root = join(directory, 'squashfs-root');
+    execFileSync('unsquashfs', ['-no-progress', '-o', String(squashfsOffset(readFileSync(path))), '-d', root, path], { stdio: ['ignore', 'ignore', 'pipe'] });
+    return root;
   }
   throw new Error(`Unsupported Linux artifact kind: ${kind}`);
 }
 
-function auditLinux(path, kind) {
+export function sidecarProvenanceViolations(provenance, expected, debVersion) {
+  const violations = ['sourceCommit', 'target', 'cargoLockSha256', 'applicationVersion', 'packageName', 'packageVersion']
+    .filter((field) => provenance[field] !== expected[field])
+    .map((field) => `sidecar provenance mismatch: ${field}`);
+  if (debVersion !== undefined && debVersion !== bundleVersion(provenance.applicationVersion)) {
+    violations.push('DEB version differs from this build');
+  }
+  return violations;
+}
+
+function auditLinux(path, kind, sourceCommit) {
   const temporary = mkdtempSync(join(tmpdir(), 'identity-package-'));
   try {
     const root = extractLinuxArtifact(path, kind, temporary);
-    const executables = executableFiles(root);
+    const executables = executableFiles(root, true);
     const names = executables.map((file) => basename(file));
     const main = executables.find((file) => basename(file) === IDENTITY.mainBinary) ?? null;
     const bridge = executables.find((file) => basename(file) === IDENTITY.bridgeBinary) ?? null;
@@ -299,6 +391,55 @@ function auditLinux(path, kind) {
       && fields.StartupWMClass === IDENTITY.mainBinary
       && fields.Terminal === 'false');
     const violations = [];
+    const control = kind === 'deb' ? Object.fromEntries(['Depends', 'Architecture', 'Version'].map((field) =>
+      [field, execFileSync('dpkg-deb', ['-f', path, field], { encoding: 'utf8' }).trim()])) : null;
+    const linuxRuntime = JSON.parse(execFileSync('python3', [
+      join(SCRIPT_DIR, 'audit-linux-elf.py'), root, kind,
+      ...(control ? ['--control', JSON.stringify(control)] : []),
+    ], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }));
+    violations.push(...linuxRuntime.violations);
+    const sidecars = [];
+    if (sourceCommit) {
+      const repository = resolve(SCRIPT_DIR, '..');
+      for (const name of [IDENTITY.runnerBuildBinary, IDENTITY.bridgeBinary]) {
+        const provenancePath = join(repository, 'build', `${name}-provenance.json`);
+        if (!existsSync(provenancePath)) {
+          violations.push(`missing build provenance: ${name}`);
+          continue;
+        }
+        const provenance = JSON.parse(readFileSync(provenancePath, 'utf8'));
+        const runner = name === IDENTITY.runnerBuildBinary;
+        const packageManifest = readFileSync(join(repository, runner ? 'src-runner' : 'src-cdp-launcher', 'Cargo.toml'), 'utf8');
+        violations.push(...sidecarProvenanceViolations(provenance, {
+          sourceCommit, target: 'x86_64-unknown-linux-gnu',
+          cargoLockSha256: sha256(join(repository, 'Cargo.lock')),
+          applicationVersion: readFileSync(join(repository, 'public', 'version.txt'), 'utf8').trim(),
+          packageName: runner ? 'discord-quest-runner' : 'discord-cdp-launcher',
+          packageVersion: /^version\s*=\s*"([^"]+)"/m.exec(packageManifest)?.[1],
+        }, control?.Version).map((error) => `${name}: ${error}`));
+        if (name === IDENTITY.bridgeBinary) {
+          if (!bridge || (kind === 'deb' ? sha256(bridge) !== provenance.sha256
+            : linuxElfContentHash(readFileSync(bridge)) !== provenance.elfContentSha256)) {
+            violations.push('packaged bridge differs from this build');
+          }
+          provenance.packagedSha256 = bridge ? sha256(bridge) : null;
+          provenance.verification = kind === 'deb' ? 'whole file' : 'ELF allocated sections except dynamic loader tables; loader metadata audited separately';
+        } else {
+          const runner = readFileSync(join(repository, 'src-tauri', 'data', IDENTITY.runnerBuildBinary));
+          if (!runner.length || createHash('sha256').update(runner).digest('hex') !== provenance.sha256
+            || !main || readFileSync(main).indexOf(runner) < 0) violations.push('embedded runner differs from this build');
+        }
+        sidecars.push({ name, ...provenance });
+      }
+    }
+    if (kind === 'appimage' || kind === 'appdir') {
+      for (const library of incompatibleAppImageLibraries(root)) {
+        violations.push(`AppImage must use the host Wayland client library: ${library}`);
+      }
+      for (const file of missingAppImageMediaFiles(root)) {
+        violations.push(`AppImage media framework is incomplete: missing ${file}`);
+      }
+    }
     if (!main) violations.push(`Linux payload must contain ${IDENTITY.mainBinary}`);
     if (!bridge) violations.push(`Linux payload must contain ${IDENTITY.bridgeBinary}`);
     if (internalTokenFiles.length) violations.push('executable filenames contain product tokens');
@@ -328,6 +469,17 @@ function auditLinux(path, kind) {
       icons,
       executableNames: [...new Set(names)].sort(),
       desktopEntries,
+      linuxRuntime,
+      evidence: {
+        sourceCommit: sourceCommit || null,
+        sourceVerification: sourceCommit ? 'CI checkout claim; payload hashes recorded separately' : 'not supplied',
+        artifactSha256: kind === 'appdir' ? null : sha256(path),
+        debControl: control,
+        sidecars,
+        sidecarVerification: sourceCommit ? 'checked against this checkout build inputs; see violations' : 'not verified: build inputs unavailable',
+        missingDependencies: linuxRuntime.missingDependencies,
+        hostDependencies: linuxRuntime.hostDependencies,
+      },
       knownResiduals: kind === 'appimage'
         ? ['outer AppImage filename and standard APPIMAGE/APPDIR/ARGV0 variables may retain public identity']
         : [],
@@ -342,13 +494,22 @@ export function auditArtifact(options) {
   const kind = options.platform === 'macos' ? 'app' : detectLinuxKind(options.artifact, options.kind);
   const result = options.platform === 'macos'
     ? auditMacApp(options.artifact)
-    : auditLinux(options.artifact, kind);
+    : auditLinux(options.artifact, kind, auditSourceCommit(options));
   return {
     schemaVersion: 1,
     generatedAt: new Date().toISOString(),
     ...result,
     passed: result.violations.length === 0,
   };
+}
+
+export function auditSourceCommit(options) {
+  if (options.sourceCommit !== undefined) return options.sourceCommit;
+  // Event SHAs may differ from checkout HEAD (PR merge refs or custom refs).
+  // Preserve optional provenance checks outside CI and explicit overrides.
+  return process.env.GITHUB_SHA
+    ? execFileSync('git', ['rev-parse', 'HEAD'], { cwd: resolve(SCRIPT_DIR, '..'), encoding: 'utf8' }).trim()
+    : undefined;
 }
 
 function main() {

@@ -39,7 +39,7 @@ const LINUX_ICON_NAME: &str = "com.masterain.discord-quest-helper.cdp";
 
 #[cfg(target_os = "linux")]
 fn zenity_icon_flag() -> &'static str {
-    let version = Command::new("zenity")
+    let version = discord_cdp_launch_core::linux_host_command("zenity")
         .arg("--version")
         .output()
         .ok()
@@ -65,7 +65,7 @@ fn zenity_icon_flag() -> &'static str {
 
 #[cfg(target_os = "linux")]
 fn zenity_dialog(kind: &str, title: &str, message: &str) -> Command {
-    let mut command = Command::new("zenity");
+    let mut command = discord_cdp_launch_core::linux_host_command("zenity");
     command.args([
         kind,
         "--title",
@@ -108,7 +108,7 @@ pub(crate) fn show_info_dialog(title: &str, message: &str) {
         ("kdialog", vec!["--title", title, "--msgbox", message]),
         ("xmessage", vec!["-title", title, "-center", message]),
     ] {
-        if Command::new(program)
+        if discord_cdp_launch_core::linux_host_command(program)
             .args(args)
             .status()
             .is_ok_and(|status| status.success())

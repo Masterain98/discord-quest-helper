@@ -1962,7 +1962,7 @@ async fn open_in_explorer(path: String) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     {
         println!("Opening file manager at: {}", path.display());
-        std::process::Command::new("xdg-open")
+        discord_cdp_launch_core::linux_host_command("xdg-open")
             .arg(&path)
             .spawn()
             .map_err(|e| format!("Failed to open directory: {}", e))?;
@@ -2087,7 +2087,7 @@ pub fn initialize_runtime_identity_and_run() {
 /// Configure the upstream-supported fallback before Tauri initializes GTK.
 #[cfg(target_os = "linux")]
 fn configure_linux_webkit_runtime() {
-    // Tauri's AppImage GTK hook currently forces GDK_BACKEND=x11. If no X11
+    // Older AppImage GTK hooks forced GDK_BACKEND=x11. If no X11
     // display exists but a Wayland socket was explicitly supplied, restore the
     // only usable backend before Tauri initializes GTK.
     if std::env::var_os("WAYLAND_DISPLAY").is_some()
@@ -3614,10 +3614,10 @@ fn create_platform_cdp_launcher_shortcut(
     })?;
 
     // Best-effort refresh of the desktop database; failure is non-fatal.
-    let _ = std::process::Command::new("update-desktop-database")
+    let _ = discord_cdp_launch_core::linux_host_command("update-desktop-database")
         .arg(&applications_dir)
         .status();
-    let _ = std::process::Command::new("gtk-update-icon-cache")
+    let _ = discord_cdp_launch_core::linux_host_command("gtk-update-icon-cache")
         .args(["-f", "-t"])
         .arg(&icon_theme_dir)
         .status();

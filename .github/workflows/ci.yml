@@ -1,7 +1,9 @@
 name: CI
 
 # Continuous integration checks for every pull request and develop push.
-# Release bundling stays in build-release.yml.
+# PR CI runs one representative launch on Linux and macOS.
+# Full Linux X11/Wayland package checks and distributable DMG builds stay in
+# build-release.yml; build-test.yml creates manual installable packages.
 on:
   pull_request:
     branches:
@@ -66,21 +68,28 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
+            gstreamer1.0-plugins-bad \
+            gstreamer1.0-libav \
             build-essential \
             curl \
             wget \
             file \
             libxdo-dev \
             libssl-dev \
+            libnss3 \
             libayatana-appindicator3-dev \
             librsvg2-dev \
             patchelf \
+            binutils \
+            squashfs-tools \
+            python3 \
             desktop-file-utils \
             xdg-utils \
             xvfb \
             xdotool \
             x11-utils \
-            weston \
             dbus-x11 \
             libfuse2
 
@@ -89,18 +98,27 @@ jobs:
         with:
           workspaces: '. -> target'
 
+      - name: Validate Linux bundle inputs and ELF audit
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          node scripts/check-linux-bundle-inputs.mjs
+          python3 scripts/test_audit_linux_elf.py
+
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Validate i18n
-        run: pnpm run i18n:check
-
-      - name: Run frontend tests
-        run: pnpm test
-
-      - name: Validate runtime identity policy and audit tools
+      - name: Validate i18n and runtime identity configuration
+        if: matrix.platform == 'ubuntu-22.04'
         run: |
+          pnpm run i18n:check
           pnpm run check:runtime-identity
+
+      # Audit tooling and version synchronization are platform-independent;
+      # Linux also runs the ELF/packager cases, so run this suite once.
+      - name: Run frontend and build-tool tests
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          pnpm test
           pnpm run test:identity-audit
           pnpm run test:packaged-identity
 
@@ -110,15 +128,16 @@ jobs:
         run: pnpm run build
 
       - name: Rust format
+        if: matrix.platform == 'ubuntu-22.04'
         run: |
           cargo fmt --package discord-cdp-launch-core --package discord-cdp-launcher -- --check
           cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 
       - name: Rust clippy
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
 
       - name: Rust tests
-        run: cargo test --workspace
+        run: cargo test --locked --workspace
 
       - name: Verify CDP core dependency boundary
         run: pnpm run check:cdp-core-deps
@@ -135,7 +154,7 @@ jobs:
 
       - name: Build Linux DEB and AppImage identity smoke artifacts
         if: matrix.platform == 'ubuntu-22.04'
-        run: pnpm exec tauri build --bundles deb,appimage
+        run: pnpm exec tauri build --bundles deb,appimage -- --locked
 
       - name: Audit and smoke-test Linux desktop identities
         if: matrix.platform == 'ubuntu-22.04'
@@ -151,26 +170,13 @@ jobs:
           node scripts/audit-packaged-identity.mjs \
             --platform linux --artifact "$appimage" \
             --output target/release/bundle/identity-manifest-linux-appimage.json
-          mkdir -p "$RUNNER_TEMP/deb-root"
-          dpkg-deb -x "$deb" "$RUNNER_TEMP/deb-root"
-          main_binary="$(node -p 'JSON.parse(require("fs").readFileSync("scripts/runtime-identity-tokens.json", "utf8")).identity.mainBinary')"
-          binary="$RUNNER_TEMP/deb-root/usr/bin/$main_binary"
-          dbus-run-session -- xvfb-run -a scripts/smoke-linux-runtime-identity.sh \
-            x11 --kind binary "$binary" \
-            target/release/bundle/identity-smoke-linux-deb-x11.json
-          dbus-run-session -- scripts/smoke-linux-runtime-identity.sh \
-            wayland --kind binary "$binary" \
-            target/release/bundle/identity-smoke-linux-deb-wayland.json
           dbus-run-session -- xvfb-run -a scripts/smoke-linux-runtime-identity.sh \
             x11 --kind appimage "$appimage" \
             target/release/bundle/identity-smoke-linux-appimage-x11.json
-          dbus-run-session -- scripts/smoke-linux-runtime-identity.sh \
-            wayland --kind appimage "$appimage" \
-            target/release/bundle/identity-smoke-linux-appimage-wayland.json
 
-      - name: Build unsigned macOS app and DMG identity smoke artifacts
+      - name: Build unsigned macOS app smoke artifact
         if: matrix.platform == 'macos-15'
-        run: pnpm exec tauri build --no-sign --target ${{ matrix.cdp_target }} --bundles app,dmg
+        run: pnpm exec tauri build --no-sign --target ${{ matrix.cdp_target }} --bundles app -- --locked
 
       - name: Audit and smoke-test unsigned macOS bundle
         if: matrix.platform == 'macos-15'
@@ -184,11 +190,6 @@ jobs:
             --output target/${{ matrix.cdp_target }}/release/bundle/identity-manifest-macos-smoke.json
           scripts/smoke-macos-runtime-identity.sh "$app" \
             target/${{ matrix.cdp_target }}/release/bundle/identity-smoke-macos.json
-          renamed_root="$(mktemp -d "$RUNNER_TEMP/runtime-identity-renamed.XXXXXX")"
-          renamed_app="$renamed_root/DQH.app"
-          cp -R "$app" "$renamed_app"
-          scripts/smoke-macos-runtime-identity.sh "$renamed_app" \
-            target/${{ matrix.cdp_target }}/release/bundle/identity-smoke-macos-renamed.json
 
       - name: Upload desktop identity manifests
         if: matrix.platform == 'ubuntu-22.04' || matrix.platform == 'macos-15'

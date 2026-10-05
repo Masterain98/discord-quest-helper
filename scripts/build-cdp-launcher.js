@@ -2,6 +2,7 @@ import { execFileSync } from 'child_process';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'fs';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
+import { recordSidecar } from './sidecar-provenance.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -34,6 +35,7 @@ const metadata = JSON.parse(execFileSync(
   'cargo',
   [
     'metadata',
+    '--locked',
     '--format-version', '1',
     '--no-deps',
     '--manifest-path', manifestPath,
@@ -80,6 +82,7 @@ console.log(`Building runtime bridge for ${targetTriple}...`);
 
 execFileSync('cargo', [
   'build',
+  '--locked',
   '--manifest-path', manifestPath,
   '--package', 'discord-cdp-launcher',
   '--profile', 'sidecar-release',
@@ -95,6 +98,7 @@ if (!existsSync(sourceExe)) {
 }
 
 copyFileSync(sourceExe, destExe);
+recordSidecar(rootDir, runtimeBridgeName, destExe, targetTriple, metadata, 'discord-cdp-launcher');
 
 if (targetTriple.includes('apple-darwin') && macosSigningEnabled) {
   execFileSync('/usr/bin/codesign', ['--force', '--sign', '-', destExe], { stdio: 'inherit' });
