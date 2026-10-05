@@ -359,10 +359,14 @@ function extractLinuxArtifact(path, kind, directory) {
   throw new Error(`Unsupported Linux artifact kind: ${kind}`);
 }
 
-export function sidecarProvenanceViolations(provenance, expected) {
-  return ['sourceCommit', 'target', 'cargoLockSha256', 'applicationVersion', 'packageName', 'packageVersion']
+export function sidecarProvenanceViolations(provenance, expected, debVersion) {
+  const violations = ['sourceCommit', 'target', 'cargoLockSha256', 'applicationVersion', 'packageName', 'packageVersion']
     .filter((field) => provenance[field] !== expected[field])
     .map((field) => `sidecar provenance mismatch: ${field}`);
+  if (debVersion !== undefined && debVersion !== bundleVersion(provenance.applicationVersion)) {
+    violations.push('DEB version differs from this build');
+  }
+  return violations;
 }
 
 function auditLinux(path, kind, sourceCommit) {
@@ -412,7 +416,7 @@ function auditLinux(path, kind, sourceCommit) {
           applicationVersion: readFileSync(join(repository, 'public', 'version.txt'), 'utf8').trim(),
           packageName: runner ? 'discord-quest-runner' : 'discord-cdp-launcher',
           packageVersion: /^version\s*=\s*"([^"]+)"/m.exec(packageManifest)?.[1],
-        }).map((error) => `${name}: ${error}`));
+        }, control?.Version).map((error) => `${name}: ${error}`));
         if (name === IDENTITY.bridgeBinary) {
           if (!bridge || (kind === 'deb' ? sha256(bridge) !== provenance.sha256
             : linuxElfContentHash(readFileSync(bridge)) !== provenance.elfContentSha256)) {
@@ -425,7 +429,6 @@ function auditLinux(path, kind, sourceCommit) {
           if (!runner.length || createHash('sha256').update(runner).digest('hex') !== provenance.sha256
             || !main || readFileSync(main).indexOf(runner) < 0) violations.push('embedded runner differs from this build');
         }
-        if (control && control.Version !== bundleVersion(provenance.applicationVersion)) violations.push('DEB version differs from this build');
         sidecars.push({ name, ...provenance });
       }
     }

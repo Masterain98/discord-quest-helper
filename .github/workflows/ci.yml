@@ -1,7 +1,9 @@
 name: CI
 
 # Continuous integration checks for every pull request and develop push.
-# Release bundling stays in build-release.yml.
+# PR CI runs one representative launch on Linux and macOS.
+# Full Linux X11/Wayland package checks and distributable DMG builds stay in
+# build-release.yml; build-test.yml creates manual installable packages.
 on:
   pull_request:
     branches:

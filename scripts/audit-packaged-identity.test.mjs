@@ -191,6 +191,18 @@ test('sidecar provenance rejects version, target, lockfile and source mismatches
   }
 });
 
+test('DEB audit accepts normalized release versions while rejecting a different candidate or package version', () => {
+  for (const applicationVersion of ['0.10.8', '0.10.8-rc1']) {
+    const expected = { applicationVersion };
+    assert.deepEqual(sidecarProvenanceViolations(expected, expected, '0.10.8'), []);
+    assert.deepEqual(sidecarProvenanceViolations(expected, expected, '0.10.9'),
+      ['DEB version differs from this build']);
+  }
+  assert.deepEqual(sidecarProvenanceViolations(
+    { applicationVersion: '0.10.8-rc2' }, { applicationVersion: '0.10.8-rc1' }, '0.10.8'),
+  ['sidecar provenance mismatch: applicationVersion']);
+});
+
 test('CI provenance uses checkout HEAD even when the event SHA differs, preserving explicit overrides', (context) => {
   const previous = process.env.GITHUB_SHA;
   const previousGitDir = process.env.GIT_DIR;
