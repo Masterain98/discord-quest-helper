@@ -85,7 +85,13 @@ pub trait PlatformBackend {
     fn find_installs(&self) -> Result<Vec<DiscordInstall>, LaunchError>;
     fn is_running(&self, channel: Option<DiscordChannel>) -> Result<bool, LaunchError>;
     fn terminate(&self, channel: Option<DiscordChannel>) -> Result<(), LaunchError>;
-    fn spawn(&self, install: &DiscordInstall, mode: DiscordLaunchMode) -> Result<u32, LaunchError>;
+    /// Launch the client and return its PID when the platform exposes it.
+    /// Bundle launch services may only expose their own short-lived PID.
+    fn spawn(
+        &self,
+        install: &DiscordInstall,
+        mode: DiscordLaunchMode,
+    ) -> Result<Option<u32>, LaunchError>;
 }
 
 pub fn find_discord_installs() -> Result<Vec<DiscordInstall>, LaunchError> {
@@ -612,13 +618,13 @@ where
     }
 
     let pid = platform.spawn(&install, DiscordLaunchMode::Cdp { port: options.port })?;
-    eprintln!("[cdp-launch] process spawned pid={pid}");
+    eprintln!("[cdp-launch] process spawned pid={pid:?}");
     if !options.wait_for_cdp {
         return Ok(result_for(
             &install,
             &options,
             LaunchOutcome::Spawned,
-            Some(pid),
+            pid,
             false,
         ));
     }
@@ -628,7 +634,7 @@ where
         &install,
         &options,
         LaunchOutcome::Spawned,
-        Some(pid),
+        pid,
         true,
     ))
 }

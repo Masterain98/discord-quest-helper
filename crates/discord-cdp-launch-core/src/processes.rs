@@ -927,10 +927,10 @@ mod tests {
             &self,
             install: &DiscordInstall,
             mode: DiscordLaunchMode,
-        ) -> Result<u32, LaunchError> {
+        ) -> Result<Option<u32>, LaunchError> {
             self.spawned.lock().unwrap().push((install.channel, mode));
             self.running.lock().unwrap().insert(install.channel, true);
-            Ok(1)
+            Ok(Some(1))
         }
     }
 
@@ -1060,9 +1060,9 @@ mod tests {
             &self,
             _install: &DiscordInstall,
             _mode: DiscordLaunchMode,
-        ) -> Result<u32, LaunchError> {
+        ) -> Result<Option<u32>, LaunchError> {
             *self.spawned.lock().unwrap() = true;
-            Ok(1)
+            Ok(Some(1))
         }
     }
 
@@ -1104,7 +1104,7 @@ mod tests {
             &self,
             _install: &DiscordInstall,
             _mode: DiscordLaunchMode,
-        ) -> Result<u32, LaunchError> {
+        ) -> Result<Option<u32>, LaunchError> {
             unreachable!()
         }
     }

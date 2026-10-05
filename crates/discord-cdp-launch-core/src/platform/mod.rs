@@ -27,8 +27,12 @@ impl PlatformBackend for SystemPlatform {
         windows::terminate(channel)
     }
 
-    fn spawn(&self, install: &DiscordInstall, mode: DiscordLaunchMode) -> Result<u32, LaunchError> {
-        windows::spawn(install, mode)
+    fn spawn(
+        &self,
+        install: &DiscordInstall,
+        mode: DiscordLaunchMode,
+    ) -> Result<Option<u32>, LaunchError> {
+        windows::spawn(install, mode).map(Some)
     }
 }
 
@@ -46,7 +50,11 @@ impl PlatformBackend for SystemPlatform {
         macos::terminate(channel)
     }
 
-    fn spawn(&self, install: &DiscordInstall, mode: DiscordLaunchMode) -> Result<u32, LaunchError> {
+    fn spawn(
+        &self,
+        install: &DiscordInstall,
+        mode: DiscordLaunchMode,
+    ) -> Result<Option<u32>, LaunchError> {
         macos::spawn(install, mode)
     }
 }
@@ -65,8 +73,12 @@ impl PlatformBackend for SystemPlatform {
         linux::terminate(channel)
     }
 
-    fn spawn(&self, install: &DiscordInstall, mode: DiscordLaunchMode) -> Result<u32, LaunchError> {
-        linux::spawn(install, mode)
+    fn spawn(
+        &self,
+        install: &DiscordInstall,
+        mode: DiscordLaunchMode,
+    ) -> Result<Option<u32>, LaunchError> {
+        linux::spawn(install, mode).map(Some)
     }
 }
 
@@ -88,7 +100,7 @@ impl PlatformBackend for SystemPlatform {
         &self,
         _install: &DiscordInstall,
         _mode: DiscordLaunchMode,
-    ) -> Result<u32, LaunchError> {
+    ) -> Result<Option<u32>, LaunchError> {
         unsupported::unsupported()
     }
 }

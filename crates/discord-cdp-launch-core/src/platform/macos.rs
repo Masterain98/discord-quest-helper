@@ -94,7 +94,35 @@ pub(crate) fn terminate(channel: Option<DiscordChannel>) -> Result<(), LaunchErr
     first_error.map_or(Ok(()), Err)
 }
 
-pub(crate) fn spawn(install: &DiscordInstall, mode: DiscordLaunchMode) -> Result<u32, LaunchError> {
+pub(crate) fn spawn(
+    install: &DiscordInstall,
+    mode: DiscordLaunchMode,
+) -> Result<Option<u32>, LaunchError> {
+    let bundle_path = macos_app_bundle_path(&install.executable_path);
+    if let Some(bundle_path) = bundle_path {
+        let mut command = Command::new("/usr/bin/open");
+        command.args(macos_bundle_launch_args(bundle_path, mode));
+        let output = command
+            .output()
+            .map_err(|source| LaunchError::SpawnFailed {
+                path: bundle_path.to_path_buf(),
+                source,
+            })?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            let details = if stderr.is_empty() {
+                format!("Launch Services exited with {}", output.status)
+            } else {
+                format!("Launch Services exited with {}: {stderr}", output.status)
+            };
+            return Err(LaunchError::ProcessTermination {
+                process: "/usr/bin/open".to_string(),
+                details,
+            });
+        }
+        return Ok(None);
+    }
+
     let mut command = Command::new(&install.executable_path);
     command
         .current_dir(&install.working_dir)
@@ -108,12 +136,34 @@ pub(crate) fn spawn(install: &DiscordInstall, mode: DiscordLaunchMode) -> Result
             std::thread::spawn(move || {
                 let _ = child.wait();
             });
-            pid
+            Some(pid)
         })
         .map_err(|source| LaunchError::SpawnFailed {
             path: install.executable_path.clone(),
             source,
         })
+}
+
+fn macos_app_bundle_path(executable_path: &std::path::Path) -> Option<&std::path::Path> {
+    executable_path
+        .parent()
+        .and_then(std::path::Path::parent)
+        .and_then(std::path::Path::parent)
+        .filter(|path| path.extension().is_some_and(|extension| extension == "app"))
+}
+
+fn macos_bundle_launch_args(
+    bundle_path: &std::path::Path,
+    mode: DiscordLaunchMode,
+) -> Vec<std::ffi::OsString> {
+    let mut args = vec![
+        "-n".into(),
+        "-a".into(),
+        bundle_path.as_os_str().to_owned(),
+        "--args".into(),
+    ];
+    args.extend(build_launch_args(mode));
+    args
 }
 
 fn process_names_for(channel: Option<DiscordChannel>) -> Vec<&'static str> {
@@ -174,4 +224,39 @@ pub(crate) fn spawn_vesktop(
             path: install.executable_path.clone(),
             source,
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{macos_app_bundle_path, macos_bundle_launch_args};
+    use crate::DiscordLaunchMode;
+    use std::path::Path;
+
+    #[test]
+    fn finds_app_bundle_for_inner_discord_executable() {
+        assert_eq!(
+            macos_app_bundle_path(Path::new(
+                "/Applications/Discord.app/Contents/MacOS/Discord"
+            )),
+            Some(Path::new("/Applications/Discord.app"))
+        );
+        assert_eq!(macos_app_bundle_path(Path::new("/opt/discord")), None);
+    }
+
+    #[test]
+    fn passes_the_requested_debugging_port_through_launch_services() {
+        assert_eq!(
+            macos_bundle_launch_args(
+                Path::new("/Applications/Discord.app"),
+                DiscordLaunchMode::Cdp { port: 9223 }
+            ),
+            vec![
+                "-n",
+                "-a",
+                "/Applications/Discord.app",
+                "--args",
+                "--remote-debugging-port=9223"
+            ]
+        );
+    }
 }
