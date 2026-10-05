@@ -1,11 +1,8 @@
 ## ✨ What's Changed
 
-1. Improved Discord compatibility and CDP connection reliability, with more accurate client detection and clearer login and connection errors.
-2. Reduced waiting when starting game quests, with fewer unnecessary page switches in Discord.
-3. Fixed quest cards disappearing when starting a quest or refreshing the list, and added smoother status transitions.
-4. Quests now stop cleanly if the Discord page they use closes or reloads, and returning Discord to normal mode is more reliable.
+1. Fixed an issue where game simulation in CDP mode could leave Discord stuck on a black screen, even after restarting Discord.
+2. Fixed Discord launch failures on macOS when entering CDP mode or returning to normal mode, contributed by @mlemors.
+3. Improved Linux AppImage compatibility to reduce startup crashes and gray screens after login, with more reliable Discord launching.
+4. Added an animated glow around active quest cards, making running quests easier to spot.
 5. Bumped default client config:
-    - client version to `1.0.9260`
-    - Electron version to `42.11.8`
-    - default client build number to `625378`
-    - native build number to `92473`
+    - default client build number to `627798`
