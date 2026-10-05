@@ -44,7 +44,7 @@ const CDP_CLEANUP_VERIFY_TIMEOUT_SECS: u64 = 10;
 const JS_INIT_QUEST_MODULES: &str = r#"
 (async () => {
     try {
-        const DQH_INIT_VERSION = 8;
+        const DQH_INIT_VERSION = 9;
         const required = __DQH_REQUIRED__;
         const discoverOnly = __DQH_DISCOVER_ONLY__;
         let wpRequire = webpackChunkdiscord_app.push([[Symbol()], {}, r => r]);
@@ -99,16 +99,18 @@ const JS_INIT_QUEST_MODULES: &str = r#"
                         }
 
                         // Native utils wrapper used by RunningGameStore to register
-                        // setObservedGamesCallback. Unique vs i18n decoys because it
-                        // also exposes getDiscordUtils + setGameCandidateOverrides.
-                        if (!modules.NativeUtils && typeof val?.getDiscordUtils === "function" && typeof val?.setObservedGamesCallback === "function" && typeof val?.setGameCandidateOverrides === "function") {
+                        // setObservedGamesCallback. Translation proxies also expose
+                        // these names, but claim an own getRunningGames property;
+                        // the native wrapper does not (same exclusion as HTTP).
+                        if (!modules.NativeUtils && !Object.hasOwn(val, "getRunningGames") && typeof val?.getDiscordUtils === "function" && typeof val?.setObservedGamesCallback === "function" && typeof val?.setGameCandidateOverrides === "function") {
                             modules.NativeUtils = val;
                         }
 
-                        // DetectableGameStore: getGameByExecutable distinguishes the
-                        // real module from i18n getDetectableGame decoys.
+                        // Translation exports synthesize ALL of these methods, even
+                        // through property descriptors. Only the real store exposes
+                        // an Array via its games getter; never call a games function.
                         if (!modules.DetectableGameStore && typeof val?.getDetectableGame === "function" && typeof val?.getGameByExecutable === "function" && typeof val?.findGame === "function") {
-                            modules.DetectableGameStore = val;
+                            if (Array.isArray(val.games)) modules.DetectableGameStore = val;
                         }
 
                         // Collect API candidates: any module with get + post functions
@@ -407,14 +409,18 @@ fn js_spoof_play_game_for(
         function detectableGamesPayload() {{
             const store = dqh.DetectableGameStore;
             if (!store) return [];
-            let raw = store.games;
-            if (typeof raw === "function") {{
-                try {{ raw = store.games(); }} catch(e) {{ return []; }}
-            }}
-            if (raw && typeof raw.values === "function") return Array.from(raw.values());
-            if (Array.isArray(raw)) return raw;
-            if (raw && typeof raw === "object") return Object.values(raw);
-            return [];
+            const raw = store.games;
+            // GAMES_DATABASE_UPDATE is persisted by Discord. A malformed row is
+            // inserted before its name is read, breaking every subsequent boot.
+            // Fail closed for the whole payload, including cached/legacy bridges.
+            if (!Array.isArray(raw) || !raw.every(game => game &&
+                typeof game.id === "string" && typeof game.name === "string" &&
+                Array.isArray(game.executables) && game.executables.every(exe =>
+                    exe && typeof exe.name === "string" && typeof exe.os === "string") &&
+                Array.isArray(game.aliases) && game.aliases.every(alias => typeof alias === "string") &&
+                Array.isArray(game.thirdPartySkus))) return [];
+            // The event consumes API names, whereas the store uses camelCase.
+            return raw.map(game => ({{ ...game, third_party_skus: game.thirdPartySkus }}));
         }}
         function reregisterObserver() {{
             try {{
@@ -1053,19 +1059,15 @@ const JS_CLEANUP_SPOOF: &str = r#"
             ));
         }
         function detectableGamesPayload(dqh) {
-            if (Array.isArray(dqh._detectableGamesPayload) && dqh._detectableGamesPayload.length) {
-                return dqh._detectableGamesPayload;
-            }
             const store = dqh.DetectableGameStore;
-            if (!store) return [];
-            let raw = store.games;
-            if (typeof raw === "function") {
-                try { raw = store.games(); } catch(e) { return []; }
-            }
-            if (raw && typeof raw.values === "function") return Array.from(raw.values());
-            if (Array.isArray(raw)) return raw;
-            if (raw && typeof raw === "object") return Object.values(raw);
-            return [];
+            const raw = store ? store.games : dqh._detectableGamesPayload;
+            if (!Array.isArray(raw) || !raw.every(game => game &&
+                typeof game.id === "string" && typeof game.name === "string" &&
+                Array.isArray(game.executables) && game.executables.every(exe =>
+                    exe && typeof exe.name === "string" && typeof exe.os === "string") &&
+                Array.isArray(game.aliases) && game.aliases.every(alias => typeof alias === "string") &&
+                Array.isArray(game.thirdPartySkus))) return [];
+            return raw.map(game => ({ ...game, third_party_skus: game.thirdPartySkus }));
         }
         async function cleanupOne(dqh, name) {
             dqh._spoofActive = false;
@@ -2090,8 +2092,10 @@ fn log_cdp_cleanup_failure(context: &str, err: &anyhow::Error) {
     );
 }
 
-async fn cdp_cleanup_best_effort(port: u16) {
-    let _ = cdp_cleanup_with_attempts(port, CDP_CLEANUP_ATTEMPTS).await;
+async fn cdp_cleanup_before_init(port: u16) -> Result<()> {
+    cdp_cleanup_with_attempts(port, CDP_CLEANUP_ATTEMPTS)
+        .await
+        .context("Failed to clear existing CDP spoof state before initialization")
 }
 
 pub(crate) async fn cdp_cleanup_after_stop(port: u16, context: &str, cancelled: bool) {
@@ -2519,7 +2523,7 @@ pub async fn complete_play_quest_via_cdp(
 
     // Defensive pre-cleanup: prevent stale spoof state from a previous run from leaking
     // into the new quest session.
-    cdp_cleanup_best_effort(port).await;
+    cdp_cleanup_before_init(port).await?;
     cdp_warmup_quest_route(port).await;
     cdp_prepare_quest_modules(port, "play quest").await?;
 
@@ -2728,7 +2732,7 @@ pub async fn complete_stream_quest_via_cdp(
     );
 
     // Defensive pre-cleanup: ensure previous spoof state is removed before applying new patches.
-    cdp_cleanup_best_effort(port).await;
+    cdp_cleanup_before_init(port).await?;
     cdp_warmup_quest_route(port).await;
     // Both patches are required; startup errors clean up and never reach polling.
     let stream_summary = cdp_start_stream_spoof(port, &app_id).await?;
@@ -2867,7 +2871,7 @@ pub async fn complete_video_quest_via_cdp(
     );
 
     // Defensive pre-cleanup for cross-quest consistency.
-    cdp_cleanup_best_effort(port).await;
+    cdp_cleanup_before_init(port).await?;
     cdp_warmup_quest_route(port).await;
     cdp_prepare_quest_modules(port, "video quest").await?;
 
@@ -3702,7 +3706,7 @@ pub async fn complete_play_activity_via_cdp(
         anyhow::bail!("PLAY_ACTIVITY intervals must be greater than zero");
     }
 
-    cdp_cleanup_best_effort(port).await;
+    cdp_cleanup_before_init(port).await?;
     cdp_warmup_quest_route(port).await;
     if let Err(error) = cdp_prepare_quest_modules_on_primary(port, "PLAY_ACTIVITY").await {
         cdp_cleanup_after_stop(port, "PLAY_ACTIVITY init failed", false).await;
@@ -4330,6 +4334,43 @@ mod tests {
         serde_json::json!({"id":1,"result":{"result":{"value":value.to_string()}}})
     }
 
+    #[tokio::test]
+    async fn pre_init_cleanup_retries_and_refuses_residual_spoof_state() {
+        for clean_on_attempt in [Some(2), None] {
+            let counts = std::sync::Arc::new(std::sync::Mutex::new((0u32, 0u32)));
+            let requests = counts.clone();
+            let server = FakeQuestCdp::start(move |expression| {
+                let mut counts = requests.lock().unwrap();
+                if expression.contains("awaitedObserverRefresh") {
+                    counts.0 += 1;
+                    fake_script_reply(serde_json::json!({"success":true}))
+                } else if expression.contains("let dqhPresent = false") {
+                    counts.1 += 1;
+                    let dirty = clean_on_attempt.is_none_or(|attempt| counts.0 < attempt);
+                    fake_script_reply(serde_json::json!({"success":true,"dqhPresent":dirty,
+                        "spoofActive":dirty,"fakeGamePresent":dirty,"hasDispatchHook":dirty,
+                        "broadPatchCount":0,"observerHook":false,
+                        "fakeInRunningGames":dirty,"debugGamePresent":false}))
+                } else {
+                    panic!("initialization must not run during pre-cleanup");
+                }
+            });
+            let result = cdp_cleanup_before_init(server.port).await;
+            let expected_attempts = clean_on_attempt.unwrap_or(CDP_CLEANUP_ATTEMPTS);
+            assert_eq!(
+                *counts.lock().unwrap(),
+                (expected_attempts, expected_attempts)
+            );
+            if clean_on_attempt.is_some() {
+                result.unwrap();
+            } else {
+                let error = format!("{:#}", result.unwrap_err());
+                assert!(error.contains("before initialization"));
+                assert!(error.contains("spoof may still be active"));
+            }
+        }
+    }
+
     #[tokio::test(start_paused = true)]
     async fn module_budget_excludes_verification_and_is_shared_by_both_scripts() {
         for script_delay_ms in [700, 1200] {
@@ -4788,7 +4829,7 @@ mod tests {
         assert!(JS_VERIFY_CLEANUP_STATE.contains("const val = exp[key];"));
         assert!(JS_INIT_QUEST_MODULES.contains("NativeUtils"));
         assert!(JS_INIT_QUEST_MODULES.contains("DetectableGameStore"));
-        assert!(JS_INIT_QUEST_MODULES.contains("const DQH_INIT_VERSION = 8"));
+        assert!(JS_INIT_QUEST_MODULES.contains("const DQH_INIT_VERSION = 9"));
     }
 
     fn snapshot_game_by_id<'a>(
