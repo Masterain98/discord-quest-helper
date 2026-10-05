@@ -70,6 +70,18 @@ class LinuxAuditTests(unittest.TestCase):
         result = self.check({"usr/bin/app": metadata(needed=["libc.so.6"], versionNeeds={"libc.so.6": ["GLIBC_2.36"]})})
         self.assertIn("glibc baseline", result["violations"][0])
 
+    def test_malformed_version_components_do_not_crash(self):
+        for version in ["GLIBC_2.", "GLIBC_2..36", "GLIBC_.", "GLIBCXX_3.", "CXXABI_1..13", "GLIBC_PRIVATE"]:
+            with self.subTest(version=version):
+                result = self.check({"usr/bin/app": metadata(needed=["libc.so.6"], versionNeeds={"libc.so.6": [version]})})
+                self.assertEqual(result["violations"], [])
+
+    def test_cpp_baselines_remain_enforced(self):
+        for version in ["GLIBCXX_3.4.31", "CXXABI_1.3.14"]:
+            with self.subTest(version=version):
+                result = self.check({"usr/bin/app": metadata(needed=["libstdc++.so.6"], versionNeeds={"libstdc++.so.6": [version]})})
+                self.assertTrue(any("C++ baseline" in error for error in result["violations"]))
+
     def test_origin_runpath(self):
         provider = self.provider("libfirst.so.1")
         result = self.check({"usr/lib/plugins/plugin.so": metadata(needed=["libfirst.so.1"], runpath=["$ORIGIN/.."]),

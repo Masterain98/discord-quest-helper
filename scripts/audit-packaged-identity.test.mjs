@@ -1,14 +1,17 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { linuxElfContentHash } from './sidecar-provenance.mjs';
 import { linuxBundleInputViolations } from './check-linux-bundle-inputs.mjs';
 
 import {
   auditArtifact,
+  auditSourceCommit,
   APPIMAGE_MEDIA_FILES,
   containsProductToken,
   IDENTITY,
@@ -236,26 +239,153 @@ test('sidecar provenance rejects version, target, lockfile and source mismatches
   }
 });
 
-test('sidecar content digest tolerates loader metadata changes and detects code changes', () => {
-  const bytes = Buffer.alloc(512);
+test('CI provenance uses checkout HEAD even when the event SHA differs, preserving explicit overrides', (context) => {
+  const previous = process.env.GITHUB_SHA;
+  const previousGitDir = process.env.GIT_DIR;
+  const root = mkdtempSync(join(tmpdir(), 'identity-checkout-'));
+  execFileSync('git', ['init', '--quiet', root]);
+  execFileSync('git', ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '--quiet', '--allow-empty', '--no-gpg-sign', '-m', 'Fixture checkout'], { cwd: root });
+  process.env.GIT_DIR = join(root, '.git');
+  context.after(() => {
+    if (previous === undefined) delete process.env.GITHUB_SHA;
+    else process.env.GITHUB_SHA = previous;
+    if (previousGitDir === undefined) delete process.env.GIT_DIR;
+    else process.env.GIT_DIR = previousGitDir;
+    rmSync(root, { recursive: true, force: true });
+  });
+  process.env.GITHUB_SHA = 'different-event-commit';
+  assert.equal(auditSourceCommit({}), execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim());
+  assert.equal(auditSourceCommit({ sourceCommit: 'explicit-commit' }), 'explicit-commit');
+  assert.equal(auditSourceCommit({ sourceCommit: null }), null);
+  delete process.env.GITHUB_SHA;
+  assert.equal(auditSourceCommit({}), undefined);
+});
+
+function contentElfFixture() {
+  const bytes = Buffer.alloc(2048);
   elfFixture().copy(bytes);
-  bytes.writeBigUInt64LE(256n, 40);
-  bytes.writeUInt16LE(4, 60);
-  bytes.writeUInt16LE(3, 62);
-  bytes.write('code', 128);
-  bytes.write('data', 132);
-  Buffer.from('\0.text\0.rodata\0.shstrtab\0').copy(bytes, 136);
-  for (const [index, name, offset, size] of [[1, 1, 128, 4], [2, 7, 132, 4], [3, 15, 136, 25]]) {
-    bytes.writeUInt32LE(name, 256 + index * 64);
-    bytes.writeBigUInt64LE(BigInt(offset), 256 + index * 64 + 24);
-    bytes.writeBigUInt64LE(BigInt(size), 256 + index * 64 + 32);
+  const sections = [
+    ['.text', 1, 6, 256, 4], ['.rodata', 1, 2, 260, 4],
+    ['.data', 1, 3, 264, 4], ['.init_array', 14, 3, 272, 8],
+    ['.bss', 8, 3, 9000, 16], ['.dynamic', 6, 3, 288, 16],
+    ['.shstrtab', 3, 0, 512, 0],
+  ];
+  const names = Buffer.from(`\0${sections.map(([name]) => name).join('\0')}\0`);
+  names.copy(bytes, 512);
+  sections.at(-1)[4] = names.length;
+  bytes.writeBigUInt64LE(1024n, 40);
+  bytes.writeUInt16LE(sections.length + 1, 60);
+  bytes.writeUInt16LE(sections.length, 62);
+  bytes.writeBigUInt64LE(BigInt(bytes.length), 96);
+  bytes.writeBigUInt64LE(10000n, 104);
+  bytes.write('code', 256);
+  bytes.write('data', 260);
+  sections.forEach(([name, type, flags, start, size], index) => {
+    const offset = 1024 + (index + 1) * 64;
+    bytes.writeUInt32LE(names.indexOf(`${name}\0`), offset);
+    bytes.writeUInt32LE(type, offset + 4);
+    bytes.writeBigUInt64LE(BigInt(flags), offset + 8);
+    bytes.writeBigUInt64LE(BigInt(start), offset + 16);
+    bytes.writeBigUInt64LE(BigInt(start), offset + 24);
+    bytes.writeBigUInt64LE(BigInt(size), offset + 32);
+  });
+  return bytes;
+}
+
+test('sidecar digest detects code, writable data, constructor pointers and zero-initialized sizes', () => {
+  const bytes = contentElfFixture();
+  const original = linuxElfContentHash(bytes);
+  for (const offset of [256, 260, 264, 272, 1024 + 5 * 64 + 32, 24]) {
+    const changed = Buffer.from(bytes);
+    changed[offset] ^= 1;
+    assert.notEqual(linuxElfContentHash(changed), original, `must detect mutation at ${offset}`);
   }
+});
+
+test('sidecar digest tolerates packaging layout changes and excludes independently audited loader tables', () => {
+  const bytes = contentElfFixture();
   const original = linuxElfContentHash(bytes);
   bytes[32] = 0; // changed program-header location, as a packager may rewrite
   assert.equal(linuxElfContentHash(bytes), original);
-  bytes[128] ^= 1;
-  assert.notEqual(linuxElfContentHash(bytes), original);
+  bytes[288] ^= 1; // dynamic table is covered by the separate loader audit
+  assert.equal(linuxElfContentHash(bytes), original);
   assert.throws(() => linuxElfContentHash(bytes.subarray(0, 80)), /section table/);
+});
+
+test('allocated content digest survives a real patchelf RPATH rewrite', {
+  skip: process.platform !== 'linux' ? 'Linux compiler/packager fixture' : false,
+}, (context) => {
+  const root = mkdtempSync(join(tmpdir(), 'identity-patchelf-'));
+  context.after(() => rmSync(root, { recursive: true, force: true }));
+  const executable = join(root, 'bridge');
+  writeFileSync(join(root, 'bridge.c'), 'volatile int value = 42; __attribute__((constructor)) void init(void) { value++; } int main(void) { return value; }\n');
+  execFileSync('cc', ['-o', executable, join(root, 'bridge.c')]);
+  const original = readFileSync(executable);
+  const digest = linuxElfContentHash(original);
+  execFileSync('patchelf', ['--set-rpath', '$ORIGIN/../lib', executable]);
+  const packaged = readFileSync(executable);
+  assert.notDeepEqual(packaged, original, 'packager must actually change the ELF');
+  assert.equal(linuxElfContentHash(packaged), digest);
+});
+
+test('DEB audit accepts normalized stable/RC versions while rejecting wrong releases and candidates', {
+  skip: process.platform !== 'linux' ? 'Linux DEB/provenance integration' : false,
+}, (context) => {
+  const repository = mkdtempSync(join(tmpdir(), 'identity-deb-version-'));
+  context.after(() => rmSync(repository, { recursive: true, force: true }));
+  const scripts = dirname(fileURLToPath(import.meta.url));
+  for (const dir of ['scripts', 'public', 'build', 'src-runner', 'src-cdp-launcher', 'src-tauri/data', 'payload/DEBIAN', 'payload/usr/bin', 'payload/usr/share/applications', 'payload/usr/share/icons']) {
+    mkdirSync(join(repository, dir), { recursive: true });
+  }
+  for (const name of ['audit-packaged-identity.mjs', 'audit-linux-elf.py', 'sidecar-provenance.mjs', 'release-version.mjs', 'runtime-identity-tokens.json']) {
+    copyFileSync(join(scripts, name), join(repository, 'scripts', name));
+  }
+  writeFileSync(join(repository, 'Cargo.lock'), '# fixture lockfile\n');
+  for (const dir of ['src-runner', 'src-cdp-launcher']) writeFileSync(join(repository, dir, 'Cargo.toml'), '[package]\nversion = "0.1.0"\n');
+  writeFileSync(join(repository, 'bridge.c'), 'int main(void) { return 0; }\n');
+  execFileSync('cc', ['-o', join(repository, 'bridge'), join(repository, 'bridge.c')]);
+  const bridge = readFileSync(join(repository, 'bridge'));
+  writeFileSync(join(repository, 'src-tauri/data', IDENTITY.runnerBuildBinary), bridge);
+  writeFileSync(join(repository, 'payload/usr/bin', IDENTITY.mainBinary), Buffer.concat([bridge, bridge]));
+  writeFileSync(join(repository, 'payload/usr/bin', IDENTITY.bridgeBinary), bridge);
+  for (const name of [IDENTITY.mainBinary, IDENTITY.bridgeBinary]) chmodSync(join(repository, 'payload/usr/bin', name), 0o755);
+  writeFileSync(join(repository, 'payload/usr/share/applications/public.desktop'), `[Desktop Entry]\nName=${IDENTITY.publicName}\nExec=${IDENTITY.mainBinary}\nIcon=public\nStartupWMClass=${IDENTITY.mainBinary}\nTerminal=false\n`);
+  const icon = Buffer.alloc(24);
+  Buffer.from('89504e470d0a1a0a', 'hex').copy(icon);
+  icon.writeUInt32BE(64, 16);
+  icon.writeUInt32BE(64, 20);
+  writeFileSync(join(repository, 'payload/usr/share/icons/public.png'), icon);
+  const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
+  const writeProvenance = (release) => {
+    for (const [name, packageName] of [[IDENTITY.runnerBuildBinary, 'discord-quest-runner'], [IDENTITY.bridgeBinary, 'discord-cdp-launcher']]) {
+      writeFileSync(join(repository, 'build', `${name}-provenance.json`), JSON.stringify({
+        sourceCommit: 'fixture-commit', target: 'x86_64-unknown-linux-gnu', packageName, packageVersion: '0.1.0',
+        applicationVersion: release, cargoLockSha256: sha256(readFileSync(join(repository, 'Cargo.lock'))),
+        sha256: sha256(bridge), elfContentSha256: linuxElfContentHash(bridge),
+      }));
+    }
+  };
+  const build = (version) => {
+    // Tauri adds GTK/WebKit dependencies in addition to the explicit config.
+    const dependencies = ['libgtk-3-0', 'libwebkit2gtk-4.1-0', ...JSON.parse(readFileSync(join(scripts, '../src-tauri/tauri.linux.conf.json'))).bundle.linux.deb.depends];
+    writeFileSync(join(repository, 'payload/DEBIAN/control'), `Package: fixture\nVersion: ${version}\nArchitecture: amd64\nMaintainer: Fixture <fixture@example.invalid>\nDescription: audit fixture\nDepends: ${dependencies.join(', ')}\n`);
+    execFileSync('dpkg-deb', ['--build', join(repository, 'payload'), join(repository, 'fixture.deb')]);
+  };
+  const audit = () => JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e',
+    'import { auditArtifact } from "./scripts/audit-packaged-identity.mjs"; console.log(JSON.stringify(auditArtifact({platform:"linux",artifact:"fixture.deb",sourceCommit:"fixture-commit"})));',
+  ], { cwd: repository, encoding: 'utf8' }));
+  build('0.10.8');
+  for (const release of ['0.10.8', '0.10.8-rc1']) {
+    writeFileSync(join(repository, 'public/version.txt'), release);
+    writeProvenance(release);
+    const result = audit();
+    assert.equal(result.passed, true, JSON.stringify(result.violations));
+  }
+  writeProvenance('0.10.8-rc2');
+  assert.ok(audit().violations.some((error) => error.includes('applicationVersion')));
+  writeProvenance('0.10.8-rc1');
+  build('0.10.9');
+  assert.ok(audit().violations.includes('DEB version differs from this build'));
 });
 
 test('media file checks accept internal links and reject escaped and broken links', {

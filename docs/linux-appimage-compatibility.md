@@ -27,8 +27,9 @@ On the Ubuntu build host, install the normal Tauri Linux build dependencies and:
 sudo apt install gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
   gstreamer1.0-plugins-bad gstreamer1.0-libav
 pnpm run tauri:build --bundles deb,appimage
+app_version="$(node -p 'JSON.parse(require("fs").readFileSync("src-tauri/tauri.conf.json", "utf8")).version')"
 node scripts/audit-packaged-identity.mjs --platform linux \
-  --artifact "target/release/bundle/appimage/Discord Quest Helper_0.10.7_amd64.AppImage"
+  --artifact "target/release/bundle/appimage/Discord Quest Helper_${app_version}_amd64.AppImage"
 ```
 
 See the [Tauri AppImage media documentation](https://tauri.app/distribute/appimage/#gstreamer-media-framework-support) and [Issue #188](https://github.com/Masterain98/discord-quest-helper/issues/188#issuecomment-5967091575).

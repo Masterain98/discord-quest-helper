@@ -5,19 +5,21 @@
  * pre-release suffix (e.g. -rc1, -beta2), and patches:
  *   - package.json           (npm "version" field)
  *   - src-tauri/Cargo.toml   (Cargo [package] version)
+ *   - Cargo.lock             (only this workspace package's version)
  *   - src-tauri/tauri.conf.json (Tauri "version" field)
  *
  * This ensures the Windows PE binary's FILEVERSION / PRODUCTVERSION
  * and the Rust env!("CARGO_PKG_VERSION") always match the real release
  * version (minus pre-release tags).
  *
- * Run automatically via the "build:runner" script before every
- * tauri:dev / tauri:build invocation.
+ * Run automatically before sidecar builds in tauri:dev / tauri:build
+ * and the release/manual-build workflows.
  */
 
 import { readFileSync, writeFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { bundleVersion, syncCargoLockVersion } from './release-version.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const rootDir = resolve(__dirname, '..');
@@ -32,15 +34,17 @@ if (!rawVersion) {
 }
 
 // Strip pre-release suffix: "0.9.0-rc2" → "0.9.0"
-const semver = rawVersion.split('-')[0];
-
-// Validate basic x.y.z shape
-if (!/^\d+\.\d+\.\d+$/.test(semver)) {
-    console.error(`❌ Invalid semver "${semver}" derived from "${rawVersion}"`);
-    process.exit(1);
-}
+const semver = bundleVersion(rawVersion);
 
 console.log(`🔄 Syncing version: ${rawVersion} → ${semver}`);
+
+// Update only the local package version. Keep every dependency resolution and
+// checksum intact so subsequent --locked builds still enforce reproducibility.
+const cargoPath = resolve(rootDir, 'src-tauri', 'Cargo.toml');
+const cargo = readFileSync(cargoPath, 'utf-8');
+const packageName = /^name\s*=\s*"([^"]+)"/m.exec(cargo)?.[1];
+const lockPath = resolve(rootDir, 'Cargo.lock');
+const updatedLock = syncCargoLockVersion(readFileSync(lockPath, 'utf-8'), packageName, semver);
 
 // ── 2. Patch package.json ────────────────────────────────────────────────────
 const pkgPath = resolve(rootDir, 'package.json');
@@ -53,14 +57,14 @@ writeFileSync(pkgPath, updatedPkg);
 console.log(`   ✅ package.json → ${semver}`);
 
 // ── 3. Patch src-tauri/Cargo.toml ────────────────────────────────────────────
-const cargoPath = resolve(rootDir, 'src-tauri', 'Cargo.toml');
-const cargo = readFileSync(cargoPath, 'utf-8');
 const updatedCargo = cargo.replace(
     /^(version\s*=\s*)"[^"]+"/m,
     `$1"${semver}"`
 );
 writeFileSync(cargoPath, updatedCargo);
 console.log(`   ✅ src-tauri/Cargo.toml → ${semver}`);
+writeFileSync(lockPath, updatedLock);
+console.log(`   ✅ Cargo.lock workspace package → ${semver}`);
 
 // ── 4. Patch src-tauri/tauri.conf.json ───────────────────────────────────────
 const tauriConfPath = resolve(rootDir, 'src-tauri', 'tauri.conf.json');

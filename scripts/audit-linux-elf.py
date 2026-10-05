@@ -129,10 +129,10 @@ def validate_metadata(root, records, kind):
             else:
                 missing.append({"consumer": name, "library": needed})
             for version in versions:
-                if re.fullmatch(r"GLIBC_[0-9.]+", version) and tuple(map(int, version[6:].split("."))) > (2, 35):
+                if re.fullmatch(r"GLIBC_[0-9]+(?:\.[0-9]+)*", version) and tuple(map(int, version[6:].split("."))) > (2, 35):
                     violations.append(f"exceeds Ubuntu 22.04 glibc baseline: {name}: {version}")
                 for prefix, maximum in [("GLIBCXX_", (3, 4, 30)), ("CXXABI_", (1, 3, 13))]:
-                    if re.fullmatch(prefix + r"[0-9.]+", version) and tuple(map(int, version[len(prefix):].split("."))) > maximum:
+                    if re.fullmatch(prefix + r"[0-9]+(?:\.[0-9]+)*", version) and tuple(map(int, version[len(prefix):].split("."))) > maximum:
                         violations.append(f"exceeds Ubuntu 22.04 C++ baseline: {name}: {version}")
     violations += [f"missing dependency: {entry['consumer']} -> {entry['library']}" for entry in missing]
     return {"violations": sorted(set(violations)), "missingDependencies": missing, "hostDependencies": host}

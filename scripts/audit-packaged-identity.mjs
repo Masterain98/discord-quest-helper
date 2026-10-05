@@ -17,6 +17,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { linuxElfContentHash } from './sidecar-provenance.mjs';
+import { bundleVersion } from './release-version.mjs';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const POLICY = JSON.parse(readFileSync(join(SCRIPT_DIR, 'runtime-identity-tokens.json'), 'utf8'));
@@ -418,13 +419,13 @@ function auditLinux(path, kind, sourceCommit) {
             violations.push('packaged bridge differs from this build');
           }
           provenance.packagedSha256 = bridge ? sha256(bridge) : null;
-          provenance.verification = kind === 'deb' ? 'whole file' : 'ELF .text and .rodata; loader metadata audited separately';
+          provenance.verification = kind === 'deb' ? 'whole file' : 'ELF allocated sections except dynamic loader tables; loader metadata audited separately';
         } else {
           const runner = readFileSync(join(repository, 'src-tauri', 'data', IDENTITY.runnerBuildBinary));
           if (!runner.length || createHash('sha256').update(runner).digest('hex') !== provenance.sha256
             || !main || readFileSync(main).indexOf(runner) < 0) violations.push('embedded runner differs from this build');
         }
-        if (control && control.Version !== provenance.applicationVersion) violations.push('DEB version differs from this build');
+        if (control && control.Version !== bundleVersion(provenance.applicationVersion)) violations.push('DEB version differs from this build');
         sidecars.push({ name, ...provenance });
       }
     }
@@ -490,13 +491,22 @@ export function auditArtifact(options) {
   const kind = options.platform === 'macos' ? 'app' : detectLinuxKind(options.artifact, options.kind);
   const result = options.platform === 'macos'
     ? auditMacApp(options.artifact)
-    : auditLinux(options.artifact, kind, options.sourceCommit === undefined ? process.env.GITHUB_SHA : options.sourceCommit);
+    : auditLinux(options.artifact, kind, auditSourceCommit(options));
   return {
     schemaVersion: 1,
     generatedAt: new Date().toISOString(),
     ...result,
     passed: result.violations.length === 0,
   };
+}
+
+export function auditSourceCommit(options) {
+  if (options.sourceCommit !== undefined) return options.sourceCommit;
+  // Event SHAs may differ from checkout HEAD (PR merge refs or custom refs).
+  // Preserve optional provenance checks outside CI and explicit overrides.
+  return process.env.GITHUB_SHA
+    ? execFileSync('git', ['rev-parse', 'HEAD'], { cwd: resolve(SCRIPT_DIR, '..'), encoding: 'utf8' }).trim()
+    : undefined;
 }
 
 function main() {

@@ -102,7 +102,7 @@ jobs:
         run: |
           node scripts/check-linux-bundle-inputs.mjs
           python3 scripts/test_audit_linux_elf.py
-          node --test scripts/audit-packaged-identity.test.mjs
+          node --test scripts/audit-packaged-identity.test.mjs scripts/sync-version.test.mjs
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
