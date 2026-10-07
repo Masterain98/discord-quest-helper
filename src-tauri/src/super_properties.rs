@@ -22,7 +22,7 @@ pub(crate) const DEFAULT_CHROME_VERSION: &str = "148.0.7778.280";
 pub(crate) const DEFAULT_ELECTRON_VERSION: &str = "42.11.8";
 pub(crate) const DEFAULT_OS_VERSION: &str = "10.0.19045";
 pub(crate) const DEFAULT_OS_SDK_VERSION: &str = "19045";
-pub(crate) const DEFAULT_CLIENT_BUILD_NUMBER: u64 = 627798;
+pub(crate) const DEFAULT_CLIENT_BUILD_NUMBER: u64 = 630444;
 pub(crate) const DEFAULT_NATIVE_BUILD_NUMBER: u64 = 92473;
 
 pub(crate) fn discord_user_agent(client_version: &str) -> String {
