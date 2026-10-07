@@ -107,6 +107,9 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Sync application version
+        run: pnpm run sync-version
+
       - name: Validate i18n and runtime identity configuration
         if: matrix.platform == 'ubuntu-22.04'
         run: |
@@ -192,7 +195,7 @@ jobs:
             target/${{ matrix.cdp_target }}/release/bundle/identity-smoke-macos.json
 
       - name: Upload desktop identity manifests
-        if: matrix.platform == 'ubuntu-22.04' || matrix.platform == 'macos-15'
+        if: always() && (matrix.platform == 'ubuntu-22.04' || matrix.platform == 'macos-15')
         uses: actions/upload-artifact@v7
         with:
           name: runtime-identity-${{ matrix.cdp_target }}

@@ -1,5 +1,5 @@
 ## ✨ What's Changed
 
-1. Optimized task warm up process, fasten the launch time.
+1. Optimized task startup to speed up launch time.
 2. Bumped default client config:
     - default client build number to `630444`

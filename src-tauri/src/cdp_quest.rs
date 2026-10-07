@@ -856,16 +856,20 @@ fn js_start_video_quest(quest_id: &str, seconds_needed: u32, initial_seconds: f6
                 let debugFirstResponse = null;
                 let apiCallCount = 0;
                 const API_TIMEOUT = 15000; // 15s timeout per API call
+                const isRunning = () => window.__dqh_cdp === dqh && dqh.initialized && dqh._videoRunning;
 
                 // Helper: call api.post with a timeout to prevent hanging on wrong module
-                function apiPost(opts) {{
-                    return Promise.race([
-                        dqh.api.post(opts),
-                        new Promise((_, reject) => setTimeout(() => reject(new Error("API call timed out after " + API_TIMEOUT + "ms — possible wrong API module")), API_TIMEOUT))
-                    ]);
+                async function apiPost(opts) {{
+                    let timer;
+                    try {{
+                        return await Promise.race([
+                            dqh.api.post(opts),
+                            new Promise((_, reject) => {{ timer = setTimeout(() => reject(new Error("API call timed out after " + API_TIMEOUT + "ms — possible wrong API module")), API_TIMEOUT); }})
+                        ]);
+                    }} finally {{ clearTimeout(timer); }}
                 }}
 
-                while (true) {{
+                while (isRunning()) {{
                     const maxAllowed = Math.floor((Date.now() - enrolledAt) / 1000) + maxFuture;
                     const diff = maxAllowed - secondsDone;
                     const timestamp = secondsDone + speed;
@@ -876,6 +880,7 @@ fn js_start_video_quest(quest_id: &str, seconds_needed: u32, initial_seconds: f6
                                 url: "/quests/" + questId + "/video-progress",
                                 body: {{ timestamp: Math.min(secondsNeeded, timestamp + Math.random()) }}
                             }});
+                            if (!isRunning()) return;
                             apiCallCount++;
                             if (!debugFirstResponse) {{
                                 try {{ debugFirstResponse = JSON.stringify(res).substring(0, 500); }} catch(e2) {{ debugFirstResponse = String(res); }}
@@ -894,6 +899,7 @@ fn js_start_video_quest(quest_id: &str, seconds_needed: u32, initial_seconds: f6
                             dqh._videoProgress = secondsDone;
                             dqh._videoCompleted = completed;
                         }} catch (e) {{
+                            if (!isRunning()) return;
                             consecutiveErrors++;
                             dqh._videoError = String(e);
                             if (consecutiveErrors >= maxErrors) {{
@@ -912,6 +918,8 @@ fn js_start_video_quest(quest_id: &str, seconds_needed: u32, initial_seconds: f6
                     await new Promise(r => setTimeout(r, interval * 1000));
                 }}
 
+                if (!isRunning()) return;
+
                 // Final submission to ensure completion
                 if (!completed) {{
                     try {{
@@ -919,6 +927,7 @@ fn js_start_video_quest(quest_id: &str, seconds_needed: u32, initial_seconds: f6
                             url: "/quests/" + questId + "/video-progress",
                             body: {{ timestamp: secondsNeeded }}
                         }});
+                        if (!isRunning()) return;
                         apiCallCount++;
                         if (!debugFirstResponse) {{
                             try {{ debugFirstResponse = JSON.stringify(res).substring(0, 500); }} catch(e2) {{ debugFirstResponse = String(res); }}
@@ -926,6 +935,7 @@ fn js_start_video_quest(quest_id: &str, seconds_needed: u32, initial_seconds: f6
                         completed = res?.body?.completed_at != null;
                         dqh._videoCompleted = completed;
                     }} catch(e) {{
+                        if (!isRunning()) return;
                         dqh._videoError = "Final post failed: " + String(e);
                     }}
                 }}
@@ -1107,6 +1117,8 @@ const JS_CLEANUP_SPOOF: &str = r#"
         }
         async function cleanupOne(dqh, name) {
             dqh._spoofActive = false;
+            dqh._videoRunning = false;
+            dqh.initialized = false;
             let awaitedObserverRefresh = false;
 
             if (dqh._origDispatch && dqh.FluxDispatcher) {
@@ -2453,6 +2465,52 @@ pub async fn complete_stream_quest_via_cdp(
     }
 }
 
+const JS_STOP_VIDEO_QUEST: &str = r#"
+(() => {
+    const dqh = window.__dqh_cdp;
+    if (dqh) {
+        dqh._videoRunning = false;
+        dqh.initialized = false;
+    }
+    return JSON.stringify({ success: true, stopped: true });
+})()
+"#;
+
+async fn cdp_stop_video_quest(port: u16) {
+    let _ = cdp_execute_json_on_task_target(
+        port,
+        JS_STOP_VIDEO_QUEST,
+        false,
+        5,
+        "video quest stop signal",
+    )
+    .await;
+    cdp_cleanup_after_stop(port, "video quest cancelled", true).await;
+}
+
+async fn cdp_start_video_quest(
+    port: u16,
+    js: &str,
+    cancel_rx: &mut tokio::sync::mpsc::Receiver<()>,
+) -> Result<Option<CdpJsonExecutionSummary>> {
+    tokio::select! {
+        biased;
+        _ = cancel_rx.recv() => {
+            cdp_stop_video_quest(port).await;
+            Ok(None)
+        }
+        result = cdp_execute_json_on_task_target(port, js, true, 15, "video quest start") => {
+            match result {
+                Ok(summary) => Ok(Some(summary)),
+                Err(error) => {
+                    cdp_cleanup_after_stop(port, "video quest startup failed", false).await;
+                    Err(error.context("Failed to launch video quest JS"))
+                }
+            }
+        }
+    }
+}
+
 /// Complete a WATCH_VIDEO quest via CDP.
 ///
 /// Uses Discord's internal `api.post()` to submit video progress,
@@ -2495,9 +2553,10 @@ pub async fn complete_video_quest_via_cdp(
     //    Await only enrollment preflight; the progress loop remains fire-and-forget.
     let js = js_start_video_quest(&quest_id, seconds_needed, initial_progress);
 
-    let start_summary = cdp_execute_json_on_task_target(port, &js, true, 15, "video quest start")
-        .await
-        .context("Failed to launch video quest JS")?;
+    let Some(start_summary) = cdp_start_video_quest(port, &js, &mut cancel_rx).await? else {
+        let _ = app_handle.emit("quest-stopped", ());
+        return Ok(());
+    };
 
     log_partial_target_failures("video quest start", &start_summary.target_failures);
 
@@ -2523,15 +2582,7 @@ pub async fn complete_video_quest_via_cdp(
             _ = sleep(poll_interval) => {},
             _ = cancel_rx.recv() => {
                 log(LogLevel::Info, LogCategory::TokenExtraction, "CDP video quest cancelled", None);
-                // Try to stop the JS loop
-                let _ = cdp_execute_json_on_task_target(
-                    port,
-                    "(() => { if (window.__dqh_cdp) { window.__dqh_cdp._videoRunning = false; } return JSON.stringify({ success: true, stopped: true }); })()",
-                    false,
-                    5,
-                    "video quest stop signal"
-                ).await;
-                cdp_cleanup_after_stop(port, "video quest cancelled", true).await;
+                cdp_stop_video_quest(port).await;
                 let _ = app_handle.emit("quest-stopped", ());
                 return Ok(());
             }
@@ -3941,31 +3992,28 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn startup_preparation_uses_current_page_without_navigation() {
-        for operation in [
-            "video quest",
-            "play quest",
-            "stream quest",
-            "PLAY_ACTIVITY",
-            "manual game simulation",
-        ] {
+    async fn video_startup_cancellation_stops_and_cleans_up_before_returning() {
+        for success in [true, false] {
+            let (cancel_tx, mut cancel_rx) = tokio::sync::mpsc::channel(1);
             let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
             let requests = seen.clone();
-            // The fixture only accepts Runtime.evaluate; navigation commands fail.
             let server = FakeQuestCdp::start(move |expression| {
                 if expression.contains("moduleLoaderPresent:") {
                     return fake_runtime_reply();
                 }
-                let step = if expression.contains("awaitedObserverRefresh") {
+                let step = if expression.contains("const secondsNeeded =") {
+                    cancel_tx.try_send(()).unwrap();
+                    requests.lock().unwrap().push("start");
+                    return fake_script_reply(serde_json::json!({"success":success,
+                        "error":"enrollment lookup failed"}));
+                } else if expression.contains("stopped: true") {
+                    "stop"
+                } else if expression.contains("awaitedObserverRefresh") {
                     "cleanup"
                 } else if expression.contains("let dqhPresent = false") {
                     "verify-cleanup"
-                } else if expression.contains("const discoverOnly = true") {
-                    "discover"
-                } else if expression.contains("const discoverOnly = false") {
-                    "initialize"
                 } else {
-                    panic!("unexpected startup expression: {expression}");
+                    panic!("unexpected video expression: {expression}");
                 };
                 requests.lock().unwrap().push(step);
                 fake_script_reply(serde_json::json!({"success":true,"dqhPresent":false,
@@ -3973,16 +4021,55 @@ mod tests {
                     "broadPatchCount":0,"observerHook":false,"fakeInRunningGames":false,
                     "debugGamePresent":false}))
             });
-            cdp_cleanup_before_init(server.port).await.unwrap();
-            cdp_prepare_quest_modules(server.port, operation)
-                .await
-                .unwrap();
+            let result = cdp_start_video_quest(
+                server.port,
+                &js_start_video_quest("qid", 100, 0.0),
+                &mut cancel_rx,
+            )
+            .await
+            .unwrap();
+            assert!(result.is_none());
             assert_eq!(
                 *seen.lock().unwrap(),
-                ["cleanup", "verify-cleanup", "discover", "initialize"],
-                "{operation}"
+                ["start", "stop", "cleanup", "verify-cleanup"]
             );
         }
+    }
+
+    #[tokio::test]
+    async fn startup_preparation_uses_current_page_without_navigation() {
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let requests = seen.clone();
+        // The fixture only accepts Runtime.evaluate; navigation commands fail.
+        let server = FakeQuestCdp::start(move |expression| {
+            if expression.contains("moduleLoaderPresent:") {
+                return fake_runtime_reply();
+            }
+            let step = if expression.contains("awaitedObserverRefresh") {
+                "cleanup"
+            } else if expression.contains("let dqhPresent = false") {
+                "verify-cleanup"
+            } else if expression.contains("const discoverOnly = true") {
+                "discover"
+            } else if expression.contains("const discoverOnly = false") {
+                "initialize"
+            } else {
+                panic!("unexpected startup expression: {expression}");
+            };
+            requests.lock().unwrap().push(step);
+            fake_script_reply(serde_json::json!({"success":true,"dqhPresent":false,
+                "spoofActive":false,"fakeGamePresent":false,"hasDispatchHook":false,
+                "broadPatchCount":0,"observerHook":false,"fakeInRunningGames":false,
+                "debugGamePresent":false}))
+        });
+        cdp_cleanup_before_init(server.port).await.unwrap();
+        cdp_prepare_quest_modules(server.port, "video quest")
+            .await
+            .unwrap();
+        assert_eq!(
+            *seen.lock().unwrap(),
+            ["cleanup", "verify-cleanup", "discover", "initialize"]
+        );
     }
 
     #[tokio::test]

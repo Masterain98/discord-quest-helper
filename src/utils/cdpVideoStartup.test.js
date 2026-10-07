@@ -3,6 +3,7 @@ import { runInNewContext } from 'node:vm'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const source = readFileSync('src-tauri/src/cdp_quest.rs', 'utf8')
+const stopCode = source.match(/const JS_STOP_VIDEO_QUEST: &str = r#"([\s\S]*?)"#;/)[1]
 const template = source.match(/fn js_start_video_quest[\s\S]*?r#"([\s\S]*?)"#,/)[1]
 const code = Object.entries({ quest_id: 'qid', seconds_needed: '100', initial_seconds: '0',
   video_speed: '10', video_interval: '1', video_max_future: '10' })
@@ -13,12 +14,13 @@ function serverQuest(enrolledAt) {
   return { id: 'qid', user_status: { enrolled_at: enrolledAt } }
 }
 
-function start({ cached = null, body, get } = {}) {
+function start({ cached = null, body, get, post } = {}) {
   const api = { get: vi.fn(get ?? (async () => ({ body }))),
-    post: vi.fn(async () => ({ body: { completed_at: new Date().toISOString() } })) }
+    post: vi.fn(post ?? (async () => ({ body: { completed_at: new Date().toISOString() } }))) }
   const dqh = { initialized: true, QuestsStore: { getQuest: vi.fn(() => cached) }, api }
   const navigation = vi.fn(() => { throw new Error('Startup must not navigate') })
-  const location = { href: 'https://discord.com/channels/@me', reload: navigation, assign: navigation }
+  const location = { get href() { return 'https://discord.com/channels/@me' },
+    set href(_) { navigation() }, reload: navigation, assign: navigation, replace: navigation }
   const window = { __dqh_cdp: dqh, location }
   const pending = runInNewContext(code, { window, Date, setTimeout, clearTimeout,
     history: { pushState: navigation, replaceState: navigation } })
@@ -30,6 +32,16 @@ beforeEach(() => vi.useFakeTimers())
 afterEach(() => { vi.clearAllTimers(); vi.useRealTimers() })
 
 describe('video startup on the current Discord page', () => {
+  it('keeps navigation helpers out of the actual quest and manual startup callers', () => {
+    for (const name of ['complete_video_quest_via_cdp', 'complete_play_quest_via_cdp',
+      'complete_stream_quest_via_cdp', 'complete_play_activity_via_cdp', 'start_manual_game_spoof']) {
+      const body = source.match(new RegExp(`pub async fn ${name}\\([\\s\\S]*?\\n\\}`))?.[0]
+      expect(body, name).toBeDefined()
+      expect(body, name).not.toMatch(/(?:navigate|warmup|warm_up)\w*\s*\(|Page\.navigate/)
+    }
+    expect(readFileSync('src-tauri/src/cdp_client.rs', 'utf8')).not.toContain('Page.navigate')
+  })
+
   it('starts from cached enrollment without a request or navigation', async () => {
     const run = start({ cached: { userStatus: { enrolledAt: new Date(Date.now() - 60000).toISOString() } } })
     expect(await run.pending).toEqual({ success: true, started: true })
@@ -112,5 +124,39 @@ describe('video startup on the current Discord page', () => {
       error: 'Video quest startup cancelled during enrollment lookup' })
     expect(run.api.post).not.toHaveBeenCalled()
     expect(run.dqh._videoPromise).toBeUndefined()
+  })
+
+  it('does not start progress when Stop arrives during enrollment lookup', async () => {
+    let resolve
+    const run = start({ get: () => new Promise(r => { resolve = r }) })
+    runInNewContext(stopCode, { window: run.window })
+    resolve({ body: [serverQuest(new Date().toISOString())] })
+    expect(await run.pending).toEqual({ success: false,
+      error: 'Video quest startup cancelled during enrollment lookup' })
+    expect(run.api.post).not.toHaveBeenCalled()
+    expect(run.dqh._videoPromise).toBeUndefined()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it.each(['interval', 'request', 'retry'])('stops without another post or completion during %s', async phase => {
+    let resolve
+    const run = start({ cached: { userStatus: {
+      enrolledAt: new Date(Date.now() - 60000).toISOString(),
+    } }, post: phase === 'request' ? () => new Promise(r => { resolve = r })
+      : async () => {
+        if (phase === 'retry') throw new Error('Retryable request failure')
+        return { body: {} }
+      } })
+    expect((await run.pending).success).toBe(true)
+    expect(run.api.post).toHaveBeenCalledOnce()
+    runInNewContext(stopCode, { window: run.window })
+    resolve?.({ body: { completed_at: new Date().toISOString() } })
+    await vi.runAllTimersAsync()
+    await run.dqh._videoPromise
+    expect(run.api.post).toHaveBeenCalledOnce()
+    expect(run.dqh._videoCompleted).toBe(false)
+    expect(run.dqh._videoResult).toBeNull()
+    expect(run.dqh._videoRunning).toBe(false)
+    expect(vi.getTimerCount()).toBe(0)
   })
 })

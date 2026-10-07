@@ -110,8 +110,10 @@ camelCase enrollment fields. The request has a ten-second timeout and reports
 missing quests, unenrolled quests, invalid timestamps, malformed responses and
 request failures before submitting any video progress. CDP awaits this bounded
 preflight only; the video progress loop remains a globally retained Promise that
-Rust polls. If cleanup replaced or removed the module bridge during the lookup,
-startup fails instead of launching a stale loop.
+Rust polls. Stop requests are handled during this preflight, invalidate the
+module bridge, and report the quest as stopped. Late enrollment responses cannot
+restart the run. The progress loop checks its stop flag and bridge identity before
+submitting again, including retries and the final submission.
 
 Activity SDK capability discovery also checks at most three times within two
 seconds. Its retries are spaced across that budget; the former 12-second discovery
