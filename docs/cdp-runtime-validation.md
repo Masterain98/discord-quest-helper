@@ -88,24 +88,32 @@ budget begins; both evaluations retain their document-generation guard.
 
 Tasks bind the verified target ID and document generation before initialization.
 Initial binding retries discovery at most three times with 250ms intervals to
-tolerate loading after warmup navigation; a bound task never discovers a replacement.
+tolerate a loading renderer; a bound task never discovers a replacement.
 Their independent monitor detects closure/reload during waits. Inconclusive probes
 retry the same target up to three times; a confirmed generation change stops
 immediately. Evaluations also guard the generation before executing. Activity
 iframes retain their own document
 binding. Failure stops the task and triggers cleanup without selecting another
 renderer. Cleanup still visits Discord page targets, including auxiliary windows,
-and validates their loopback debugger URLs. Existing quest-specific warmup
-navigation remains separate from connection polling and readiness checks.
-History API warmup requires an independent router location as well as the matching
-URL; `history.pushState` alone is not evidence of route success. Without readable
-state, real router methods may confirm navigation by changing the URL from the
-path captured before their call to the requested path. If independent router
-state is available, it must match too; an absent or contradictory state cannot
-override that requirement. Failed methods fall through to `Page.navigate`. A
-failed History attempt restores the original URL before trying router methods.
+and validates their loopback debugger URLs. Quest startup and manual game
+simulation discover modules on the current page without route warmup, History API
+writes or full-page navigation. Missing capabilities report the existing error
+rather than navigating to load them. Activity execution retains its own necessary
+client operations.
 JSON task execution reuses one verified renderer and its document guard per call;
 the separate pinned-session monitor remains active.
+
+Video startup first reads a valid enrollment timestamp from QuestsStore. If it
+is missing or invalid, a read-only `/quests/@me` request resolves the requested
+quest from either an array response or `body.quests`, accepting snake_case and
+camelCase enrollment fields. The request has a ten-second timeout and reports
+missing quests, unenrolled quests, invalid timestamps, malformed responses and
+request failures before submitting any video progress. CDP awaits this bounded
+preflight only; the video progress loop remains a globally retained Promise that
+Rust polls. Stop requests are handled during this preflight, invalidate the
+module bridge, and report the quest as stopped. Late enrollment responses cannot
+restart the run. The progress loop checks its stop flag and bridge identity before
+submitting again, including retries and the final submission.
 
 Activity SDK capability discovery also checks at most three times within two
 seconds. Its retries are spaced across that budget; the former 12-second discovery

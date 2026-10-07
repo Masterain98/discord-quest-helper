@@ -1,8 +1,5 @@
 ## ✨ What's Changed
 
-1. Fixed an issue where game simulation in CDP mode could leave Discord stuck on a black screen, even after restarting Discord.
-2. Fixed Discord launch failures on macOS when entering CDP mode or returning to normal mode, contributed by @mlemors.
-3. Improved Linux AppImage compatibility to reduce startup crashes and gray screens after login, with more reliable Discord launching.
-4. Added an animated glow around active quest cards, making running quests easier to spot.
-5. Bumped default client config:
-    - default client build number to `627798`
+1. Optimized task startup to speed up launch time.
+2. Bumped default client config:
+    - default client build number to `630444`

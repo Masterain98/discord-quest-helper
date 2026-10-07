@@ -523,7 +523,10 @@ function main() {
     const json = `${JSON.stringify(manifest, null, 2)}\n`;
     if (options.output) writeFileSync(options.output, json);
     else process.stdout.write(json);
-    if (!manifest.passed) process.exitCode = 1;
+    if (!manifest.passed) {
+      for (const violation of manifest.violations) console.error(`Packaged identity audit failed: ${violation}`);
+      process.exitCode = 1;
+    }
   } catch (error) {
     console.error(`Packaged identity audit failed: ${error.message}`);
     process.exitCode = 2;

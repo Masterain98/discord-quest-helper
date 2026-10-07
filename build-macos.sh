@@ -54,6 +54,8 @@ VERSION=$(cat "$VERSION_FILE" | tr -d '[:space:]')
 echo -e "${GREEN}Version: $VERSION${NC}"
 echo ""
 
+pnpm run sync-version
+
 # Define paths
 SRC_TAURI="$PROJECT_ROOT/src-tauri"
 RELEASE_DIR="$PROJECT_ROOT/target/release"
