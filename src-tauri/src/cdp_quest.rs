@@ -22,11 +22,6 @@ use crate::cdp_game_spoof::{
 use crate::models::PlayActivityHeartbeatStatus;
 use discord_cdp_launch_core::is_discord_auxiliary_page;
 
-const QUEST_HOME_URL: &str = "https://discord.com/quest-home";
-const QUEST_HOME_DETOUR_URL: &str = "https://discord.com/store";
-const QUEST_WARMUP_NAV_TIMEOUT_SECS: u64 = 20;
-const QUEST_WARMUP_DWELL_MS: u64 = 1500;
-const QUEST_WARMUP_RESTORE_SETTLE_MS: u64 = 800;
 const CDP_CLEANUP_ATTEMPTS: u32 = 5;
 const CDP_CLEANUP_CANCEL_ATTEMPTS: u32 = 1;
 const CDP_CLEANUP_VERIFY_TIMEOUT_SECS: u64 = 10;
@@ -775,8 +770,8 @@ fn js_spoof_stream(app_id: &str) -> String {
 ///
 /// The async loop is launched and stored as a global Promise (to prevent GC).
 /// Progress/completion/errors are written to `window.__dqh_cdp._video*` fields
-/// and polled from Rust. This avoids CDP's `awaitPromise` which is fragile for
-/// long-running Promises ("Promise was collected" error).
+/// and polled from Rust. CDP awaits only the bounded enrollment preflight,
+/// never the long-running progress Promise ("Promise was collected" error).
 ///
 /// Mirrors the gist's time-bound approach: Discord validates that the
 /// submitted timestamp doesn't exceed `(now - enrolledAt) + maxFuture`.
@@ -784,7 +779,7 @@ fn js_start_video_quest(quest_id: &str, seconds_needed: u32, initial_seconds: f6
     let timing = cdp_video_timing();
     format!(
         r#"
-(() => {{
+(async () => {{
     try {{
         const dqh = window.__dqh_cdp;
         if (!dqh || !dqh.initialized) return JSON.stringify({{ success: false, error: "Modules not initialized" }});
@@ -792,10 +787,52 @@ fn js_start_video_quest(quest_id: &str, seconds_needed: u32, initial_seconds: f6
         const questId = "{quest_id}";
         const secondsNeeded = {seconds_needed};
 
-        // Read enrolledAt from QuestsStore for time-bound calculation
-        const quest = dqh.QuestsStore.getQuest(questId);
-        if (!quest || !quest.userStatus || !quest.userStatus.enrolledAt) {{
-            return JSON.stringify({{ success: false, error: "Quest not found or not enrolled" }});
+        // Enrollment through Helper's HTTP API may not yet be in Discord's store.
+        // Read the missing data directly instead of navigating or reloading Discord.
+        function enrollmentTime(value) {{
+            if (!value) return NaN;
+            return new Date(value).getTime();
+        }}
+        let quest = null;
+        try {{ quest = dqh.QuestsStore.getQuest(questId); }} catch (_) {{}}
+        let enrolledAt = enrollmentTime(quest?.userStatus?.enrolledAt);
+        if (!Number.isFinite(enrolledAt)) {{
+            let timer;
+            let response;
+            try {{
+                response = await Promise.race([
+                    dqh.api.get({{ url: "/quests/@me" }}),
+                    new Promise((_, reject) => {{
+                        timer = setTimeout(() => reject(new Error("Video quest enrollment request timed out after 10000ms")), 10000);
+                    }})
+                ]);
+            }} catch (error) {{
+                return JSON.stringify({{ success: false, error: "Failed to fetch video quest enrollment: " + String(error) }});
+            }} finally {{
+                clearTimeout(timer);
+            }}
+            const body = response?.body;
+            const quests = Array.isArray(body) ? body : body?.quests;
+            if (!Array.isArray(quests)) {{
+                return JSON.stringify({{ success: false, error: "Video quest enrollment response has no quests array" }});
+            }}
+            quest = quests.find(item => item?.id === questId);
+            if (!quest) {{
+                return JSON.stringify({{ success: false, error: "Quest not found in /quests/@me" }});
+            }}
+            const status = quest.user_status ?? quest.userStatus;
+            const value = status?.enrolled_at ?? status?.enrolledAt;
+            if (!value) {{
+                return JSON.stringify({{ success: false, error: "Quest not enrolled" }});
+            }}
+            enrolledAt = enrollmentTime(value);
+            if (!Number.isFinite(enrolledAt)) {{
+                return JSON.stringify({{ success: false, error: "Quest enrollment timestamp is invalid" }});
+            }}
+        }}
+        // Cleanup may have run while the read was pending. Never restart that run.
+        if (window.__dqh_cdp !== dqh || !dqh.initialized) {{
+            return JSON.stringify({{ success: false, error: "Video quest startup cancelled during enrollment lookup" }});
         }}
 
         // Initialize video state fields (polled by Rust)
@@ -810,7 +847,6 @@ fn js_start_video_quest(quest_id: &str, seconds_needed: u32, initial_seconds: f6
         dqh._videoPromise = (async () => {{
             try {{
                 let secondsDone = {initial_seconds};
-                const enrolledAt = new Date(quest.userStatus.enrolledAt).getTime();
                 const speed = {video_speed};
                 const interval = {video_interval};
                 const maxFuture = {video_max_future};
@@ -1302,261 +1338,6 @@ struct CdpJsonExecutionSummary {
     target_failures: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct QuestRouteWarmupPlan {
-    original_url: String,
-    warmup_url: String,
-    restore_url: String,
-    already_on_quest_home: bool,
-}
-
-fn build_quest_route_warmup_plan(current_url: &str) -> Option<QuestRouteWarmupPlan> {
-    let current = reqwest::Url::parse(current_url).ok()?;
-    if !matches!(current.scheme(), "http" | "https") {
-        return None;
-    }
-
-    let already_on_quest_home = current.path().eq_ignore_ascii_case("/quest-home");
-    let warmup_url = if already_on_quest_home {
-        current.join(QUEST_HOME_DETOUR_URL).ok()?
-    } else {
-        current.join(QUEST_HOME_URL).ok()?
-    };
-
-    Some(QuestRouteWarmupPlan {
-        original_url: current_url.to_string(),
-        warmup_url: warmup_url.to_string(),
-        restore_url: current_url.to_string(),
-        already_on_quest_home,
-    })
-}
-
-fn is_quest_home_url(current_url: &str) -> bool {
-    reqwest::Url::parse(current_url)
-        .map(|url| url.path().eq_ignore_ascii_case("/quest-home"))
-        .unwrap_or(false)
-}
-
-fn js_warmup_quest_route(plan: &QuestRouteWarmupPlan) -> String {
-    let warmup_url = serde_json::to_string(&plan.warmup_url).unwrap_or_else(|_| "\"\"".to_string());
-    let restore_url =
-        serde_json::to_string(&plan.restore_url).unwrap_or_else(|_| "\"\"".to_string());
-
-    format!(
-        r#"
-(async () => {{
-    try {{
-        const warmupUrl = new URL({warmup_url}, window.location.href);
-        const restoreUrl = new URL({restore_url}, window.location.href);
-        const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-        const pathFor = url => url.pathname + url.search + url.hash;
-        const currentPath = () => window.location.pathname + window.location.search + window.location.hash;
-
-        let wpRequire = null;
-        try {{
-            if (typeof webpackChunkdiscord_app !== "undefined") {{
-                wpRequire = webpackChunkdiscord_app.push([[Symbol()], {{}}, r => r]);
-                webpackChunkdiscord_app.pop();
-            }}
-        }} catch (_) {{}}
-
-        function findRouter() {{
-            if (!wpRequire || !wpRequire.c) return null;
-
-            const seen = new Set();
-            const inspect = value => {{
-                if (!value || (typeof value !== "object" && typeof value !== "function") || seen.has(value)) {{
-                    return null;
-                }}
-                seen.add(value);
-
-                if (typeof value.transitionTo === "function" && (
-                    typeof value.replaceWith === "function"
-                    || typeof value.navigate === "function"
-                    || typeof value.back === "function"
-                )) {{
-                    return value;
-                }}
-
-                if (value.router && typeof value.router.transitionTo === "function") {{
-                    return value.router;
-                }}
-
-                return null;
-            }};
-
-            for (const moduleRecord of Object.values(wpRequire.c)) {{
-                try {{
-                    const exportsObj = moduleRecord?.exports;
-                    if (!exportsObj) continue;
-
-                    const direct = inspect(exportsObj);
-                    if (direct) return direct;
-
-                    for (const key of Object.keys(exportsObj)) {{
-                        const candidate = inspect(exportsObj[key]);
-                        if (candidate) return candidate;
-                    }}
-                }} catch (_) {{}}
-            }}
-
-            return null;
-        }}
-
-        const router = findRouter();
-        function routerPath() {{
-            try {{
-                const location = typeof router?.getLocation === "function" ? router.getLocation()
-                    : router?.location ?? router?.getState?.()?.location;
-                // Window.location only reflects pushState, not a committed SPA route.
-                if (!location || location === window.location || typeof location.pathname !== "string") return null;
-                return location.pathname + (location.search || "") + (location.hash || "");
-            }} catch (_) {{ return null; }}
-        }}
-
-        async function waitForRoute(expectedPath, timeoutMs, routerStartPath = null, requireState = true) {{
-            const confirmed = () => {{
-                if (currentPath() !== expectedPath) return false;
-                const route = routerPath();
-                if (route !== null) return route === expectedPath;
-                // A router method may commit navigation without exposing location.
-                // History API writes never qualify, nor does an unchanged URL.
-                return !requireState && routerStartPath !== null && routerStartPath !== expectedPath;
-            }};
-            const start = Date.now();
-            while (Date.now() - start < timeoutMs) {{
-                if (confirmed()) return true;
-                await sleep(50);
-            }}
-            return confirmed();
-        }}
-
-        async function navigateWithinApp(targetUrl) {{
-            const targetPath = pathFor(targetUrl);
-            const failures = [];
-            if (currentPath() === targetPath && routerPath() === targetPath) {{
-                return {{ success: true, method: "already-there", targetPath, failures }};
-            }}
-
-            // Keep the fast History API path only when independent router state
-            // can confirm that Discord actually handled the navigation.
-            const originalPath = currentPath();
-            const originalState = history.state;
-            let historyChanged = false;
-            try {{
-                if (routerPath() !== null) {{
-                    history.pushState(history.state, "", targetPath);
-                    historyChanged = true;
-                    window.dispatchEvent(new PopStateEvent("popstate", {{ state: history.state }}));
-                    window.dispatchEvent(new Event("locationchange"));
-                    document.dispatchEvent(new Event("locationchange"));
-                    if (await waitForRoute(targetPath, 1200)) {{
-                        return {{ success: true, method: "history.pushState", targetPath, failures }};
-                    }}
-                    failures.push("history.pushState:no-route-change");
-                }} else {{
-                    failures.push("history.pushState:no-route-signal");
-                }}
-            }} catch (e) {{
-                failures.push("history.pushState:" + String(e));
-            }}
-            if (historyChanged) {{
-                history.replaceState(originalState, "", originalPath);
-            }}
-
-            if (router) {{
-                if (typeof router.transitionTo === "function") {{
-                    try {{
-                        const beforePath = currentPath();
-                        const requireState = routerPath() !== null;
-                        await Promise.resolve(router.transitionTo(targetPath));
-                        if (await waitForRoute(targetPath, 2500, beforePath, requireState)) {{
-                            return {{ success: true, method: "router.transitionTo", targetPath, failures }};
-                        }}
-                        failures.push("router.transitionTo:no-route-change");
-                    }} catch (e) {{
-                        failures.push("router.transitionTo:" + String(e));
-                    }}
-                }}
-
-                if (typeof router.replaceWith === "function") {{
-                    try {{
-                        const beforePath = currentPath();
-                        const requireState = routerPath() !== null;
-                        await Promise.resolve(router.replaceWith(targetPath));
-                        if (await waitForRoute(targetPath, 2500, beforePath, requireState)) {{
-                            return {{ success: true, method: "router.replaceWith", targetPath, failures }};
-                        }}
-                        failures.push("router.replaceWith:no-route-change");
-                    }} catch (e) {{
-                        failures.push("router.replaceWith:" + String(e));
-                    }}
-                }}
-
-                if (typeof router.navigate === "function") {{
-                    try {{
-                        const beforePath = currentPath();
-                        const requireState = routerPath() !== null;
-                        await Promise.resolve(router.navigate(targetPath));
-                        if (await waitForRoute(targetPath, 2500, beforePath, requireState)) {{
-                            return {{ success: true, method: "router.navigate", targetPath, failures }};
-                        }}
-                        failures.push("router.navigate:no-route-change");
-                    }} catch (e) {{
-                        failures.push("router.navigate:" + String(e));
-                    }}
-                }}
-            }} else {{
-                failures.push("router:not-found");
-            }}
-
-            return {{ success: false, method: null, targetPath, failures }};
-        }}
-
-        const warmupResult = await navigateWithinApp(warmupUrl);
-        if (!warmupResult.success) {{
-            return JSON.stringify({{
-                success: false,
-                stage: "warmup",
-                error: "Failed to navigate within Discord SPA",
-                details: warmupResult.failures,
-                currentUrl: window.location.href
-            }});
-        }}
-
-        await sleep({dwell_ms});
-
-        const restoreResult = await navigateWithinApp(restoreUrl);
-        if (!restoreResult.success) {{
-            return JSON.stringify({{
-                success: false,
-                stage: "restore",
-                error: "Failed to restore original Discord SPA route",
-                details: restoreResult.failures,
-                warmupMethod: warmupResult.method,
-                currentUrl: window.location.href
-            }});
-        }}
-
-        await sleep({restore_settle_ms});
-
-        return JSON.stringify({{
-            success: true,
-            warmupMethod: warmupResult.method,
-            restoreMethod: restoreResult.method,
-            finalUrl: window.location.href,
-            finalPath: currentPath(),
-        }});
-    }} catch (e) {{
-        return JSON.stringify({{ success: false, error: String(e) }});
-    }}
-}})()
-"#,
-        dwell_ms = QUEST_WARMUP_DWELL_MS,
-        restore_settle_ms = QUEST_WARMUP_RESTORE_SETTLE_MS
-    )
-}
-
 fn cdp_result_succeeded(parsed: &serde_json::Value) -> bool {
     parsed
         .get("success")
@@ -1684,176 +1465,6 @@ async fn cdp_execute_json_on_task_target(
         successful_results,
         target_failures,
     })
-}
-
-async fn cdp_warmup_quest_route(port: u16) {
-    use crate::logger::{log, LogCategory, LogLevel};
-
-    let primary_target = match cdp_client::get_primary_discord_target(port).await {
-        Ok(target) => target,
-        Err(err) => {
-            log(
-                LogLevel::Warn,
-                LogCategory::TokenExtraction,
-                &format!(
-                    "CDP quest route warmup skipped: unable to inspect primary target: {}",
-                    err
-                ),
-                None,
-            );
-            return;
-        }
-    };
-
-    if is_quest_home_url(&primary_target.url) {
-        log(
-            LogLevel::Info,
-            LogCategory::TokenExtraction,
-            "CDP quest route warmup skipped: already on quest-home",
-            None,
-        );
-        return;
-    }
-
-    let plan = match build_quest_route_warmup_plan(&primary_target.url) {
-        Some(plan) => plan,
-        None => {
-            log(
-                LogLevel::Warn,
-                LogCategory::TokenExtraction,
-                &format!(
-                    "CDP quest route warmup skipped: unsupported target URL {}",
-                    primary_target.url
-                ),
-                None,
-            );
-            return;
-        }
-    };
-
-    log(
-        LogLevel::Info,
-        LogCategory::TokenExtraction,
-        &format!(
-            "CDP quest route warmup: current_url={} warmup_url={} restore_url={} already_on_quest_home={}",
-            plan.original_url,
-            plan.warmup_url,
-            plan.restore_url,
-            plan.already_on_quest_home
-        ),
-        None,
-    );
-
-    let spa_warmup_js = js_warmup_quest_route(&plan);
-    match cdp_client::execute_js_via_primary_discord_target(
-        port,
-        &spa_warmup_js,
-        true,
-        QUEST_WARMUP_NAV_TIMEOUT_SECS,
-    )
-    .await
-    {
-        Ok(raw) => {
-            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&raw) {
-                if cdp_result_succeeded(&parsed) {
-                    log(
-                        LogLevel::Info,
-                        LogCategory::TokenExtraction,
-                        &format!(
-                            "CDP quest route warmup completed via in-app navigation (warmupMethod={}, restoreMethod={}, finalUrl={})",
-                            parsed.get("warmupMethod").and_then(|value| value.as_str()).unwrap_or("unknown"),
-                            parsed.get("restoreMethod").and_then(|value| value.as_str()).unwrap_or("unknown"),
-                            parsed.get("finalUrl").and_then(|value| value.as_str()).unwrap_or("unknown")
-                        ),
-                        None,
-                    );
-                    return;
-                }
-
-                log(
-                    LogLevel::Warn,
-                    LogCategory::TokenExtraction,
-                    &format!(
-                        "CDP quest route warmup SPA attempt failed (stage={}, error={}, details={:?}); falling back to Page.navigate",
-                        parsed.get("stage").and_then(|value| value.as_str()).unwrap_or("unknown"),
-                        parsed.get("error").and_then(|value| value.as_str()).unwrap_or("unknown"),
-                        parsed.get("details")
-                    ),
-                    None,
-                );
-            } else {
-                log(
-                    LogLevel::Warn,
-                    LogCategory::TokenExtraction,
-                    &format!(
-                        "CDP quest route warmup SPA attempt returned non-JSON result: {}",
-                        raw
-                    ),
-                    None,
-                );
-            }
-        }
-        Err(err) => {
-            log(
-                LogLevel::Warn,
-                LogCategory::TokenExtraction,
-                &format!("CDP quest route warmup SPA attempt failed to execute: {}; falling back to Page.navigate", err),
-                None,
-            );
-        }
-    }
-
-    if let Err(err) = cdp_client::navigate_primary_discord_target(
-        port,
-        &plan.warmup_url,
-        QUEST_WARMUP_NAV_TIMEOUT_SECS,
-    )
-    .await
-    {
-        log(
-            LogLevel::Warn,
-            LogCategory::TokenExtraction,
-            &format!(
-                "CDP quest route warmup failed while navigating to {}: {}",
-                plan.warmup_url, err
-            ),
-            None,
-        );
-        return;
-    }
-
-    sleep(Duration::from_millis(QUEST_WARMUP_DWELL_MS)).await;
-
-    if let Err(err) = cdp_client::navigate_primary_discord_target(
-        port,
-        &plan.restore_url,
-        QUEST_WARMUP_NAV_TIMEOUT_SECS,
-    )
-    .await
-    {
-        log(
-            LogLevel::Warn,
-            LogCategory::TokenExtraction,
-            &format!(
-                "CDP quest route warmup failed while restoring {}: {}",
-                plan.restore_url, err
-            ),
-            None,
-        );
-        return;
-    }
-
-    sleep(Duration::from_millis(QUEST_WARMUP_RESTORE_SETTLE_MS)).await;
-
-    log(
-        LogLevel::Info,
-        LogCategory::TokenExtraction,
-        &format!(
-            "CDP quest route warmup completed via {} and restored to {}",
-            plan.warmup_url, plan.restore_url
-        ),
-        None,
-    );
 }
 
 async fn cdp_wait_for_endpoint(port: u16) -> Result<()> {
@@ -2311,7 +1922,6 @@ pub async fn start_manual_game_spoof(port: u16, app_id: &str, app_name: &str) ->
     cdp_cleanup_with_attempts(port, CDP_CLEANUP_ATTEMPTS)
         .await
         .context("Failed to clear an existing CDP game simulation")?;
-    cdp_warmup_quest_route(port).await;
     cdp_prepare_quest_modules(port, "manual game simulation").await?;
 
     let js = js_spoof_play_game(app_id, app_name);
@@ -2524,7 +2134,6 @@ pub async fn complete_play_quest_via_cdp(
     // Defensive pre-cleanup: prevent stale spoof state from a previous run from leaking
     // into the new quest session.
     cdp_cleanup_before_init(port).await?;
-    cdp_warmup_quest_route(port).await;
     cdp_prepare_quest_modules(port, "play quest").await?;
 
     // 2. Spoof running game
@@ -2733,7 +2342,6 @@ pub async fn complete_stream_quest_via_cdp(
 
     // Defensive pre-cleanup: ensure previous spoof state is removed before applying new patches.
     cdp_cleanup_before_init(port).await?;
-    cdp_warmup_quest_route(port).await;
     // Both patches are required; startup errors clean up and never reach polling.
     let stream_summary = cdp_start_stream_spoof(port, &app_id).await?;
     log(
@@ -2872,7 +2480,6 @@ pub async fn complete_video_quest_via_cdp(
 
     // Defensive pre-cleanup for cross-quest consistency.
     cdp_cleanup_before_init(port).await?;
-    cdp_warmup_quest_route(port).await;
     cdp_prepare_quest_modules(port, "video quest").await?;
 
     let initial_pct = if seconds_needed > 0 {
@@ -2885,10 +2492,10 @@ pub async fn complete_video_quest_via_cdp(
     // 2. Fire-and-forget: launch the async video JS loop inside Discord.
     //    The JS stores its Promise globally (prevents V8 GC) and writes progress
     //    to window.__dqh_cdp._video* fields. We poll those from Rust.
-    //    This avoids CDP "Promise was collected" errors from awaitPromise=true.
+    //    Await only enrollment preflight; the progress loop remains fire-and-forget.
     let js = js_start_video_quest(&quest_id, seconds_needed, initial_progress);
 
-    let start_summary = cdp_execute_json_on_task_target(port, &js, false, 15, "video quest start")
+    let start_summary = cdp_execute_json_on_task_target(port, &js, true, 15, "video quest start")
         .await
         .context("Failed to launch video quest JS")?;
 
@@ -3707,7 +3314,6 @@ pub async fn complete_play_activity_via_cdp(
     }
 
     cdp_cleanup_before_init(port).await?;
-    cdp_warmup_quest_route(port).await;
     if let Err(error) = cdp_prepare_quest_modules_on_primary(port, "PLAY_ACTIVITY").await {
         cdp_cleanup_after_stop(port, "PLAY_ACTIVITY init failed", false).await;
         return Err(error);
@@ -4335,6 +3941,51 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn startup_preparation_uses_current_page_without_navigation() {
+        for operation in [
+            "video quest",
+            "play quest",
+            "stream quest",
+            "PLAY_ACTIVITY",
+            "manual game simulation",
+        ] {
+            let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+            let requests = seen.clone();
+            // The fixture only accepts Runtime.evaluate; navigation commands fail.
+            let server = FakeQuestCdp::start(move |expression| {
+                if expression.contains("moduleLoaderPresent:") {
+                    return fake_runtime_reply();
+                }
+                let step = if expression.contains("awaitedObserverRefresh") {
+                    "cleanup"
+                } else if expression.contains("let dqhPresent = false") {
+                    "verify-cleanup"
+                } else if expression.contains("const discoverOnly = true") {
+                    "discover"
+                } else if expression.contains("const discoverOnly = false") {
+                    "initialize"
+                } else {
+                    panic!("unexpected startup expression: {expression}");
+                };
+                requests.lock().unwrap().push(step);
+                fake_script_reply(serde_json::json!({"success":true,"dqhPresent":false,
+                    "spoofActive":false,"fakeGamePresent":false,"hasDispatchHook":false,
+                    "broadPatchCount":0,"observerHook":false,"fakeInRunningGames":false,
+                    "debugGamePresent":false}))
+            });
+            cdp_cleanup_before_init(server.port).await.unwrap();
+            cdp_prepare_quest_modules(server.port, operation)
+                .await
+                .unwrap();
+            assert_eq!(
+                *seen.lock().unwrap(),
+                ["cleanup", "verify-cleanup", "discover", "initialize"],
+                "{operation}"
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn pre_init_cleanup_retries_and_refuses_residual_spoof_state() {
         for clean_on_attempt in [Some(2), None] {
             let counts = std::sync::Arc::new(std::sync::Mutex::new((0u32, 0u32)));
@@ -4575,56 +4226,6 @@ mod tests {
             }
             .progress_percentage(900),
             100.0
-        );
-    }
-
-    #[test]
-    fn test_build_quest_route_warmup_plan_for_non_quest_page() {
-        let plan = build_quest_route_warmup_plan("https://discord.com/channels/@me").unwrap();
-
-        assert_eq!(plan.original_url, "https://discord.com/channels/@me");
-        assert_eq!(plan.warmup_url, QUEST_HOME_URL);
-        assert_eq!(plan.restore_url, "https://discord.com/channels/@me");
-        assert!(!plan.already_on_quest_home);
-    }
-
-    #[test]
-    fn test_build_quest_route_warmup_plan_for_quest_home() {
-        let plan = build_quest_route_warmup_plan("https://discord.com/quest-home").unwrap();
-
-        assert_eq!(plan.warmup_url, QUEST_HOME_DETOUR_URL);
-        assert_eq!(plan.restore_url, QUEST_HOME_URL);
-        assert!(plan.already_on_quest_home);
-    }
-
-    #[test]
-    fn quest_route_warmup_is_skipped_when_already_on_quest_home() {
-        assert!(is_quest_home_url("https://discord.com/quest-home"));
-        assert!(is_quest_home_url("https://discord.com/quest-home?tab=all"));
-        assert!(!is_quest_home_url("https://discord.com/store"));
-    }
-
-    #[test]
-    fn test_build_quest_route_warmup_plan_rejects_invalid_urls() {
-        assert!(build_quest_route_warmup_plan("not-a-url").is_none());
-        assert!(build_quest_route_warmup_plan("chrome://version").is_none());
-    }
-
-    #[test]
-    fn quest_route_warmup_tries_history_api_before_router_fallback() {
-        let plan = build_quest_route_warmup_plan("https://discord.com/quest-home").unwrap();
-        let js = js_warmup_quest_route(&plan);
-
-        let history_navigation = js
-            .find("history.pushState(history.state, \"\", targetPath)")
-            .expect("History API navigation should be present");
-        let router_fallback = js
-            .find("await Promise.resolve(router.transitionTo(targetPath))")
-            .expect("router fallback should remain available");
-
-        assert!(
-            history_navigation < router_fallback,
-            "the verified History API path should run before slower router fallbacks"
         );
     }
 
