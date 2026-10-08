@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import Home from './views/Home.vue'
+import GlobalQuests from './views/GlobalQuests.vue'
 import GameSimulator from './views/GameSimulator.vue'
 import Settings from './views/Settings.vue'
 import Debug from './views/Debug.vue'
 import TitleBar from './components/TitleBar.vue'
 import { Button } from '@/components/ui/button'
 import { useAuthStore } from '@/stores/auth'
+import { useQuestsStore } from '@/stores/quests'
 import { useGameIdleStore } from '@/stores/gameIdle'
 import { useVersionStore } from '@/stores/version'
 import { useI18n } from 'vue-i18n'
@@ -30,6 +32,8 @@ import {
 const { t, locale } = useI18n()
 const currentTab = ref<AppTab>('home')
 const authStore = useAuthStore()
+const questsStore = useQuestsStore()
+watch(() => authStore.user?.id ?? null, id => questsStore.setQuestAccount(id), { immediate: true, flush: 'sync' })
 const gameIdleStore = useGameIdleStore()
 const authTransitioning = ref(false)
 const immersiveGameIdle = computed(() => currentTab.value === 'game' && (gameIdleStore.isActive || gameIdleStore.loading))
@@ -141,7 +145,7 @@ onUnmounted(() => {
 
 function handleAppNavigate(e: Event) {
   const tab = (e as CustomEvent<string>).detail
-  if (tab === 'home' || tab === 'game' || tab === 'settings' || tab === 'debug') {
+  if (tab === 'home' || tab === 'global' || tab === 'game' || tab === 'settings' || tab === 'debug') {
     currentTab.value = tab
   }
 }
@@ -312,6 +316,8 @@ watch(
             </LoginPanel>
           </template>
         
+          <GlobalQuests v-else-if="currentTab === 'global'" />
+
           <GameSimulator v-else-if="currentTab === 'game'" />
         
           <Settings

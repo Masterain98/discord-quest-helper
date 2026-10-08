@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useI18n } from 'vue-i18n'
 
-export type AppTab = 'home' | 'game' | 'settings' | 'debug'
+export type AppTab = 'home' | 'global' | 'game' | 'settings' | 'debug'
 
 const props = defineProps<{
   current: AppTab
@@ -18,6 +18,7 @@ const { t } = useI18n()
 
 const items = [
   { key: 'home' as const, label: 'nav.home' },
+  { key: 'global' as const, label: 'nav.global_quests' },
   { key: 'game' as const, label: 'nav.game_simulator' },
   { key: 'settings' as const, label: 'nav.settings' },
   { key: 'debug' as const, label: 'nav.debug', debugOnly: true },

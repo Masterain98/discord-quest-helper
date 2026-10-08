@@ -68,7 +68,8 @@
     "home": "Inicio",
     "game_simulator": "Simulador de juegos",
     "settings": "Configuración",
-    "debug": "Depurar"
+    "debug": "Depurar",
+    "global_quests": "Misiones globales"
   },
   "home": {
     "dashboard_title": "Quest Panel de control",
@@ -552,5 +553,88 @@
     "close_only": "Cerrar solo esta aplicación",
     "restore_and_close": "Cerrar y reiniciar Discord normalmente",
     "helper_error": "No se pudo iniciar el asistente de reinicio de Discord. Puede que tengas que cerrar Discord por completo y volver a abrirlo manualmente."
+  },
+  "global_quests": {
+    "region_label": "Región",
+    "description": "Consulta todas las misiones vigentes del catálogo comunitario, incluidas las variantes regionales.",
+    "search": "Buscar misión o juego",
+    "filters": "Filtros",
+    "country_search": "Buscar países",
+    "source_label": "Datos de misiones globales de discordquest.com",
+    "country_empty": "No se encontraron países",
+    "country": "Disponible en",
+    "all_countries": "Todos los países",
+    "clear": "Borrar filtros",
+    "country_hint": "El filtro de país incluye misiones globales y excluye la disponibilidad desconocida.",
+    "results": "{count} de {total} misiones",
+    "updated": "Actualizado: {time}",
+    "refresh_error": "Error al actualizar. Se muestra el catálogo anterior.",
+    "regions_stale": "No se actualizaron las restricciones. Se conserva la información anterior.",
+    "regions_error": "Las restricciones no están disponibles y se muestran como desconocidas.",
+    "account_error": "No se pudo actualizar el estado de finalización de la cuenta.",
+    "link_error": "No se pudo abrir el enlace.",
+    "loading": "Cargando misiones globales…",
+    "load_error": "No se pudo cargar el catálogo de misiones.",
+    "retry": "Reintentar",
+    "empty": "No hay misiones que coincidan con la búsqueda y los filtros.",
+    "completed": "Completada",
+    "accepted": "Aceptada",
+    "upcoming": "Próximamente",
+    "details": "Detalles",
+    "requirements": "Requisitos",
+    "restrictions": "Restricciones",
+    "age_hint": "Esta misión puede requerir verificación de edad.",
+    "eligibility_hint": "Las etiquetas comunitarias no garantizan que tu cuenta pueda participar.",
+    "all_rewards": "Todas las recompensas",
+    "open_discord": "Ver en Discord",
+    "only_countries": "Solo: {countries}",
+    "except_countries": "Excepto: {countries}",
+    "starts": "Inicio: {time}",
+    "ends": "Fin: {time}",
+    "unknown": "Desconocido",
+    "target_count": "{count} objetivos",
+    "premium_reward": "Recompensa Nitro: {count} Orbs",
+    "reward_expires": "La recompensa caduca: {time}",
+    "filter_titles": {
+      "tasks": "Tipo de misión",
+      "rewards": "Tipo de recompensa",
+      "regions": "Restricción regional",
+      "ages": "Restricción de edad"
+    },
+    "tasks": {
+      "watch": "Ver",
+      "play": "Jugar",
+      "stream": "Transmitir",
+      "activity": "Actividad / logro",
+      "other": "Otro"
+    },
+    "rewards": {
+      "orbs": "Orbs",
+      "avatar": "Decoración de avatar",
+      "ingame": "Recompensa del juego",
+      "nitro": "Nitro",
+      "other": "Otro / desconocido"
+    },
+    "regions": {
+      "global": "Disponible globalmente",
+      "restricted": "Restricción regional",
+      "unknown": "Región desconocida"
+    },
+    "ages": {
+      "adult": "18+",
+      "unmarked": "Sin restricción de edad indicada",
+      "unknown": "Edad desconocida"
+    },
+    "platforms": {
+      "WATCH_VIDEO": "Vídeo en escritorio",
+      "WATCH_VIDEO_ON_MOBILE": "Vídeo en móvil",
+      "PLAY_ON_DESKTOP": "Jugar en escritorio",
+      "PLAY_ON_XBOX": "Jugar en Xbox",
+      "PLAY_ON_PLAYSTATION": "Jugar en PlayStation",
+      "STREAM_ON_DESKTOP": "Transmitir en escritorio",
+      "ACHIEVEMENT_IN_ACTIVITY": "Logro en actividad",
+      "PLAY_ACTIVITY": "Jugar en actividad",
+      "ACHIEVEMENT_IN_GAME": "Logro en juego"
+    }
   }
 }

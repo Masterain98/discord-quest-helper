@@ -68,7 +68,8 @@
     "home": "Accueil",
     "game_simulator": "Simulateur de jeu",
     "settings": "Paramètres",
-    "debug": "Débogage"
+    "debug": "Débogage",
+    "global_quests": "Quêtes mondiales"
   },
   "home": {
     "dashboard_title": "Quest Tableau de bord",
@@ -552,5 +553,88 @@
     "close_only": "Fermer uniquement cette application",
     "restore_and_close": "Fermer et redémarrer Discord normalement",
     "helper_error": "L'assistant de redémarrage de Discord n'a pas pu démarrer. Fermez complètement Discord et rouvrez-le manuellement."
+  },
+  "global_quests": {
+    "region_label": "Région",
+    "description": "Consultez toutes les quêtes encore valides du catalogue communautaire, y compris les variantes régionales.",
+    "search": "Rechercher une quête ou un jeu",
+    "filters": "Filtres",
+    "country_search": "Rechercher des pays",
+    "source_label": "Données des quêtes mondiales fournies par discordquest.com",
+    "country_empty": "Aucun pays trouvé",
+    "country": "Disponible dans",
+    "all_countries": "Tous les pays",
+    "clear": "Effacer les filtres",
+    "country_hint": "Le filtre par pays inclut les quêtes mondiales et exclut la disponibilité inconnue.",
+    "results": "{count} quêtes sur {total}",
+    "updated": "Mis à jour : {time}",
+    "refresh_error": "Échec de la mise à jour. Le catalogue précédent est affiché.",
+    "regions_stale": "Les restrictions n’ont pas été actualisées. Les informations précédentes sont conservées.",
+    "regions_error": "Les restrictions sont indisponibles et affichées comme inconnues.",
+    "account_error": "Le statut d’achèvement du compte n’a pas pu être actualisé.",
+    "link_error": "Impossible d’ouvrir le lien.",
+    "loading": "Chargement des quêtes mondiales…",
+    "load_error": "Impossible de charger le catalogue des quêtes.",
+    "retry": "Réessayer",
+    "empty": "Aucune quête ne correspond à la recherche et aux filtres.",
+    "completed": "Terminée",
+    "accepted": "Acceptée",
+    "upcoming": "À venir",
+    "details": "Détails",
+    "requirements": "Conditions",
+    "restrictions": "Restrictions",
+    "age_hint": "Cette quête peut nécessiter une vérification de l’âge.",
+    "eligibility_hint": "Les indications communautaires ne garantissent pas l’éligibilité de votre compte.",
+    "all_rewards": "Toutes les récompenses",
+    "open_discord": "Voir dans Discord",
+    "only_countries": "Uniquement : {countries}",
+    "except_countries": "Sauf : {countries}",
+    "starts": "Début : {time}",
+    "ends": "Fin : {time}",
+    "unknown": "Inconnu",
+    "target_count": "{count} objectifs",
+    "premium_reward": "Récompense Nitro : {count} Orbs",
+    "reward_expires": "Expiration de la récompense : {time}",
+    "filter_titles": {
+      "tasks": "Type de quête",
+      "rewards": "Type de récompense",
+      "regions": "Restriction régionale",
+      "ages": "Restriction d’âge"
+    },
+    "tasks": {
+      "watch": "Regarder",
+      "play": "Jouer",
+      "stream": "Diffuser",
+      "activity": "Activité / succès",
+      "other": "Autre"
+    },
+    "rewards": {
+      "orbs": "Orbs",
+      "avatar": "Décoration d’avatar",
+      "ingame": "Récompense en jeu",
+      "nitro": "Nitro",
+      "other": "Autre / inconnu"
+    },
+    "regions": {
+      "global": "Disponible mondialement",
+      "restricted": "Restriction régionale",
+      "unknown": "Région inconnue"
+    },
+    "ages": {
+      "adult": "18+",
+      "unmarked": "Aucune restriction d’âge indiquée",
+      "unknown": "Âge inconnu"
+    },
+    "platforms": {
+      "WATCH_VIDEO": "Vidéo sur ordinateur",
+      "WATCH_VIDEO_ON_MOBILE": "Vidéo sur mobile",
+      "PLAY_ON_DESKTOP": "Jeu sur ordinateur",
+      "PLAY_ON_XBOX": "Jeu sur Xbox",
+      "PLAY_ON_PLAYSTATION": "Jeu sur PlayStation",
+      "STREAM_ON_DESKTOP": "Diffusion sur ordinateur",
+      "ACHIEVEMENT_IN_ACTIVITY": "Succès d’activité",
+      "PLAY_ACTIVITY": "Jeu d’activité",
+      "ACHIEVEMENT_IN_GAME": "Succès en jeu"
+    }
   }
 }
