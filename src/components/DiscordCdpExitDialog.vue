@@ -4,7 +4,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 import { message } from '@tauri-apps/plugin-dialog'
 import { useI18n } from 'vue-i18n'
-import { LoaderCircle } from 'lucide-vue-next'
+import { LoaderCircle, X } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import {
   AlertDialog,
@@ -58,7 +58,17 @@ onUnmounted(() => unlisten?.())
 <template>
   <AlertDialog :open="state.dialogOpen">
     <AlertDialogContent class="max-w-[560px]">
-      <AlertDialogHeader>
+      <Button
+        variant="ghost"
+        size="icon"
+        class="absolute right-3 top-3"
+        :aria-label="t('dialog.cancel')"
+        :disabled="state.checking || state.closing"
+        @click="guard.cancelClose"
+      >
+        <X class="h-4 w-4" />
+      </Button>
+      <AlertDialogHeader class="pr-8">
         <AlertDialogTitle>{{ t('exit_cdp.title') }}</AlertDialogTitle>
         <AlertDialogDescription>{{ t('exit_cdp.description') }}</AlertDialogDescription>
       </AlertDialogHeader>
