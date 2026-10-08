@@ -300,7 +300,6 @@ void store.refresh()
             <div class="flex flex-wrap gap-1">
               <GlobalQuestTaskBadges :tasks="quest.tasks" compact />
               <Badge v-if="!quest.tasks.length" variant="secondary" class="px-1.5 py-0 text-[10px] font-normal leading-4">{{ t('global_quests.tasks.other') }}</Badge>
-              <Badge v-if="!quest.tasks.length" variant="secondary">{{ t('global_quests.tasks.other') }}</Badge>
             </div>
           </div>
           <div class="min-w-0 space-y-1 text-xs">
