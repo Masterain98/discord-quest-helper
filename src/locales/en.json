@@ -68,7 +68,8 @@
     "home": "Home",
     "game_simulator": "Game Simulator",
     "settings": "Settings",
-    "debug": "Debug"
+    "debug": "Debug",
+    "global_quests": "Global Quests"
   },
   "home": {
     "dashboard_title": "Quest Dashboard",
@@ -554,5 +555,88 @@
     "close_only": "Close this app only",
     "restore_and_close": "Close app and restart Discord normally",
     "helper_error": "The Discord restart helper could not be started. You may need to fully quit and reopen Discord manually."
+  },
+  "global_quests": {
+    "region_label": "Region",
+    "description": "Browse all unexpired quests from the community catalog, including regional variants.",
+    "search": "Search quest or game",
+    "filters": "Filters",
+    "country_search": "Search countries",
+    "source_label": "Global quest data from discordquest.com",
+    "country_empty": "No countries found",
+    "country": "Available in",
+    "all_countries": "All countries",
+    "clear": "Clear filters",
+    "country_hint": "Country filtering includes global quests and excludes unknown availability.",
+    "results": "{count} of {total} quests",
+    "updated": "Updated {time}",
+    "refresh_error": "Refresh failed. Showing the previous catalog.",
+    "regions_stale": "Restriction data could not be updated. Previous information is retained.",
+    "regions_error": "Restriction data is unavailable. Missing information is shown as unknown.",
+    "account_error": "Account completion status could not be updated.",
+    "link_error": "Could not open the link.",
+    "loading": "Loading global quests…",
+    "load_error": "Could not load the quest catalog.",
+    "retry": "Retry",
+    "empty": "No quests match your search and filters.",
+    "completed": "Completed",
+    "accepted": "Accepted",
+    "upcoming": "Upcoming",
+    "details": "Details",
+    "requirements": "Requirements",
+    "restrictions": "Restrictions",
+    "age_hint": "Age verification may be required for this quest.",
+    "eligibility_hint": "Community restriction labels do not guarantee eligibility for your account.",
+    "all_rewards": "All rewards",
+    "open_discord": "View in Discord",
+    "only_countries": "Only: {countries}",
+    "except_countries": "Except: {countries}",
+    "starts": "Starts: {time}",
+    "ends": "Ends: {time}",
+    "unknown": "Unknown",
+    "target_count": "{count} objectives",
+    "premium_reward": "Nitro reward: {count} Orbs",
+    "reward_expires": "Reward expires: {time}",
+    "filter_titles": {
+      "tasks": "Quest type",
+      "rewards": "Reward type",
+      "regions": "Regional restriction",
+      "ages": "Age restriction"
+    },
+    "tasks": {
+      "watch": "Watch",
+      "play": "Play",
+      "stream": "Stream",
+      "activity": "Activity / achievement",
+      "other": "Other"
+    },
+    "rewards": {
+      "orbs": "Orbs",
+      "avatar": "Avatar decoration",
+      "ingame": "In-game reward",
+      "nitro": "Nitro",
+      "other": "Other / unknown"
+    },
+    "regions": {
+      "global": "Globally available",
+      "restricted": "Region restricted",
+      "unknown": "Region unknown"
+    },
+    "ages": {
+      "adult": "18+",
+      "unmarked": "No age restriction marked",
+      "unknown": "Age unknown"
+    },
+    "platforms": {
+      "WATCH_VIDEO": "Desktop video",
+      "WATCH_VIDEO_ON_MOBILE": "Mobile video",
+      "PLAY_ON_DESKTOP": "Desktop play",
+      "PLAY_ON_XBOX": "Xbox play",
+      "PLAY_ON_PLAYSTATION": "PlayStation play",
+      "STREAM_ON_DESKTOP": "Desktop stream",
+      "ACHIEVEMENT_IN_ACTIVITY": "Activity achievement",
+      "PLAY_ACTIVITY": "Activity play",
+      "ACHIEVEMENT_IN_GAME": "Game achievement"
+    }
   }
 }

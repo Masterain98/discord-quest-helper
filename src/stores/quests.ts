@@ -375,6 +375,23 @@ export const useQuestsStore = defineStore('quests', () => {
 
   let questsFetchGeneration = 0
   let questsFetchInFlight: Promise<void> | null = null
+  const questAccountId = ref<string | null>(null)
+
+  // Account changes invalidate both cached rows and requests from the old session.
+  function setQuestAccount(accountId: string | null) {
+    if (questAccountId.value === accountId) return
+    questAccountId.value = accountId
+    questsFetchGeneration++
+    questsFetchInFlight = null
+    quests.value = []
+    excludedQuests.value = []
+    questEnrollmentBlockedUntil.value = null
+    lastQuestsFetchTime.value = 0
+    loading.value = false
+    refreshing.value = false
+    hasLoadedQuests.value = false
+    error.value = null
+  }
 
   async function fetchQuests(silent = false, force = false) {
     // Manual refresh and polling share a request, so an older response cannot
@@ -1384,6 +1401,7 @@ export const useQuestsStore = defineStore('quests', () => {
   }
 
   function resetForLogout() {
+    questAccountId.value = null
     orbsFetchGeneration++
     questsFetchGeneration++
     questsFetchInFlight = null
@@ -1506,6 +1524,8 @@ export const useQuestsStore = defineStore('quests', () => {
     loading,
     refreshing,
     hasLoadedQuests,
+    questAccountId,
+    setQuestAccount,
     startingQuestId,
     error,
     orbsBalance,

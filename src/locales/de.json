@@ -68,7 +68,8 @@
     "home": "Startseite",
     "game_simulator": "Spielsimulator",
     "settings": "Einstellungen",
-    "debug": "Debuggen"
+    "debug": "Debuggen",
+    "global_quests": "Globale Quests"
   },
   "home": {
     "dashboard_title": "Quest Dashboard",
@@ -552,5 +553,88 @@
     "close_only": "Nur diese App schließen",
     "restore_and_close": "App schließen und Discord normal neu starten",
     "helper_error": "Der Discord-Neustarthelfer konnte nicht gestartet werden. Beende Discord vollständig und öffne es manuell erneut."
+  },
+  "global_quests": {
+    "region_label": "Region",
+    "description": "Alle noch gültigen Quests im Community-Katalog, einschließlich regionaler Varianten.",
+    "search": "Quest oder Spiel suchen",
+    "filters": "Filter",
+    "country_search": "Länder suchen",
+    "source_label": "Quest-Daten stammen von discordquest.com",
+    "country_empty": "Keine Länder gefunden",
+    "country": "Verfügbar in",
+    "all_countries": "Alle Länder",
+    "clear": "Filter zurücksetzen",
+    "country_hint": "Der Länderfilter enthält globale Quests und schließt unbekannte Verfügbarkeit aus.",
+    "results": "{count} von {total} Quests",
+    "updated": "Aktualisiert: {time}",
+    "refresh_error": "Aktualisierung fehlgeschlagen. Der vorherige Katalog wird angezeigt.",
+    "regions_stale": "Einschränkungen konnten nicht aktualisiert werden. Vorherige Angaben bleiben erhalten.",
+    "regions_error": "Einschränkungen sind nicht verfügbar und werden als unbekannt angezeigt.",
+    "account_error": "Der Abschlussstatus des Kontos konnte nicht aktualisiert werden.",
+    "link_error": "Der Link konnte nicht geöffnet werden.",
+    "loading": "Globale Quests werden geladen…",
+    "load_error": "Der Quest-Katalog konnte nicht geladen werden.",
+    "retry": "Erneut versuchen",
+    "empty": "Keine Quests entsprechen der Suche und den Filtern.",
+    "completed": "Abgeschlossen",
+    "accepted": "Angenommen",
+    "upcoming": "Demnächst",
+    "details": "Details",
+    "requirements": "Anforderungen",
+    "restrictions": "Einschränkungen",
+    "age_hint": "Für diese Quest kann eine Altersverifizierung erforderlich sein.",
+    "eligibility_hint": "Community-Angaben garantieren nicht die Teilnahmeberechtigung deines Kontos.",
+    "all_rewards": "Alle Belohnungen",
+    "open_discord": "In Discord ansehen",
+    "only_countries": "Nur: {countries}",
+    "except_countries": "Außer: {countries}",
+    "starts": "Beginn: {time}",
+    "ends": "Ende: {time}",
+    "unknown": "Unbekannt",
+    "target_count": "{count} Ziele",
+    "premium_reward": "Nitro-Belohnung: {count} Orbs",
+    "reward_expires": "Belohnung verfällt: {time}",
+    "filter_titles": {
+      "tasks": "Quest-Typ",
+      "rewards": "Belohnungstyp",
+      "regions": "Regionale Einschränkung",
+      "ages": "Altersbeschränkung"
+    },
+    "tasks": {
+      "watch": "Ansehen",
+      "play": "Spielen",
+      "stream": "Streamen",
+      "activity": "Aktivität / Erfolg",
+      "other": "Sonstige"
+    },
+    "rewards": {
+      "orbs": "Orbs",
+      "avatar": "Avatar-Dekoration",
+      "ingame": "Spielbelohnung",
+      "nitro": "Nitro",
+      "other": "Sonstige / unbekannt"
+    },
+    "regions": {
+      "global": "Weltweit verfügbar",
+      "restricted": "Regional eingeschränkt",
+      "unknown": "Region unbekannt"
+    },
+    "ages": {
+      "adult": "18+",
+      "unmarked": "Keine Altersbeschränkung angegeben",
+      "unknown": "Alter unbekannt"
+    },
+    "platforms": {
+      "WATCH_VIDEO": "Desktop-Video",
+      "WATCH_VIDEO_ON_MOBILE": "Mobiles Video",
+      "PLAY_ON_DESKTOP": "Desktop-Spiel",
+      "PLAY_ON_XBOX": "Xbox-Spiel",
+      "PLAY_ON_PLAYSTATION": "PlayStation-Spiel",
+      "STREAM_ON_DESKTOP": "Desktop-Stream",
+      "ACHIEVEMENT_IN_ACTIVITY": "Aktivitätserfolg",
+      "PLAY_ACTIVITY": "Aktivitätsspiel",
+      "ACHIEVEMENT_IN_GAME": "Spielerfolg"
+    }
   }
 }

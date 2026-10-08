@@ -68,7 +68,8 @@
     "home": "首頁",
     "game_simulator": "遊戲模擬",
     "settings": "設定",
-    "debug": "偵錯"
+    "debug": "偵錯",
+    "global_quests": "全球任務"
   },
   "home": {
     "dashboard_title": "Quest 儀表板",
@@ -552,5 +553,88 @@
     "close_only": "僅關閉本應用程式",
     "restore_and_close": "關閉本應用程式並將 Discord 重新啟動至一般模式",
     "helper_error": "無法啟動 Discord 重新啟動助手。你可能需要手動完全結束並重新開啟 Discord。"
+  },
+  "global_quests": {
+    "region_label": "地區",
+    "description": "瀏覽社群目錄中所有未過期任務，包括不同地區的任務版本。",
+    "search": "搜尋任務或遊戲",
+    "filters": "篩選",
+    "country_search": "搜尋國家／地區",
+    "source_label": "全球任務資料來源於 discordquest.com",
+    "country_empty": "找不到國家／地區",
+    "country": "可參與國家／地區",
+    "all_countries": "所有國家／地區",
+    "clear": "清除篩選",
+    "country_hint": "國家篩選包含全球可用任務，不包含可用性未知的任務。",
+    "results": "顯示 {count} / {total} 個任務",
+    "updated": "更新於 {time}",
+    "refresh_error": "重新整理失敗，正在顯示上次取得的任務。",
+    "regions_stale": "限制資訊未能更新，保留上次取得的資訊。",
+    "regions_error": "限制資訊暫時無法取得，缺少的資訊顯示為未知。",
+    "account_error": "帳號完成狀態未能更新。",
+    "link_error": "無法開啟連結。",
+    "loading": "正在載入全球任務…",
+    "load_error": "無法載入任務目錄。",
+    "retry": "重試",
+    "empty": "沒有符合搜尋和篩選條件的任務。",
+    "completed": "已完成",
+    "accepted": "已接受",
+    "upcoming": "即將開始",
+    "details": "詳情",
+    "requirements": "任務要求",
+    "restrictions": "參與限制",
+    "age_hint": "此任務可能需要完成年齡驗證。",
+    "eligibility_hint": "社群提供的限制標記不保證目前帳號實際可參與。",
+    "all_rewards": "全部獎勵",
+    "open_discord": "在 Discord 查看",
+    "only_countries": "僅限：{countries}",
+    "except_countries": "排除：{countries}",
+    "starts": "開始：{time}",
+    "ends": "截止：{time}",
+    "unknown": "未知",
+    "target_count": "{count} 個目標",
+    "premium_reward": "Nitro 獎勵：{count} Orbs",
+    "reward_expires": "獎勵到期：{time}",
+    "filter_titles": {
+      "tasks": "任務類型",
+      "rewards": "獎勵類型",
+      "regions": "地區限制",
+      "ages": "年齡限制"
+    },
+    "tasks": {
+      "watch": "觀看",
+      "play": "遊玩",
+      "stream": "直播",
+      "activity": "活動／成就",
+      "other": "其他"
+    },
+    "rewards": {
+      "orbs": "Orbs",
+      "avatar": "頭像裝飾",
+      "ingame": "遊戲內獎勵",
+      "nitro": "Nitro",
+      "other": "其他／未知"
+    },
+    "regions": {
+      "global": "全球可用",
+      "restricted": "地區受限",
+      "unknown": "地區資訊未知"
+    },
+    "ages": {
+      "adult": "18+",
+      "unmarked": "未標記年齡限制",
+      "unknown": "年齡資訊未知"
+    },
+    "platforms": {
+      "WATCH_VIDEO": "桌面端影片",
+      "WATCH_VIDEO_ON_MOBILE": "行動端影片",
+      "PLAY_ON_DESKTOP": "桌面端遊玩",
+      "PLAY_ON_XBOX": "Xbox 遊玩",
+      "PLAY_ON_PLAYSTATION": "PlayStation 遊玩",
+      "STREAM_ON_DESKTOP": "桌面端直播",
+      "ACHIEVEMENT_IN_ACTIVITY": "活動成就",
+      "PLAY_ACTIVITY": "活動遊玩",
+      "ACHIEVEMENT_IN_GAME": "遊戲成就"
+    }
   }
 }

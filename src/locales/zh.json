@@ -68,7 +68,8 @@
     "home": "首页",
     "game_simulator": "游戏模拟",
     "settings": "设置",
-    "debug": "调试"
+    "debug": "调试",
+    "global_quests": "全球任务"
   },
   "home": {
     "dashboard_title": "任务仪表盘",
@@ -554,5 +555,88 @@
     "close_only": "仅关闭本应用",
     "restore_and_close": "关闭本应用并重启Discord到一般模式",
     "helper_error": "无法启动 Discord 重启助手。你可能需要手动完全退出并重新打开 Discord。"
+  },
+  "global_quests": {
+    "region_label": "地区",
+    "description": "浏览社区目录中所有未过期任务，包括不同地区的任务版本。",
+    "search": "搜索任务或游戏",
+    "filters": "筛选",
+    "country_search": "搜索国家／地区",
+    "source_label": "全球任务数据来源于 discordquest.com",
+    "country_empty": "找不到国家／地区",
+    "country": "可参与国家／地区",
+    "all_countries": "所有国家／地区",
+    "clear": "清除筛选",
+    "country_hint": "国家筛选包含全球可用任务，不包含可用性未知的任务。",
+    "results": "显示 {count} / {total} 个任务",
+    "updated": "更新于 {time}",
+    "refresh_error": "刷新失败，正在显示上次获取的任务。",
+    "regions_stale": "限制信息未能更新，保留上次获取的信息。",
+    "regions_error": "限制信息暂不可用，缺失信息显示为未知。",
+    "account_error": "账号完成状态未能更新。",
+    "link_error": "无法打开链接。",
+    "loading": "正在加载全球任务…",
+    "load_error": "无法加载任务目录。",
+    "retry": "重试",
+    "empty": "没有符合搜索和筛选条件的任务。",
+    "completed": "已完成",
+    "accepted": "已接受",
+    "upcoming": "即将开始",
+    "details": "详情",
+    "requirements": "任务要求",
+    "restrictions": "参与限制",
+    "age_hint": "此任务可能需要完成年龄验证。",
+    "eligibility_hint": "社区提供的限制标记不保证当前账号实际可参与。",
+    "all_rewards": "全部奖励",
+    "open_discord": "在 Discord 查看",
+    "only_countries": "仅限：{countries}",
+    "except_countries": "排除：{countries}",
+    "starts": "开始：{time}",
+    "ends": "截止：{time}",
+    "unknown": "未知",
+    "target_count": "{count} 个目标",
+    "premium_reward": "Nitro 奖励：{count} Orbs",
+    "reward_expires": "奖励到期：{time}",
+    "filter_titles": {
+      "tasks": "任务类型",
+      "rewards": "奖励类型",
+      "regions": "地区限制",
+      "ages": "年龄限制"
+    },
+    "tasks": {
+      "watch": "观看",
+      "play": "游玩",
+      "stream": "直播",
+      "activity": "活动／成就",
+      "other": "其他"
+    },
+    "rewards": {
+      "orbs": "Orbs",
+      "avatar": "头像装饰",
+      "ingame": "游戏内奖励",
+      "nitro": "Nitro",
+      "other": "其他／未知"
+    },
+    "regions": {
+      "global": "全球可用",
+      "restricted": "地区受限",
+      "unknown": "地区信息未知"
+    },
+    "ages": {
+      "adult": "18+",
+      "unmarked": "未标记年龄限制",
+      "unknown": "年龄信息未知"
+    },
+    "platforms": {
+      "WATCH_VIDEO": "桌面端视频",
+      "WATCH_VIDEO_ON_MOBILE": "移动端视频",
+      "PLAY_ON_DESKTOP": "桌面端游玩",
+      "PLAY_ON_XBOX": "Xbox 游玩",
+      "PLAY_ON_PLAYSTATION": "PlayStation 游玩",
+      "STREAM_ON_DESKTOP": "桌面端直播",
+      "ACHIEVEMENT_IN_ACTIVITY": "活动成就",
+      "PLAY_ACTIVITY": "活动游玩",
+      "ACHIEVEMENT_IN_GAME": "游戏成就"
+    }
   }
 }

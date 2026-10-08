@@ -68,7 +68,8 @@
     "home": "ホーム",
     "game_simulator": "ゲームシミュレーター",
     "settings": "設定",
-    "debug": "デバッグ"
+    "debug": "デバッグ",
+    "global_quests": "世界のクエスト"
   },
   "home": {
     "dashboard_title": "Quest ダッシュボード",
@@ -552,5 +553,88 @@
     "close_only": "このアプリのみ閉じる",
     "restore_and_close": "アプリを閉じて Discord を通常モードで再起動",
     "helper_error": "Discord 再起動ヘルパーを開始できませんでした。Discord を完全に終了して手動で再起動してください。"
+  },
+  "global_quests": {
+    "region_label": "地域",
+    "description": "地域別のバージョンを含む、期限内のコミュニティクエストを表示します。",
+    "search": "クエストやゲームを検索",
+    "filters": "フィルター",
+    "country_search": "国を検索",
+    "source_label": "グローバルクエストのデータ提供元：discordquest.com",
+    "country_empty": "国が見つかりません",
+    "country": "参加可能な国",
+    "all_countries": "すべての国",
+    "clear": "フィルターを解除",
+    "country_hint": "国の絞り込みには世界共通のクエストを含み、参加可否不明のものを除きます。",
+    "results": "{total} 件中 {count} 件",
+    "updated": "更新：{time}",
+    "refresh_error": "更新に失敗しました。前回の一覧を表示しています。",
+    "regions_stale": "制限情報を更新できませんでした。前回の情報を表示しています。",
+    "regions_error": "制限情報を取得できません。不明として表示します。",
+    "account_error": "アカウントの完了状態を更新できませんでした。",
+    "link_error": "リンクを開けませんでした。",
+    "loading": "世界のクエストを読み込み中…",
+    "load_error": "クエスト一覧を読み込めませんでした。",
+    "retry": "再試行",
+    "empty": "検索条件に一致するクエストはありません。",
+    "completed": "完了",
+    "accepted": "受諾済み",
+    "upcoming": "開始予定",
+    "details": "詳細",
+    "requirements": "達成条件",
+    "restrictions": "参加制限",
+    "age_hint": "このクエストには年齢確認が必要な場合があります。",
+    "eligibility_hint": "コミュニティの制限情報は、アカウントの参加資格を保証しません。",
+    "all_rewards": "すべての報酬",
+    "open_discord": "Discord で表示",
+    "only_countries": "対象：{countries}",
+    "except_countries": "対象外：{countries}",
+    "starts": "開始：{time}",
+    "ends": "終了：{time}",
+    "unknown": "不明",
+    "target_count": "{count} 個の目標",
+    "premium_reward": "Nitro 報酬：{count} Orbs",
+    "reward_expires": "報酬の有効期限：{time}",
+    "filter_titles": {
+      "tasks": "クエストの種類",
+      "rewards": "報酬の種類",
+      "regions": "地域制限",
+      "ages": "年齢制限"
+    },
+    "tasks": {
+      "watch": "視聴",
+      "play": "プレイ",
+      "stream": "配信",
+      "activity": "アクティビティ／実績",
+      "other": "その他"
+    },
+    "rewards": {
+      "orbs": "Orbs",
+      "avatar": "アバターデコレーション",
+      "ingame": "ゲーム内報酬",
+      "nitro": "Nitro",
+      "other": "その他／不明"
+    },
+    "regions": {
+      "global": "世界共通",
+      "restricted": "地域制限あり",
+      "unknown": "地域情報不明"
+    },
+    "ages": {
+      "adult": "18歳以上",
+      "unmarked": "年齢制限の記載なし",
+      "unknown": "年齢情報不明"
+    },
+    "platforms": {
+      "WATCH_VIDEO": "デスクトップ動画",
+      "WATCH_VIDEO_ON_MOBILE": "モバイル動画",
+      "PLAY_ON_DESKTOP": "デスクトッププレイ",
+      "PLAY_ON_XBOX": "Xbox プレイ",
+      "PLAY_ON_PLAYSTATION": "PlayStation プレイ",
+      "STREAM_ON_DESKTOP": "デスクトップ配信",
+      "ACHIEVEMENT_IN_ACTIVITY": "アクティビティ実績",
+      "PLAY_ACTIVITY": "アクティビティプレイ",
+      "ACHIEVEMENT_IN_GAME": "ゲーム実績"
+    }
   }
 }

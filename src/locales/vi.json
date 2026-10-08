@@ -68,7 +68,8 @@
     "home": "Trang chủ",
     "game_simulator": "Trình mô phỏng trò chơi",
     "settings": "Cài đặt",
-    "debug": "Gỡ lỗi"
+    "debug": "Gỡ lỗi",
+    "global_quests": "Nhiệm vụ toàn cầu"
   },
   "home": {
     "dashboard_title": "Quest Trang tổng quan",
@@ -552,5 +553,88 @@
     "close_only": "Chỉ đóng ứng dụng này",
     "restore_and_close": "Đóng và khởi động Discord bình thường",
     "helper_error": "Không thể khởi động trình trợ giúp khởi động lại Discord. Hãy thoát hoàn toàn Discord rồi mở lại theo cách thủ công."
+  },
+  "global_quests": {
+    "region_label": "Khu vực",
+    "description": "Xem tất cả nhiệm vụ chưa hết hạn trong danh mục cộng đồng, bao gồm các phiên bản theo khu vực.",
+    "search": "Tìm nhiệm vụ hoặc trò chơi",
+    "filters": "Bộ lọc",
+    "country_search": "Tìm quốc gia",
+    "source_label": "Dữ liệu nhiệm vụ toàn cầu từ discordquest.com",
+    "country_empty": "Không tìm thấy quốc gia",
+    "country": "Có sẵn tại",
+    "all_countries": "Tất cả quốc gia",
+    "clear": "Xóa bộ lọc",
+    "country_hint": "Bộ lọc quốc gia bao gồm nhiệm vụ toàn cầu và loại trừ nhiệm vụ chưa rõ khả dụng.",
+    "results": "{count} trong {total} nhiệm vụ",
+    "updated": "Cập nhật: {time}",
+    "refresh_error": "Làm mới thất bại. Đang hiển thị danh mục trước đó.",
+    "regions_stale": "Không thể cập nhật giới hạn. Giữ lại thông tin trước đó.",
+    "regions_error": "Không có thông tin giới hạn và được hiển thị là chưa rõ.",
+    "account_error": "Không thể cập nhật trạng thái hoàn thành của tài khoản.",
+    "link_error": "Không thể mở liên kết.",
+    "loading": "Đang tải nhiệm vụ toàn cầu…",
+    "load_error": "Không thể tải danh mục nhiệm vụ.",
+    "retry": "Thử lại",
+    "empty": "Không có nhiệm vụ phù hợp với tìm kiếm và bộ lọc.",
+    "completed": "Đã hoàn thành",
+    "accepted": "Đã nhận",
+    "upcoming": "Sắp bắt đầu",
+    "details": "Chi tiết",
+    "requirements": "Yêu cầu",
+    "restrictions": "Giới hạn",
+    "age_hint": "Nhiệm vụ này có thể yêu cầu xác minh tuổi.",
+    "eligibility_hint": "Nhãn cộng đồng không đảm bảo tài khoản của bạn đủ điều kiện tham gia.",
+    "all_rewards": "Tất cả phần thưởng",
+    "open_discord": "Xem trong Discord",
+    "only_countries": "Chỉ: {countries}",
+    "except_countries": "Ngoại trừ: {countries}",
+    "starts": "Bắt đầu: {time}",
+    "ends": "Kết thúc: {time}",
+    "unknown": "Chưa rõ",
+    "target_count": "{count} mục tiêu",
+    "premium_reward": "Phần thưởng Nitro: {count} Orbs",
+    "reward_expires": "Phần thưởng hết hạn: {time}",
+    "filter_titles": {
+      "tasks": "Loại nhiệm vụ",
+      "rewards": "Loại phần thưởng",
+      "regions": "Giới hạn khu vực",
+      "ages": "Giới hạn tuổi"
+    },
+    "tasks": {
+      "watch": "Xem",
+      "play": "Chơi",
+      "stream": "Phát trực tiếp",
+      "activity": "Hoạt động / thành tích",
+      "other": "Khác"
+    },
+    "rewards": {
+      "orbs": "Orbs",
+      "avatar": "Trang trí ảnh đại diện",
+      "ingame": "Phần thưởng trong trò chơi",
+      "nitro": "Nitro",
+      "other": "Khác / chưa rõ"
+    },
+    "regions": {
+      "global": "Có sẵn toàn cầu",
+      "restricted": "Giới hạn khu vực",
+      "unknown": "Khu vực chưa rõ"
+    },
+    "ages": {
+      "adult": "18+",
+      "unmarked": "Không có giới hạn tuổi được đánh dấu",
+      "unknown": "Tuổi chưa rõ"
+    },
+    "platforms": {
+      "WATCH_VIDEO": "Video máy tính",
+      "WATCH_VIDEO_ON_MOBILE": "Video di động",
+      "PLAY_ON_DESKTOP": "Chơi trên máy tính",
+      "PLAY_ON_XBOX": "Chơi trên Xbox",
+      "PLAY_ON_PLAYSTATION": "Chơi trên PlayStation",
+      "STREAM_ON_DESKTOP": "Phát trực tiếp máy tính",
+      "ACHIEVEMENT_IN_ACTIVITY": "Thành tích hoạt động",
+      "PLAY_ACTIVITY": "Chơi hoạt động",
+      "ACHIEVEMENT_IN_GAME": "Thành tích trò chơi"
+    }
   }
 }

@@ -68,7 +68,8 @@
     "home": "Beranda",
     "game_simulator": "Simulator Permainan",
     "settings": "Pengaturan",
-    "debug": "Men-debug"
+    "debug": "Men-debug",
+    "global_quests": "Quest Global"
   },
   "home": {
     "dashboard_title": "Quest Dasbor",
@@ -552,5 +553,88 @@
     "close_only": "Tutup aplikasi ini saja",
     "restore_and_close": "Tutup dan mulai ulang Discord secara normal",
     "helper_error": "Pembantu mulai ulang Discord tidak dapat dijalankan. Tutup Discord sepenuhnya lalu buka kembali secara manual."
+  },
+  "global_quests": {
+    "region_label": "Wilayah",
+    "description": "Lihat semua quest yang belum kedaluwarsa dari katalog komunitas, termasuk varian regional.",
+    "search": "Cari quest atau game",
+    "filters": "Filter",
+    "country_search": "Cari negara",
+    "source_label": "Data quest global dari discordquest.com",
+    "country_empty": "Negara tidak ditemukan",
+    "country": "Tersedia di",
+    "all_countries": "Semua negara",
+    "clear": "Hapus filter",
+    "country_hint": "Filter negara mencakup quest global dan mengecualikan ketersediaan yang tidak diketahui.",
+    "results": "{count} dari {total} quest",
+    "updated": "Diperbarui: {time}",
+    "refresh_error": "Pembaruan gagal. Menampilkan katalog sebelumnya.",
+    "regions_stale": "Pembatasan tidak dapat diperbarui. Informasi sebelumnya dipertahankan.",
+    "regions_error": "Informasi pembatasan tidak tersedia dan ditampilkan sebagai tidak diketahui.",
+    "account_error": "Status penyelesaian akun tidak dapat diperbarui.",
+    "link_error": "Tautan tidak dapat dibuka.",
+    "loading": "Memuat quest global…",
+    "load_error": "Katalog quest tidak dapat dimuat.",
+    "retry": "Coba lagi",
+    "empty": "Tidak ada quest yang sesuai dengan pencarian dan filter.",
+    "completed": "Selesai",
+    "accepted": "Diterima",
+    "upcoming": "Segera dimulai",
+    "details": "Detail",
+    "requirements": "Persyaratan",
+    "restrictions": "Pembatasan",
+    "age_hint": "Quest ini mungkin memerlukan verifikasi usia.",
+    "eligibility_hint": "Label komunitas tidak menjamin akun Anda memenuhi syarat untuk berpartisipasi.",
+    "all_rewards": "Semua hadiah",
+    "open_discord": "Lihat di Discord",
+    "only_countries": "Hanya: {countries}",
+    "except_countries": "Kecuali: {countries}",
+    "starts": "Mulai: {time}",
+    "ends": "Berakhir: {time}",
+    "unknown": "Tidak diketahui",
+    "target_count": "{count} target",
+    "premium_reward": "Hadiah Nitro: {count} Orbs",
+    "reward_expires": "Hadiah kedaluwarsa: {time}",
+    "filter_titles": {
+      "tasks": "Jenis quest",
+      "rewards": "Jenis hadiah",
+      "regions": "Pembatasan wilayah",
+      "ages": "Pembatasan usia"
+    },
+    "tasks": {
+      "watch": "Tonton",
+      "play": "Main",
+      "stream": "Streaming",
+      "activity": "Aktivitas / pencapaian",
+      "other": "Lainnya"
+    },
+    "rewards": {
+      "orbs": "Orbs",
+      "avatar": "Dekorasi avatar",
+      "ingame": "Hadiah dalam game",
+      "nitro": "Nitro",
+      "other": "Lainnya / tidak diketahui"
+    },
+    "regions": {
+      "global": "Tersedia global",
+      "restricted": "Dibatasi wilayah",
+      "unknown": "Wilayah tidak diketahui"
+    },
+    "ages": {
+      "adult": "18+",
+      "unmarked": "Tidak ada batas usia yang ditandai",
+      "unknown": "Usia tidak diketahui"
+    },
+    "platforms": {
+      "WATCH_VIDEO": "Video desktop",
+      "WATCH_VIDEO_ON_MOBILE": "Video seluler",
+      "PLAY_ON_DESKTOP": "Main di desktop",
+      "PLAY_ON_XBOX": "Main di Xbox",
+      "PLAY_ON_PLAYSTATION": "Main di PlayStation",
+      "STREAM_ON_DESKTOP": "Streaming desktop",
+      "ACHIEVEMENT_IN_ACTIVITY": "Pencapaian aktivitas",
+      "PLAY_ACTIVITY": "Main aktivitas",
+      "ACHIEVEMENT_IN_GAME": "Pencapaian game"
+    }
   }
 }

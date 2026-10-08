@@ -68,7 +68,8 @@
     "home": "Ana sayfa",
     "game_simulator": "Oyun Simülatörü",
     "settings": "Ayarlar",
-    "debug": "Hata ayıklama"
+    "debug": "Hata ayıklama",
+    "global_quests": "Küresel Görevler"
   },
   "home": {
     "dashboard_title": "Quest Kontrol Paneli",
@@ -552,5 +553,88 @@
     "close_only": "Yalnızca bu uygulamayı kapat",
     "restore_and_close": "Kapat ve Discord'u normal başlat",
     "helper_error": "Discord yeniden başlatma yardımcısı başlatılamadı. Discord'u tamamen kapatıp elle yeniden açmanız gerekebilir."
+  },
+  "global_quests": {
+    "region_label": "Bölge",
+    "description": "Bölgesel sürümler dahil topluluk kataloğundaki süresi dolmamış tüm görevleri görüntüleyin.",
+    "search": "Görev veya oyun ara",
+    "filters": "Filtreler",
+    "country_search": "Ülke ara",
+    "source_label": "Küresel görev verileri discordquest.com kaynağından",
+    "country_empty": "Ülke bulunamadı",
+    "country": "Kullanılabilir ülke",
+    "all_countries": "Tüm ülkeler",
+    "clear": "Filtreleri temizle",
+    "country_hint": "Ülke filtresi küresel görevleri içerir, kullanılabilirliği bilinmeyenleri hariç tutar.",
+    "results": "{total} görevden {count} tanesi",
+    "updated": "Güncellendi: {time}",
+    "refresh_error": "Yenileme başarısız. Önceki katalog gösteriliyor.",
+    "regions_stale": "Kısıtlamalar güncellenemedi. Önceki bilgiler korunuyor.",
+    "regions_error": "Kısıtlama bilgileri kullanılamıyor ve bilinmiyor olarak gösteriliyor.",
+    "account_error": "Hesabın tamamlanma durumu güncellenemedi.",
+    "link_error": "Bağlantı açılamadı.",
+    "loading": "Küresel görevler yükleniyor…",
+    "load_error": "Görev kataloğu yüklenemedi.",
+    "retry": "Tekrar dene",
+    "empty": "Arama ve filtrelere uyan görev yok.",
+    "completed": "Tamamlandı",
+    "accepted": "Kabul edildi",
+    "upcoming": "Yakında",
+    "details": "Ayrıntılar",
+    "requirements": "Gereksinimler",
+    "restrictions": "Kısıtlamalar",
+    "age_hint": "Bu görev yaş doğrulaması gerektirebilir.",
+    "eligibility_hint": "Topluluk etiketleri hesabınızın katılım uygunluğunu garanti etmez.",
+    "all_rewards": "Tüm ödüller",
+    "open_discord": "Discord’da görüntüle",
+    "only_countries": "Yalnızca: {countries}",
+    "except_countries": "Hariç: {countries}",
+    "starts": "Başlangıç: {time}",
+    "ends": "Bitiş: {time}",
+    "unknown": "Bilinmiyor",
+    "target_count": "{count} hedef",
+    "premium_reward": "Nitro ödülü: {count} Orbs",
+    "reward_expires": "Ödülün sona ermesi: {time}",
+    "filter_titles": {
+      "tasks": "Görev türü",
+      "rewards": "Ödül türü",
+      "regions": "Bölgesel kısıtlama",
+      "ages": "Yaş kısıtlaması"
+    },
+    "tasks": {
+      "watch": "İzle",
+      "play": "Oyna",
+      "stream": "Yayın yap",
+      "activity": "Etkinlik / başarı",
+      "other": "Diğer"
+    },
+    "rewards": {
+      "orbs": "Orbs",
+      "avatar": "Avatar süsü",
+      "ingame": "Oyun içi ödül",
+      "nitro": "Nitro",
+      "other": "Diğer / bilinmiyor"
+    },
+    "regions": {
+      "global": "Küresel erişim",
+      "restricted": "Bölgesel kısıtlı",
+      "unknown": "Bölge bilinmiyor"
+    },
+    "ages": {
+      "adult": "18+",
+      "unmarked": "Yaş kısıtlaması belirtilmemiş",
+      "unknown": "Yaş bilinmiyor"
+    },
+    "platforms": {
+      "WATCH_VIDEO": "Masaüstü video",
+      "WATCH_VIDEO_ON_MOBILE": "Mobil video",
+      "PLAY_ON_DESKTOP": "Masaüstü oyun",
+      "PLAY_ON_XBOX": "Xbox oyun",
+      "PLAY_ON_PLAYSTATION": "PlayStation oyun",
+      "STREAM_ON_DESKTOP": "Masaüstü yayın",
+      "ACHIEVEMENT_IN_ACTIVITY": "Etkinlik başarısı",
+      "PLAY_ACTIVITY": "Etkinlik oyunu",
+      "ACHIEVEMENT_IN_GAME": "Oyun başarısı"
+    }
   }
 }

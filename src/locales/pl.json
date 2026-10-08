@@ -68,7 +68,8 @@
     "home": "Strona główna",
     "game_simulator": "Symulator gry",
     "settings": "Ustawienia",
-    "debug": "Debuguj"
+    "debug": "Debuguj",
+    "global_quests": "Zadania globalne"
   },
   "home": {
     "dashboard_title": "Quest Panel kontrolny",
@@ -552,5 +553,88 @@
     "close_only": "Zamknij tylko tę aplikację",
     "restore_and_close": "Zamknij i uruchom Discord normalnie",
     "helper_error": "Nie udało się uruchomić pomocnika ponownego uruchamiania Discord. Zamknij Discord całkowicie i otwórz go ręcznie."
+  },
+  "global_quests": {
+    "region_label": "Region",
+    "description": "Przeglądaj wszystkie niewygasłe zadania z katalogu społeczności, w tym wersje regionalne.",
+    "search": "Szukaj zadania lub gry",
+    "filters": "Filtry",
+    "country_search": "Szukaj krajów",
+    "source_label": "Dane globalnych zadań pochodzą z discordquest.com",
+    "country_empty": "Nie znaleziono krajów",
+    "country": "Dostępne w",
+    "all_countries": "Wszystkie kraje",
+    "clear": "Wyczyść filtry",
+    "country_hint": "Filtr kraju obejmuje zadania globalne i wyklucza nieznaną dostępność.",
+    "results": "{count} z {total} zadań",
+    "updated": "Aktualizacja: {time}",
+    "refresh_error": "Nie udało się odświeżyć. Wyświetlany jest poprzedni katalog.",
+    "regions_stale": "Nie zaktualizowano ograniczeń. Zachowano poprzednie informacje.",
+    "regions_error": "Ograniczenia są niedostępne i oznaczone jako nieznane.",
+    "account_error": "Nie udało się zaktualizować stanu ukończenia konta.",
+    "link_error": "Nie udało się otworzyć linku.",
+    "loading": "Ładowanie zadań globalnych…",
+    "load_error": "Nie udało się załadować katalogu zadań.",
+    "retry": "Ponów",
+    "empty": "Brak zadań pasujących do wyszukiwania i filtrów.",
+    "completed": "Ukończone",
+    "accepted": "Przyjęte",
+    "upcoming": "Wkrótce",
+    "details": "Szczegóły",
+    "requirements": "Wymagania",
+    "restrictions": "Ograniczenia",
+    "age_hint": "To zadanie może wymagać weryfikacji wieku.",
+    "eligibility_hint": "Oznaczenia społeczności nie gwarantują możliwości udziału konta.",
+    "all_rewards": "Wszystkie nagrody",
+    "open_discord": "Zobacz w Discord",
+    "only_countries": "Tylko: {countries}",
+    "except_countries": "Z wyjątkiem: {countries}",
+    "starts": "Początek: {time}",
+    "ends": "Koniec: {time}",
+    "unknown": "Nieznane",
+    "target_count": "Liczba celów: {count}",
+    "premium_reward": "Nagroda Nitro: {count} Orbs",
+    "reward_expires": "Nagroda wygasa: {time}",
+    "filter_titles": {
+      "tasks": "Typ zadania",
+      "rewards": "Typ nagrody",
+      "regions": "Ograniczenie regionalne",
+      "ages": "Ograniczenie wiekowe"
+    },
+    "tasks": {
+      "watch": "Oglądanie",
+      "play": "Granie",
+      "stream": "Transmisja",
+      "activity": "Aktywność / osiągnięcie",
+      "other": "Inne"
+    },
+    "rewards": {
+      "orbs": "Orbs",
+      "avatar": "Ozdoba awatara",
+      "ingame": "Nagroda w grze",
+      "nitro": "Nitro",
+      "other": "Inne / nieznane"
+    },
+    "regions": {
+      "global": "Dostępne globalnie",
+      "restricted": "Ograniczone regionalnie",
+      "unknown": "Region nieznany"
+    },
+    "ages": {
+      "adult": "18+",
+      "unmarked": "Brak oznaczonego ograniczenia wieku",
+      "unknown": "Wiek nieznany"
+    },
+    "platforms": {
+      "WATCH_VIDEO": "Wideo na komputerze",
+      "WATCH_VIDEO_ON_MOBILE": "Wideo na telefonie",
+      "PLAY_ON_DESKTOP": "Gra na komputerze",
+      "PLAY_ON_XBOX": "Gra na Xbox",
+      "PLAY_ON_PLAYSTATION": "Gra na PlayStation",
+      "STREAM_ON_DESKTOP": "Transmisja z komputera",
+      "ACHIEVEMENT_IN_ACTIVITY": "Osiągnięcie aktywności",
+      "PLAY_ACTIVITY": "Gra w aktywności",
+      "ACHIEVEMENT_IN_GAME": "Osiągnięcie w grze"
+    }
   }
 }

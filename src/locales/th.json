@@ -68,7 +68,8 @@
     "home": "หน้าแรก",
     "game_simulator": "เกมจำลอง",
     "settings": "การตั้งค่า",
-    "debug": "ดีบัก"
+    "debug": "ดีบัก",
+    "global_quests": "ภารกิจทั่วโลก"
   },
   "home": {
     "dashboard_title": "Quest แดชบอร์ด",
@@ -552,5 +553,88 @@
     "close_only": "ปิดเฉพาะแอปนี้",
     "restore_and_close": "ปิดแอปและเริ่ม Discord ใหม่ในโหมดปกติ",
     "helper_error": "ไม่สามารถเริ่มตัวช่วยรีสตาร์ต Discord ได้ โปรดปิด Discord ให้สมบูรณ์แล้วเปิดใหม่ด้วยตนเอง"
+  },
+  "global_quests": {
+    "region_label": "ภูมิภาค",
+    "description": "ดูภารกิจที่ยังไม่หมดอายุทั้งหมดจากรายการชุมชน รวมถึงเวอร์ชันเฉพาะภูมิภาค",
+    "search": "ค้นหาภารกิจหรือเกม",
+    "filters": "ตัวกรอง",
+    "country_search": "ค้นหาประเทศ",
+    "source_label": "ข้อมูลภารกิจทั่วโลกจาก discordquest.com",
+    "country_empty": "ไม่พบประเทศ",
+    "country": "ประเทศที่เข้าร่วมได้",
+    "all_countries": "ทุกประเทศ",
+    "clear": "ล้างตัวกรอง",
+    "country_hint": "ตัวกรองประเทศรวมภารกิจทั่วโลกและไม่รวมภารกิจที่ไม่ทราบสิทธิ์เข้าร่วม",
+    "results": "{count} จาก {total} ภารกิจ",
+    "updated": "อัปเดต: {time}",
+    "refresh_error": "รีเฟรชไม่สำเร็จ กำลังแสดงรายการก่อนหน้า",
+    "regions_stale": "อัปเดตข้อจำกัดไม่ได้ จึงเก็บข้อมูลก่อนหน้าไว้",
+    "regions_error": "ไม่มีข้อมูลข้อจำกัด จึงแสดงว่าไม่ทราบ",
+    "account_error": "อัปเดตสถานะสำเร็จของบัญชีไม่ได้",
+    "link_error": "เปิดลิงก์ไม่ได้",
+    "loading": "กำลังโหลดภารกิจทั่วโลก…",
+    "load_error": "โหลดรายการภารกิจไม่ได้",
+    "retry": "ลองอีกครั้ง",
+    "empty": "ไม่มีภารกิจที่ตรงกับการค้นหาและตัวกรอง",
+    "completed": "สำเร็จแล้ว",
+    "accepted": "รับแล้ว",
+    "upcoming": "เร็ว ๆ นี้",
+    "details": "รายละเอียด",
+    "requirements": "ข้อกำหนด",
+    "restrictions": "ข้อจำกัด",
+    "age_hint": "ภารกิจนี้อาจต้องยืนยันอายุ",
+    "eligibility_hint": "ป้ายกำกับจากชุมชนไม่รับประกันว่าบัญชีของคุณมีสิทธิ์เข้าร่วม",
+    "all_rewards": "รางวัลทั้งหมด",
+    "open_discord": "ดูใน Discord",
+    "only_countries": "เฉพาะ: {countries}",
+    "except_countries": "ยกเว้น: {countries}",
+    "starts": "เริ่ม: {time}",
+    "ends": "สิ้นสุด: {time}",
+    "unknown": "ไม่ทราบ",
+    "target_count": "{count} เป้าหมาย",
+    "premium_reward": "รางวัล Nitro: {count} Orbs",
+    "reward_expires": "รางวัลหมดอายุ: {time}",
+    "filter_titles": {
+      "tasks": "ประเภทภารกิจ",
+      "rewards": "ประเภทรางวัล",
+      "regions": "ข้อจำกัดภูมิภาค",
+      "ages": "ข้อจำกัดอายุ"
+    },
+    "tasks": {
+      "watch": "ดู",
+      "play": "เล่น",
+      "stream": "สตรีม",
+      "activity": "กิจกรรม / ความสำเร็จ",
+      "other": "อื่น ๆ"
+    },
+    "rewards": {
+      "orbs": "Orbs",
+      "avatar": "ของตกแต่งอวาตาร์",
+      "ingame": "รางวัลในเกม",
+      "nitro": "Nitro",
+      "other": "อื่น ๆ / ไม่ทราบ"
+    },
+    "regions": {
+      "global": "เข้าร่วมได้ทั่วโลก",
+      "restricted": "จำกัดภูมิภาค",
+      "unknown": "ไม่ทราบภูมิภาค"
+    },
+    "ages": {
+      "adult": "18+",
+      "unmarked": "ไม่มีข้อจำกัดอายุที่ระบุ",
+      "unknown": "ไม่ทราบอายุ"
+    },
+    "platforms": {
+      "WATCH_VIDEO": "วิดีโอบนเดสก์ท็อป",
+      "WATCH_VIDEO_ON_MOBILE": "วิดีโอบนมือถือ",
+      "PLAY_ON_DESKTOP": "เล่นบนเดสก์ท็อป",
+      "PLAY_ON_XBOX": "เล่นบน Xbox",
+      "PLAY_ON_PLAYSTATION": "เล่นบน PlayStation",
+      "STREAM_ON_DESKTOP": "สตรีมบนเดสก์ท็อป",
+      "ACHIEVEMENT_IN_ACTIVITY": "ความสำเร็จในกิจกรรม",
+      "PLAY_ACTIVITY": "เล่นกิจกรรม",
+      "ACHIEVEMENT_IN_GAME": "ความสำเร็จในเกม"
+    }
   }
 }

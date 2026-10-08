@@ -68,7 +68,8 @@
     "home": "홈",
     "game_simulator": "게임 시뮬레이터",
     "settings": "설정",
-    "debug": "디버그"
+    "debug": "디버그",
+    "global_quests": "글로벌 퀘스트"
   },
   "home": {
     "dashboard_title": "Quest 대시보드",
@@ -552,5 +553,88 @@
     "close_only": "이 앱만 닫기",
     "restore_and_close": "앱을 닫고 Discord를 일반 모드로 다시 시작",
     "helper_error": "Discord 재시작 도우미를 시작하지 못했습니다. Discord를 완전히 종료한 후 수동으로 다시 여세요."
+  },
+  "global_quests": {
+    "region_label": "지역",
+    "description": "지역별 버전을 포함하여 커뮤니티 목록의 만료되지 않은 퀘스트를 표시합니다.",
+    "search": "퀘스트 또는 게임 검색",
+    "filters": "필터",
+    "country_search": "국가 검색",
+    "source_label": "글로벌 퀘스트 데이터 제공: discordquest.com",
+    "country_empty": "국가를 찾을 수 없습니다",
+    "country": "참여 가능한 국가",
+    "all_countries": "모든 국가",
+    "clear": "필터 초기화",
+    "country_hint": "국가 필터에는 전 세계 퀘스트가 포함되며 참여 가능 여부가 불명확한 퀘스트는 제외됩니다.",
+    "results": "전체 {total}개 중 {count}개",
+    "updated": "업데이트: {time}",
+    "refresh_error": "새로 고침에 실패했습니다. 이전 목록을 표시합니다.",
+    "regions_stale": "제한 정보를 업데이트하지 못했습니다. 이전 정보를 유지합니다.",
+    "regions_error": "제한 정보를 가져올 수 없어 알 수 없음으로 표시합니다.",
+    "account_error": "계정의 완료 상태를 업데이트하지 못했습니다.",
+    "link_error": "링크를 열 수 없습니다.",
+    "loading": "글로벌 퀘스트를 불러오는 중…",
+    "load_error": "퀘스트 목록을 불러올 수 없습니다.",
+    "retry": "다시 시도",
+    "empty": "검색 및 필터 조건에 맞는 퀘스트가 없습니다.",
+    "completed": "완료",
+    "accepted": "수락됨",
+    "upcoming": "시작 예정",
+    "details": "상세 정보",
+    "requirements": "완료 조건",
+    "restrictions": "참여 제한",
+    "age_hint": "이 퀘스트에는 연령 인증이 필요할 수 있습니다.",
+    "eligibility_hint": "커뮤니티의 제한 표시는 계정의 실제 참여 자격을 보장하지 않습니다.",
+    "all_rewards": "모든 보상",
+    "open_discord": "Discord에서 보기",
+    "only_countries": "허용: {countries}",
+    "except_countries": "제외: {countries}",
+    "starts": "시작: {time}",
+    "ends": "종료: {time}",
+    "unknown": "알 수 없음",
+    "target_count": "목표 {count}개",
+    "premium_reward": "Nitro 보상: {count} Orbs",
+    "reward_expires": "보상 만료: {time}",
+    "filter_titles": {
+      "tasks": "퀘스트 유형",
+      "rewards": "보상 유형",
+      "regions": "지역 제한",
+      "ages": "연령 제한"
+    },
+    "tasks": {
+      "watch": "시청",
+      "play": "플레이",
+      "stream": "방송",
+      "activity": "활동 / 업적",
+      "other": "기타"
+    },
+    "rewards": {
+      "orbs": "Orbs",
+      "avatar": "아바타 장식",
+      "ingame": "게임 내 보상",
+      "nitro": "Nitro",
+      "other": "기타 / 알 수 없음"
+    },
+    "regions": {
+      "global": "전 세계 이용 가능",
+      "restricted": "지역 제한 있음",
+      "unknown": "지역 정보 알 수 없음"
+    },
+    "ages": {
+      "adult": "18세 이상",
+      "unmarked": "표시된 연령 제한 없음",
+      "unknown": "연령 정보 알 수 없음"
+    },
+    "platforms": {
+      "WATCH_VIDEO": "데스크톱 영상",
+      "WATCH_VIDEO_ON_MOBILE": "모바일 영상",
+      "PLAY_ON_DESKTOP": "데스크톱 플레이",
+      "PLAY_ON_XBOX": "Xbox 플레이",
+      "PLAY_ON_PLAYSTATION": "PlayStation 플레이",
+      "STREAM_ON_DESKTOP": "데스크톱 방송",
+      "ACHIEVEMENT_IN_ACTIVITY": "활동 업적",
+      "PLAY_ACTIVITY": "활동 플레이",
+      "ACHIEVEMENT_IN_GAME": "게임 업적"
+    }
   }
 }
