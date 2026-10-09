@@ -148,6 +148,7 @@
     "in_game_rewards": "ゲーム内報酬",
     "discord_rewards": "Discord報酬",
     "active_progress": "アクティブなクエスト進捗",
+    "collapse_progress": "折りたたむ",
     "up_next": "次のクエスト",
     "submitted": "送信済み",
     "pending": "保留中"

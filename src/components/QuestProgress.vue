@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, ref, watch, onUnmounted } from 'vue'
 import { useQuestsStore } from '@/stores/quests'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { AlertCircle, ChevronUp, ListChecks, X } from 'lucide-vue-next'
+import { AlertCircle, ChevronDown, ChevronUp, ListChecks, LoaderCircle } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
@@ -68,10 +68,10 @@ const floatingStyle = computed(() => {
   }
 })
 
-function clampPosition(left: number, top: number) {
+function clampPosition(left: number, top: number, measuredWidth?: number, measuredHeight?: number) {
   const rect = floatingRef.value?.getBoundingClientRect()
-  const width = rect?.width ?? 384
-  const height = rect?.height ?? 80
+  const width = measuredWidth ?? rect?.width ?? 384
+  const height = measuredHeight ?? rect?.height ?? 80
   const maxLeft = Math.max(EDGE_MARGIN, window.innerWidth - width - EDGE_MARGIN)
   const maxTop = Math.max(EDGE_MARGIN, window.innerHeight - height - EDGE_MARGIN)
 
@@ -155,6 +155,25 @@ function handleCollapsedClick() {
   expanded.value = true
 }
 
+function collapseToCorner() {
+  expanded.value = false
+  floatingPosition.value = null
+  localStorage.removeItem(FLOATING_POSITION_KEY)
+}
+
+function handlePanelEnter(element: Element) {
+  if (!expanded.value || !floatingPosition.value || !(element instanceof HTMLElement)) return
+
+  // Clamp using the expanded panel's real dimensions before the enter
+  // transition starts, so it never renders low and then jumps upward.
+  floatingPosition.value = clampPosition(
+    floatingPosition.value.left,
+    floatingPosition.value.top,
+    element.offsetWidth,
+    element.offsetHeight,
+  )
+}
+
 function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60)
   const s = Math.floor(seconds % 60)
@@ -169,6 +188,7 @@ const submittedTimeText = computed(() => {
 })
 
 async function handleStop() {
+  if (questsStore.stopping) return
   await questsStore.stop()
 }
 
@@ -193,24 +213,21 @@ watch(() => questsStore.activeQuestProgress, (next) => {
 onUnmounted(() => { if (_raf !== null) cancelAnimationFrame(_raf) })
 
 onMounted(() => {
-  const savedPosition = localStorage.getItem(FLOATING_POSITION_KEY)
-  if (!savedPosition) return
-  try {
-    const parsed = JSON.parse(savedPosition) as { left?: unknown, top?: unknown }
-    if (typeof parsed.left === 'number' && typeof parsed.top === 'number') {
-      floatingPosition.value = clampPosition(parsed.left, parsed.top)
-    }
-  } catch {
+  // Always start new progress sessions in the bottom-right corner. Older saved
+  // positions may have been captured while the expanded panel was open.
+  localStorage.removeItem(FLOATING_POSITION_KEY)
+})
+
+watch(hasFloatingContent, (visible) => {
+  if (!visible) {
+    expanded.value = false
+    floatingPosition.value = null
     localStorage.removeItem(FLOATING_POSITION_KEY)
   }
 })
 
-watch(hasFloatingContent, (visible) => {
-  if (!visible) expanded.value = false
-})
-
-watch([expanded, queuedBehindCount], () => {
-  if (hasFloatingContent.value) {
+watch(queuedBehindCount, () => {
+  if (hasFloatingContent.value && floatingPosition.value) {
     reconcileFloatingPosition()
   }
 })
@@ -250,13 +267,15 @@ const progressBarStyle = computed(() => {
     class="fixed bottom-5 right-5 z-50 w-[calc(100vw-2rem)] max-w-sm"
     :style="floatingStyle"
   >
-    <button
-      v-if="!expanded"
-      type="button"
-      class="w-full cursor-grab rounded-lg border bg-card px-4 py-3 text-left shadow-lg transition-all hover:-translate-y-0.5 hover:shadow-xl active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      @pointerdown="startDrag"
-      @click="handleCollapsedClick"
-    >
+    <Transition name="quest-progress-panel" mode="out-in" @enter="handlePanelEnter">
+      <button
+        v-if="!expanded"
+        key="collapsed"
+        type="button"
+        class="w-full cursor-grab rounded-lg border bg-card px-4 py-3 text-left shadow-lg transition-shadow hover:shadow-xl active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        @pointerdown="startDrag"
+        @click="handleCollapsedClick"
+      >
       <div class="flex items-center gap-3">
         <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
           <AlertCircle v-if="questsStore.error && !questsStore.activeQuestId" class="h-4 w-4" />
@@ -284,9 +303,9 @@ const progressBarStyle = computed(() => {
         </div>
         <ChevronUp class="h-4 w-4 shrink-0 text-muted-foreground" />
       </div>
-    </button>
+      </button>
 
-    <Card v-else class="border-border/50 shadow-xl">
+    <Card v-else key="expanded" class="border-border/50 shadow-xl">
       <CardHeader
         class="flex cursor-grab flex-row items-center justify-between space-y-0 pb-3 active:cursor-grabbing"
         @pointerdown="startDrag"
@@ -297,8 +316,16 @@ const progressBarStyle = computed(() => {
             {{ t('home.queue_count', { count: queuedBehindCount }) }}
           </span>
         </CardTitle>
-        <Button variant="ghost" size="icon" class="h-8 w-8 shrink-0" @pointerdown.stop @click="expanded = false">
-          <X class="h-4 w-4" />
+        <Button
+          variant="ghost"
+          size="icon"
+          class="h-8 w-8 shrink-0"
+          :aria-label="t('quest.collapse_progress')"
+          :title="t('quest.collapse_progress')"
+          @pointerdown.stop
+          @click="collapseToCorner"
+        >
+          <ChevronDown class="h-4 w-4" />
         </Button>
       </CardHeader>
       <CardContent>
@@ -336,8 +363,10 @@ const progressBarStyle = computed(() => {
           <Button
             variant="destructive"
             class="w-full"
+            :disabled="questsStore.stopping"
             @click="handleStop"
           >
+            <LoaderCircle v-if="questsStore.stopping" class="mr-2 h-4 w-4 animate-spin" />
             {{ t('home.stop') }}
           </Button>
         </div>
@@ -376,5 +405,24 @@ const progressBarStyle = computed(() => {
         </div>
       </CardContent>
     </Card>
+    </Transition>
   </div>
 </template>
+
+<style scoped>
+.quest-progress-panel-enter-active,
+.quest-progress-panel-leave-active {
+  transform-origin: bottom right;
+  transition: opacity 180ms ease, transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.quest-progress-panel-enter-from {
+  opacity: 0;
+  transform: scaleY(0.94);
+}
+
+.quest-progress-panel-leave-to {
+  opacity: 0;
+  transform: scaleY(0.96);
+}
+</style>

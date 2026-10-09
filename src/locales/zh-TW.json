@@ -148,6 +148,7 @@
     "in_game_rewards": "遊戲內獎勵",
     "discord_rewards": "Discord 獎勵",
     "active_progress": "當前任務進度",
+    "collapse_progress": "收合",
     "up_next": "隊列中",
     "submitted": "已提交",
     "pending": "待提交"

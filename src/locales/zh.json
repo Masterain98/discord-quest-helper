@@ -150,6 +150,7 @@
     "in_game_rewards": "游戏内奖励",
     "discord_rewards": "Discord 奖励",
     "active_progress": "当前任务进度",
+    "collapse_progress": "折叠",
     "up_next": "队列中",
     "submitted": "已提交",
     "pending": "待提交"
