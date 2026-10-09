@@ -16,8 +16,9 @@ import { useQuestsStore } from '@/stores/quests'
 import { acceptedGlobalQuestIds, completedGlobalQuestIds, filterGlobalQuests, unknownRestriction } from '@/utils/globalQuests'
 import type { GlobalQuest, GlobalQuestReward } from '@/types/globalQuests'
 import { GLOBAL_COUNTRY_CODES } from '@/utils/globalCountries'
-import { navigateDiscordSpa } from '@/api/tauri'
+import { logIpInfoDiagnostic, navigateDiscordSpa, type IpInfoDiagnosticLevel } from '@/api/tauri'
 import { openGlobalQuest } from '@/utils/globalQuestNavigation'
+import { fetchIpInfo, type IpInfo } from '@/api/ipInfo'
 
 const { t, locale } = useI18n()
 const store = useGlobalQuestsStore()
@@ -34,6 +35,9 @@ const countrySearchInput = ref<HTMLInputElement | null>(null)
 const countryOptions = ref<HTMLElement | null>(null)
 const linkError = ref(false)
 const openingQuest = ref<string | null>(null)
+const ipInfo = ref<IpInfo | null>(null)
+const ipInfoFailed = ref(false)
+const ipInfoLoading = ref(false)
 const completed = computed(() => completedGlobalQuestIds(accountQuests.quests, auth.user?.id ?? null, accountQuests.questAccountId))
 const accepted = computed(() => acceptedGlobalQuestIds(accountQuests.quests, auth.user?.id ?? null, accountQuests.questAccountId))
 const visible = computed(() => filterGlobalQuests(store.quests, store.restrictions, store.filters, now.value.getTime(), completed.value, accepted.value))
@@ -148,23 +152,93 @@ async function openExternal(url: string) {
     else window.open(url, '_blank', 'noopener,noreferrer')
   } catch { linkError.value = true }
 }
+async function reportIpInfoDiagnostic(
+  level: IpInfoDiagnosticLevel,
+  event: string,
+  details: Record<string, string | number>,
+) {
+  const prefix = `[ip-info] ${event}`
+  if (level === 'error') console.error(prefix, details)
+  else if (level === 'warn') console.warn(prefix, details)
+  else if (level === 'info') console.info(prefix, details)
+  else console.debug(prefix, details)
+
+  try {
+    await logIpInfoDiagnostic(level, event, details)
+  } catch (error) {
+    console.error('[ip-info] failed to forward diagnostics to the app terminal', error)
+  }
+}
+async function loadIpInfo() {
+  if (ipInfoLoading.value) return
+  ipInfoLoading.value = true
+  ipInfoFailed.value = false
+  const startedAt = performance.now()
+  await reportIpInfoDiagnostic('debug', 'lookup started', {
+    endpoint: 'https://my.ippure.com/v1/info',
+    origin: window.location.origin,
+  })
+  try {
+    ipInfo.value = await fetchIpInfo()
+    await reportIpInfoDiagnostic('info', 'lookup succeeded', {
+      countryCode: ipInfo.value.countryCode,
+      country: ipInfo.value.country,
+      durationMs: Math.round(performance.now() - startedAt),
+    })
+  } catch (error) {
+    ipInfoFailed.value = true
+    const errorName = error instanceof Error ? error.name : typeof error === 'string' ? 'TauriCommandError' : 'UnknownError'
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    await reportIpInfoDiagnostic('error', 'lookup failed', {
+      command: 'get_ip_info',
+      origin: window.location.origin,
+      errorName,
+      errorMessage,
+      durationMs: Math.round(performance.now() - startedAt),
+    })
+  } finally {
+    ipInfoLoading.value = false
+  }
+}
 async function refresh() {
   await Promise.all([store.refresh(true), auth.user ? accountQuests.fetchQuests(true, true) : Promise.resolve()])
 }
 watch(() => auth.user?.id, id => { if (id) void accountQuests.fetchQuests(true, true) }, { immediate: true })
 void store.refresh()
+void loadIpInfo()
 </script>
 
 <template>
-  <div class="space-y-5 pb-6">
+  <div class="space-y-4 pb-6">
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div class="min-w-0 space-y-1.5">
         <h2 class="flex items-center gap-2 text-2xl font-semibold tracking-tight"><Globe2 class="h-6 w-6 text-primary" />{{ t('nav.global_quests') }}</h2>
         <p class="max-w-3xl text-sm leading-relaxed text-muted-foreground">{{ t('global_quests.description') }}</p>
       </div>
-      <button type="button" class="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary" @click="openSource">
-        {{ t('global_quests.source_label') }} <ExternalLink class="h-3 w-3" />
-      </button>
+      <div class="flex min-w-0 flex-col items-end gap-2">
+        <button type="button" class="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary" @click="openSource">
+          {{ t('global_quests.source_label') }} <ExternalLink class="h-3 w-3" />
+        </button>
+        <div class="inline-flex max-w-full items-center gap-2 rounded-md border border-border/70 bg-card px-3 py-1 text-xs text-muted-foreground" role="status" aria-live="polite" :aria-label="`${t('global_quests.location_label')}: ${ipInfo ? regionNames.of(ipInfo.countryCode) ?? ipInfo.country : ipInfoFailed ? t('global_quests.location_unavailable') : t('general.loading')}`">
+          <Globe2 class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span class="shrink-0">{{ t('global_quests.location_label') }}:</span>
+          <template v-if="ipInfo">
+            <img :src="`/flags/${ipInfo.countryCode}.svg`" alt="" width="21" height="14" class="h-3.5 w-[21px] shrink-0 rounded-[2px] ring-1 ring-border/50">
+          </template>
+          <span v-else class="truncate">{{ ipInfoFailed ? t('global_quests.location_unavailable') : t('general.loading') }}</span>
+          <Button
+            variant="ghost"
+            size="icon"
+            class="ml-1 h-8 w-8 shrink-0 border-l border-border/70 pl-1"
+            :aria-label="t('general.refresh')"
+            :title="t('general.refresh')"
+            :disabled="ipInfoLoading"
+            @click="loadIpInfo"
+          >
+            <RotateCw class="h-4 w-4" :class="ipInfoLoading && 'animate-spin'" />
+          </Button>
+        </div>
+      </div>
     </div>
 
     <div class="rounded-xl border border-border/70 bg-card/70 p-3.5">

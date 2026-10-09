@@ -561,6 +561,8 @@
     "filters": "Filtreler",
     "country_search": "Ülke ara",
     "source_label": "Küresel görev verileri discordquest.com kaynağından",
+    "location_label": "Konumunuz",
+    "location_unavailable": "Konum bilgisi alınamadı",
     "country_empty": "Ülke bulunamadı",
     "country": "Kullanılabilir ülke",
     "all_countries": "Tüm ülkeler",

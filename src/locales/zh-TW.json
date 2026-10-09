@@ -561,6 +561,8 @@
     "filters": "篩選",
     "country_search": "搜尋國家／地區",
     "source_label": "全球任務資料來源於 discordquest.com",
+    "location_label": "目前地區",
+    "location_unavailable": "暫時無法取得所在地區",
     "country_empty": "找不到國家／地區",
     "country": "可參與國家／地區",
     "all_countries": "所有國家／地區",

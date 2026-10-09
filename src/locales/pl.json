@@ -561,6 +561,8 @@
     "filters": "Filtry",
     "country_search": "Szukaj krajów",
     "source_label": "Dane globalnych zadań pochodzą z discordquest.com",
+    "location_label": "Twoja lokalizacja",
+    "location_unavailable": "Lokalizacja niedostępna",
     "country_empty": "Nie znaleziono krajów",
     "country": "Dostępne w",
     "all_countries": "Wszystkie kraje",

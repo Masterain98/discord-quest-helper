@@ -561,6 +561,8 @@
     "filters": "Filter",
     "country_search": "Länder suchen",
     "source_label": "Quest-Daten stammen von discordquest.com",
+    "location_label": "Dein Standort",
+    "location_unavailable": "Standort nicht verfügbar",
     "country_empty": "Keine Länder gefunden",
     "country": "Verfügbar in",
     "all_countries": "Alle Länder",

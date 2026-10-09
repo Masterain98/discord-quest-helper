@@ -582,6 +582,21 @@ export async function getDebugInfo(): Promise<DebugInfo> {
   return await invoke('get_debug_info')
 }
 
+export type IpInfoDiagnosticLevel = 'debug' | 'info' | 'warn' | 'error'
+
+export async function logIpInfoDiagnostic(
+  level: IpInfoDiagnosticLevel,
+  event: string,
+  details?: Record<string, string | number>,
+): Promise<void> {
+  if (!('__TAURI_INTERNALS__' in window)) return
+  await invoke('log_ip_info_diagnostic', {
+    level,
+    event,
+    details: details ? JSON.stringify(details) : null,
+  })
+}
+
 export type RuntimeIdentityLevel = 'full' | 'degraded' | 'disabled' | 'notApplicable'
 
 export interface RuntimeIdentityStatus {

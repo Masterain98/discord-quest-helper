@@ -563,6 +563,8 @@
     "filters": "筛选",
     "country_search": "搜索国家／地区",
     "source_label": "全球任务数据来源于 discordquest.com",
+    "location_label": "当前地区",
+    "location_unavailable": "暂时无法获取所在地区",
     "country_empty": "找不到国家／地区",
     "country": "可参与国家／地区",
     "all_countries": "所有国家／地区",

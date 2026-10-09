@@ -563,6 +563,8 @@
     "filters": "Filters",
     "country_search": "Search countries",
     "source_label": "Global quest data from discordquest.com",
+    "location_label": "Your location",
+    "location_unavailable": "Location unavailable",
     "country_empty": "No countries found",
     "country": "Available in",
     "all_countries": "All countries",

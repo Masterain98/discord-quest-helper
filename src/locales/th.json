@@ -561,6 +561,8 @@
     "filters": "ตัวกรอง",
     "country_search": "ค้นหาประเทศ",
     "source_label": "ข้อมูลภารกิจทั่วโลกจาก discordquest.com",
+    "location_label": "ตำแหน่งของคุณ",
+    "location_unavailable": "ไม่สามารถระบุตำแหน่งได้",
     "country_empty": "ไม่พบประเทศ",
     "country": "ประเทศที่เข้าร่วมได้",
     "all_countries": "ทุกประเทศ",

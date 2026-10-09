@@ -561,6 +561,8 @@
     "filters": "Bộ lọc",
     "country_search": "Tìm quốc gia",
     "source_label": "Dữ liệu nhiệm vụ toàn cầu từ discordquest.com",
+    "location_label": "Vị trí của bạn",
+    "location_unavailable": "Không thể lấy vị trí",
     "country_empty": "Không tìm thấy quốc gia",
     "country": "Có sẵn tại",
     "all_countries": "Tất cả quốc gia",

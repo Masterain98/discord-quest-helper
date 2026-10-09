@@ -561,6 +561,8 @@
     "filters": "Filtres",
     "country_search": "Rechercher des pays",
     "source_label": "Données des quêtes mondiales fournies par discordquest.com",
+    "location_label": "Votre emplacement",
+    "location_unavailable": "Emplacement indisponible",
     "country_empty": "Aucun pays trouvé",
     "country": "Disponible dans",
     "all_countries": "Tous les pays",

@@ -561,6 +561,8 @@
     "filters": "Filtros",
     "country_search": "Buscar países",
     "source_label": "Datos de misiones globales de discordquest.com",
+    "location_label": "Tu ubicación",
+    "location_unavailable": "No se pudo obtener la ubicación",
     "country_empty": "No se encontraron países",
     "country": "Disponible en",
     "all_countries": "Todos los países",

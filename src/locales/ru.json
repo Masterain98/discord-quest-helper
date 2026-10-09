@@ -561,6 +561,8 @@
     "filters": "Фильтры",
     "country_search": "Поиск страны",
     "source_label": "Данные глобальных заданий предоставлены discordquest.com",
+    "location_label": "Ваше местоположение",
+    "location_unavailable": "Не удалось определить местоположение",
     "country_empty": "Страны не найдены",
     "country": "Доступно в стране",
     "all_countries": "Все страны",
