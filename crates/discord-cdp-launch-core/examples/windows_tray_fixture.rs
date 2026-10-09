@@ -17,7 +17,7 @@ mod fixture {
         atomic::{AtomicBool, Ordering},
         Arc,
     };
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows_sys::Win32::UI::Shell::{
         Shell_NotifyIconW, NIF_GUID, NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE,
@@ -32,6 +32,9 @@ mod fixture {
         let args: Vec<_> = std::env::args().collect();
         let ignore_close = args.iter().any(|arg| arg == "--ignore-close");
         let use_guid = args.iter().any(|arg| arg == "--guid");
+        let second_guid = args.iter().any(|arg| arg == "--second-guid");
+        let recreate_guid = args.iter().any(|arg| arg == "--recreate-guid-on-close");
+        assert!(!(second_guid || recreate_guid) || use_guid);
         let port = args.iter().find_map(|arg| {
             arg.strip_prefix("--remote-debugging-port=")
                 .and_then(|port| port.parse::<u16>().ok())
@@ -44,9 +47,11 @@ mod fixture {
             })
             .unwrap_or(3);
         let quit = Arc::new(AtomicBool::new(false));
+        let recreate = Arc::new(AtomicBool::new(false));
         if let Some(port) = port {
             let listener = TcpListener::bind(("127.0.0.1", port)).unwrap();
             let quit = quit.clone();
+            let recreate = recreate.clone();
             std::thread::spawn(move || {
                 for stream in listener.incoming() {
                     let Ok(mut stream) = stream else {
@@ -59,9 +64,30 @@ mod fixture {
                         .set_write_timeout(Some(Duration::from_secs(3)))
                         .unwrap();
                     let mut header = [0u8; 4096];
-                    let length = stream.peek(&mut header).unwrap();
+                    let deadline = Instant::now() + Duration::from_secs(3);
+                    let length = loop {
+                        let length = stream.peek(&mut header).unwrap();
+                        // TCP may deliver only a prefix of the request line.
+                        // Do not misclassify a partial /json request as WebSocket.
+                        if length == 0 || length >= b"GET /json ".len() {
+                            break length;
+                        }
+                        assert!(Instant::now() < deadline, "incomplete fixture request line");
+                        std::thread::sleep(Duration::from_millis(1));
+                    };
+                    if length == 0 {
+                        continue;
+                    }
                     if header[..length].starts_with(b"GET /json ") {
-                        let _ = stream.read(&mut header);
+                        // Consume all HTTP headers before closing the socket;
+                        // unread incoming bytes can reset a Windows TCP socket.
+                        let mut length = 0;
+                        while !header[..length].windows(4).any(|part| part == b"\r\n\r\n") {
+                            assert!(length < header.len(), "oversized fixture request");
+                            let read = stream.read(&mut header[length..]).unwrap();
+                            assert_ne!(read, 0, "incomplete fixture request headers");
+                            length += read;
+                        }
                         let body = json!([{
                             "id": "fixture", "type": "page", "title": "Shutdown fixture",
                             "url": "https://discord.com/shutdown-fixture",
@@ -75,6 +101,7 @@ mod fixture {
                     let request: serde_json::Value = serde_json::from_str(&request).unwrap();
                     assert_eq!(request["method"], "Browser.close");
                     if ignore_close {
+                        recreate.store(recreate_guid, Ordering::SeqCst);
                         let _ = socket.send(tungstenite::Message::Text(
                             json!({"id": request["id"], "result": {}})
                                 .to_string()
@@ -141,10 +168,23 @@ mod fixture {
             0,
             "Explorer must be running"
         );
+        let mut second = data;
+        second.guidItem = windows_sys::core::GUID::from_u128(
+            0xc9b70756_8da9_47b3_a8cb_001000000000 | u128::from(std::process::id()),
+        );
+        let mut second_added = second_guid;
+        if second_added {
+            assert_ne!(unsafe { Shell_NotifyIconW(NIM_ADD, &second) }, 0);
+        }
         println!("{}", json!({"window": window as usize, "id": id}));
         std::io::stdout().flush().unwrap();
         let mut message = MSG::default();
         while !quit.load(Ordering::SeqCst) {
+            if recreate.swap(false, Ordering::SeqCst) {
+                assert_ne!(unsafe { Shell_NotifyIconW(NIM_DELETE, &data) }, 0);
+                assert_ne!(unsafe { Shell_NotifyIconW(NIM_ADD, &second) }, 0);
+                second_added = true;
+            }
             while unsafe { PeekMessageW(&mut message, std::ptr::null_mut(), 0, 0, PM_REMOVE) } != 0
             {
                 unsafe {
@@ -154,7 +194,10 @@ mod fixture {
             }
             std::thread::sleep(Duration::from_millis(10));
         }
-        assert_ne!(unsafe { Shell_NotifyIconW(NIM_DELETE, &data) }, 0);
+        unsafe { Shell_NotifyIconW(NIM_DELETE, &data) };
+        if second_added {
+            assert_ne!(unsafe { Shell_NotifyIconW(NIM_DELETE, &second) }, 0);
+        }
         unsafe { DestroyWindow(window) };
     }
 }

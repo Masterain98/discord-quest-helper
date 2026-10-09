@@ -64,10 +64,13 @@ cargo test -p discord-cdp-launch-core --all-features native_ -- --ignored --noca
 ```
 
 These cover graceful CDP exit without an acknowledgment, an acknowledged but
-unresponsive client, forced exit without CDP, GUID icons, recreated/high icon IDs,
-preservation of another installation, live owners and reused HWNDs. Ordinary
-tests also cover TCP listener ownership, ownership changes during discovery and
-unsupported close commands. Native shell tests were run on Windows 10 build
+unresponsive client, forced exit without CDP, distinct GUIDs sharing the same
+window/ID, GUID recreation during the grace period, high numeric icon IDs,
+preservation of another installation and live owners/windows. Recycled HWNDs
+from another process and recreated numeric IDs are not exercised natively.
+Ordinary tests also cover TCP listener ownership, ownership changes during
+discovery, unsupported close commands and a deadline reached before the quit
+request is sent. Native shell tests were run on Windows 10 build
 19045; Windows 11 and a restart of the user's actual Discord remain separate
 runtime acceptance checks.
 

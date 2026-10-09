@@ -98,6 +98,14 @@ struct TrayIcon {
 }
 
 impl TrayIcon {
+    fn identity_key(self) -> (usize, u32, Option<u128>) {
+        let guid = self.guid.map(|guid| {
+            windows_core::GUID::from_values(guid.data1, guid.data2, guid.data3, guid.data4)
+                .to_u128()
+        });
+        (self.window as usize, self.id, guid)
+    }
+
     fn identifier(self) -> NOTIFYICONIDENTIFIER {
         NOTIFYICONIDENTIFIER {
             cbSize: size_of::<NOTIFYICONIDENTIFIER>() as u32,
@@ -216,7 +224,7 @@ impl WindowsShutdown {
             if !self
                 .icons
                 .iter()
-                .any(|old| old.window == icon.window && old.id == icon.id)
+                .any(|old| old.identity_key() == icon.identity_key())
             {
                 self.icons.push(icon);
             }
@@ -560,6 +568,31 @@ mod tests {
                     0xc9b70755_8da9_47b3_a8cb_001000000000 | u128::from(fixture.child.id()),
                 ));
             }
+            if let Some(port) = arguments
+                .iter()
+                .find_map(|argument| crate::processes::parse_cdp_port(argument.as_ref()))
+            {
+                // Window creation alone does not prove the CDP worker is ready.
+                // Wait for a complete discovery response before timing shutdown.
+                let deadline = Instant::now() + Duration::from_secs(5);
+                loop {
+                    if crate::list_cdp_targets_with_timeouts(
+                        port,
+                        Duration::from_millis(100),
+                        Duration::from_millis(100),
+                    )
+                    .is_ok_and(|targets| targets.iter().any(quit_target))
+                    {
+                        break;
+                    }
+                    assert!(
+                        Instant::now() < deadline,
+                        "fixture CDP worker was not ready"
+                    );
+                    assert!(fixture.child.try_wait().unwrap().is_none());
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+            }
             fixture
         }
 
@@ -583,6 +616,15 @@ mod tests {
                 )]),
             )
         }
+
+        fn second_guid_icon(&self) -> TrayIcon {
+            TrayIcon {
+                guid: Some(windows_sys::core::GUID::from_u128(
+                    0xc9b70756_8da9_47b3_a8cb_001000000000 | u128::from(self.child.id()),
+                )),
+                ..self.icon
+            }
+        }
     }
 
     impl Drop for Fixture {
@@ -601,6 +643,10 @@ mod tests {
                 );
             }
             unsafe { Shell_NotifyIconW(NIM_DELETE, &data) };
+            if self.guid {
+                data.guidItem = self.second_guid_icon().guid.unwrap();
+                unsafe { Shell_NotifyIconW(NIM_DELETE, &data) };
+            }
             let _ = self.child.kill();
             let _ = self.child.wait();
             let _ = std::fs::remove_file(&self.executable);
@@ -639,6 +685,47 @@ mod tests {
 
     #[test]
     #[ignore = "requires Explorer; build the windows_tray_fixture example first"]
+    fn native_distinct_and_recreated_guids_survive_snapshot_deduplication() {
+        for recreate in [false, true] {
+            let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+            let port = listener.local_addr().unwrap().port();
+            drop(listener);
+            let mut arguments = vec!["--guid".into()];
+            if recreate {
+                arguments.extend([
+                    format!("--remote-debugging-port={port}"),
+                    "--ignore-close".into(),
+                    "--recreate-guid-on-close".into(),
+                ]);
+            } else {
+                arguments.push("--second-guid".into());
+            }
+            let mut target = Fixture::start(&arguments, true);
+            let second = target.second_guid_icon();
+            assert!(target.icon.exists());
+            assert_eq!(second.exists(), !recreate);
+            let mut snapshot = target.snapshot();
+            assert_eq!(snapshot.icons.len(), if recreate { 1 } else { 2 });
+            if recreate {
+                assert_eq!(snapshot.processes.len(), 1);
+                assert_eq!(snapshot.processes[0].cdp_ports, vec![port]);
+                assert!(port_owned_by(port, target.child.id()));
+                snapshot.request_graceful_exit();
+                assert!(!target.icon.exists());
+                assert!(second.exists());
+            }
+            snapshot.refresh_tray_icons();
+            assert_eq!(snapshot.icons.len(), 2);
+            target.child.kill().unwrap();
+            target.child.wait().unwrap();
+            snapshot.finish().unwrap();
+            assert!(!target.icon.exists());
+            assert!(!second.exists());
+        }
+    }
+
+    #[test]
+    #[ignore = "requires Explorer; build the windows_tray_fixture example first"]
     fn native_high_icon_id_is_captured_without_assuming_a_fresh_electron_process() {
         let mut target = Fixture::start(&["--icon-id=5000".into()], false);
         assert_eq!(target.snapshot().icons.len(), 1);
@@ -649,11 +736,11 @@ mod tests {
 
     #[test]
     #[ignore = "requires Explorer; build the windows_tray_fixture example first"]
-    fn native_live_owner_and_reused_window_are_preserved() {
+    fn native_live_owner_and_window_are_preserved() {
         let mut target = Fixture::start(&[], false);
         assert!(target.snapshot().finish().is_err());
         assert!(target.icon.exists());
-        target.icon.remove_after_exit(); // a reused HWND is still a live window
+        target.icon.remove_after_exit(); // the live-window guard also skips this original HWND
         assert!(target.icon.exists());
         assert!(target.child.try_wait().unwrap().is_none());
     }

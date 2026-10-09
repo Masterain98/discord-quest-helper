@@ -169,23 +169,24 @@ pub(super) fn capture(
         .ok()?;
     // A hung Explorer must not indefinitely delay restarting the client. A
     // late callback owns all its state and unregisters when the call returns.
-    let mut records = receiver.recv_timeout(CAPTURE_BUDGET).ok()??;
-    records.sort_by_key(|record| (record.window, record.id));
-    records.dedup_by_key(|record| (record.window, record.id));
-    Some(
-        records
-            .into_iter()
-            .map(|record| TrayIcon {
-                window: record.window as _,
-                id: record.id,
-                owner_pid: record.owner_pid,
-                guid: (record.guid != GUID::zeroed()).then_some(windows_sys::core::GUID {
-                    data1: record.guid.data1,
-                    data2: record.guid.data2,
-                    data3: record.guid.data3,
-                    data4: record.guid.data4,
-                }),
-            })
-            .collect(),
-    )
+    let records = receiver.recv_timeout(CAPTURE_BUDGET).ok()??;
+    let mut icons: Vec<_> = records
+        .into_iter()
+        .map(|record| TrayIcon {
+            window: record.window as _,
+            id: record.id,
+            owner_pid: record.owner_pid,
+            guid: (record.guid != GUID::zeroed()).then_some(windows_sys::core::GUID {
+                data1: record.guid.data1,
+                data2: record.guid.data2,
+                data3: record.guid.data3,
+                data4: record.guid.data4,
+            }),
+        })
+        .collect();
+    // GUID identifies a separate Shell registration even when HWND/ID match.
+    // Use the same complete identity when merging a later shutdown snapshot.
+    icons.sort_by_key(|icon| icon.identity_key());
+    icons.dedup_by_key(|icon| icon.identity_key());
+    Some(icons)
 }

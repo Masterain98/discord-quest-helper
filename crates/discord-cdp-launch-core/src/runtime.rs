@@ -4,7 +4,7 @@ use serde_json::{json, Value};
 use std::io::{self, Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 use std::time::{Duration, Instant};
-use tungstenite::{client::client_with_config, protocol::WebSocketConfig, Message};
+use tungstenite::{client::client_with_config, protocol::WebSocketConfig, Message, WebSocket};
 use url::Url;
 
 struct DeadlineStream {
@@ -125,12 +125,17 @@ pub(crate) fn close_browser(port: u16, target: &CdpTarget, deadline: Instant) ->
     // Electron's DevToolsManagerDelegate handles this with Browser::Quit(),
     // including applications which expose no renderer-side app.quit bridge.
     // Electron intentionally does not send an acknowledgment before exiting.
-    match exchange(
+    browser_close_submitted(exchange(
         port,
         target,
         json!({"id": 1, "method": "Browser.close", "params": {}}),
         deadline,
-    ) {
+    ))
+}
+
+#[cfg(target_os = "windows")]
+fn browser_close_submitted(outcome: Result<Value, CdpRuntime>) -> bool {
+    match outcome {
         Ok(_) => true,
         Err(failure) => {
             failure.failure_stage.as_deref() == Some("evaluate")
@@ -171,7 +176,7 @@ fn exchange(
     }
     // The socket owns its stream; dropping it closes TCP even on handshake errors.
     let stream = DeadlineStream { stream, deadline };
-    let Ok((mut socket, _)) = client_with_config(
+    let Ok((socket, _)) = client_with_config(
         ws_url,
         stream,
         Some(
@@ -182,8 +187,17 @@ fn exchange(
     ) else {
         return Err(failed("handshake", "handshake_failed", false));
     };
+    exchange_request(socket, request, deadline)
+}
+
+fn exchange_request(
+    mut socket: WebSocket<DeadlineStream>,
+    request: Value,
+    deadline: Instant,
+) -> Result<Value, CdpRuntime> {
     let outcome = (|| {
-        set_budget(&socket.get_ref().stream, deadline).map_err(|_| ("evaluate", "deadline"))?;
+        set_budget(&socket.get_ref().stream, deadline)
+            .map_err(|_| ("evaluate", "deadline_before_send"))?;
         socket
             .send(Message::Text(request.to_string().into()))
             .map_err(|_| ("evaluate", "send_failed"))?;
@@ -493,6 +507,40 @@ mod tests {
             assert!(start.elapsed() < Duration::from_millis(850));
             server.join().unwrap();
         }
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn browser_close_rejects_a_deadline_reached_before_sending() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            let mut socket = tungstenite::accept(stream).unwrap();
+            // The client finishes the handshake but must not send Browser.close.
+            assert!(!matches!(socket.read(), Ok(Message::Text(_))));
+        });
+        let stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+        let (socket, _) = client_with_config(
+            format!("ws://127.0.0.1:{port}/devtools/page/close"),
+            DeadlineStream {
+                stream,
+                deadline: Instant::now() + Duration::from_secs(2),
+            },
+            None,
+        )
+        .unwrap();
+        // Expire the budget at the exact boundary after the completed handshake.
+        let outcome = exchange_request(
+            socket,
+            json!({"id": 1, "method": "Browser.close", "params": {}}),
+            Instant::now(),
+        );
+        server.join().unwrap();
+        assert!(!browser_close_submitted(outcome));
     }
 
     #[cfg(target_os = "windows")]
