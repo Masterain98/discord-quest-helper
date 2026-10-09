@@ -92,6 +92,8 @@
     "stop_queue": "停止队列",
     "queue_count": "排队 {count}",
     "accept_quest": "接受任务",
+    "add_to_queue": "添加至任务队列",
+    "already_queued": "已在任务队列",
     "accepting": "接受中...",
     "stop": "停止",
     "start_quest": "开始任务",
@@ -154,6 +156,21 @@
     "up_next": "队列中",
     "submitted": "已提交",
     "pending": "待提交"
+  },
+  "queue": {
+    "remove": "将 {name} 移出任务队列",
+    "move_up": "将 {name} 上移",
+    "move_down": "将 {name} 下移",
+    "clear_pending": "清空待执行",
+    "order_hint": "拖动卡片或使用箭头调整执行顺序。",
+    "order_updated": "已更新队列顺序。",
+    "stop_title": "停止任务",
+    "stop_description": "请选择要停止的范围。",
+    "stop_current": "停止当前任务",
+    "stop_current_continue": "结束当前任务后，继续执行剩余 {count} 个排队任务。",
+    "stop_current_only": "结束当前任务的运行。",
+    "stop_all": "停止整个队列",
+    "stop_all_description": "停止执行，并清空剩余 {count} 个排队任务。"
   },
   "filter": {
     "type": "类型",

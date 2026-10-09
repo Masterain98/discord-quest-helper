@@ -92,6 +92,8 @@
     "stop_queue": "Dừng hàng đợi",
     "queue_count": "{count} đã xếp hàng",
     "accept_quest": "Chấp nhận Quests",
+    "add_to_queue": "Thêm vào hàng đợi",
+    "already_queued": "Đã xếp hàng",
     "accepting": "Chấp nhận...",
     "stop": "Dừng lại",
     "start_quest": "Bắt đầu Quest",
@@ -152,6 +154,21 @@
     "up_next": "Tiếp theo",
     "submitted": "Đã gửi",
     "pending": "Đang chờ xử lý tại địa phương"
+  },
+  "queue": {
+    "remove": "Xóa {name} khỏi hàng đợi",
+    "move_up": "Di chuyển {name} lên",
+    "move_down": "Di chuyển {name} xuống",
+    "clear_pending": "Xóa tác vụ chờ",
+    "order_hint": "Kéo thẻ hoặc dùng mũi tên để thay đổi thứ tự tác vụ.",
+    "order_updated": "Đã cập nhật thứ tự hàng đợi.",
+    "stop_title": "Dừng tác vụ",
+    "stop_description": "Chọn phạm vi muốn dừng.",
+    "stop_current": "Dừng tác vụ hiện tại",
+    "stop_current_continue": "Dừng tác vụ này rồi tiếp tục {count} tác vụ còn lại.",
+    "stop_current_only": "Kết thúc tác vụ hiện tại.",
+    "stop_all": "Dừng toàn bộ hàng đợi",
+    "stop_all_description": "Dừng chạy và xóa tất cả {count} tác vụ đang chờ."
   },
   "filter": {
     "type": "Loại",

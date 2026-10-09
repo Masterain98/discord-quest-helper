@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { Quest, DetectableGame, DesktopClientArg, ExcludedQuest, GameQuestMode, PlatformCapabilities } from '@/api/tauri'
 import { getQuestKind, playActivityProgressPercentage } from '@/utils/questTasks'
 import { resolveSimulationExecutable } from '@/utils/executables'
@@ -75,6 +75,8 @@ export const useQuestsStore = defineStore('quests', () => {
   const hasLoadedQuests = ref(false)
   const startingQuestId = ref<string | null>(null)
   const stopping = ref(false)
+  const stopDialogOpen = ref(false)
+  const stopDialogQuestId = ref<string | null>(null)
   const error = ref<string | null>(null)
   const orbsBalance = ref<number | null>(null)
   const orbsBalanceFetchedAt = ref<string | null>(null)
@@ -87,6 +89,7 @@ export const useQuestsStore = defineStore('quests', () => {
   let simulationPathRevision = 0
 
   const activeQuestId = ref<string | null>(null)
+  const completingQuestId = ref<string | null>(null)
   const activeQuestType = ref<'video' | 'stream' | 'game' | 'activity' | null>(null)
   const activeQuestProgress = ref(0)
   const activeQuestTargetDuration = ref(0)
@@ -358,6 +361,7 @@ export const useQuestsStore = defineStore('quests', () => {
   let completeUnlisten: (() => void) | null = null
   let errorUnlisten: (() => void) | null = null
   let pollingTimer: ReturnType<typeof setInterval> | null = null
+  let queueAdvanceTimer: ReturnType<typeof setTimeout> | null = null
   // Guards against overlapping interval callbacks. `setInterval` keeps firing
   // while an async tick is still awaiting cleanup, and two ticks observing the
   // same completed queue item would each shift the shared queue and schedule
@@ -483,10 +487,12 @@ export const useQuestsStore = defineStore('quests', () => {
   }
 
   async function finishQueuedQuest(questId: string) {
+    if (stopping.value) return
     if (!isQueueRunning.value || questQueue.value[0]?.id !== questId || activeQuestId.value !== questId) return
     if (completionClaimedFor === questId) return
     completionClaimedFor = questId
     const completedExecutable = activeGameExe.value
+    completingQuestId.value = questId
     activeQuestId.value = null
     try {
       if (completedExecutable && gameQuestMode.value === 'simulate') {
@@ -503,10 +509,12 @@ export const useQuestsStore = defineStore('quests', () => {
       stopProgressSimulation()
       cleanupListeners()
       stopPolling()
+      completingQuestId.value = null
       return
     }
 
-    questQueue.value.shift()
+    const completedIndex = questQueue.value.findIndex(item => item.id === questId)
+    if (completedIndex >= 0) questQueue.value.splice(completedIndex, 1)
     activeQuestType.value = null
     activeQuestProgress.value = 0
     activeQuestTargetDuration.value = 0
@@ -515,13 +523,13 @@ export const useQuestsStore = defineStore('quests', () => {
     stopProgressSimulation()
     cleanupListeners()
     stopPolling()
+    completingQuestId.value = null
     void fetchQuests(true, true)
-    setTimeout(() => {
-      if (isQueueRunning.value) void processQueue()
-    }, 2000)
+    if (isQueueRunning.value) scheduleNextQueuedQuest()
   }
 
   async function checkActiveQuestStatus() {
+    if (stopping.value) return
     if (!activeQuestId.value) return
     const quest = quests.value.find(q => q.id === activeQuestId.value)
     if (!quest) return
@@ -1067,11 +1075,26 @@ export const useQuestsStore = defineStore('quests', () => {
     stopPolling()
   }
 
-  async function stop() {
+  async function stop(scope: 'current' | 'all' = 'all'): Promise<boolean> {
+    if (stopping.value || (scope === 'current' && !activeQuestId.value)) return false
+    const stoppedQuestId = activeQuestId.value
+    cancelQueueAdvance()
+    isQueueRunning.value = false
+    stopDialogOpen.value = false
+
+    // Completion already owns native cleanup; stopping the remaining queue
+    // must not run the same cleanup a second time.
+    if (completingQuestId.value && !stoppedQuestId) {
+      questQueue.value = []
+      return true
+    }
+
     stopping.value = true
+    let stoppedSuccessfully = false
     console.log('questsStore.stop() called')
 
     stopProgressSimulation()
+    stopPolling()
 
     try {
       // Force Save Logic for Video Quests (skip in CDP mode — progress is server-managed)
@@ -1086,12 +1109,6 @@ export const useQuestsStore = defineStore('quests', () => {
         } catch (e) {
           console.error('Failed to force submit progress on stop:', e)
         }
-      }
-
-      // If manually stopping, ensure queue is also stopped/cleared
-      if (isQueueRunning.value || questQueue.value.length > 0) {
-        isQueueRunning.value = false
-        questQueue.value = [] // Clear queue on manual stop
       }
 
       let exeToStop = activeGameExe.value
@@ -1128,7 +1145,7 @@ export const useQuestsStore = defineStore('quests', () => {
           await emit('event_disconnect')
         } catch (e) {
           error.value = e instanceof Error ? e.message : String(e)
-          return
+          return false
         }
         activeGameExe.value = null
       }
@@ -1136,15 +1153,21 @@ export const useQuestsStore = defineStore('quests', () => {
       try {
         await stopQuest()
       } catch (e) {
-        // Ignore error if no quest running
+        error.value = e instanceof Error ? e.message : String(e)
+        return false
       }
       try {
         await stopGameSimulationUsage()
       } catch (historyError) {
         error.value = historyError instanceof Error ? historyError.message : String(historyError)
-        return
+        return false
       }
 
+      if (scope === 'all') {
+        questQueue.value = []
+      } else {
+        questQueue.value = questQueue.value.filter(item => item.id !== stoppedQuestId)
+      }
       activeQuestId.value = null
       activeQuestType.value = null
       activeQuestProgress.value = 0
@@ -1152,12 +1175,18 @@ export const useQuestsStore = defineStore('quests', () => {
       localProgress.value = 0
 
       cleanupListeners()
+      stoppedSuccessfully = true
 
       // Refresh quests to get latest status
       await fetchQuests(true, true)
+      return true
 
     } finally {
       stopping.value = false
+      if (stoppedSuccessfully && scope === 'current' && questQueue.value.length > 0) {
+        isQueueRunning.value = true
+        scheduleNextQueuedQuest()
+      }
     }
   }
 
@@ -1307,8 +1336,90 @@ export const useQuestsStore = defineStore('quests', () => {
   // But we can start a "Queue Mode".
   const questQueue = ref<QueueItem[]>([])
   const isQueueRunning = ref(false)
+  const lockedQueueQuestId = computed(() =>
+    activeQuestId.value ?? startingQuestId.value ?? completingQuestId.value
+  )
+  const upcomingQuests = computed(() =>
+    questQueue.value.filter(item => item.id !== lockedQueueQuestId.value)
+  )
+  const queueEditingDisabled = computed(() =>
+    stopping.value || startingQuestId.value !== null || completingQuestId.value !== null
+  )
+
+  function cancelQueueAdvance() {
+    if (queueAdvanceTimer !== null) clearTimeout(queueAdvanceTimer)
+    queueAdvanceTimer = null
+  }
+
+  function scheduleNextQueuedQuest() {
+    cancelQueueAdvance()
+    queueAdvanceTimer = setTimeout(() => {
+      queueAdvanceTimer = null
+      if (isQueueRunning.value) void processQueue()
+    }, 2000)
+  }
+
+  function requestStop() {
+    if (stopping.value || (!activeQuestId.value && questQueue.value.length === 0)) return
+    if (activeQuestId.value && upcomingQuests.value.length === 0) {
+      void stop('all').catch(stopError => { console.error('Failed to stop quests:', stopError) })
+      return
+    }
+    stopDialogQuestId.value = activeQuestId.value
+    stopDialogOpen.value = true
+  }
+
+  function removeQueuedQuest(questId: string): boolean {
+    if (queueEditingDisabled.value || questId === lockedQueueQuestId.value) return false
+    const index = questQueue.value.findIndex(item => item.id === questId)
+    if (index < 0) return false
+    questQueue.value.splice(index, 1)
+    if (questQueue.value.length === 0) {
+      isQueueRunning.value = false
+      cancelQueueAdvance()
+    }
+    return true
+  }
+
+  function moveQueuedQuest(questId: string, direction: -1 | 1): boolean {
+    if (queueEditingDisabled.value) return false
+    const upcoming = upcomingQuests.value
+    const from = upcoming.findIndex(item => item.id === questId)
+    const to = from + direction
+    if (from < 0 || to < 0 || to >= upcoming.length) return false
+    const fromIndex = questQueue.value.findIndex(item => item.id === upcoming[from].id)
+    const toIndex = questQueue.value.findIndex(item => item.id === upcoming[to].id)
+    const moved = questQueue.value[fromIndex]
+    questQueue.value[fromIndex] = questQueue.value[toIndex]
+    questQueue.value[toIndex] = moved
+    return true
+  }
+
+  function reorderQueuedQuest(questId: string, targetQuestId: string, placement: 'before' | 'after'): boolean {
+    if (queueEditingDisabled.value || questId === targetQuestId) return false
+    const upcoming = upcomingQuests.value
+    if (!upcoming.some(item => item.id === questId) || !upcoming.some(item => item.id === targetQuestId)) return false
+    const from = questQueue.value.findIndex(item => item.id === questId)
+    const target = questQueue.value.findIndex(item => item.id === targetQuestId)
+    const insertion = target + (placement === 'after' ? 1 : 0) - (from < target ? 1 : 0)
+    if (from === insertion) return false
+    const [item] = questQueue.value.splice(from, 1)
+    questQueue.value.splice(insertion, 0, item)
+    return true
+  }
+
+  function clearUpcomingQueue() {
+    if (queueEditingDisabled.value) return
+    questQueue.value = questQueue.value.filter(item => item.id === lockedQueueQuestId.value)
+    if (questQueue.value.length === 0) {
+      isQueueRunning.value = false
+      cancelQueueAdvance()
+    }
+  }
 
   async function processQueue() {
+    if (stopping.value || lockedQueueQuestId.value) return
+    cancelQueueAdvance()
     if (questQueue.value.length === 0) {
       isQueueRunning.value = false
       return
@@ -1365,6 +1476,33 @@ export const useQuestsStore = defineStore('quests', () => {
     }
   }
 
+  function addToQueueBehindActive(q: Quest): boolean {
+    const activeId = activeQuestId.value
+    if (queueEditingDisabled.value) return false
+    if (!activeId || activeId === q.id || getQuestKind(q) === 'activity' || q.user_status?.completed_at) return false
+    if (questQueue.value.some(item => item.id === q.id)) return false
+
+    const activeQuest = quests.value.find(item => item.id === activeId)
+    if (!activeQuest) return false
+
+    // Manually started quests are not normally stored in the queue. Add the
+    // active quest as the queue head so the existing completion flow advances
+    // to newly queued quests once it finishes.
+    if (questQueue.value[0]?.id !== activeId) {
+      const activeIndex = questQueue.value.findIndex(item => item.id === activeId)
+      if (activeIndex >= 0) {
+        const [queuedActiveQuest] = questQueue.value.splice(activeIndex, 1)
+        questQueue.value.unshift(queuedActiveQuest)
+      } else {
+        questQueue.value.unshift(activeQuest)
+      }
+    }
+
+    questQueue.value.push(q)
+    isQueueRunning.value = true
+    return true
+  }
+
   // We need to modify `onQuestComplete` to trigger next in queue.
   // See `setupListeners`.
 
@@ -1401,6 +1539,10 @@ export const useQuestsStore = defineStore('quests', () => {
   }
 
   function resetForLogout() {
+    cancelQueueAdvance()
+    stopDialogOpen.value = false
+    stopDialogQuestId.value = null
+    completingQuestId.value = null
     questAccountId.value = null
     orbsFetchGeneration++
     questsFetchGeneration++
@@ -1555,6 +1697,15 @@ export const useQuestsStore = defineStore('quests', () => {
     activeGameExe,
     questQueue, // Export queue
     isQueueRunning,
+    upcomingQuests,
+    queueEditingDisabled,
+    stopDialogOpen,
+    stopDialogQuestId,
+    requestStop,
+    removeQueuedQuest,
+    moveQueuedQuest,
+    reorderQueuedQuest,
+    clearUpcomingQueue,
     fetchQuests,
     fetchOrbsBalance,
     updateQuestEnrollment,
@@ -1569,17 +1720,14 @@ export const useQuestsStore = defineStore('quests', () => {
     acceptAllQuests,
     // Add to queue logic needs integration with listeners
     addToQueue: (q: Quest, selectedExeName?: string) => {
-      if (!questQueue.value.find(x => x.id === q.id)) {
+      if (getQuestKind(q) !== 'activity' && !questQueue.value.find(x => x.id === q.id)) {
         const item: QueueItem = { ...q, selectedExeName }
         questQueue.value.push(item)
       }
     },
+    addToQueueBehindActive,
     startQueue: processQueue,
-    clearQueue: () => {
-      questQueue.value = []
-      isQueueRunning.value = false
-      stop()
-    },
+    clearQueue: () => stop('all'),
     // Game Process Caching
     detectableGames,
     getDetectableGames,

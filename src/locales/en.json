@@ -92,6 +92,8 @@
     "stop_queue": "Stop queue",
     "queue_count": "{count} queued",
     "accept_quest": "Accept Quest",
+    "add_to_queue": "Add to queue",
+    "already_queued": "Already queued",
     "accepting": "Accepting...",
     "stop": "Stop",
     "start_quest": "Start Quest",
@@ -154,6 +156,21 @@
     "up_next": "Up Next",
     "submitted": "Submitted",
     "pending": "Local Pending"
+  },
+  "queue": {
+    "remove": "Remove {name} from queue",
+    "move_up": "Move {name} up",
+    "move_down": "Move {name} down",
+    "clear_pending": "Clear pending",
+    "order_hint": "Drag cards or use the arrows to reorder tasks.",
+    "order_updated": "Queue order updated.",
+    "stop_title": "Stop tasks",
+    "stop_description": "Choose what to stop.",
+    "stop_current": "Stop current task",
+    "stop_current_continue": "Stop this task, then continue the remaining {count} queued tasks.",
+    "stop_current_only": "End the current task.",
+    "stop_all": "Stop entire queue",
+    "stop_all_description": "Stop processing and clear all {count} pending tasks."
   },
   "filter": {
     "type": "Type",

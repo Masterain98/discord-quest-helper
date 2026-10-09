@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, ref, watch, onUnmounted } from 'vue'
 import { useQuestsStore } from '@/stores/quests'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { AlertCircle, ChevronDown, ChevronUp, ListChecks, LoaderCircle } from 'lucide-vue-next'
+import { AlertCircle, ChevronDown, ChevronUp, GripVertical, ListChecks, LoaderCircle, Trash2 } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
@@ -33,9 +33,153 @@ const hasFloatingContent = computed(() =>
   !!questsStore.activeQuestId || questsStore.questQueue.length > 0 || !!questsStore.error
 )
 
-const queuedUpcoming = computed(() => {
-  if (!questsStore.activeQuestId) return questsStore.questQueue
-  return questsStore.questQueue.filter(quest => quest.id !== questsStore.activeQuestId)
+const queuedUpcoming = computed(() => questsStore.upcomingQuests)
+
+const queueListRef = ref<HTMLElement | null>(null)
+const draggedQueueQuestId = ref<string | null>(null)
+const queueDropTarget = ref<{ id: string, placement: 'before' | 'after' } | null>(null)
+const queueOrderAnnouncement = ref('')
+const draggedQueueQuest = computed(() => queuedUpcoming.value.find(item => item.id === draggedQueueQuestId.value))
+const queueDragPreview = ref({ left: 0, top: 0, width: 0 })
+let queuePointerState: {
+  id: string, pointerId: number, startX: number, startY: number,
+  offsetX: number, offsetY: number, width: number, element: HTMLElement,
+} | null = null
+let queuePointerY = 0
+let queueAutoScrollFrame: number | null = null
+let queueScrollTime = 0
+
+function stopQueueAutoScroll() {
+  if (queueAutoScrollFrame !== null) cancelAnimationFrame(queueAutoScrollFrame)
+  queueAutoScrollFrame = null
+  queueScrollTime = 0
+}
+
+function resetQueueDrag() {
+  const state = queuePointerState
+  queuePointerState = null
+  draggedQueueQuestId.value = null
+  queueDropTarget.value = null
+  stopQueueAutoScroll()
+  window.removeEventListener('pointermove', moveQueuePointer)
+  window.removeEventListener('pointerup', dropQueueQuest)
+  window.removeEventListener('pointercancel', resetQueueDrag)
+  window.removeEventListener('keydown', cancelQueueDragOnEscape)
+  if (state?.element.hasPointerCapture(state.pointerId)) state.element.releasePointerCapture(state.pointerId)
+}
+
+function startQueueDrag(event: PointerEvent, questId: string) {
+  if (!event.isPrimary || event.button !== 0 || queuePointerState || questsStore.queueEditingDisabled || queuedUpcoming.value.length < 2) return
+  if (!(event.target instanceof Element) || event.target.closest('button')) return
+  // Touch users can scroll the list normally; the handle reserves touch dragging.
+  if (event.pointerType === 'touch' && !event.target.closest('[data-queue-drag-handle]')) return
+  if (!(event.currentTarget instanceof HTMLElement)) return
+  event.preventDefault()
+  event.stopPropagation()
+  const element = event.currentTarget
+  const rect = element.getBoundingClientRect()
+  queuePointerState = {
+    id: questId, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY,
+    offsetX: event.clientX - rect.left, offsetY: event.clientY - rect.top, width: rect.width, element,
+  }
+  element.setPointerCapture(event.pointerId)
+  window.addEventListener('pointermove', moveQueuePointer)
+  window.addEventListener('pointerup', dropQueueQuest)
+  window.addEventListener('pointercancel', resetQueueDrag)
+  window.addEventListener('keydown', cancelQueueDragOnEscape)
+}
+
+function cancelQueueDragOnEscape(event: KeyboardEvent) {
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    resetQueueDrag()
+  }
+}
+
+function updateQueueDropTarget() {
+  const rows = Array.from(queueListRef.value?.querySelectorAll<HTMLElement>('[data-queue-id]') ?? [])
+  const nextRow = rows.find(row => {
+    const rect = row.getBoundingClientRect()
+    return queuePointerY < rect.top + rect.height / 2
+  })
+  const target = nextRow ?? rows[rows.length - 1]
+  const id = target?.dataset.queueId
+  queueDropTarget.value = id && id !== draggedQueueQuestId.value
+    ? { id, placement: nextRow ? 'before' : 'after' }
+    : null
+}
+
+function scrollQueueWhileDragging(time: number) {
+  queueAutoScrollFrame = null
+  const list = queueListRef.value
+  if (!list || !draggedQueueQuestId.value) return
+  const rect = list.getBoundingClientRect()
+  const edge = Math.min(32, rect.height / 3)
+  const speed = queuePointerY < rect.top + edge
+    ? -Math.min(1, (rect.top + edge - queuePointerY) / edge)
+    : queuePointerY > rect.bottom - edge
+      ? Math.min(1, (queuePointerY - rect.bottom + edge) / edge)
+      : 0
+  const elapsed = queueScrollTime ? Math.min(time - queueScrollTime, 32) : 16
+  queueScrollTime = time
+  const previous = list.scrollTop
+  list.scrollTop += speed * elapsed * 0.4
+  if (list.scrollTop !== previous) updateQueueDropTarget()
+  if (speed !== 0 && list.scrollTop !== previous) queueAutoScrollFrame = requestAnimationFrame(scrollQueueWhileDragging)
+  else queueScrollTime = 0
+}
+
+function updateQueuePointer(x: number, y: number) {
+  queuePointerY = y
+  const list = queueListRef.value
+  if (!list) return
+  const rect = list.getBoundingClientRect()
+  if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+    queueDropTarget.value = null
+    stopQueueAutoScroll()
+    return
+  }
+  updateQueueDropTarget()
+  if (queueAutoScrollFrame === null) queueAutoScrollFrame = requestAnimationFrame(scrollQueueWhileDragging)
+}
+
+function moveQueuePointer(event: PointerEvent) {
+  const state = queuePointerState
+  if (!state || event.pointerId !== state.pointerId) return
+  if (!draggedQueueQuestId.value) {
+    if (Math.hypot(event.clientX - state.startX, event.clientY - state.startY) < 6) return
+    queueOrderAnnouncement.value = ''
+    draggedQueueQuestId.value = state.id
+  }
+  event.preventDefault()
+  queueDragPreview.value = { left: event.clientX - state.offsetX, top: event.clientY - state.offsetY, width: state.width }
+  updateQueuePointer(event.clientX, event.clientY)
+}
+
+function dropQueueQuest(event: PointerEvent) {
+  if (!queuePointerState || event.pointerId !== queuePointerState.pointerId) return
+  if (!draggedQueueQuestId.value) {
+    resetQueueDrag()
+    return
+  }
+  event.preventDefault()
+  updateQueuePointer(event.clientX, event.clientY)
+  const id = draggedQueueQuestId.value
+  const target = queueDropTarget.value
+  resetQueueDrag()
+  if (target && questsStore.reorderQueuedQuest(id, target.id, target.placement)) {
+    queueOrderAnnouncement.value = t('queue.order_updated')
+  }
+}
+
+// Abort stale drops if queue execution or another action changes the list.
+watch(() => queuedUpcoming.value.map(item => item.id).join(','), resetQueueDrag)
+watch(() => questsStore.queueEditingDisabled, disabled => { if (disabled) resetQueueDrag() })
+watch(expanded, value => { if (!value) resetQueueDrag() })
+onMounted(() => window.addEventListener('blur', resetQueueDrag))
+onUnmounted(() => {
+  resetQueueDrag()
+  window.removeEventListener('blur', resetQueueDrag)
 })
 
 const queuedBehindCount = computed(() => {
@@ -187,9 +331,9 @@ const submittedTimeText = computed(() => {
   return `${formatTime(currentSeconds)} / ${formatTime(total)}`
 })
 
-async function handleStop() {
+function handleStop() {
   if (questsStore.stopping) return
-  await questsStore.stop()
+  questsStore.requestStop()
 }
 
 // Animate the submitted (blue) progress value so it eases forward instead of jumping
@@ -305,7 +449,7 @@ const progressBarStyle = computed(() => {
       </div>
       </button>
 
-    <Card v-else key="expanded" class="border-border/50 shadow-xl">
+    <Card v-else key="expanded" class="max-h-[calc(100dvh-2.5rem)] overflow-y-auto border-border/50 shadow-xl">
       <CardHeader
         class="flex cursor-grab flex-row items-center justify-between space-y-0 pb-3 active:cursor-grabbing"
         @pointerdown="startDrag"
@@ -371,33 +515,90 @@ const progressBarStyle = computed(() => {
           </Button>
         </div>
 
-        <div v-if="queuedUpcoming.length > 0" :class="questsStore.activeQuestId && 'mt-6 border-t pt-4'">
-          <div class="mb-2 flex items-center justify-between">
-            <h4 class="text-sm font-semibold">{{ t('quest.up_next') }} ({{ queuedUpcoming.length }})</h4>
+        <section v-if="queuedUpcoming.length > 0" :class="questsStore.activeQuestId && 'mt-6 border-t pt-4'" :aria-label="t('quest.up_next')">
+          <div class="mb-1 flex items-center justify-between gap-2">
+            <h4 class="flex items-center gap-2 text-sm font-semibold">
+              {{ t('quest.up_next') }}
+              <span class="rounded bg-primary/10 px-1.5 py-0.5 text-xs tabular-nums text-primary">{{ queuedUpcoming.length }}</span>
+            </h4>
             <Button
               variant="ghost"
               size="sm"
-              class="h-6 px-2 text-destructive hover:text-destructive"
-              @click="questsStore.clearQueue"
+              class="h-7 px-2 text-xs text-red-600 hover:bg-red-500/10 hover:text-red-700 dark:text-red-400"
+              :disabled="questsStore.queueEditingDisabled"
+              @click="questsStore.clearUpcomingQueue"
             >
-              {{ t('general.clear') }}
+              {{ t('queue.clear_pending') }}
             </Button>
           </div>
+          <p id="quest-queue-order-hint" class="mb-3 text-[11px] leading-relaxed text-muted-foreground">{{ t('queue.order_hint') }}</p>
+          <span class="sr-only" role="status" aria-live="polite">{{ queueOrderAnnouncement }}</span>
 
-          <div class="max-h-[260px] space-y-2 overflow-y-auto pr-1">
-            <div
+          <div
+            ref="queueListRef"
+            class="max-h-[260px] overflow-y-auto p-1 -m-1"
+          >
+          <TransitionGroup name="queue-item" tag="ol" class="space-y-2" aria-describedby="quest-queue-order-hint">
+            <li
               v-for="(quest, index) in queuedUpcoming"
               :key="quest.id"
-              class="flex items-center gap-2 rounded bg-muted/50 p-2 text-sm"
+              :data-queue-id="quest.id"
+              class="queue-row relative flex select-none items-center gap-2 rounded-md border border-primary/10 bg-primary/5 p-2.5 text-sm"
+              :class="{
+                'cursor-grab hover:border-primary/30 active:cursor-grabbing': !questsStore.queueEditingDisabled && queuedUpcoming.length > 1,
+                'queue-row-dragging': draggedQueueQuestId === quest.id,
+                'queue-drop-before': queueDropTarget?.id === quest.id && queueDropTarget.placement === 'before',
+                'queue-drop-after': queueDropTarget?.id === quest.id && queueDropTarget.placement === 'after',
+              }"
+              @pointerdown="startQueueDrag($event, quest.id)"
+              @dragstart.prevent
+              @lostpointercapture="resetQueueDrag"
             >
-              <span class="w-4 shrink-0 text-xs text-muted-foreground">{{ index + 1 }}.</span>
+              <span
+                data-queue-drag-handle
+                class="flex h-6 w-9 shrink-0 items-center justify-center gap-0.5 rounded bg-primary/10 text-[11px] font-medium tabular-nums text-primary"
+                :class="{ 'touch-none': !questsStore.queueEditingDisabled && queuedUpcoming.length > 1 }"
+              >
+                <GripVertical class="h-3.5 w-3.5 text-primary/60" aria-hidden="true" />
+                {{ index + 1 }}
+              </span>
               <div class="min-w-0 flex-1">
-                <div class="truncate font-medium">{{ quest.config.messages.quest_name }}</div>
-                <div class="truncate text-xs text-muted-foreground">{{ quest.config.messages.game_title }}</div>
+                <div class="truncate text-xs font-medium" :title="quest.config.messages.quest_name">{{ quest.config.messages.quest_name }}</div>
+                <div class="mt-0.5 truncate text-[11px] text-muted-foreground">{{ quest.config.messages.game_title }}</div>
               </div>
-            </div>
+              <div class="flex shrink-0 items-center gap-0.5">
+                <Button
+                  variant="ghost" size="icon" class="h-7 w-7 text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                  :title="t('queue.move_up', { name: quest.config.messages.quest_name })"
+                  :aria-label="t('queue.move_up', { name: quest.config.messages.quest_name })"
+                  :disabled="index === 0 || questsStore.queueEditingDisabled"
+                  @click="questsStore.moveQueuedQuest(quest.id, -1)"
+                ><ChevronUp class="h-4 w-4" aria-hidden="true" /></Button>
+                <Button
+                  variant="ghost" size="icon" class="h-7 w-7 text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                  :title="t('queue.move_down', { name: quest.config.messages.quest_name })"
+                  :aria-label="t('queue.move_down', { name: quest.config.messages.quest_name })"
+                  :disabled="index === queuedUpcoming.length - 1 || questsStore.queueEditingDisabled"
+                  @click="questsStore.moveQueuedQuest(quest.id, 1)"
+                ><ChevronDown class="h-4 w-4" aria-hidden="true" /></Button>
+                <Button
+                  variant="ghost" size="icon" class="h-7 w-7 text-red-600/80 hover:bg-red-500/10 hover:text-red-700 dark:text-red-400"
+                  :title="t('queue.remove', { name: quest.config.messages.quest_name })"
+                  :aria-label="t('queue.remove', { name: quest.config.messages.quest_name })"
+                  :disabled="questsStore.queueEditingDisabled"
+                  @click="questsStore.removeQueuedQuest(quest.id)"
+                ><Trash2 class="h-3.5 w-3.5" aria-hidden="true" /></Button>
+              </div>
+            </li>
+          </TransitionGroup>
           </div>
-        </div>
+          <Button
+            v-if="!questsStore.activeQuestId"
+            variant="outline" class="mt-3 w-full border-red-500/25 bg-red-500/5 text-red-700 hover:bg-red-500/10 dark:text-red-300"
+            :disabled="questsStore.queueEditingDisabled"
+            @click="questsStore.requestStop()"
+          >{{ t('queue.stop_all') }}</Button>
+        </section>
 
         <div v-if="questsStore.error" class="mt-4 flex items-start gap-2 rounded border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-500">
           <AlertCircle class="mt-0.5 h-4 w-4 shrink-0" />
@@ -407,6 +608,20 @@ const progressBarStyle = computed(() => {
     </Card>
     </Transition>
   </div>
+  <Teleport to="body">
+    <div
+      v-if="draggedQueueQuest"
+      aria-hidden="true"
+      class="pointer-events-none fixed z-[100] flex items-center gap-2 rounded-md border border-primary/40 bg-card p-2.5 text-sm shadow-xl ring-1 ring-primary/10"
+      :style="{ left: `${queueDragPreview.left}px`, top: `${queueDragPreview.top}px`, width: `${queueDragPreview.width}px` }"
+    >
+      <GripVertical class="h-4 w-4 shrink-0 text-primary" />
+      <div class="min-w-0 flex-1">
+        <div class="truncate text-xs font-medium">{{ draggedQueueQuest.config.messages.quest_name }}</div>
+        <div class="mt-0.5 truncate text-[11px] text-muted-foreground">{{ draggedQueueQuest.config.messages.game_title }}</div>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -424,5 +639,47 @@ const progressBarStyle = computed(() => {
 .quest-progress-panel-leave-to {
   opacity: 0;
   transform: scaleY(0.96);
+}
+
+.queue-item-move,
+.queue-item-enter-active,
+.queue-item-leave-active {
+  transition: transform 180ms ease, opacity 180ms ease;
+}
+
+.queue-item-enter-from,
+.queue-item-leave-to {
+  opacity: 0;
+  transform: scale(0.98);
+}
+
+.queue-row-dragging {
+  opacity: 0.4;
+  border-style: dashed;
+}
+
+.queue-drop-before::before,
+.queue-drop-after::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  border-radius: 999px;
+  background: hsl(var(--primary));
+  pointer-events: none;
+}
+
+.queue-drop-before::before { top: -5px; }
+.queue-drop-after::after { bottom: -5px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .quest-progress-panel-enter-active,
+  .quest-progress-panel-leave-active,
+  .queue-item-move,
+  .queue-item-enter-active,
+  .queue-item-leave-active {
+    transition: none;
+  }
 }
 </style>

@@ -92,6 +92,8 @@
     "stop_queue": "Sırayı durdur",
     "queue_count": "{count} sıraya alındı",
     "accept_quest": "Kabul et Quests",
+    "add_to_queue": "Kuyruğa ekle",
+    "already_queued": "Kuyrukta",
     "accepting": "Kabul ediliyor...",
     "stop": "Durdur",
     "start_quest": "Quest'ı başlat",
@@ -152,6 +154,21 @@
     "up_next": "Sonraki",
     "submitted": "Gönderildi",
     "pending": "Yerel Beklemede"
+  },
+  "queue": {
+    "remove": "{name} görevini kuyruktan kaldır",
+    "move_up": "{name} görevini yukarı taşı",
+    "move_down": "{name} görevini aşağı taşı",
+    "clear_pending": "Bekleyenleri temizle",
+    "order_hint": "Görevleri sıralamak için kartları sürükleyin veya okları kullanın.",
+    "order_updated": "Kuyruk sırası güncellendi.",
+    "stop_title": "Görevleri durdur",
+    "stop_description": "Neyin durdurulacağını seçin.",
+    "stop_current": "Geçerli görevi durdur",
+    "stop_current_continue": "Bu görevi durdurup kalan {count} göreve devam et.",
+    "stop_current_only": "Geçerli görevi sonlandır.",
+    "stop_all": "Tüm kuyruğu durdur",
+    "stop_all_description": "Çalışmayı durdur ve bekleyen {count} görevin tamamını kaldır."
   },
   "filter": {
     "type": "Tür",

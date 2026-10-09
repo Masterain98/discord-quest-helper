@@ -202,13 +202,19 @@
 
                   <Button
                     v-else-if="questsStore.activeQuestId === quest.id && startingQuestId !== quest.id"
-                    @click="questsStore.stop()"
+                    @click="questsStore.requestStop()"
                     variant="destructive"
                     :disabled="questsStore.stopping || isBatchAccepting"
                   >
                     <Loader2 v-if="questsStore.stopping" class="w-4 h-4 mr-2 animate-spin" />
                     {{ t('home.stop') }}
                   </Button>
+
+                  <QuestQueueAction
+                    v-else-if="getQuestType(quest) !== 'activity' && !quest.user_status?.completed_at && canStartQuest(quest) && (questsStore.questQueue.some(item => item.id === quest.id) || (questsStore.activeQuestId && questsStore.activeQuestId !== quest.id))"
+                    :quest="quest"
+                    :disabled="isBatchAccepting || gameIdleStore.isActive"
+                  />
 
                   <Button
                     v-else-if="!quest.user_status?.completed_at && canStartQuest(quest)"
@@ -263,6 +269,7 @@
     </div>
 
     <QuestProgress />
+    <QuestStopDialog />
 
     <!-- Accept All Confirmation Dialog -->
     <AlertDialog :open="showAcceptAllDialog" @update:open="showAcceptAllDialog = $event">
@@ -538,6 +545,8 @@ import QuestListHeader from '@/components/home/QuestListHeader.vue'
 import QuestViewTabs from '@/components/home/QuestViewTabs.vue'
 import QuestCard from '@/components/QuestCard.vue'
 import QuestProgress from '@/components/QuestProgress.vue'
+import QuestQueueAction from '@/components/QuestQueueAction.vue'
+import QuestStopDialog from '@/components/QuestStopDialog.vue'
 import type { DetectableGame, PlatformCapabilities, Quest } from '@/api/tauri'
 import {
   acceptQuest as acceptQuestApi,

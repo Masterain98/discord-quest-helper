@@ -92,6 +92,8 @@
     "stop_queue": "หยุดคิว",
     "queue_count": "{count} อยู่ในคิว",
     "accept_quest": "ยอมรับ Quests",
+    "add_to_queue": "เพิ่มเข้าคิว",
+    "already_queued": "อยู่ในคิว",
     "accepting": "ยอมรับ...",
     "stop": "หยุด",
     "start_quest": "เริ่ม Quest",
@@ -152,6 +154,21 @@
     "up_next": "ต่อไป",
     "submitted": "ส่งแล้ว",
     "pending": "รอดำเนินการในท้องถิ่น"
+  },
+  "queue": {
+    "remove": "นำ {name} ออกจากคิว",
+    "move_up": "เลื่อน {name} ขึ้น",
+    "move_down": "เลื่อน {name} ลง",
+    "clear_pending": "ล้างงานที่รอ",
+    "order_hint": "ลากการ์ดหรือใช้ลูกศรเพื่อเปลี่ยนลำดับงาน",
+    "order_updated": "อัปเดตลำดับคิวแล้ว",
+    "stop_title": "หยุดงาน",
+    "stop_description": "เลือกขอบเขตที่ต้องการหยุด",
+    "stop_current": "หยุดงานปัจจุบัน",
+    "stop_current_continue": "หยุดงานนี้ แล้วทำงานที่เหลืออีก {count} งานต่อ",
+    "stop_current_only": "สิ้นสุดงานปัจจุบัน",
+    "stop_all": "หยุดทั้งคิว",
+    "stop_all_description": "หยุดการทำงานและล้างงานที่รอทั้งหมด {count} งาน"
   },
   "filter": {
     "type": "ประเภท",

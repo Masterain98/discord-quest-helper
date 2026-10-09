@@ -92,6 +92,8 @@
     "stop_queue": "Arrêter la file d'attente",
     "queue_count": "{count} en file d'attente",
     "accept_quest": "Accepter Quests",
+    "add_to_queue": "Ajouter à la file",
+    "already_queued": "Déjà en file",
     "accepting": "Accepter...",
     "stop": "Arrêter",
     "start_quest": "Démarrer Quest",
@@ -152,6 +154,21 @@
     "up_next": "Suivant",
     "submitted": "Soumis",
     "pending": "Local en attente"
+  },
+  "queue": {
+    "remove": "Retirer {name} de la file",
+    "move_up": "Monter {name}",
+    "move_down": "Descendre {name}",
+    "clear_pending": "Vider les tâches en attente",
+    "order_hint": "Faites glisser les cartes ou utilisez les flèches pour changer l’ordre.",
+    "order_updated": "Ordre de la file mis à jour.",
+    "stop_title": "Arrêter les tâches",
+    "stop_description": "Choisissez ce que vous voulez arrêter.",
+    "stop_current": "Arrêter la tâche actuelle",
+    "stop_current_continue": "Arrêter cette tâche, puis poursuivre les {count} tâches restantes.",
+    "stop_current_only": "Terminer la tâche actuelle.",
+    "stop_all": "Arrêter toute la file",
+    "stop_all_description": "Arrêter l’exécution et supprimer les {count} tâches en attente."
   },
   "filter": {
     "type": "Type",

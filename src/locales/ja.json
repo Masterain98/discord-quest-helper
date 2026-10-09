@@ -92,6 +92,8 @@
     "stop_queue": "キューを停止する",
     "queue_count": "{count} 件待機中",
     "accept_quest": "クエストを受け入れる",
+    "add_to_queue": "キューに追加",
+    "already_queued": "キューに追加済み",
     "accepting": "受け入れ中...",
     "stop": "停止",
     "start_quest": "クエスト開始",
@@ -152,6 +154,21 @@
     "up_next": "次のクエスト",
     "submitted": "送信済み",
     "pending": "保留中"
+  },
+  "queue": {
+    "remove": "{name} をキューから削除",
+    "move_up": "{name} を上に移動",
+    "move_down": "{name} を下に移動",
+    "clear_pending": "待機中のタスクを削除",
+    "order_hint": "カードのドラッグまたは矢印で順序を変更できます。",
+    "order_updated": "キューの順序を更新しました。",
+    "stop_title": "タスクを停止",
+    "stop_description": "停止する範囲を選択してください。",
+    "stop_current": "現在のタスクを停止",
+    "stop_current_continue": "このタスクを停止して、残りの {count} 件のタスクを続行します。",
+    "stop_current_only": "現在のタスクを終了します。",
+    "stop_all": "キュー全体を停止",
+    "stop_all_description": "実行を停止し、待機中の {count} 件のタスクをすべて削除します。"
   },
   "filter": {
     "type": "タイプ",

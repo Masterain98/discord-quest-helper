@@ -92,6 +92,8 @@
     "stop_queue": "Zatrzymaj kolejkę",
     "queue_count": "{count} w kolejce",
     "accept_quest": "Zaakceptuj Quests",
+    "add_to_queue": "Dodaj do kolejki",
+    "already_queued": "W kolejce",
     "accepting": "Akceptuję...",
     "stop": "Stop",
     "start_quest": "Rozpocznij Quest",
@@ -152,6 +154,21 @@
     "up_next": "Dalej",
     "submitted": "Przesłane",
     "pending": "Lokalne oczekujące"
+  },
+  "queue": {
+    "remove": "Usuń {name} z kolejki",
+    "move_up": "Przesuń {name} w górę",
+    "move_down": "Przesuń {name} w dół",
+    "clear_pending": "Wyczyść oczekujące",
+    "order_hint": "Przeciągaj karty lub używaj strzałek, aby zmienić kolejność zadań.",
+    "order_updated": "Zaktualizowano kolejność w kolejce.",
+    "stop_title": "Zatrzymaj zadania",
+    "stop_description": "Wybierz, co zatrzymać.",
+    "stop_current": "Zatrzymaj bieżące zadanie",
+    "stop_current_continue": "Zatrzymaj to zadanie i kontynuuj pozostałe zadania ({count}).",
+    "stop_current_only": "Zakończ bieżące zadanie.",
+    "stop_all": "Zatrzymaj całą kolejkę",
+    "stop_all_description": "Zatrzymaj wykonywanie i usuń wszystkie oczekujące zadania ({count})."
   },
   "filter": {
     "type": "Typ",

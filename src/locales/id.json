@@ -92,6 +92,8 @@
     "stop_queue": "Hentikan antrian",
     "queue_count": "{count} mengantri",
     "accept_quest": "Terima Quests",
+    "add_to_queue": "Tambahkan ke antrean",
+    "already_queued": "Sudah dalam antrean",
     "accepting": "Menerima...",
     "stop": "Berhenti",
     "start_quest": "Mulai Quest",
@@ -152,6 +154,21 @@
     "up_next": "Selanjutnya",
     "submitted": "Dikirim",
     "pending": "Lokal Tertunda"
+  },
+  "queue": {
+    "remove": "Hapus {name} dari antrean",
+    "move_up": "Pindahkan {name} ke atas",
+    "move_down": "Pindahkan {name} ke bawah",
+    "clear_pending": "Kosongkan antrean",
+    "order_hint": "Seret kartu atau gunakan panah untuk mengubah urutan tugas.",
+    "order_updated": "Urutan antrean diperbarui.",
+    "stop_title": "Hentikan tugas",
+    "stop_description": "Pilih tugas yang ingin dihentikan.",
+    "stop_current": "Hentikan tugas saat ini",
+    "stop_current_continue": "Hentikan tugas ini, lalu lanjutkan {count} tugas yang tersisa.",
+    "stop_current_only": "Akhiri tugas saat ini.",
+    "stop_all": "Hentikan seluruh antrean",
+    "stop_all_description": "Hentikan eksekusi dan hapus semua {count} tugas yang menunggu."
   },
   "filter": {
     "type": "Tipe",

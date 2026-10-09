@@ -92,6 +92,8 @@
     "stop_queue": "Stoppen Sie die Warteschlange",
     "queue_count": "{count} in der Warteschlange",
     "accept_quest": "Akzeptieren Quests",
+    "add_to_queue": "Zur Warteschlange hinzufügen",
+    "already_queued": "In der Warteschlange",
     "accepting": "Akzeptieren...",
     "stop": "Stopp",
     "start_quest": "Quest starten",
@@ -152,6 +154,21 @@
     "up_next": "Als nächstes",
     "submitted": "Eingereicht",
     "pending": "Lokal ausstehend"
+  },
+  "queue": {
+    "remove": "{name} aus der Warteschlange entfernen",
+    "move_up": "{name} nach oben verschieben",
+    "move_down": "{name} nach unten verschieben",
+    "clear_pending": "Wartende löschen",
+    "order_hint": "Zum Sortieren ziehen oder die Pfeile verwenden.",
+    "order_updated": "Reihenfolge der Warteschlange aktualisiert.",
+    "stop_title": "Aufgaben stoppen",
+    "stop_description": "Wähle, was gestoppt werden soll.",
+    "stop_current": "Aktuelle Aufgabe stoppen",
+    "stop_current_continue": "Diese Aufgabe stoppen und danach die übrigen {count} Aufgaben fortsetzen.",
+    "stop_current_only": "Die aktuelle Aufgabe beenden.",
+    "stop_all": "Gesamte Warteschlange stoppen",
+    "stop_all_description": "Ausführung stoppen und alle {count} wartenden Aufgaben entfernen."
   },
   "filter": {
     "type": "Typ",

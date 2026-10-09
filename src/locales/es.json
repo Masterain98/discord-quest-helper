@@ -92,6 +92,8 @@
     "stop_queue": "Detener cola",
     "queue_count": "{count} en cola",
     "accept_quest": "Aceptar misión",
+    "add_to_queue": "Añadir a la cola",
+    "already_queued": "En cola",
     "accepting": "Aceptando...",
     "stop": "Detener",
     "start_quest": "Iniciar misión",
@@ -152,6 +154,21 @@
     "up_next": "Siguiente",
     "submitted": "Enviado",
     "pending": "Pendiente"
+  },
+  "queue": {
+    "remove": "Quitar {name} de la cola",
+    "move_up": "Subir {name}",
+    "move_down": "Bajar {name}",
+    "clear_pending": "Vaciar pendientes",
+    "order_hint": "Arrastra las tarjetas o usa las flechas para reordenar las tareas.",
+    "order_updated": "Orden de la cola actualizado.",
+    "stop_title": "Detener tareas",
+    "stop_description": "Elige qué quieres detener.",
+    "stop_current": "Detener tarea actual",
+    "stop_current_continue": "Detener esta tarea y continuar con las {count} tareas restantes.",
+    "stop_current_only": "Finalizar la tarea actual.",
+    "stop_all": "Detener toda la cola",
+    "stop_all_description": "Detener la ejecución y eliminar las {count} tareas pendientes."
   },
   "filter": {
     "type": "Tipo",

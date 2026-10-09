@@ -92,6 +92,8 @@
     "stop_queue": "Parar fila",
     "queue_count": "{count} na fila",
     "accept_quest": "Aceitar Quests",
+    "add_to_queue": "Adicionar à fila",
+    "already_queued": "Na fila",
     "accepting": "Aceitando...",
     "stop": "Parar",
     "start_quest": "Iniciar Quest",
@@ -152,6 +154,21 @@
     "up_next": "A seguir",
     "submitted": "Enviado",
     "pending": "Local pendente"
+  },
+  "queue": {
+    "remove": "Remover {name} da fila",
+    "move_up": "Mover {name} para cima",
+    "move_down": "Mover {name} para baixo",
+    "clear_pending": "Limpar pendentes",
+    "order_hint": "Arraste os cartões ou use as setas para reordenar as tarefas.",
+    "order_updated": "Ordem da fila atualizada.",
+    "stop_title": "Parar tarefas",
+    "stop_description": "Escolha o que pretende parar.",
+    "stop_current": "Parar tarefa atual",
+    "stop_current_continue": "Parar esta tarefa e continuar as {count} tarefas restantes.",
+    "stop_current_only": "Terminar a tarefa atual.",
+    "stop_all": "Parar toda a fila",
+    "stop_all_description": "Parar a execução e remover todas as {count} tarefas pendentes."
   },
   "filter": {
     "type": "Tipo",
