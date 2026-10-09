@@ -456,23 +456,29 @@ pub fn is_client_installation_running(
 /// cross-platform process handles, so this narrows PID-reuse risk without
 /// claiming an OS-level race-free guarantee.
 pub fn terminate_installation_process_tree(executable_path: &Path) -> Result<(), LaunchError> {
+    terminate_matching_process_trees(|process| {
+        process
+            .exe()
+            .is_some_and(|path| paths_refer_to_same_executable(path, executable_path))
+    })
+}
+
+pub(crate) fn terminate_matching_process_trees(
+    matches_root: impl Fn(&sysinfo::Process) -> bool,
+) -> Result<(), LaunchError> {
     let mut system = System::new();
     system.refresh_processes_specifics(
         ProcessesToUpdate::All,
         true,
         ProcessRefreshKind::nothing()
             .with_exe(UpdateKind::OnlyIfNotSet)
+            .with_cmd(UpdateKind::OnlyIfNotSet)
             .without_tasks(),
     );
     let roots: HashSet<_> = system
         .processes()
         .iter()
-        .filter_map(|(pid, process)| {
-            process
-                .exe()
-                .is_some_and(|path| paths_refer_to_same_executable(path, executable_path))
-                .then_some((*pid, process.start_time()))
-        })
+        .filter_map(|(pid, process)| matches_root(process).then_some((*pid, process.start_time())))
         .collect();
     if roots.is_empty() {
         return Ok(());
@@ -505,6 +511,16 @@ pub fn terminate_installation_process_tree(executable_path: &Path) -> Result<(),
             })
         })
         .collect();
+
+    // Capture tray identities while the old callback windows still exist.
+    // Every Windows termination entry point uses this same preparation.
+    #[cfg(target_os = "windows")]
+    let mut shutdown =
+        crate::platform::windows::shutdown::WindowsShutdown::prepare(&system, &target_identities);
+    #[cfg(target_os = "windows")]
+    shutdown.request_graceful_exit();
+    #[cfg(target_os = "windows")]
+    shutdown.refresh_tray_icons();
 
     // Descendants first. Refreshing the process table before every kill keeps
     // the identity check as close as possible to the operation itself.
@@ -548,11 +564,16 @@ pub fn terminate_installation_process_tree(executable_path: &Path) -> Result<(),
                 process: pid.to_string(),
                 details: format!(
                     "the process for '{}' refused termination",
-                    executable_path.display()
+                    expected_executable
+                        .as_deref()
+                        .unwrap_or(Path::new("unknown"))
+                        .display()
                 ),
             });
         }
     }
+    #[cfg(target_os = "windows")]
+    shutdown.finish()?;
     Ok(())
 }
 
@@ -696,7 +717,7 @@ pub(crate) fn classify_cdp_port_owner(
     }
 }
 
-fn parse_cdp_port(argument: &OsStr) -> Option<u16> {
+pub(crate) fn parse_cdp_port(argument: &OsStr) -> Option<u16> {
     let value = argument.to_str()?;
     value
         .strip_prefix("--remote-debugging-port=")?
