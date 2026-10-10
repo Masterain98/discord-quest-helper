@@ -686,6 +686,7 @@
     "circular": "Circular reference",
     "property_error": "Could not read properties.",
     "no_properties": "No own properties.",
+    "property_snapshot": "Properties captured when expanded",
     "levels": {
       "all": "All levels",
       "log": "log",

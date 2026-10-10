@@ -33,7 +33,11 @@ export function createDiscordConsoleLifecycle(deps: ConsoleLifecycleDependencies
     inFlight = work
     try { await work } finally { if (inFlight === work) inFlight = null }
   }
-  async function invalidate(clear = false) { revision++; await deps.console.disconnect(clear) }
+  async function invalidate(clear = false) {
+    revision++
+    inFlight = null
+    await deps.console.disconnect(clear)
+  }
   async function stop() { stopped = true; await invalidate(true) }
   return { refresh, invalidate, stop }
 }

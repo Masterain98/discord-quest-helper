@@ -43,6 +43,7 @@ async function toggle() {
     <span v-if="object.objectId && expired" class="ml-2 text-xs text-muted-foreground">{{ t('discord_console.expired') }}</span>
     <span v-else-if="circular" class="ml-2 text-muted-foreground">{{ t('discord_console.circular') }}</span>
     <div v-if="expanded && !expired" class="ml-2 border-l border-border pl-3">
+      <p v-if="result" class="mb-1 text-[11px] text-muted-foreground">{{ t('discord_console.property_snapshot') }}</p>
       <p v-if="failed" class="text-destructive">{{ t('discord_console.property_error') }}</p>
       <p v-else-if="result && !children.length" class="text-muted-foreground">{{ t('discord_console.no_properties') }}</p>
       <div v-for="(property, index) in children" :key="`${property.name}:${index}`" class="py-0.5">

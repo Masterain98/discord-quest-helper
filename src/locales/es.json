@@ -684,6 +684,7 @@
     "circular": "Referencia circular",
     "property_error": "No se pudieron leer las propiedades.",
     "no_properties": "Sin propiedades propias.",
+    "property_snapshot": "Propiedades capturadas al expandir",
     "levels": {
       "all": "Todos los niveles",
       "log": "log",

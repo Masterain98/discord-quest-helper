@@ -110,12 +110,14 @@ impl ConsoleManager {
         tokio::spawn(run_session(
             socket,
             receiver,
-            info.session_id.clone(),
-            context,
-            buffered,
-            sink,
-            open,
-            REQUEST_TIMEOUT,
+            SessionRuntime {
+                session: info.session_id.clone(),
+                context,
+                buffered,
+                sink,
+                open,
+                request_timeout: REQUEST_TIMEOUT,
+            },
         ));
         Ok(info)
     }
@@ -366,16 +368,28 @@ fn console_event(
     })
 }
 
-async fn run_session(
-    mut socket: Socket,
-    mut requests: mpsc::Receiver<Request>,
+struct SessionRuntime {
     session: String,
     context: Context,
     buffered: Vec<Value>,
     sink: EventSink,
     open: Arc<AtomicBool>,
     request_timeout: Duration,
+}
+
+async fn run_session(
+    mut socket: Socket,
+    mut requests: mpsc::Receiver<Request>,
+    runtime: SessionRuntime,
 ) {
+    let SessionRuntime {
+        session,
+        context,
+        buffered,
+        sink,
+        open,
+        request_timeout,
+    } = runtime;
     let mut objects = HashSet::new();
     let mut pending: HashMap<u64, Pending> = HashMap::new();
     let mut next_id = 4u64;
@@ -635,12 +649,14 @@ mod tests {
         tokio::spawn(run_session(
             client,
             receiver,
-            "test".into(),
-            context(),
-            Vec::new(),
-            Arc::new(move |event| events.send(event).is_ok()),
-            open,
-            timeout,
+            SessionRuntime {
+                session: "test".into(),
+                context: context(),
+                buffered: Vec::new(),
+                sink: Arc::new(move |event| events.send(event).is_ok()),
+                open,
+                request_timeout: timeout,
+            },
         ));
         (manager, peer, sink)
     }

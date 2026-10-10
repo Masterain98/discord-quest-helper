@@ -34,6 +34,7 @@ export const useDiscordConsoleStore = defineStore('discordConsole', () => {
   let lastSequence = 0
   let historyDraft = ''
   let connectPromise: Promise<void> | null = null
+  let connectRevision = -1
   // Expanded properties are owned by their root output entry, including nested handles.
   const entryObjects = new Map<number, Set<string>>()
   const properties = shallowRef(new Map<string, api.ConsoleProperties>())
@@ -103,8 +104,15 @@ export const useDiscordConsoleStore = defineStore('discordConsole', () => {
   async function connect(port: number) {
     opened.value = true
     if (session.value?.port === port) return
-    if (connectPromise) return connectPromise
+    if (connectPromise) {
+      if (connectRevision === revision) return connectPromise
+      const requestedRevision = revision
+      await connectPromise
+      if (revision === requestedRevision) await connect(port)
+      return
+    }
     const generation = ++revision
+    connectRevision = generation
     connecting.value = true
     const buffered: api.ConsoleEvent[] = []
     let accepted = false

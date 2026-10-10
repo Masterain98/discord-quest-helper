@@ -684,6 +684,7 @@
     "circular": "循環參照",
     "property_error": "無法讀取屬性。",
     "no_properties": "沒有自身屬性。",
+    "property_snapshot": "展開時的屬性快照",
     "levels": {
       "all": "全部等級",
       "log": "log",

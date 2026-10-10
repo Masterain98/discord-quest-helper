@@ -117,6 +117,23 @@ describe('Discord console session', () => {
     expect(api.closeDiscordConsole).toHaveBeenCalledWith('one')
   })
 
+  it('retries the new port after a stale connection finishes without waiting for a poll', async () => {
+    const old = deferred<ConsoleSession>()
+    api.openDiscordConsole.mockImplementationOnce(() => old.promise)
+      .mockResolvedValueOnce({ ...info('new'), port: 9224 })
+    const store = useDiscordConsoleStore()
+    const staleConnection = store.connect(9223)
+    await store.disconnect()
+    const nextConnection = store.connect(9224)
+    expect(api.openDiscordConsole).toHaveBeenCalledTimes(1)
+    old.resolve(info('old'))
+    await Promise.all([staleConnection, nextConnection])
+    expect(api.openDiscordConsole).toHaveBeenCalledTimes(2)
+    expect(api.openDiscordConsole).toHaveBeenLastCalledWith(9224, expect.any(Function))
+    expect(api.closeDiscordConsole).toHaveBeenCalledWith('old')
+    expect(store.session?.sessionId).toBe('new')
+  })
+
   it('streams logs during pending evaluation, ignores duplicate and foreign events, and serializes execution', async () => {
     const pending = deferred<{ result: { type: string; value: number } }>()
     api.evaluateDiscordConsole.mockReturnValue(pending.promise)

@@ -51,6 +51,23 @@ describe('application console lifecycle', () => {
     expect(deps.setAvailable).not.toHaveBeenCalled()
     expect(deps.console.disconnect).toHaveBeenCalledWith(true)
   })
+  it('starts a probe for a new configuration before the old probe finishes', async () => {
+    const { lifecycle, deps, snapshot } = setup()
+    let finishOld!: (value: { connected: boolean }) => void
+    deps.check.mockReturnValueOnce(new Promise(resolve => { finishOld = resolve }))
+      .mockResolvedValueOnce({ connected: true })
+    const oldProbe = lifecycle.refresh()
+    snapshot.port = 9224
+    await lifecycle.invalidate()
+    await lifecycle.refresh()
+    expect(deps.check).toHaveBeenCalledTimes(2)
+    expect(deps.check).toHaveBeenLastCalledWith(9224)
+    expect(deps.setAvailable).toHaveBeenCalledWith(true)
+    expect(deps.setAvailable).toHaveBeenCalledTimes(1)
+    finishOld({ connected: false })
+    await oldProbe
+    expect(deps.setAvailable).toHaveBeenCalledTimes(1)
+  })
   it('stops polling and clears session state at app shutdown', async () => {
     const { lifecycle, deps, snapshot } = setup()
     snapshot.mode = 'simulate'

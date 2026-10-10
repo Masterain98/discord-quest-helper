@@ -684,6 +684,7 @@
     "circular": "循環参照",
     "property_error": "プロパティを読み取れません。",
     "no_properties": "独自のプロパティはありません。",
+    "property_snapshot": "展開時点のプロパティのスナップショット",
     "levels": {
       "all": "すべて",
       "log": "log",

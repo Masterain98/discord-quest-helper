@@ -684,6 +684,7 @@
     "circular": "Referensi melingkar",
     "property_error": "Tidak dapat membaca properti.",
     "no_properties": "Tidak ada properti sendiri.",
+    "property_snapshot": "Properti saat dibuka",
     "levels": {
       "all": "Semua tingkat",
       "log": "log",

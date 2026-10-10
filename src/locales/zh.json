@@ -686,6 +686,7 @@
     "circular": "循环引用",
     "property_error": "无法读取属性。",
     "no_properties": "没有自身属性。",
+    "property_snapshot": "展开时的属性快照",
     "levels": {
       "all": "全部级别",
       "log": "log",

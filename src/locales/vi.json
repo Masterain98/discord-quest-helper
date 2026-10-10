@@ -684,6 +684,7 @@
     "circular": "Tham chiếu vòng",
     "property_error": "Không thể đọc thuộc tính.",
     "no_properties": "Không có thuộc tính riêng.",
+    "property_snapshot": "Thuộc tính tại thời điểm mở rộng",
     "levels": {
       "all": "Tất cả mức",
       "log": "log",

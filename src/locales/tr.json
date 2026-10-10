@@ -684,6 +684,7 @@
     "circular": "Döngüsel referans",
     "property_error": "Özellikler okunamadı.",
     "no_properties": "Kendi özelliği yok.",
+    "property_snapshot": "Genişletildiği andaki özellikler",
     "levels": {
       "all": "Tüm düzeyler",
       "log": "log",

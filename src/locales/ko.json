@@ -684,6 +684,7 @@
     "circular": "순환 참조",
     "property_error": "속성을 읽을 수 없습니다.",
     "no_properties": "자체 속성이 없습니다.",
+    "property_snapshot": "펼친 시점의 속성 스냅샷",
     "levels": {
       "all": "모든 수준",
       "log": "log",

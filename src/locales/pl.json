@@ -684,6 +684,7 @@
     "circular": "Odwołanie cykliczne",
     "property_error": "Nie udało się odczytać właściwości.",
     "no_properties": "Brak własnych właściwości.",
+    "property_snapshot": "Właściwości zapisane podczas rozwinięcia",
     "levels": {
       "all": "Wszystkie poziomy",
       "log": "log",

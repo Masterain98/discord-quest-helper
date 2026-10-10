@@ -684,6 +684,7 @@
     "circular": "Zyklische Referenz",
     "property_error": "Eigenschaften konnten nicht gelesen werden.",
     "no_properties": "Keine eigenen Eigenschaften.",
+    "property_snapshot": "Eigenschaften zum Zeitpunkt des Aufklappens",
     "levels": {
       "all": "Alle Stufen",
       "log": "log",

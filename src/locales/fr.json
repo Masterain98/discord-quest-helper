@@ -684,6 +684,7 @@
     "circular": "Référence circulaire",
     "property_error": "Impossible de lire les propriétés.",
     "no_properties": "Aucune propriété propre.",
+    "property_snapshot": "Propriétés capturées lors du développement",
     "levels": {
       "all": "Tous les niveaux",
       "log": "log",
