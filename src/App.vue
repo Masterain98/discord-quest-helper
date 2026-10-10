@@ -5,12 +5,18 @@ import GlobalQuests from './views/GlobalQuests.vue'
 import GameSimulator from './views/GameSimulator.vue'
 import Settings from './views/Settings.vue'
 import Debug from './views/Debug.vue'
+import DiscordConsole from './views/DiscordConsole.vue'
 import TitleBar from './components/TitleBar.vue'
 import { Button } from '@/components/ui/button'
 import { useAuthStore } from '@/stores/auth'
 import { useQuestsStore } from '@/stores/quests'
 import { useGameIdleStore } from '@/stores/gameIdle'
 import { useVersionStore } from '@/stores/version'
+import { useDiscordConsoleStore } from '@/stores/discordConsole'
+import { useToastStore } from '@/stores/toast'
+import { checkCdpStatus } from '@/api/tauri'
+import { createDiscordConsoleLifecycle } from '@/composables/discordConsoleLifecycle'
+import { consoleFallbackTab, consoleTabEnabled } from '@/utils/discordConsole'
 import { useI18n } from 'vue-i18n'
 import { Moon, Sun, Languages } from 'lucide-vue-next'
 import AccountMenu from './components/AccountMenu.vue'
@@ -33,6 +39,33 @@ const { t, locale } = useI18n()
 const currentTab = ref<AppTab>('home')
 const authStore = useAuthStore()
 const questsStore = useQuestsStore()
+const discordConsole = useDiscordConsoleStore()
+const toastStore = useToastStore()
+const consoleEnabled = computed(() => consoleTabEnabled(questsStore.gameQuestMode, questsStore.cdpAvailable))
+const consoleLifecycle = createDiscordConsoleLifecycle({
+  snapshot: () => ({ mode: questsStore.gameQuestMode, port: questsStore.cdpPort, account: authStore.user?.id ?? null }),
+  check: checkCdpStatus,
+  setAvailable: available => { questsStore.cdpAvailable = available },
+  console: discordConsole,
+})
+let consoleMonitor: ReturnType<typeof setInterval> | undefined
+const closeConsoleOnUnload = () => { void consoleLifecycle.stop() }
+watch(() => [questsStore.gameQuestMode, questsStore.cdpPort, authStore.user?.id ?? null] as const,
+  async (current, previous) => {
+    const accountChanged = !!previous && current[2] !== previous[2]
+    if (previous) await consoleLifecycle.invalidate(accountChanged)
+    if (previous && current[1] !== previous[1]) questsStore.cdpAvailable = false
+    await consoleLifecycle.refresh()
+  }, { immediate: true, flush: 'sync' })
+watch(() => discordConsole.session, (current, previous) => {
+  if (!current && previous && questsStore.gameQuestMode === 'cdp') questsStore.cdpAvailable = false
+})
+watch(consoleEnabled, enabled => {
+  if (!enabled && currentTab.value === 'console') {
+    currentTab.value = consoleFallbackTab(currentTab.value, enabled)
+    toastStore.warning({ title: t('nav.discord_console'), description: t('discord_console.unavailable') })
+  }
+}, { flush: 'sync' })
 watch(() => authStore.user?.id ?? null, id => questsStore.setQuestAccount(id), { immediate: true, flush: 'sync' })
 const gameIdleStore = useGameIdleStore()
 const authTransitioning = ref(false)
@@ -119,6 +152,8 @@ function setLanguage(lang: string) {
 }
 
 onMounted(() => {
+  consoleMonitor = setInterval(() => { void consoleLifecycle.refresh() }, 5000)
+  window.addEventListener('beforeunload', closeConsoleOnUnload)
   // Init Theme
   const savedTheme = localStorage.getItem('theme')
   if (savedTheme) {
@@ -140,11 +175,15 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  if (consoleMonitor) clearInterval(consoleMonitor)
+  window.removeEventListener('beforeunload', closeConsoleOnUnload)
+  void consoleLifecycle.stop()
   window.removeEventListener('app:navigate', handleAppNavigate)
 })
 
 function handleAppNavigate(e: Event) {
   const tab = (e as CustomEvent<string>).detail
+  if (tab === 'console' && consoleEnabled.value) currentTab.value = tab
   if (tab === 'home' || tab === 'global' || tab === 'game' || tab === 'settings' || tab === 'debug') {
     currentTab.value = tab
   }
@@ -262,6 +301,7 @@ watch(
               <AppNavigation
                 :current="currentTab"
                 :debug-enabled="debugModeEnabled"
+                :console-enabled="consoleEnabled"
                 @navigate="currentTab = $event"
               />
 
@@ -284,6 +324,7 @@ watch(
                     <AppNavigation
                       :current="currentTab"
                       :debug-enabled="debugModeEnabled"
+                      :console-enabled="consoleEnabled"
                       @navigate="currentTab = $event"
                     />
 
@@ -319,6 +360,7 @@ watch(
           <GlobalQuests v-else-if="currentTab === 'global'" />
 
           <GameSimulator v-else-if="currentTab === 'game'" />
+          <DiscordConsole v-else-if="currentTab === 'console' && consoleEnabled" />
         
           <Settings
             v-else-if="currentTab === 'settings'"

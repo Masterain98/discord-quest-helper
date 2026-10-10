@@ -69,7 +69,8 @@
     "game_simulator": "Spielsimulator",
     "settings": "Einstellungen",
     "debug": "Debuggen",
-    "global_quests": "Globale Quests"
+    "global_quests": "Globale Quests",
+    "discord_console": "Discord-Konsole"
   },
   "home": {
     "dashboard_title": "Quest Dashboard",
@@ -655,6 +656,54 @@
       "ACHIEVEMENT_IN_ACTIVITY": "Aktivitätserfolg",
       "PLAY_ACTIVITY": "Aktivitätsspiel",
       "ACHIEVEMENT_IN_GAME": "Spielerfolg"
+    }
+  },
+  "discord_console": {
+    "pause": "Aktualisierung pausieren",
+    "resume": "Aktualisierung fortsetzen",
+    "paused_notice": "Aktualisierung pausiert. Protokolle werden im Hintergrund empfangen ({count} gepuffert, maximal 2.000).",
+    "description": "JavaScript im verbundenen Discord ausführen und die Ausgabe live verfolgen.",
+    "connecting": "Verbindung wird hergestellt…",
+    "connected": "Verbunden",
+    "disconnected": "Getrennt",
+    "search": "Ausgabe durchsuchen",
+    "level": "Protokollstufe",
+    "clear": "Ausgabe leeren",
+    "output": "Konsolenausgabe",
+    "empty": "Einen Befehl eingeben. Discord-Protokolle erscheinen hier in Echtzeit.",
+    "no_matches": "Keine passende Ausgabe.",
+    "command": "JavaScript-Befehl",
+    "placeholder": "JavaScript eingeben…",
+    "shortcuts": "Ctrl/Cmd+Enter: ausführen · Enter: neue Zeile · Alt+↑/↓: Verlauf",
+    "execute": "Ausführen",
+    "executing": "Wird ausgeführt…",
+    "copy": "Eintrag kopieren",
+    "copy_failed": "Kopieren in die Zwischenablage fehlgeschlagen.",
+    "unavailable": "Die Konsole benötigt den CDP-Modus und eine Verbindung zu Discord.",
+    "expired": "Referenz abgelaufen",
+    "circular": "Zyklische Referenz",
+    "property_error": "Eigenschaften konnten nicht gelesen werden.",
+    "no_properties": "Keine eigenen Eigenschaften.",
+    "levels": {
+      "all": "Alle Stufen",
+      "log": "log",
+      "info": "info",
+      "debug": "debug",
+      "warn": "warn",
+      "error": "error"
+    },
+    "errors": {
+      "console_request_timeout": "Zeitüberschreitung nach 30 Sekunden. Auswirkungen können weiterhin bestehen.",
+      "console_connect_timeout": "Verbindung zu Discord fehlgeschlagen.",
+      "console_connect_failed": "Verbindung zu Discord fehlgeschlagen.",
+      "console_target_unavailable": "Verbindung zu Discord fehlgeschlagen.",
+      "console_context_unavailable": "Verbindung zu Discord fehlgeschlagen.",
+      "console_protocol_error": "Der CDP-Befehl ist fehlgeschlagen oder wird nicht unterstützt.",
+      "console_protocol_unsupported": "Der CDP-Befehl ist fehlgeschlagen oder wird nicht unterstützt.",
+      "console_busy": "Die Konsole ist beschäftigt. Erneut versuchen.",
+      "console_empty_expression": "Zuerst einen Befehl eingeben.",
+      "console_object_expired": "Referenz abgelaufen",
+      "console_session_invalidated": "Getrennt"
     }
   }
 }

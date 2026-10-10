@@ -69,7 +69,8 @@
     "game_simulator": "Simulateur de jeu",
     "settings": "Paramètres",
     "debug": "Débogage",
-    "global_quests": "Quêtes mondiales"
+    "global_quests": "Quêtes mondiales",
+    "discord_console": "Console Discord"
   },
   "home": {
     "dashboard_title": "Quest Tableau de bord",
@@ -655,6 +656,54 @@
       "ACHIEVEMENT_IN_ACTIVITY": "Succès d’activité",
       "PLAY_ACTIVITY": "Jeu d’activité",
       "ACHIEVEMENT_IN_GAME": "Succès en jeu"
+    }
+  },
+  "discord_console": {
+    "pause": "Suspendre les mises à jour",
+    "resume": "Reprendre les mises à jour",
+    "paused_notice": "Mises à jour suspendues. Les journaux continuent en arrière-plan ({count} en mémoire, au maximum 2 000).",
+    "description": "Exécutez du JavaScript dans Discord et consultez la sortie en direct.",
+    "connecting": "Connexion…",
+    "connected": "Connecté",
+    "disconnected": "Déconnecté",
+    "search": "Rechercher dans la sortie",
+    "level": "Niveau de journal",
+    "clear": "Effacer la sortie",
+    "output": "Sortie de la console",
+    "empty": "Saisissez une commande. Les journaux Discord apparaissent en temps réel.",
+    "no_matches": "Aucun résultat correspondant.",
+    "command": "Commande JavaScript",
+    "placeholder": "Saisir du JavaScript…",
+    "shortcuts": "Ctrl/Cmd+Enter : exécuter · Enter : nouvelle ligne · Alt+↑/↓ : historique",
+    "execute": "Exécuter",
+    "executing": "Exécution…",
+    "copy": "Copier cette entrée",
+    "copy_failed": "Impossible de copier dans le presse-papiers.",
+    "unavailable": "La console nécessite le mode CDP et une connexion à Discord.",
+    "expired": "Référence expirée",
+    "circular": "Référence circulaire",
+    "property_error": "Impossible de lire les propriétés.",
+    "no_properties": "Aucune propriété propre.",
+    "levels": {
+      "all": "Tous les niveaux",
+      "log": "log",
+      "info": "info",
+      "debug": "debug",
+      "warn": "warn",
+      "error": "error"
+    },
+    "errors": {
+      "console_request_timeout": "Délai de 30 secondes dépassé. Les effets peuvent se poursuivre.",
+      "console_connect_timeout": "Impossible de se connecter à Discord.",
+      "console_connect_failed": "Impossible de se connecter à Discord.",
+      "console_target_unavailable": "Impossible de se connecter à Discord.",
+      "console_context_unavailable": "Impossible de se connecter à Discord.",
+      "console_protocol_error": "La commande CDP a échoué ou est incompatible.",
+      "console_protocol_unsupported": "La commande CDP a échoué ou est incompatible.",
+      "console_busy": "La console est occupée. Réessayez.",
+      "console_empty_expression": "Saisissez une commande.",
+      "console_object_expired": "Référence expirée",
+      "console_session_invalidated": "Déconnecté"
     }
   }
 }

@@ -69,7 +69,8 @@
     "game_simulator": "游戏模拟",
     "settings": "设置",
     "debug": "调试",
-    "global_quests": "全球任务"
+    "global_quests": "全球任务",
+    "discord_console": "Discord 控制台"
   },
   "home": {
     "dashboard_title": "任务仪表盘",
@@ -657,6 +658,54 @@
       "ACHIEVEMENT_IN_ACTIVITY": "活动成就",
       "PLAY_ACTIVITY": "活动游玩",
       "ACHIEVEMENT_IN_GAME": "游戏成就"
+    }
+  },
+  "discord_console": {
+    "pause": "暂停更新",
+    "resume": "恢复更新",
+    "paused_notice": "已暂停更新，后台继续接收日志（已缓存 {count} 条，最多 2,000 条）。",
+    "description": "在已连接的 Discord 客户端中执行 JavaScript 并查看实时输出。",
+    "connecting": "正在连接…",
+    "connected": "已连接",
+    "disconnected": "连接已断开",
+    "search": "搜索输出",
+    "level": "日志级别",
+    "clear": "清空输出",
+    "output": "控制台输出",
+    "empty": "输入命令开始执行，Discord 日志将在此实时显示。",
+    "no_matches": "没有匹配的输出。",
+    "command": "JavaScript 命令",
+    "placeholder": "输入 JavaScript…",
+    "shortcuts": "Ctrl/Cmd+Enter：执行 · Enter：换行 · Alt+↑/↓：历史命令",
+    "execute": "执行",
+    "executing": "正在执行…",
+    "copy": "复制此条",
+    "copy_failed": "无法复制到剪贴板。",
+    "unavailable": "控制台需要 CDP 模式和已连接的 Discord 客户端。",
+    "expired": "引用已失效",
+    "circular": "循环引用",
+    "property_error": "无法读取属性。",
+    "no_properties": "没有自身属性。",
+    "levels": {
+      "all": "全部级别",
+      "log": "log",
+      "info": "info",
+      "debug": "debug",
+      "warn": "warn",
+      "error": "error"
+    },
+    "errors": {
+      "console_request_timeout": "命令等待超过 30 秒，已执行的副作用可能仍在继续。",
+      "console_connect_timeout": "无法连接到 Discord。",
+      "console_connect_failed": "无法连接到 Discord。",
+      "console_target_unavailable": "无法连接到 Discord。",
+      "console_context_unavailable": "无法连接到 Discord。",
+      "console_protocol_error": "CDP 命令失败或不受支持。",
+      "console_protocol_unsupported": "CDP 命令失败或不受支持。",
+      "console_busy": "控制台忙碌，请稍后重试。",
+      "console_empty_expression": "请先输入命令。",
+      "console_object_expired": "引用已失效",
+      "console_session_invalidated": "连接已断开"
     }
   }
 }

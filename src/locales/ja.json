@@ -69,7 +69,8 @@
     "game_simulator": "ゲームシミュレーター",
     "settings": "設定",
     "debug": "デバッグ",
-    "global_quests": "世界のクエスト"
+    "global_quests": "世界のクエスト",
+    "discord_console": "Discord コンソール"
   },
   "home": {
     "dashboard_title": "Quest ダッシュボード",
@@ -655,6 +656,54 @@
       "ACHIEVEMENT_IN_ACTIVITY": "アクティビティ実績",
       "PLAY_ACTIVITY": "アクティビティプレイ",
       "ACHIEVEMENT_IN_GAME": "ゲーム実績"
+    }
+  },
+  "discord_console": {
+    "pause": "更新を一時停止",
+    "resume": "更新を再開",
+    "paused_notice": "更新を一時停止中。バックグラウンドでログを受信しています（{count} 件を保留、最大 2,000 件）。",
+    "description": "接続した Discord で JavaScript を実行し、出力をリアルタイムで表示します。",
+    "connecting": "接続中…",
+    "connected": "接続済み",
+    "disconnected": "切断",
+    "search": "出力を検索",
+    "level": "ログレベル",
+    "clear": "出力を消去",
+    "output": "コンソール出力",
+    "empty": "コマンドを入力してください。Discord のログがリアルタイムで表示されます。",
+    "no_matches": "一致する出力がありません。",
+    "command": "JavaScript コマンド",
+    "placeholder": "JavaScript を入力…",
+    "shortcuts": "Ctrl/Cmd+Enter：実行 · Enter：改行 · Alt+↑/↓：履歴",
+    "execute": "実行",
+    "executing": "実行中…",
+    "copy": "項目をコピー",
+    "copy_failed": "クリップボードにコピーできませんでした。",
+    "unavailable": "CDP モードと Discord への接続が必要です。",
+    "expired": "参照が無効です",
+    "circular": "循環参照",
+    "property_error": "プロパティを読み取れません。",
+    "no_properties": "独自のプロパティはありません。",
+    "levels": {
+      "all": "すべて",
+      "log": "log",
+      "info": "info",
+      "debug": "debug",
+      "warn": "warn",
+      "error": "error"
+    },
+    "errors": {
+      "console_request_timeout": "30 秒でタイムアウトしました。処理の影響は続く場合があります。",
+      "console_connect_timeout": "Discord に接続できません。",
+      "console_connect_failed": "Discord に接続できません。",
+      "console_target_unavailable": "Discord に接続できません。",
+      "console_context_unavailable": "Discord に接続できません。",
+      "console_protocol_error": "CDP コマンドが失敗したか、未対応です。",
+      "console_protocol_unsupported": "CDP コマンドが失敗したか、未対応です。",
+      "console_busy": "コンソールがビジーです。再試行してください。",
+      "console_empty_expression": "先にコマンドを入力してください。",
+      "console_object_expired": "参照が無効です",
+      "console_session_invalidated": "切断"
     }
   }
 }

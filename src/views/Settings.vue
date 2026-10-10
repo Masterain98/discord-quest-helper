@@ -24,7 +24,7 @@ const emit = defineEmits<{
 }>()
 
 onMounted(() => {
-  questsStore.initCdpMode().catch(err => {
+  questsStore.initCdpMode({ preserveMode: true }).catch(err => {
     console.warn('CDP init failed:', err)
   })
 })

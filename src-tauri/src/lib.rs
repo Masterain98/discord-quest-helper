@@ -6,6 +6,7 @@ mod cdp_game_spoof;
 mod cdp_quest;
 mod discord_api;
 mod discord_cdp_commands;
+mod discord_console;
 mod discord_gateway;
 mod game_idle;
 mod game_simulator;
@@ -2166,6 +2167,9 @@ fn create_main_window(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(std::sync::Arc::new(
+            discord_console::ConsoleManager::default(),
+        ))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
@@ -2214,6 +2218,11 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            discord_console::open_discord_console,
+            discord_console::evaluate_discord_console,
+            discord_console::get_discord_console_properties,
+            discord_console::release_discord_console_objects,
+            discord_console::close_discord_console,
             auto_detect_token,
             set_token,
             auto_login_via_cdp,
@@ -2299,6 +2308,9 @@ pub fn run() {
 
 #[tauri::command]
 async fn prepare_app_exit(state: State<'_, AppState>, app: tauri::AppHandle) -> Result<(), String> {
+    app.state::<std::sync::Arc<discord_console::ConsoleManager>>()
+        .close_all()
+        .await;
     prepare_active_work_and_local_cleanup(&state, &app).await
 }
 
@@ -2309,6 +2321,9 @@ async fn prepare_app_exit(state: State<'_, AppState>, app: tauri::AppHandle) -> 
 /// alive with the frontend's close guard latched.
 #[tauri::command]
 async fn exit_app_now(state: State<'_, AppState>, app: tauri::AppHandle) -> Result<(), String> {
+    app.state::<std::sync::Arc<discord_console::ConsoleManager>>()
+        .close_all()
+        .await;
     // The close UI fail-opens after a short prepare deadline so a hung Discord
     // evaluation cannot trap the window. This command is the last chance to
     // finish or retry CDP rollback before the process disappears.

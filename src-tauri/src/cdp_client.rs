@@ -321,7 +321,7 @@ async fn watch_pinned_documents() -> anyhow::Error {
 
 pub(crate) struct VerifiedDiscordTarget {
     pub(crate) target: CdpTarget,
-    generation: String,
+    pub(crate) generation: String,
 }
 
 pub async fn pin_discord_target(port: u16) -> Result<()> {

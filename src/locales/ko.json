@@ -69,7 +69,8 @@
     "game_simulator": "게임 시뮬레이터",
     "settings": "설정",
     "debug": "디버그",
-    "global_quests": "글로벌 퀘스트"
+    "global_quests": "글로벌 퀘스트",
+    "discord_console": "Discord 콘솔"
   },
   "home": {
     "dashboard_title": "Quest 대시보드",
@@ -655,6 +656,54 @@
       "ACHIEVEMENT_IN_ACTIVITY": "활동 업적",
       "PLAY_ACTIVITY": "활동 플레이",
       "ACHIEVEMENT_IN_GAME": "게임 업적"
+    }
+  },
+  "discord_console": {
+    "pause": "업데이트 일시 중지",
+    "resume": "업데이트 재개",
+    "paused_notice": "업데이트가 일시 중지되었습니다. 백그라운드에서 로그를 계속 수신합니다 ({count}개 보관, 최대 2,000개).",
+    "description": "연결된 Discord에서 JavaScript를 실행하고 실시간 출력을 확인합니다.",
+    "connecting": "연결 중…",
+    "connected": "연결됨",
+    "disconnected": "연결 끊김",
+    "search": "출력 검색",
+    "level": "로그 수준",
+    "clear": "출력 지우기",
+    "output": "콘솔 출력",
+    "empty": "명령을 입력하세요. Discord 로그가 실시간으로 표시됩니다.",
+    "no_matches": "일치하는 출력이 없습니다.",
+    "command": "JavaScript 명령",
+    "placeholder": "JavaScript 입력…",
+    "shortcuts": "Ctrl/Cmd+Enter: 실행 · Enter: 줄 바꿈 · Alt+↑/↓: 기록",
+    "execute": "실행",
+    "executing": "실행 중…",
+    "copy": "항목 복사",
+    "copy_failed": "클립보드에 복사할 수 없습니다.",
+    "unavailable": "CDP 모드와 Discord 연결이 필요합니다.",
+    "expired": "참조 만료됨",
+    "circular": "순환 참조",
+    "property_error": "속성을 읽을 수 없습니다.",
+    "no_properties": "자체 속성이 없습니다.",
+    "levels": {
+      "all": "모든 수준",
+      "log": "log",
+      "info": "info",
+      "debug": "debug",
+      "warn": "warn",
+      "error": "error"
+    },
+    "errors": {
+      "console_request_timeout": "30초 후 시간이 초과되었습니다. 실행 효과는 계속될 수 있습니다.",
+      "console_connect_timeout": "Discord에 연결할 수 없습니다.",
+      "console_connect_failed": "Discord에 연결할 수 없습니다.",
+      "console_target_unavailable": "Discord에 연결할 수 없습니다.",
+      "console_context_unavailable": "Discord에 연결할 수 없습니다.",
+      "console_protocol_error": "CDP 명령이 실패했거나 지원되지 않습니다.",
+      "console_protocol_unsupported": "CDP 명령이 실패했거나 지원되지 않습니다.",
+      "console_busy": "콘솔이 사용 중입니다. 다시 시도하세요.",
+      "console_empty_expression": "먼저 명령을 입력하세요.",
+      "console_object_expired": "참조 만료됨",
+      "console_session_invalidated": "연결 끊김"
     }
   }
 }

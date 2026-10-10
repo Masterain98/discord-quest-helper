@@ -69,7 +69,8 @@
     "game_simulator": "Simulator Permainan",
     "settings": "Pengaturan",
     "debug": "Men-debug",
-    "global_quests": "Quest Global"
+    "global_quests": "Quest Global",
+    "discord_console": "Konsol Discord"
   },
   "home": {
     "dashboard_title": "Quest Dasbor",
@@ -655,6 +656,54 @@
       "ACHIEVEMENT_IN_ACTIVITY": "Pencapaian aktivitas",
       "PLAY_ACTIVITY": "Main aktivitas",
       "ACHIEVEMENT_IN_GAME": "Pencapaian game"
+    }
+  },
+  "discord_console": {
+    "pause": "Jeda pembaruan",
+    "resume": "Lanjutkan pembaruan",
+    "paused_notice": "Pembaruan dijeda. Log tetap diterima di latar belakang ({count} tersimpan, maksimal 2.000).",
+    "description": "Jalankan JavaScript di Discord dan lihat keluaran langsung.",
+    "connecting": "Menghubungkan…",
+    "connected": "Terhubung",
+    "disconnected": "Terputus",
+    "search": "Cari keluaran",
+    "level": "Tingkat log",
+    "clear": "Hapus keluaran",
+    "output": "Keluaran konsol",
+    "empty": "Masukkan perintah. Log Discord ditampilkan secara langsung.",
+    "no_matches": "Tidak ada keluaran yang cocok.",
+    "command": "Perintah JavaScript",
+    "placeholder": "Masukkan JavaScript…",
+    "shortcuts": "Ctrl/Cmd+Enter: jalankan · Enter: baris baru · Alt+↑/↓: riwayat",
+    "execute": "Jalankan",
+    "executing": "Menjalankan…",
+    "copy": "Salin entri",
+    "copy_failed": "Tidak dapat menyalin ke papan klip.",
+    "unavailable": "Konsol memerlukan mode CDP dan koneksi ke Discord.",
+    "expired": "Referensi kedaluwarsa",
+    "circular": "Referensi melingkar",
+    "property_error": "Tidak dapat membaca properti.",
+    "no_properties": "Tidak ada properti sendiri.",
+    "levels": {
+      "all": "Semua tingkat",
+      "log": "log",
+      "info": "info",
+      "debug": "debug",
+      "warn": "warn",
+      "error": "error"
+    },
+    "errors": {
+      "console_request_timeout": "Batas waktu 30 detik terlampaui. Efek perintah mungkin masih berlanjut.",
+      "console_connect_timeout": "Tidak dapat terhubung ke Discord.",
+      "console_connect_failed": "Tidak dapat terhubung ke Discord.",
+      "console_target_unavailable": "Tidak dapat terhubung ke Discord.",
+      "console_context_unavailable": "Tidak dapat terhubung ke Discord.",
+      "console_protocol_error": "Perintah CDP gagal atau tidak didukung.",
+      "console_protocol_unsupported": "Perintah CDP gagal atau tidak didukung.",
+      "console_busy": "Konsol sedang sibuk. Coba lagi.",
+      "console_empty_expression": "Masukkan perintah terlebih dahulu.",
+      "console_object_expired": "Referensi kedaluwarsa",
+      "console_session_invalidated": "Terputus"
     }
   }
 }
