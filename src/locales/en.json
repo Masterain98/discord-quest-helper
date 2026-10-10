@@ -69,7 +69,8 @@
     "game_simulator": "Game Simulator",
     "settings": "Settings",
     "debug": "Debug",
-    "global_quests": "Global Quests"
+    "global_quests": "Global Quests",
+    "discord_console": "Discord Console"
   },
   "home": {
     "dashboard_title": "Quest Dashboard",
@@ -657,6 +658,55 @@
       "ACHIEVEMENT_IN_ACTIVITY": "Activity achievement",
       "PLAY_ACTIVITY": "Activity play",
       "ACHIEVEMENT_IN_GAME": "Game achievement"
+    }
+  },
+  "discord_console": {
+    "pause": "Pause updates",
+    "resume": "Resume updates",
+    "paused_notice": "Updates paused. Logs continue in the background ({count} buffered, up to 2,000).",
+    "description": "Run JavaScript in the connected Discord client and view live output.",
+    "connecting": "Connecting…",
+    "connected": "Connected",
+    "disconnected": "Disconnected",
+    "search": "Search output",
+    "level": "Log level",
+    "clear": "Clear output",
+    "output": "Console output",
+    "empty": "Run a command to get started. Discord logs appear here in real time.",
+    "no_matches": "No matching output.",
+    "command": "JavaScript command",
+    "placeholder": "Enter JavaScript…",
+    "shortcuts": "Ctrl/Cmd+Enter: execute · Enter: new line · Alt+↑/↓: history",
+    "execute": "Execute",
+    "executing": "Executing…",
+    "copy": "Copy entry",
+    "copy_failed": "Could not copy to clipboard.",
+    "unavailable": "The console requires CDP mode and a connected Discord client.",
+    "expired": "Reference expired",
+    "circular": "Circular reference",
+    "property_error": "Could not read properties.",
+    "no_properties": "No own properties.",
+    "property_snapshot": "Properties captured when expanded",
+    "levels": {
+      "all": "All levels",
+      "log": "log",
+      "info": "info",
+      "debug": "debug",
+      "warn": "warn",
+      "error": "error"
+    },
+    "errors": {
+      "console_request_timeout": "Command timed out after 30 seconds. Its effects may still continue.",
+      "console_connect_timeout": "Could not connect to Discord.",
+      "console_connect_failed": "Could not connect to Discord.",
+      "console_target_unavailable": "Could not connect to Discord.",
+      "console_context_unavailable": "Could not connect to Discord.",
+      "console_protocol_error": "The CDP command failed or is unsupported.",
+      "console_protocol_unsupported": "The CDP command failed or is unsupported.",
+      "console_busy": "The console is busy. Try again.",
+      "console_empty_expression": "Enter a command first.",
+      "console_object_expired": "Reference expired",
+      "console_session_invalidated": "Disconnected"
     }
   }
 }

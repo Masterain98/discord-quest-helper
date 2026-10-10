@@ -69,7 +69,8 @@
     "game_simulator": "遊戲模擬",
     "settings": "設定",
     "debug": "偵錯",
-    "global_quests": "全球任務"
+    "global_quests": "全球任務",
+    "discord_console": "Discord 控制台"
   },
   "home": {
     "dashboard_title": "Quest 儀表板",
@@ -655,6 +656,55 @@
       "ACHIEVEMENT_IN_ACTIVITY": "活動成就",
       "PLAY_ACTIVITY": "活動遊玩",
       "ACHIEVEMENT_IN_GAME": "遊戲成就"
+    }
+  },
+  "discord_console": {
+    "pause": "暫停更新",
+    "resume": "恢復更新",
+    "paused_notice": "已暫停更新，背景繼續接收日誌（已暫存 {count} 筆，最多 2,000 筆）。",
+    "description": "在已連線的 Discord 用戶端中執行 JavaScript 並查看即時輸出。",
+    "connecting": "正在連線…",
+    "connected": "已連線",
+    "disconnected": "連線已中斷",
+    "search": "搜尋輸出",
+    "level": "日誌等級",
+    "clear": "清空輸出",
+    "output": "控制台輸出",
+    "empty": "輸入命令開始執行，Discord 日誌將在此即時顯示。",
+    "no_matches": "沒有符合的輸出。",
+    "command": "JavaScript 命令",
+    "placeholder": "輸入 JavaScript…",
+    "shortcuts": "Ctrl/Cmd+Enter：執行 · Enter：換行 · Alt+↑/↓：歷史命令",
+    "execute": "執行",
+    "executing": "正在執行…",
+    "copy": "複製此筆",
+    "copy_failed": "無法複製到剪貼簿。",
+    "unavailable": "控制台需要 CDP 模式及已連線的 Discord 用戶端。",
+    "expired": "參照已失效",
+    "circular": "循環參照",
+    "property_error": "無法讀取屬性。",
+    "no_properties": "沒有自身屬性。",
+    "property_snapshot": "展開時的屬性快照",
+    "levels": {
+      "all": "全部等級",
+      "log": "log",
+      "info": "info",
+      "debug": "debug",
+      "warn": "warn",
+      "error": "error"
+    },
+    "errors": {
+      "console_request_timeout": "命令等待超過 30 秒，已執行的副作用可能仍在繼續。",
+      "console_connect_timeout": "無法連線至 Discord。",
+      "console_connect_failed": "無法連線至 Discord。",
+      "console_target_unavailable": "無法連線至 Discord。",
+      "console_context_unavailable": "無法連線至 Discord。",
+      "console_protocol_error": "CDP 命令失敗或不受支援。",
+      "console_protocol_unsupported": "CDP 命令失敗或不受支援。",
+      "console_busy": "控制台忙碌，請稍後重試。",
+      "console_empty_expression": "請先輸入命令。",
+      "console_object_expired": "參照已失效",
+      "console_session_invalidated": "連線已中斷"
     }
   }
 }

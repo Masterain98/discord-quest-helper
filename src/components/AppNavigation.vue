@@ -3,11 +3,12 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useI18n } from 'vue-i18n'
 
-export type AppTab = 'home' | 'global' | 'game' | 'settings' | 'debug'
+export type AppTab = 'home' | 'global' | 'game' | 'console' | 'settings' | 'debug'
 
 const props = defineProps<{
   current: AppTab
   debugEnabled: boolean
+  consoleEnabled: boolean
 }>()
 
 const emit = defineEmits<{
@@ -20,6 +21,7 @@ const items = [
   { key: 'home' as const, label: 'nav.home' },
   { key: 'global' as const, label: 'nav.global_quests' },
   { key: 'game' as const, label: 'nav.game_simulator' },
+  { key: 'console' as const, label: 'nav.discord_console', consoleOnly: true },
   { key: 'settings' as const, label: 'nav.settings' },
   { key: 'debug' as const, label: 'nav.debug', debugOnly: true },
 ]
@@ -29,7 +31,7 @@ const items = [
   <nav class="flex min-w-0 items-center gap-1 overflow-x-auto" :aria-label="t('general.title')">
     <Button
       v-for="item in items"
-      v-show="!item.debugOnly || props.debugEnabled"
+      v-show="(!item.debugOnly || props.debugEnabled) && (!item.consoleOnly || props.consoleEnabled)"
       :key="item.key"
       size="sm"
       variant="ghost"

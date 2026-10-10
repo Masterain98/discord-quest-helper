@@ -69,7 +69,8 @@
     "game_simulator": "Trình mô phỏng trò chơi",
     "settings": "Cài đặt",
     "debug": "Gỡ lỗi",
-    "global_quests": "Nhiệm vụ toàn cầu"
+    "global_quests": "Nhiệm vụ toàn cầu",
+    "discord_console": "Bảng điều khiển Discord"
   },
   "home": {
     "dashboard_title": "Quest Trang tổng quan",
@@ -655,6 +656,55 @@
       "ACHIEVEMENT_IN_ACTIVITY": "Thành tích hoạt động",
       "PLAY_ACTIVITY": "Chơi hoạt động",
       "ACHIEVEMENT_IN_GAME": "Thành tích trò chơi"
+    }
+  },
+  "discord_console": {
+    "pause": "Tạm dừng cập nhật",
+    "resume": "Tiếp tục cập nhật",
+    "paused_notice": "Đã tạm dừng cập nhật. Nhật ký vẫn được nhận trong nền ({count} mục đã lưu, tối đa 2.000).",
+    "description": "Chạy JavaScript trong Discord và xem đầu ra trực tiếp.",
+    "connecting": "Đang kết nối…",
+    "connected": "Đã kết nối",
+    "disconnected": "Đã ngắt kết nối",
+    "search": "Tìm kiếm đầu ra",
+    "level": "Mức nhật ký",
+    "clear": "Xóa đầu ra",
+    "output": "Đầu ra bảng điều khiển",
+    "empty": "Nhập lệnh. Nhật ký Discord xuất hiện theo thời gian thực.",
+    "no_matches": "Không có đầu ra phù hợp.",
+    "command": "Lệnh JavaScript",
+    "placeholder": "Nhập JavaScript…",
+    "shortcuts": "Ctrl/Cmd+Enter: thực thi · Enter: xuống dòng · Alt+↑/↓: lịch sử",
+    "execute": "Thực thi",
+    "executing": "Đang thực thi…",
+    "copy": "Sao chép mục",
+    "copy_failed": "Không thể sao chép vào bộ nhớ tạm.",
+    "unavailable": "Bảng điều khiển cần chế độ CDP và kết nối với Discord.",
+    "expired": "Tham chiếu hết hạn",
+    "circular": "Tham chiếu vòng",
+    "property_error": "Không thể đọc thuộc tính.",
+    "no_properties": "Không có thuộc tính riêng.",
+    "property_snapshot": "Thuộc tính tại thời điểm mở rộng",
+    "levels": {
+      "all": "Tất cả mức",
+      "log": "log",
+      "info": "info",
+      "debug": "debug",
+      "warn": "warn",
+      "error": "error"
+    },
+    "errors": {
+      "console_request_timeout": "Hết thời gian sau 30 giây. Tác động có thể vẫn tiếp tục.",
+      "console_connect_timeout": "Không thể kết nối với Discord.",
+      "console_connect_failed": "Không thể kết nối với Discord.",
+      "console_target_unavailable": "Không thể kết nối với Discord.",
+      "console_context_unavailable": "Không thể kết nối với Discord.",
+      "console_protocol_error": "Lệnh CDP thất bại hoặc không được hỗ trợ.",
+      "console_protocol_unsupported": "Lệnh CDP thất bại hoặc không được hỗ trợ.",
+      "console_busy": "Bảng điều khiển đang bận. Hãy thử lại.",
+      "console_empty_expression": "Hãy nhập lệnh trước.",
+      "console_object_expired": "Tham chiếu hết hạn",
+      "console_session_invalidated": "Đã ngắt kết nối"
     }
   }
 }

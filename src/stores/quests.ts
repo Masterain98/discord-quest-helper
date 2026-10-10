@@ -1583,17 +1583,17 @@ export const useQuestsStore = defineStore('quests', () => {
   }
 
   // Check CDP availability and auto-fallback if mode is 'cdp' but CDP isn't reachable
-  async function initCdpMode() {
+  async function initCdpMode(options: { preserveMode?: boolean } = {}) {
     try {
       const status = await checkCdpStatus(cdpPort.value)
       cdpAvailable.value = status.connected
-      if (gameQuestMode.value === 'cdp' && !status.connected) {
+      if (gameQuestMode.value === 'cdp' && !status.connected && !options.preserveMode) {
         console.warn('CDP mode selected but CDP not available — falling back to simulate mode')
         gameQuestMode.value = 'simulate'
       }
     } catch {
       cdpAvailable.value = false
-      if (gameQuestMode.value === 'cdp') {
+      if (gameQuestMode.value === 'cdp' && !options.preserveMode) {
         console.warn('CDP check failed — falling back to simulate mode')
         gameQuestMode.value = 'simulate'
       }
