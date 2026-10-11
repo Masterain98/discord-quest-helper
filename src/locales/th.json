@@ -69,7 +69,8 @@
     "game_simulator": "เกมจำลอง",
     "settings": "การตั้งค่า",
     "debug": "ดีบัก",
-    "global_quests": "ภารกิจทั่วโลก"
+    "global_quests": "ภารกิจทั่วโลก",
+    "discord_console": "คอนโซล Discord"
   },
   "home": {
     "dashboard_title": "Quest แดชบอร์ด",
@@ -655,6 +656,55 @@
       "ACHIEVEMENT_IN_ACTIVITY": "ความสำเร็จในกิจกรรม",
       "PLAY_ACTIVITY": "เล่นกิจกรรม",
       "ACHIEVEMENT_IN_GAME": "ความสำเร็จในเกม"
+    }
+  },
+  "discord_console": {
+    "pause": "หยุดอัปเดตชั่วคราว",
+    "resume": "อัปเดตต่อ",
+    "paused_notice": "หยุดอัปเดตชั่วคราว ยังรับบันทึกในเบื้องหลัง (เก็บไว้ {count} รายการ สูงสุด 2,000 รายการ)",
+    "description": "เรียกใช้ JavaScript ใน Discord และดูผลลัพธ์แบบเรียลไทม์",
+    "connecting": "กำลังเชื่อมต่อ…",
+    "connected": "เชื่อมต่อแล้ว",
+    "disconnected": "ตัดการเชื่อมต่อแล้ว",
+    "search": "ค้นหาผลลัพธ์",
+    "level": "ระดับบันทึก",
+    "clear": "ล้างผลลัพธ์",
+    "output": "ผลลัพธ์คอนโซล",
+    "empty": "ป้อนคำสั่ง บันทึก Discord จะแสดงแบบเรียลไทม์",
+    "no_matches": "ไม่พบผลลัพธ์ที่ตรงกัน",
+    "command": "คำสั่ง JavaScript",
+    "placeholder": "ป้อน JavaScript…",
+    "shortcuts": "Ctrl/Cmd+Enter: เรียกใช้ · Enter: ขึ้นบรรทัดใหม่ · Alt+↑/↓: ประวัติ",
+    "execute": "เรียกใช้",
+    "executing": "กำลังเรียกใช้…",
+    "copy": "คัดลอกรายการ",
+    "copy_failed": "ไม่สามารถคัดลอกไปยังคลิปบอร์ดได้",
+    "unavailable": "คอนโซลต้องใช้โหมด CDP และการเชื่อมต่อ Discord",
+    "expired": "การอ้างอิงหมดอายุ",
+    "circular": "การอ้างอิงแบบวนซ้ำ",
+    "property_error": "ไม่สามารถอ่านคุณสมบัติได้",
+    "no_properties": "ไม่มีคุณสมบัติของตัวเอง",
+    "property_snapshot": "คุณสมบัติที่บันทึกเมื่อขยาย",
+    "levels": {
+      "all": "ทุกระดับ",
+      "log": "log",
+      "info": "info",
+      "debug": "debug",
+      "warn": "warn",
+      "error": "error"
+    },
+    "errors": {
+      "console_request_timeout": "หมดเวลาหลังจาก 30 วินาที ผลของคำสั่งอาจยังดำเนินต่อไป",
+      "console_connect_timeout": "ไม่สามารถเชื่อมต่อ Discord ได้",
+      "console_connect_failed": "ไม่สามารถเชื่อมต่อ Discord ได้",
+      "console_target_unavailable": "ไม่สามารถเชื่อมต่อ Discord ได้",
+      "console_context_unavailable": "ไม่สามารถเชื่อมต่อ Discord ได้",
+      "console_protocol_error": "คำสั่ง CDP ล้มเหลวหรือไม่รองรับ",
+      "console_protocol_unsupported": "คำสั่ง CDP ล้มเหลวหรือไม่รองรับ",
+      "console_busy": "คอนโซลไม่ว่าง โปรดลองอีกครั้ง",
+      "console_empty_expression": "กรุณาป้อนคำสั่งก่อน",
+      "console_object_expired": "การอ้างอิงหมดอายุ",
+      "console_session_invalidated": "ตัดการเชื่อมต่อแล้ว"
     }
   }
 }

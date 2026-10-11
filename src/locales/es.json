@@ -69,7 +69,8 @@
     "game_simulator": "Simulador de juegos",
     "settings": "Configuración",
     "debug": "Depurar",
-    "global_quests": "Misiones globales"
+    "global_quests": "Misiones globales",
+    "discord_console": "Consola de Discord"
   },
   "home": {
     "dashboard_title": "Quest Panel de control",
@@ -655,6 +656,55 @@
       "ACHIEVEMENT_IN_ACTIVITY": "Logro en actividad",
       "PLAY_ACTIVITY": "Jugar en actividad",
       "ACHIEVEMENT_IN_GAME": "Logro en juego"
+    }
+  },
+  "discord_console": {
+    "pause": "Pausar actualizaciones",
+    "resume": "Reanudar actualizaciones",
+    "paused_notice": "Actualizaciones en pausa. Los registros siguen llegando en segundo plano ({count} almacenados, hasta 2.000).",
+    "description": "Ejecuta JavaScript en Discord y consulta la salida en tiempo real.",
+    "connecting": "Conectando…",
+    "connected": "Conectado",
+    "disconnected": "Desconectado",
+    "search": "Buscar en la salida",
+    "level": "Nivel de registro",
+    "clear": "Limpiar salida",
+    "output": "Salida de la consola",
+    "empty": "Introduce un comando. Los registros de Discord aparecen en tiempo real.",
+    "no_matches": "No hay resultados coincidentes.",
+    "command": "Comando JavaScript",
+    "placeholder": "Introduce JavaScript…",
+    "shortcuts": "Ctrl/Cmd+Enter: ejecutar · Enter: nueva línea · Alt+↑/↓: historial",
+    "execute": "Ejecutar",
+    "executing": "Ejecutando…",
+    "copy": "Copiar entrada",
+    "copy_failed": "No se pudo copiar al portapapeles.",
+    "unavailable": "La consola requiere el modo CDP y una conexión a Discord.",
+    "expired": "Referencia caducada",
+    "circular": "Referencia circular",
+    "property_error": "No se pudieron leer las propiedades.",
+    "no_properties": "Sin propiedades propias.",
+    "property_snapshot": "Propiedades capturadas al expandir",
+    "levels": {
+      "all": "Todos los niveles",
+      "log": "log",
+      "info": "info",
+      "debug": "debug",
+      "warn": "warn",
+      "error": "error"
+    },
+    "errors": {
+      "console_request_timeout": "Se agotó el tiempo de 30 segundos. Los efectos pueden continuar.",
+      "console_connect_timeout": "No se pudo conectar a Discord.",
+      "console_connect_failed": "No se pudo conectar a Discord.",
+      "console_target_unavailable": "No se pudo conectar a Discord.",
+      "console_context_unavailable": "No se pudo conectar a Discord.",
+      "console_protocol_error": "El comando CDP falló o no es compatible.",
+      "console_protocol_unsupported": "El comando CDP falló o no es compatible.",
+      "console_busy": "La consola está ocupada. Inténtalo de nuevo.",
+      "console_empty_expression": "Introduce un comando primero.",
+      "console_object_expired": "Referencia caducada",
+      "console_session_invalidated": "Desconectado"
     }
   }
 }

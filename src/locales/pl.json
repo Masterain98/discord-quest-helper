@@ -69,7 +69,8 @@
     "game_simulator": "Symulator gry",
     "settings": "Ustawienia",
     "debug": "Debuguj",
-    "global_quests": "Zadania globalne"
+    "global_quests": "Zadania globalne",
+    "discord_console": "Konsola Discord"
   },
   "home": {
     "dashboard_title": "Quest Panel kontrolny",
@@ -655,6 +656,55 @@
       "ACHIEVEMENT_IN_ACTIVITY": "Osiągnięcie aktywności",
       "PLAY_ACTIVITY": "Gra w aktywności",
       "ACHIEVEMENT_IN_GAME": "Osiągnięcie w grze"
+    }
+  },
+  "discord_console": {
+    "pause": "Wstrzymaj aktualizacje",
+    "resume": "Wznów aktualizacje",
+    "paused_notice": "Aktualizacje wstrzymane. Logi są nadal odbierane w tle ({count} w buforze, maksymalnie 2 000).",
+    "description": "Uruchamiaj JavaScript w Discordzie i obserwuj wyniki na żywo.",
+    "connecting": "Łączenie…",
+    "connected": "Połączono",
+    "disconnected": "Rozłączono",
+    "search": "Szukaj w wynikach",
+    "level": "Poziom dziennika",
+    "clear": "Wyczyść wyniki",
+    "output": "Wyniki konsoli",
+    "empty": "Wpisz polecenie. Dzienniki Discorda pojawiają się na żywo.",
+    "no_matches": "Brak pasujących wyników.",
+    "command": "Polecenie JavaScript",
+    "placeholder": "Wpisz JavaScript…",
+    "shortcuts": "Ctrl/Cmd+Enter: wykonaj · Enter: nowy wiersz · Alt+↑/↓: historia",
+    "execute": "Wykonaj",
+    "executing": "Wykonywanie…",
+    "copy": "Kopiuj wpis",
+    "copy_failed": "Nie udało się skopiować do schowka.",
+    "unavailable": "Konsola wymaga trybu CDP i połączenia z Discordem.",
+    "expired": "Odwołanie wygasło",
+    "circular": "Odwołanie cykliczne",
+    "property_error": "Nie udało się odczytać właściwości.",
+    "no_properties": "Brak własnych właściwości.",
+    "property_snapshot": "Właściwości zapisane podczas rozwinięcia",
+    "levels": {
+      "all": "Wszystkie poziomy",
+      "log": "log",
+      "info": "info",
+      "debug": "debug",
+      "warn": "warn",
+      "error": "error"
+    },
+    "errors": {
+      "console_request_timeout": "Przekroczono limit 30 sekund. Skutki mogą nadal występować.",
+      "console_connect_timeout": "Nie udało się połączyć z Discordem.",
+      "console_connect_failed": "Nie udało się połączyć z Discordem.",
+      "console_target_unavailable": "Nie udało się połączyć z Discordem.",
+      "console_context_unavailable": "Nie udało się połączyć z Discordem.",
+      "console_protocol_error": "Polecenie CDP nie powiodło się lub nie jest obsługiwane.",
+      "console_protocol_unsupported": "Polecenie CDP nie powiodło się lub nie jest obsługiwane.",
+      "console_busy": "Konsola jest zajęta. Spróbuj ponownie.",
+      "console_empty_expression": "Najpierw wpisz polecenie.",
+      "console_object_expired": "Odwołanie wygasło",
+      "console_session_invalidated": "Rozłączono"
     }
   }
 }

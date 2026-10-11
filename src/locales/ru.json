@@ -69,7 +69,8 @@
     "game_simulator": "Симулятор игр",
     "settings": "Настройки",
     "debug": "Отладка",
-    "global_quests": "Глобальные задания"
+    "global_quests": "Глобальные задания",
+    "discord_console": "Консоль Discord"
   },
   "home": {
     "dashboard_title": "Quest Панель мониторинга",
@@ -655,6 +656,55 @@
       "ACHIEVEMENT_IN_ACTIVITY": "Достижение в активности",
       "PLAY_ACTIVITY": "Игра в активности",
       "ACHIEVEMENT_IN_GAME": "Достижение в игре"
+    }
+  },
+  "discord_console": {
+    "pause": "Приостановить обновления",
+    "resume": "Возобновить обновления",
+    "paused_notice": "Обновления приостановлены. Журнал принимается в фоне (в буфере: {count}, максимум 2 000).",
+    "description": "Выполняйте JavaScript в Discord и просматривайте вывод в реальном времени.",
+    "connecting": "Подключение…",
+    "connected": "Подключено",
+    "disconnected": "Отключено",
+    "search": "Поиск в выводе",
+    "level": "Уровень журнала",
+    "clear": "Очистить вывод",
+    "output": "Вывод консоли",
+    "empty": "Введите команду. Журнал Discord отображается в реальном времени.",
+    "no_matches": "Совпадений нет.",
+    "command": "Команда JavaScript",
+    "placeholder": "Введите JavaScript…",
+    "shortcuts": "Ctrl/Cmd+Enter: выполнить · Enter: новая строка · Alt+↑/↓: история",
+    "execute": "Выполнить",
+    "executing": "Выполнение…",
+    "copy": "Копировать запись",
+    "copy_failed": "Не удалось скопировать в буфер обмена.",
+    "unavailable": "Для консоли нужен режим CDP и подключение к Discord.",
+    "expired": "Ссылка устарела",
+    "circular": "Циклическая ссылка",
+    "property_error": "Не удалось прочитать свойства.",
+    "no_properties": "Собственных свойств нет.",
+    "property_snapshot": "Свойства на момент раскрытия",
+    "levels": {
+      "all": "Все уровни",
+      "log": "log",
+      "info": "info",
+      "debug": "debug",
+      "warn": "warn",
+      "error": "error"
+    },
+    "errors": {
+      "console_request_timeout": "Истекло 30 секунд. Действие команды может продолжаться.",
+      "console_connect_timeout": "Не удалось подключиться к Discord.",
+      "console_connect_failed": "Не удалось подключиться к Discord.",
+      "console_target_unavailable": "Не удалось подключиться к Discord.",
+      "console_context_unavailable": "Не удалось подключиться к Discord.",
+      "console_protocol_error": "Команда CDP завершилась ошибкой или не поддерживается.",
+      "console_protocol_unsupported": "Команда CDP завершилась ошибкой или не поддерживается.",
+      "console_busy": "Консоль занята. Повторите попытку.",
+      "console_empty_expression": "Сначала введите команду.",
+      "console_object_expired": "Ссылка устарела",
+      "console_session_invalidated": "Отключено"
     }
   }
 }

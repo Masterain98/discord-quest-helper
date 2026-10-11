@@ -69,7 +69,8 @@
     "game_simulator": "Oyun Simülatörü",
     "settings": "Ayarlar",
     "debug": "Hata ayıklama",
-    "global_quests": "Küresel Görevler"
+    "global_quests": "Küresel Görevler",
+    "discord_console": "Discord Konsolu"
   },
   "home": {
     "dashboard_title": "Quest Kontrol Paneli",
@@ -655,6 +656,55 @@
       "ACHIEVEMENT_IN_ACTIVITY": "Etkinlik başarısı",
       "PLAY_ACTIVITY": "Etkinlik oyunu",
       "ACHIEVEMENT_IN_GAME": "Oyun başarısı"
+    }
+  },
+  "discord_console": {
+    "pause": "Güncellemeleri duraklat",
+    "resume": "Güncellemeleri sürdür",
+    "paused_notice": "Güncellemeler duraklatıldı. Günlükler arka planda alınmaya devam ediyor ({count} kayıt, en fazla 2.000).",
+    "description": "Discord içinde JavaScript çalıştırın ve çıktıyı canlı izleyin.",
+    "connecting": "Bağlanıyor…",
+    "connected": "Bağlandı",
+    "disconnected": "Bağlantı kesildi",
+    "search": "Çıktıda ara",
+    "level": "Günlük düzeyi",
+    "clear": "Çıktıyı temizle",
+    "output": "Konsol çıktısı",
+    "empty": "Bir komut girin. Discord günlükleri gerçek zamanlı görünür.",
+    "no_matches": "Eşleşen çıktı yok.",
+    "command": "JavaScript komutu",
+    "placeholder": "JavaScript girin…",
+    "shortcuts": "Ctrl/Cmd+Enter: çalıştır · Enter: yeni satır · Alt+↑/↓: geçmiş",
+    "execute": "Çalıştır",
+    "executing": "Çalıştırılıyor…",
+    "copy": "Kaydı kopyala",
+    "copy_failed": "Panoya kopyalanamadı.",
+    "unavailable": "Konsol için CDP modu ve Discord bağlantısı gerekir.",
+    "expired": "Referansın süresi doldu",
+    "circular": "Döngüsel referans",
+    "property_error": "Özellikler okunamadı.",
+    "no_properties": "Kendi özelliği yok.",
+    "property_snapshot": "Genişletildiği andaki özellikler",
+    "levels": {
+      "all": "Tüm düzeyler",
+      "log": "log",
+      "info": "info",
+      "debug": "debug",
+      "warn": "warn",
+      "error": "error"
+    },
+    "errors": {
+      "console_request_timeout": "30 saniye sonra zaman aşımı. Etkiler devam edebilir.",
+      "console_connect_timeout": "Discord bağlantısı kurulamadı.",
+      "console_connect_failed": "Discord bağlantısı kurulamadı.",
+      "console_target_unavailable": "Discord bağlantısı kurulamadı.",
+      "console_context_unavailable": "Discord bağlantısı kurulamadı.",
+      "console_protocol_error": "CDP komutu başarısız veya desteklenmiyor.",
+      "console_protocol_unsupported": "CDP komutu başarısız veya desteklenmiyor.",
+      "console_busy": "Konsol meşgul. Tekrar deneyin.",
+      "console_empty_expression": "Önce bir komut girin.",
+      "console_object_expired": "Referansın süresi doldu",
+      "console_session_invalidated": "Bağlantı kesildi"
     }
   }
 }
