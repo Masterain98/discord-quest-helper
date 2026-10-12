@@ -10,6 +10,7 @@ import TitleBar from './components/TitleBar.vue'
 import { Button } from '@/components/ui/button'
 import { useAuthStore } from '@/stores/auth'
 import { useQuestsStore } from '@/stores/quests'
+import { useGlobalQuestsStore } from '@/stores/globalQuests'
 import { useGameIdleStore } from '@/stores/gameIdle'
 import { useVersionStore } from '@/stores/version'
 import { useDiscordConsoleStore } from '@/stores/discordConsole'
@@ -39,6 +40,7 @@ const { t, locale } = useI18n()
 const currentTab = ref<AppTab>('home')
 const authStore = useAuthStore()
 const questsStore = useQuestsStore()
+const globalQuestsStore = useGlobalQuestsStore()
 const discordConsole = useDiscordConsoleStore()
 const toastStore = useToastStore()
 const consoleEnabled = computed(() => consoleTabEnabled(questsStore.gameQuestMode, questsStore.cdpAvailable))
@@ -66,7 +68,10 @@ watch(consoleEnabled, enabled => {
     toastStore.warning({ title: t('nav.discord_console'), description: t('discord_console.unavailable') })
   }
 }, { flush: 'sync' })
-watch(() => authStore.user?.id ?? null, id => questsStore.setQuestAccount(id), { immediate: true, flush: 'sync' })
+watch(() => authStore.user?.id ?? null, id => {
+  questsStore.setQuestAccount(id)
+  if (id) void questsStore.fetchQuests(true)
+}, { immediate: true, flush: 'sync' })
 const gameIdleStore = useGameIdleStore()
 const authTransitioning = ref(false)
 const immersiveGameIdle = computed(() => currentTab.value === 'game' && (gameIdleStore.isActive || gameIdleStore.loading))
@@ -152,6 +157,7 @@ function setLanguage(lang: string) {
 }
 
 onMounted(() => {
+  globalQuestsStore.initialize()
   consoleMonitor = setInterval(() => { void consoleLifecycle.refresh() }, 5000)
   window.addEventListener('beforeunload', closeConsoleOnUnload)
   // Init Theme

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
+import { storeToRefs } from 'pinia'
 import { onClickOutside, useNow } from '@vueuse/core'
 import { nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -16,9 +17,8 @@ import { useQuestsStore } from '@/stores/quests'
 import { acceptedGlobalQuestIds, completedGlobalQuestIds, filterGlobalQuests, unknownRestriction } from '@/utils/globalQuests'
 import type { GlobalQuest, GlobalQuestReward } from '@/types/globalQuests'
 import { GLOBAL_COUNTRY_CODES } from '@/utils/globalCountries'
-import { logIpInfoDiagnostic, navigateDiscordSpa, type IpInfoDiagnosticLevel } from '@/api/tauri'
+import { navigateDiscordSpa } from '@/api/tauri'
 import { openGlobalQuest } from '@/utils/globalQuestNavigation'
-import { fetchIpInfo, type IpInfo } from '@/api/ipInfo'
 
 const { t, locale } = useI18n()
 const store = useGlobalQuestsStore()
@@ -35,9 +35,7 @@ const countrySearchInput = ref<HTMLInputElement | null>(null)
 const countryOptions = ref<HTMLElement | null>(null)
 const linkError = ref(false)
 const openingQuest = ref<string | null>(null)
-const ipInfo = ref<IpInfo | null>(null)
-const ipInfoFailed = ref(false)
-const ipInfoLoading = ref(false)
+const { ipInfo, ipInfoFailed, ipInfoLoading } = storeToRefs(store)
 const completed = computed(() => completedGlobalQuestIds(accountQuests.quests, auth.user?.id ?? null, accountQuests.questAccountId))
 const accepted = computed(() => acceptedGlobalQuestIds(accountQuests.quests, auth.user?.id ?? null, accountQuests.questAccountId))
 const visible = computed(() => filterGlobalQuests(store.quests, store.restrictions, store.filters, now.value.getTime(), completed.value, accepted.value))
@@ -152,60 +150,9 @@ async function openExternal(url: string) {
     else window.open(url, '_blank', 'noopener,noreferrer')
   } catch { linkError.value = true }
 }
-async function reportIpInfoDiagnostic(
-  level: IpInfoDiagnosticLevel,
-  event: string,
-  details: Record<string, string | number>,
-) {
-  const prefix = `[ip-info] ${event}`
-  if (level === 'error') console.error(prefix, details)
-  else if (level === 'warn') console.warn(prefix, details)
-  else if (level === 'info') console.info(prefix, details)
-  else console.debug(prefix, details)
-
-  try {
-    await logIpInfoDiagnostic(level, event, details)
-  } catch (error) {
-    console.error('[ip-info] failed to forward diagnostics to the app terminal', error)
-  }
-}
-async function loadIpInfo() {
-  if (ipInfoLoading.value) return
-  ipInfoLoading.value = true
-  ipInfoFailed.value = false
-  const startedAt = performance.now()
-  await reportIpInfoDiagnostic('debug', 'lookup started', {
-    endpoint: 'https://my.ippure.com/v1/info',
-    origin: window.location.origin,
-  })
-  try {
-    ipInfo.value = await fetchIpInfo()
-    await reportIpInfoDiagnostic('info', 'lookup succeeded', {
-      countryCode: ipInfo.value.countryCode,
-      country: ipInfo.value.country,
-      durationMs: Math.round(performance.now() - startedAt),
-    })
-  } catch (error) {
-    ipInfoFailed.value = true
-    const errorName = error instanceof Error ? error.name : typeof error === 'string' ? 'TauriCommandError' : 'UnknownError'
-    const errorMessage = error instanceof Error ? error.message : String(error)
-    await reportIpInfoDiagnostic('error', 'lookup failed', {
-      command: 'get_ip_info',
-      origin: window.location.origin,
-      errorName,
-      errorMessage,
-      durationMs: Math.round(performance.now() - startedAt),
-    })
-  } finally {
-    ipInfoLoading.value = false
-  }
-}
 async function refresh() {
   await Promise.all([store.refresh(true), auth.user ? accountQuests.fetchQuests(true, true) : Promise.resolve()])
 }
-watch(() => auth.user?.id, id => { if (id) void accountQuests.fetchQuests(true, true) }, { immediate: true })
-void store.refresh()
-void loadIpInfo()
 </script>
 
 <template>
@@ -233,7 +180,7 @@ void loadIpInfo()
             :aria-label="t('general.refresh')"
             :title="t('general.refresh')"
             :disabled="ipInfoLoading"
-            @click="loadIpInfo"
+            @click="store.refreshIpInfo()"
           >
             <RotateCw class="h-4 w-4" :class="ipInfoLoading && 'animate-spin'" />
           </Button>
