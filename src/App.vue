@@ -19,7 +19,8 @@ import { checkCdpStatus } from '@/api/tauri'
 import { createDiscordConsoleLifecycle } from '@/composables/discordConsoleLifecycle'
 import { consoleFallbackTab, consoleTabEnabled } from '@/utils/discordConsole'
 import { useI18n } from 'vue-i18n'
-import { Moon, Sun, Languages } from 'lucide-vue-next'
+import { ArrowUpCircle, ExternalLink, Moon, Sun, Languages } from 'lucide-vue-next'
+import { open } from '@tauri-apps/plugin-shell'
 import AccountMenu from './components/AccountMenu.vue'
 import AppNavigation, { type AppTab } from './components/AppNavigation.vue'
 import QuestModeIndicator from './components/QuestModeIndicator.vue'
@@ -39,6 +40,7 @@ import {
 const { t, locale } = useI18n()
 const currentTab = ref<AppTab>('home')
 const authStore = useAuthStore()
+const versionStore = useVersionStore()
 const questsStore = useQuestsStore()
 const globalQuestsStore = useGlobalQuestsStore()
 const discordConsole = useDiscordConsoleStore()
@@ -173,7 +175,6 @@ onMounted(() => {
   debugModeEnabled.value = isDebugModeEnabled()
 
   // Check for updates
-  const versionStore = useVersionStore()
   versionStore.initialize()
 
   // Listen for tab navigation events from toast actions
@@ -199,6 +200,12 @@ function handleDebugDisabled() {
   debugModeEnabled.value = false
   if (currentTab.value === 'debug') {
     currentTab.value = 'settings'
+  }
+}
+
+async function openUpdatePage() {
+  if (versionStore.latestRelease?.html_url) {
+    await open(versionStore.latestRelease.html_url)
   }
 }
 
@@ -319,6 +326,28 @@ watch(
             </div>
           </header>
         </Transition>
+
+        <div
+          v-if="!immersiveGameIdle && versionStore.hasUpdate && versionStore.latestRelease"
+          role="status"
+          class="mb-6 p-4 bg-primary/10 border border-primary/30 rounded-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
+        >
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+              <ArrowUpCircle class="w-5 h-5 text-primary" />
+            </div>
+            <div>
+              <p class="font-semibold text-primary">{{ t('version.update_available') }}</p>
+              <p class="text-sm text-muted-foreground">
+                {{ t('version.update_desc', { version: versionStore.latestRelease.tag_name, current: versionStore.currentVersion }) }}
+              </p>
+            </div>
+          </div>
+          <Button @click="openUpdatePage" class="gap-2 shrink-0">
+            <ExternalLink class="w-4 h-4" />
+            {{ t('version.download') }}
+          </Button>
+        </div>
 
         <main :class="['fade-in flex-1', !showStandardShell && 'flex min-h-0 w-full']">
           <template v-if="currentTab === 'home'">

@@ -1,27 +1,5 @@
 <template>
   <div class="home-view fade-in">
-    <!-- Update Available Banner -->
-    <div 
-      v-if="versionStore.hasUpdate && versionStore.latestRelease" 
-      class="mb-6 p-4 bg-primary/10 border border-primary/30 rounded-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
-    >
-      <div class="flex items-center gap-3">
-        <div class="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
-          <ArrowUpCircle class="w-5 h-5 text-primary" />
-        </div>
-        <div>
-          <p class="font-semibold text-primary">{{ t('version.update_available') }}</p>
-          <p class="text-sm text-muted-foreground">
-            {{ t('version.update_desc', { version: versionStore.latestRelease.tag_name, current: versionStore.currentVersion }) }}
-          </p>
-        </div>
-      </div>
-      <Button @click="openUpdatePage" class="gap-2 shrink-0">
-        <ExternalLink class="w-4 h-4" />
-        {{ t('version.download') }}
-      </Button>
-    </div>
-
     <div class="space-y-6">
       <div class="space-y-6">
         <div class="flex min-w-0 items-center justify-between gap-4">
@@ -538,7 +516,6 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useQuestsStore } from '@/stores/quests'
-import { useVersionStore } from '@/stores/version'
 import { useGameIdleStore } from '@/stores/gameIdle'
 import OrbsNitroStatus from '@/components/OrbsNitroStatus.vue'
 import QuestListHeader from '@/components/home/QuestListHeader.vue'
@@ -574,10 +551,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
-import { ArrowUpCircle, ExternalLink, Gift, Loader2 } from 'lucide-vue-next'
+import { ExternalLink, Gift, Loader2 } from 'lucide-vue-next'
 import { Input } from '@/components/ui/input'
 import { useI18n } from 'vue-i18n'
-import { open } from '@tauri-apps/plugin-shell'
 import {
   firstProgressValue,
   firstStartableTask,
@@ -606,7 +582,6 @@ const { t } = useI18n()
 const authStore = useAuthStore()
 const questsStore = useQuestsStore()
 const gameIdleStore = useGameIdleStore()
-const versionStore = useVersionStore()
 const toast = useToastStore()
 
 // Executables the process simulator can launch on this host — the same rule the
@@ -650,13 +625,6 @@ const softErrorMessage = computed(() => {
 const props = defineProps<{
   debugModeEnabled?: boolean
 }>()
-
-// Open update page in browser
-async function openUpdatePage() {
-  if (versionStore.latestRelease?.html_url) {
-    await open(versionStore.latestRelease.html_url)
-  }
-}
 
 const VIEW_PRESET_STORAGE_KEY = 'questHelper_viewPreset'
 const ADVANCED_FILTERS_STORAGE_KEY = 'questHelper_advancedFilters'
