@@ -227,8 +227,7 @@ const activeTimeText = computed(() => {
     <Card
       :aria-busy="busy || undefined"
       :class="[
-        'relative z-10 mb-0 overflow-hidden border-border/50 transition-all hover:shadow-md',
-        density === 'compact' && 'hover:shadow-sm',
+        'relative z-10 mb-0 overflow-hidden border-border/50 transition-colors hover:border-primary/25',
         (busy || isActiveQuest) && 'border-primary/50',
       ]"
     >
@@ -242,8 +241,8 @@ const activeTimeText = computed(() => {
     </div>
     
     <CardHeader :class="density === 'compact' ? 'pb-2' : 'pb-3'">
-      <div class="flex justify-between items-start gap-4">
-        <div class="flex gap-3 items-start">
+      <div class="flex min-w-0 flex-wrap justify-between items-start gap-2 sm:flex-nowrap sm:gap-4">
+        <div class="flex min-w-0 w-full flex-1 gap-3 items-start sm:w-auto">
           <!-- Application Icon -->
           <img 
             v-if="quest.config.application?.icon"

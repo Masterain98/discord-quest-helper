@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { Badge } from '@/components/ui/badge'
 import { useQuestsStore } from '@/stores/quests'
 import SettingsSectionCard from './SettingsSectionCard.vue'
-import SettingsSwitch from './SettingsSwitch.vue'
+import { Switch } from '@/components/ui/switch'
 import { settingToneClass } from './settingTones'
 
 const { t } = useI18n()
@@ -18,9 +18,9 @@ const questsStore = useQuestsStore()
     :icon="Palette"
     tone="primary"
   >
-    <div class="flex items-center justify-between gap-4 rounded-lg border border-border bg-card p-4 transition-colors hover:bg-muted/40">
+    <div class="ui-setting flex items-center justify-between gap-4 rounded-xl border p-4">
       <div class="flex min-w-0 items-start gap-3">
-        <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-primary/10">
+        <div class="ui-icon-tile flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10">
           <img src="/icons/orbs.png" alt="" class="h-6 w-6 object-contain" />
         </div>
         <div class="min-w-0">
@@ -39,7 +39,7 @@ const questsStore = useQuestsStore()
         </div>
       </div>
 
-      <SettingsSwitch v-model="questsStore.showOrbsBalance" />
+      <Switch v-model="questsStore.showOrbsBalance" :aria-label="t('settings.show_orbs_balance')" />
     </div>
   </SettingsSectionCard>
 </template>

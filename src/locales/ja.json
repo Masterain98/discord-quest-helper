@@ -65,7 +65,7 @@
     "cdp_client_vesktop": "Vesktop"
   },
   "nav": {
-    "home": "ホーム",
+    "home": "自分のタスク",
     "game_simulator": "ゲームシミュレーター",
     "settings": "設定",
     "debug": "デバッグ",
@@ -73,7 +73,7 @@
     "discord_console": "Discord コンソール"
   },
   "home": {
-    "dashboard_title": "Quest ダッシュボード",
+    "dashboard_title": "自分のタスク",
     "dashboard_desc": "クエストの状態を確認し、リストを絞り込んで操作します。",
     "advanced_filters": "高度なフィルター",
     "reset_filters": "フィルターをリセットする",
@@ -152,6 +152,8 @@
     "discord_rewards": "Discord報酬",
     "active_progress": "アクティブなクエスト進捗",
     "collapse_progress": "折りたたむ",
+    "show_progress": "タスクの進捗を表示",
+    "hide_progress": "進捗ウィンドウを非表示",
     "up_next": "次のクエスト",
     "submitted": "送信済み",
     "pending": "保留中"
@@ -188,6 +190,9 @@
     "in_game": "ゲーム内報酬"
   },
   "settings": {
+    "navigation_expand": "設定サイドバーを展開",
+    "navigation_collapse": "設定サイドバーを折りたたむ",
+    "navigation_close": "設定サイドバーを閉じる",
     "title": "設定",
     "control_center_desc": "アカウントの健全性、完了動作、Discord の統合、診断、および高度な内部機能を 1 か所から確認できます。",
     "nav_account": "アカウント",
@@ -477,6 +482,13 @@
     "nitro": "Nitro",
     "nitro_classic": "Nitro Classic",
     "nitro_basic": "Nitro Basic"
+  },
+  "sidebar": {
+    "utilities": "ツール",
+    "mode": "現在のモード",
+    "light": "ライト",
+    "dark": "ダーク",
+    "orbs_unavailable": "Orbsを読み込めません。更新してください。"
   },
   "header": {
     "toggle_theme": "テーマ切替",

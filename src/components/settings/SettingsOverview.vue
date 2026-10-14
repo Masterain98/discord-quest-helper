@@ -82,23 +82,23 @@ const recommendation = computed<{ text: string, action: string, section: Setting
 
 <template>
   <div class="space-y-3">
-    <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+    <div class="settings-overview-grid grid gap-3">
       <div
         v-for="card in cards"
         :key="card.label"
         :class="cn(
-          'rounded-lg border bg-card p-4 transition-all hover:-translate-y-0.5 hover:shadow-sm',
+          'ui-panel rounded-2xl border bg-card p-4',
           card.ok ? settingToneClass[card.tone].card : settingToneClass.warning.card,
         )"
       >
         <div class="flex items-center justify-between gap-3">
           <span class="text-xs font-medium text-muted-foreground">{{ card.label }}</span>
-          <div :class="cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-md', settingToneClass[card.ok ? card.tone : 'warning'].icon)">
-            <component :is="card.icon" class="h-4 w-4" />
+          <div :class="cn('ui-icon-tile flex h-8 w-8 shrink-0 items-center justify-center rounded-[0.625rem]', settingToneClass[card.ok ? 'primary' : 'warning'].icon)">
+            <component :is="card.icon" class="h-4 w-4" :stroke-width="1.7" />
           </div>
         </div>
-        <div class="mt-2 flex items-center gap-2">
-          <p class="truncate text-sm font-semibold">{{ card.value }}</p>
+        <div class="mt-3 flex min-w-0 flex-wrap items-center gap-2">
+          <p class="min-w-0 truncate text-sm font-semibold" :title="card.value">{{ card.value }}</p>
           <Badge
             variant="outline"
             :class="cn('shrink-0 text-[10px]', settingToneClass[card.ok ? card.tone : 'warning'].badge)"
@@ -128,3 +128,13 @@ const recommendation = computed<{ text: string, action: string, section: Setting
     </SettingsStatusPanel>
   </div>
 </template>
+
+<style scoped>
+.settings-overview-grid { grid-template-columns: minmax(0, 1fr); }
+@container workspace (min-width: 400px) {
+  .settings-overview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container workspace (min-width: 800px) {
+  .settings-overview-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+</style>

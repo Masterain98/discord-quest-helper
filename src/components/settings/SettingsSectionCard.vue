@@ -16,14 +16,14 @@ const props = withDefaults(defineProps<{
 </script>
 
 <template>
-  <Card :class="cn('overflow-hidden transition-shadow hover:shadow-sm', settingToneClass[tone].card)">
+  <Card :class="cn('overflow-hidden', settingToneClass[tone].card)">
     <CardHeader class="pb-4">
       <div class="flex items-start gap-3">
         <div
           v-if="icon"
-          :class="cn('mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-md', settingToneClass[tone].icon)"
+          :class="cn('ui-icon-tile mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl', settingToneClass[tone].icon)"
         >
-          <component :is="icon" class="h-5 w-5" />
+          <component :is="icon" class="h-5 w-5" :stroke-width="1.7" />
         </div>
         <div class="min-w-0">
           <CardTitle>{{ title }}</CardTitle>

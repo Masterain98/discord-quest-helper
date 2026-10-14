@@ -65,7 +65,7 @@
     "cdp_client_vesktop": "Vesktop"
   },
   "nav": {
-    "home": "Trang chủ",
+    "home": "Nhiệm vụ của tôi",
     "game_simulator": "Trình mô phỏng trò chơi",
     "settings": "Cài đặt",
     "debug": "Gỡ lỗi",
@@ -73,7 +73,7 @@
     "discord_console": "Bảng điều khiển Discord"
   },
   "home": {
-    "dashboard_title": "Quest Trang tổng quan",
+    "dashboard_title": "Nhiệm vụ của tôi",
     "dashboard_desc": "Xem trạng thái nhiệm vụ, sau đó lọc danh sách để thực hiện thao tác.",
     "advanced_filters": "Bộ lọc nâng cao",
     "reset_filters": "Đặt lại bộ lọc",
@@ -152,6 +152,8 @@
     "discord_rewards": "Discord Phần thưởng",
     "active_progress": "Tiến trình đang hoạt động Quest",
     "collapse_progress": "Thu gọn",
+    "show_progress": "Hiện tiến độ tác vụ",
+    "hide_progress": "Ẩn cửa sổ tiến độ",
     "up_next": "Tiếp theo",
     "submitted": "Đã gửi",
     "pending": "Đang chờ xử lý tại địa phương"
@@ -188,6 +190,9 @@
     "in_game": "Phần thưởng trong trò chơi"
   },
   "settings": {
+    "navigation_expand": "Mở rộng thanh bên cài đặt",
+    "navigation_collapse": "Thu gọn thanh bên cài đặt",
+    "navigation_close": "Đóng thanh bên cài đặt",
     "title": "Cài đặt",
     "control_center_desc": "Kiểm tra tình trạng tài khoản, hành vi hoàn thành, tích hợp Discord, chẩn đoán và nội bộ nâng cao từ một nơi.",
     "nav_account": "Tài khoản",
@@ -477,6 +482,13 @@
     "nitro": "Nitro",
     "nitro_classic": "Nitro Classic",
     "nitro_basic": "Nitro Basic"
+  },
+  "sidebar": {
+    "utilities": "Công cụ",
+    "mode": "Chế độ hiện tại",
+    "light": "Sáng",
+    "dark": "Tối",
+    "orbs_unavailable": "Không thể tải Orbs. Hãy thử làm mới."
   },
   "header": {
     "toggle_theme": "Chuyển đổi chủ đề",

@@ -65,7 +65,7 @@
     "cdp_client_vesktop": "Vesktop"
   },
   "nav": {
-    "home": "Startseite",
+    "home": "Meine Aufgaben",
     "game_simulator": "Spielsimulator",
     "settings": "Einstellungen",
     "debug": "Debuggen",
@@ -73,7 +73,7 @@
     "discord_console": "Discord-Konsole"
   },
   "home": {
-    "dashboard_title": "Quest Dashboard",
+    "dashboard_title": "Meine Aufgaben",
     "dashboard_desc": "Prüfen Sie den Quest-Status und filtern Sie dann die Liste, um Aktionen auszuführen.",
     "advanced_filters": "Erweiterte Filter",
     "reset_filters": "Filter zurücksetzen",
@@ -152,6 +152,8 @@
     "discord_rewards": "Discord Belohnungen",
     "active_progress": "Aktiver Quest Fortschritt",
     "collapse_progress": "Einklappen",
+    "show_progress": "Fortschritt anzeigen",
+    "hide_progress": "Fortschrittsfenster ausblenden",
     "up_next": "Als nächstes",
     "submitted": "Eingereicht",
     "pending": "Lokal ausstehend"
@@ -188,6 +190,9 @@
     "in_game": "Belohnung im Spiel"
   },
   "settings": {
+    "navigation_expand": "Einstellungsseitenleiste erweitern",
+    "navigation_collapse": "Einstellungsseitenleiste einklappen",
+    "navigation_close": "Einstellungsseitenleiste schließen",
     "title": "Einstellungen",
     "control_center_desc": "Überprüfen Sie den Kontozustand, das Abschlussverhalten, die Discord-Integration, Diagnosen und erweiterte Interna von einem Ort aus.",
     "nav_account": "Konto",
@@ -477,6 +482,13 @@
     "nitro": "Nitro",
     "nitro_classic": "Nitro Classic",
     "nitro_basic": "Nitro Basic"
+  },
+  "sidebar": {
+    "utilities": "Werkzeuge",
+    "mode": "Aktueller Modus",
+    "light": "Hell",
+    "dark": "Dunkel",
+    "orbs_unavailable": "Orbs konnten nicht geladen werden. Bitte aktualisieren."
   },
   "header": {
     "toggle_theme": "Thema umschalten",

@@ -4,11 +4,10 @@
       <div class="space-y-6">
         <div class="flex min-w-0 items-center justify-between gap-4">
           <div class="min-w-0 space-y-2">
-            <h2 class="text-2xl font-bold tracking-tight select-none">{{ t('home.dashboard_title') }}</h2>
+            <h2 class="ui-page-heading text-2xl font-semibold select-none">{{ t('home.dashboard_title') }}</h2>
             <p class="text-sm text-muted-foreground text-pretty">{{ t('home.dashboard_desc') }}</p>
           </div>
 
-          <OrbsNitroStatus class="shrink-0" />
         </div>
 
         <QuestViewTabs
@@ -132,18 +131,18 @@
               </div>
             </div>
 
-            <label class="flex items-start gap-3 rounded-lg border border-border p-3">
-              <input
-                v-model="advancedFilters.includeExpired"
-                type="checkbox"
-                class="mt-1 h-4 w-4 accent-primary"
-              />
+            <label class="ui-setting flex cursor-pointer items-center justify-between gap-3 rounded-xl border p-3">
               <span class="min-w-0 flex-1">
                 <span class="text-sm font-medium">{{ t('home.include_expired') }}</span>
-                <span class="mt-1 block text-xs text-muted-foreground">
+                <span id="home-include-expired-description" class="mt-1 block text-xs text-muted-foreground">
                   {{ t('home.include_expired_desc') }}
                 </span>
               </span>
+              <Switch
+                v-model="advancedFilters.includeExpired"
+                :aria-label="t('home.include_expired')"
+                aria-describedby="home-include-expired-description"
+              />
             </label>
           </CardContent>
         </Card>
@@ -245,9 +244,6 @@
         </template>
       </div>
     </div>
-
-    <QuestProgress />
-    <QuestStopDialog />
 
     <!-- Accept All Confirmation Dialog -->
     <AlertDialog :open="showAcceptAllDialog" @update:open="showAcceptAllDialog = $event">
@@ -517,13 +513,10 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useQuestsStore } from '@/stores/quests'
 import { useGameIdleStore } from '@/stores/gameIdle'
-import OrbsNitroStatus from '@/components/OrbsNitroStatus.vue'
 import QuestListHeader from '@/components/home/QuestListHeader.vue'
 import QuestViewTabs from '@/components/home/QuestViewTabs.vue'
 import QuestCard from '@/components/QuestCard.vue'
-import QuestProgress from '@/components/QuestProgress.vue'
 import QuestQueueAction from '@/components/QuestQueueAction.vue'
-import QuestStopDialog from '@/components/QuestStopDialog.vue'
 import type { DetectableGame, PlatformCapabilities, Quest } from '@/api/tauri'
 import {
   acceptQuest as acceptQuestApi,
@@ -553,6 +546,7 @@ import {
 import { cn } from '@/lib/utils'
 import { ExternalLink, Gift, Loader2 } from 'lucide-vue-next'
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import { useI18n } from 'vue-i18n'
 import {
   firstProgressValue,
@@ -761,24 +755,12 @@ function selectPreset(preset: QuestViewPreset) {
 onMounted(() => {
   if (authStore.user) {
     questsStore.fetchQuests()
-    questsStore.fetchOrbsBalance().catch(err => {
-      console.warn('Background Orbs balance fetch failed:', err)
-    })
-    authStore.fetchNitroProgramReward().catch(err => {
-      console.warn('Background Nitro program reward fetch failed:', err)
-    })
   }
 })
 
 watch(() => authStore.user, (newUser) => {
   if (newUser) {
     questsStore.fetchQuests()
-    questsStore.fetchOrbsBalance().catch(err => {
-      console.warn('Background Orbs balance fetch failed:', err)
-    })
-    authStore.fetchNitroProgramReward().catch(err => {
-      console.warn('Background Nitro program reward fetch failed:', err)
-    })
   } else {
     questsStore.quests = []
   }

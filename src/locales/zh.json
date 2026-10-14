@@ -65,7 +65,7 @@
     }
   },
   "nav": {
-    "home": "首页",
+    "home": "我的任务",
     "game_simulator": "游戏模拟",
     "settings": "设置",
     "debug": "调试",
@@ -73,7 +73,7 @@
     "discord_console": "Discord 控制台"
   },
   "home": {
-    "dashboard_title": "任务仪表盘",
+    "dashboard_title": "我的任务",
     "dashboard_desc": "查看任务状态，然后通过筛选任务列表执行操作。",
     "advanced_filters": "高级筛选",
     "reset_filters": "重置筛选",
@@ -154,6 +154,8 @@
     "discord_rewards": "Discord 奖励",
     "active_progress": "当前任务进度",
     "collapse_progress": "折叠",
+    "show_progress": "显示任务进度",
+    "hide_progress": "隐藏任务进度窗口",
     "up_next": "队列中",
     "submitted": "已提交",
     "pending": "待提交"
@@ -190,6 +192,9 @@
     "in_game": "游戏内奖励"
   },
   "settings": {
+    "navigation_expand": "展开设置侧栏",
+    "navigation_collapse": "收起设置侧栏",
+    "navigation_close": "关闭设置侧栏",
     "title": "设置",
     "control_center_desc": "在一个地方查看账号状态、任务行为、Discord 集成、诊断与高级内部选项。",
     "nav_account": "账号",
@@ -479,6 +484,13 @@
     "nitro": "Nitro",
     "nitro_classic": "Nitro Classic",
     "nitro_basic": "Nitro Basic"
+  },
+  "sidebar": {
+    "utilities": "工具",
+    "mode": "当前运行模式",
+    "light": "浅色",
+    "dark": "深色",
+    "orbs_unavailable": "无法加载 Orbs，请刷新重试。"
   },
   "header": {
     "toggle_theme": "切换主题",

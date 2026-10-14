@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import GlobalQuestRegions from '@/components/GlobalQuestRegions.vue'
 import GlobalQuestTaskBadges from '@/components/GlobalQuestTaskBadges.vue'
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import { useGlobalQuestsStore } from '@/stores/globalQuests'
 import { useAuthStore } from '@/stores/auth'
 import { useQuestsStore } from '@/stores/quests'
@@ -110,11 +111,11 @@ function handleCountryOptionKeydown(event: KeyboardEvent) {
   }
 }
 
-function toggleFilter(group: typeof groups[number]['key'], value: string) {
+function setFilter(group: typeof groups[number]['key'], value: string, enabled: boolean) {
   const values = store.filters[group] as string[]
   const index = values.indexOf(value)
-  if (index === -1) values.push(value)
-  else values.splice(index, 1)
+  if (enabled && index === -1) values.push(value)
+  else if (!enabled && index !== -1) values.splice(index, 1)
 }
 function clearFilters() { store.clearFilters(); countryQuery.value = ''; countryPickerOpen.value = false }
 function restriction(quest: GlobalQuest) { return store.restrictions[quest.id] ?? unknownRestriction() }
@@ -159,7 +160,7 @@ async function refresh() {
   <div class="space-y-4 pb-6">
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div class="min-w-0 space-y-1.5">
-        <h2 class="flex items-center gap-2 text-2xl font-semibold tracking-tight"><Globe2 class="h-6 w-6 text-primary" />{{ t('nav.global_quests') }}</h2>
+        <h2 class="ui-page-heading flex items-center gap-2 text-2xl font-semibold"><Globe2 class="h-6 w-6 text-primary" :stroke-width="1.7" />{{ t('nav.global_quests') }}</h2>
         <p class="max-w-3xl text-sm leading-relaxed text-muted-foreground">{{ t('global_quests.description') }}</p>
       </div>
       <div class="flex min-w-0 flex-col items-end gap-2">
@@ -188,7 +189,7 @@ async function refresh() {
       </div>
     </div>
 
-    <div class="rounded-xl border border-border/70 bg-card/70 p-3.5">
+    <div class="ui-panel rounded-2xl border bg-card p-4">
       <div class="flex flex-wrap items-center gap-2">
         <div class="relative min-w-48 flex-1">
           <Search class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -202,12 +203,16 @@ async function refresh() {
         </Button>
       </div>
       <div v-if="store.showFilters" id="global-quest-filters" class="mt-4 space-y-4 border-t border-border pt-4">
-        <div class="grid grid-cols-2 gap-5 lg:grid-cols-4">
+        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <fieldset v-for="group in groups" :key="group.key" class="min-w-0 space-y-2">
             <legend class="mb-2 text-sm font-semibold">{{ t(`global_quests.filter_titles.${group.key}`) }}</legend>
-            <label v-for="option in group.options" :key="option" class="flex cursor-pointer items-center gap-2 text-sm">
-              <input type="checkbox" class="h-4 w-4 shrink-0 accent-primary" :checked="(store.filters[group.key] as string[]).includes(option)" @change="toggleFilter(group.key, option)">
-              {{ t(`global_quests.${group.key}.${option}`) }}
+            <label v-for="option in group.options" :key="option" class="flex min-h-9 cursor-pointer items-center justify-between gap-3 text-sm">
+              <span class="min-w-0">{{ t(`global_quests.${group.key}.${option}`) }}</span>
+              <Switch
+                :model-value="(store.filters[group.key] as string[]).includes(option)"
+                :aria-label="`${t(`global_quests.filter_titles.${group.key}`)}: ${t(`global_quests.${group.key}.${option}`)}`"
+                @update:model-value="setFilter(group.key, option, $event)"
+              />
             </label>
           </fieldset>
         </div>
@@ -233,7 +238,7 @@ async function refresh() {
               </span>
               <ChevronDown class="ml-2 h-4 w-4 shrink-0 opacity-50" aria-hidden="true" />
             </button>
-            <div v-if="countryPickerOpen" class="absolute left-0 top-full z-50 mt-1 w-full overflow-hidden rounded-md border border-border bg-popover text-popover-foreground shadow-lg ring-1 ring-black/5">
+            <div v-if="countryPickerOpen" class="ui-popover absolute left-0 top-full z-50 mt-1 w-full overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground">
               <div class="border-b border-border p-2">
                 <div class="relative">
                   <Search class="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
@@ -245,7 +250,7 @@ async function refresh() {
                     role="searchbox"
                     :aria-label="t('global_quests.country_search')"
                     :placeholder="t('global_quests.country_search')"
-                    class="h-9 w-full rounded-sm border border-input bg-background pl-9 pr-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                    class="ui-input h-9 w-full rounded-[0.625rem] border border-input bg-background pl-9 pr-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
                     @keydown="handleCountrySearchKeydown"
                   >
                 </div>
@@ -305,7 +310,7 @@ async function refresh() {
       <Button v-if="filterCount || store.filters.query" variant="ghost" class="mt-3" @click="clearFilters">{{ t('global_quests.clear') }}</Button>
     </div>
     <ul v-else class="space-y-1.5" :aria-label="t('nav.global_quests')">
-      <li v-for="quest in visible" :key="quest.id" class="overflow-hidden rounded-xl border border-border/70 bg-card/70" :data-quest-id="quest.id" :data-completed="completed.has(quest.id)" :data-accepted="accepted.has(quest.id)">
+      <li v-for="quest in visible" :key="quest.id" class="ui-panel overflow-hidden rounded-xl border bg-card" :data-quest-id="quest.id" :data-completed="completed.has(quest.id)" :data-accepted="accepted.has(quest.id)">
         <div class="global-quest-row" :class="completed.has(quest.id) && 'global-quest-row--completed'">
           <div class="flex h-10 w-14 shrink-0 items-center justify-center overflow-hidden rounded bg-muted">
             <img v-if="quest.thumbnailUrl && !failedImages.has(quest.id)" :src="quest.thumbnailUrl" alt="" loading="lazy" class="h-full w-full object-cover" @error="failedImages.add(quest.id)">

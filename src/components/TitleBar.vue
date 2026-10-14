@@ -4,6 +4,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { Minus, Square, X, Copy } from 'lucide-vue-next'
 import { useVersionStore } from '@/stores/version'
 
+defineProps<{ brandVisible?: boolean }>()
 const appWindow = getCurrentWindow()
 const versionStore = useVersionStore()
 const isMaximized = ref(false)
@@ -48,40 +49,47 @@ async function handleDragStart(e: MouseEvent) {
 </script>
 
 <template>
-  <div 
-    class="h-[32px] w-full flex justify-between items-center bg-background select-none fixed top-0 left-0 z-50 border-b border-border/40"
-  >
-    <div 
-      class="flex-1 flex items-center gap-2 px-3 h-full cursor-default"
+  <div class="app-titlebar fixed left-0 top-0 z-50 flex h-[48px] w-full select-none items-center">
+    <div
+      class="app-titlebar-brand app-brand-lockup"
+      :class="{ 'invisible': brandVisible === false }"
       @mousedown="handleDragStart"
     >
-        <img src="/icons/logo.png" alt="logo" class="w-4 h-4 pointer-events-none" />
-        <span class="text-xs font-medium text-muted-foreground pointer-events-none">
-          Discord Quest Helper <span class="opacity-70 ml-1">v{{ versionStore.currentVersion }}</span>
-        </span>
+      <span class="app-titlebar-logo-zone" aria-hidden="true">
+        <img src="/icons/logo.png" alt="" class="h-9 w-9 rounded-[11px] pointer-events-none" />
+      </span>
+      <span class="app-titlebar-app-name">
+        <span class="font-medium">Discord Quest Helper</span>
+        <span class="opacity-70">v{{ versionStore.currentVersion }}</span>
+      </span>
     </div>
 
-    <div class="flex h-full">
-      <button 
-        @click="handleMinimize" 
-        class="titlebar-button hover:bg-accent hover:text-accent-foreground inline-flex items-center justify-center h-full w-[46px] transition-colors"
+    <div class="app-titlebar-drag-region" @mousedown="handleDragStart" />
+
+    <div class="app-titlebar-controls flex h-full">
+      <button
+        type="button"
+        @click="handleMinimize"
+        class="titlebar-button"
         tabindex="-1"
       >
         <Minus class="w-4 h-4" />
       </button>
 
-      <button 
-        @click="handleToggleMaximize" 
-        class="titlebar-button hover:bg-accent hover:text-accent-foreground inline-flex items-center justify-center h-full w-[46px] transition-colors"
+      <button
+        type="button"
+        @click="handleToggleMaximize"
+        class="titlebar-button"
         tabindex="-1"
       >
         <Copy v-if="isMaximized" class="w-4 h-4 rotate-180" />
         <Square v-else class="w-3.5 h-3.5" />
       </button>
 
-      <button 
-        @click="handleClose" 
-        class="titlebar-button hover:bg-destructive hover:text-white inline-flex items-center justify-center h-full w-[46px] transition-colors"
+      <button
+        type="button"
+        @click="handleClose"
+        class="titlebar-button titlebar-button-close"
         tabindex="-1"
       >
         <X class="w-4 h-4" />
@@ -89,7 +97,7 @@ async function handleDragStart(e: MouseEvent) {
     </div>
   </div>
   <!-- Spacer to prevent content from going under titlebar -->
-  <div class="h-[32px] w-full shrink-0"></div>
+  <div class="h-[48px] w-full shrink-0"></div>
 </template>
 
 <style scoped>

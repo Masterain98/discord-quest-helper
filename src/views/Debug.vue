@@ -594,9 +594,9 @@ onMounted(() => {
 
 <template>
   <div class="space-y-6">
-    <div class="flex items-center justify-between">
+    <div class="flex flex-wrap items-center justify-between gap-3">
       <div>
-        <h2 class="text-2xl font-bold">{{ t('debug.title') }}</h2>
+        <h2 class="ui-page-heading text-2xl font-semibold">{{ t('debug.title') }}</h2>
         <p class="text-muted-foreground">{{ t('debug.description') }}</p>
       </div>
       <Button variant="outline" size="sm" @click="loadDebugInfo" :disabled="loading">
@@ -623,7 +623,7 @@ onMounted(() => {
       <!-- Discord CDP Diagnostics -->
       <Card>
         <CardHeader>
-          <div class="flex items-start justify-between gap-4">
+          <div class="flex flex-col items-start justify-between gap-3 sm:flex-row sm:gap-4">
             <div>
               <CardTitle class="flex items-center gap-2">
                 <Radio class="w-5 h-5" />
@@ -711,7 +711,7 @@ onMounted(() => {
       <!-- Runtime Identity Audit -->
       <Card v-if="identityAudit">
         <CardHeader>
-          <div class="flex items-start justify-between gap-4">
+          <div class="flex flex-col items-start justify-between gap-3 sm:flex-row sm:gap-4">
             <div>
               <CardTitle class="flex items-center gap-2">
                 <ShieldCheck class="w-5 h-5" />
@@ -855,7 +855,7 @@ onMounted(() => {
       <!-- Runner Info -->
       <Card>
         <CardHeader>
-          <div class="flex items-center justify-between">
+          <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
               <CardTitle class="flex items-center gap-2">
                 <Package class="w-5 h-5" />
@@ -896,7 +896,7 @@ onMounted(() => {
       <!-- Discord Running Games Snapshot -->
       <Card>
         <CardHeader>
-          <div class="flex items-center justify-between gap-4">
+          <div class="flex flex-wrap items-center justify-between gap-4">
             <div>
               <CardTitle class="flex items-center gap-2">
                 <Gamepad2 class="w-5 h-5" />
@@ -966,7 +966,7 @@ onMounted(() => {
             </div>
 
             <div class="space-y-3">
-              <div class="flex items-center justify-between">
+              <div class="flex flex-wrap items-center justify-between gap-3">
                 <div class="text-sm font-medium">
                   {{ t('debug.running_games_raw') }}
                   <span class="text-muted-foreground font-normal">({{ runningGamesSnapshot.games.length }})</span>
@@ -1057,7 +1057,7 @@ onMounted(() => {
       <!-- Session IDs -->
       <Card>
         <CardHeader>
-          <div class="flex items-center justify-between">
+          <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
               <CardTitle>{{ t('debug.session_ids') }}</CardTitle>
               <CardDescription>{{ t('debug.session_ids_desc') }}</CardDescription>
@@ -1156,7 +1156,7 @@ onMounted(() => {
           
           <!-- Base64 -->
           <div class="space-y-2">
-            <div class="flex items-center justify-between">
+            <div class="flex flex-wrap items-center justify-between gap-3">
               <span class="text-sm font-medium">Base64 Encoded</span>
               <Button variant="ghost" size="sm" @click="copyToClipboard(debugText(debugInfo.x_super_properties_base64), 'base64')">
                 <Check v-if="copied === 'base64'" class="w-4 h-4 mr-1 text-green-500" />
@@ -1265,7 +1265,7 @@ onMounted(() => {
             <div class="space-y-2 rounded border border-border p-3">
               <div class="text-sm font-medium">/quests/decision</div>
               <div class="flex items-center gap-2">
-                <input v-model.number="decisionPlacement" type="number" min="1" class="h-8 w-20 rounded border border-input bg-background px-2 text-xs" />
+                <input v-model.number="decisionPlacement" type="number" min="1" class="ui-input h-8 w-20 rounded-[0.625rem] border border-input bg-background px-2 text-xs" />
                 <Button size="sm" variant="outline" :disabled="decisionLoading" @click="fetchQuestDecisionDebug">
                   <RefreshCw v-if="decisionLoading" class="w-4 h-4 mr-2 animate-spin" />
                   {{ t('debug.fetch') }}
@@ -1277,8 +1277,8 @@ onMounted(() => {
             <div class="space-y-2 rounded border border-border p-3">
               <div class="text-sm font-medium">/quests/get-decisions</div>
               <div class="flex items-center gap-2">
-                <input v-model.number="decisionsPlacement" type="number" min="1" class="h-8 w-20 rounded border border-input bg-background px-2 text-xs" />
-                <input v-model.number="decisionsNum" type="number" min="1" max="5" class="h-8 w-20 rounded border border-input bg-background px-2 text-xs" />
+                <input v-model.number="decisionsPlacement" type="number" min="1" class="ui-input h-8 w-20 rounded-[0.625rem] border border-input bg-background px-2 text-xs" />
+                <input v-model.number="decisionsNum" type="number" min="1" max="5" class="ui-input h-8 w-20 rounded-[0.625rem] border border-input bg-background px-2 text-xs" />
                 <Button size="sm" variant="outline" :disabled="decisionLoading" @click="fetchQuestDecisionsDebug">
                   <RefreshCw v-if="decisionLoading" class="w-4 h-4 mr-2 animate-spin" />
                   {{ t('debug.fetch') }}
@@ -1293,7 +1293,7 @@ onMounted(() => {
       <!-- Captured Discord Headers (Network Dump) -->
       <Card>
         <CardHeader>
-          <div class="flex items-center justify-between">
+          <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
               <CardTitle class="flex items-center gap-2">
                 <Radio class="w-5 h-5" />
@@ -1309,7 +1309,7 @@ onMounted(() => {
                   min="5"
                   max="120"
                   :disabled="capturing"
-                  class="w-16 h-8 px-2 text-xs text-center rounded border border-input bg-background"
+                  class="ui-input w-16 h-8 px-2 text-xs text-center rounded-[0.625rem] border border-input bg-background"
                 />
                 <span class="text-xs text-muted-foreground">s</span>
               </div>
@@ -1343,7 +1343,7 @@ onMounted(() => {
 
             <!-- Grouped Headers -->
             <div class="space-y-2">
-              <div class="flex items-center justify-between">
+              <div class="flex flex-wrap items-center justify-between gap-3">
                 <div class="text-sm font-medium">{{ t('debug.header_key_counts') }}</div>
                 <Button variant="ghost" size="sm" @click="copyToClipboard(JSON.stringify(capturedHeaders.header_kv_counts, null, 2), 'kv_json')">
                   <Check v-if="copied === 'kv_json'" class="w-4 h-4 mr-1 text-green-500" />
@@ -1397,7 +1397,7 @@ onMounted(() => {
 
             <!-- Request List -->
             <div class="space-y-2">
-              <div class="flex items-center justify-between">
+              <div class="flex flex-wrap items-center justify-between gap-3">
                 <div class="text-sm font-medium">{{ t('debug.request_list') }} <span class="text-muted-foreground font-normal">({{ filteredRequests.length }}/{{ capturedRequests.length }})</span></div>
                 <Button variant="ghost" size="sm" @click="copyToClipboard(JSON.stringify(capturedRequests, null, 2), 'requests_json')">
                   <Check v-if="copied === 'requests_json'" class="w-4 h-4 mr-1 text-green-500" />
@@ -1425,7 +1425,7 @@ onMounted(() => {
                 <Search class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
                 <input
                   v-model="requestSearch"
-                  class="w-full pl-8 pr-8 py-1.5 bg-muted rounded border border-input text-xs"
+                  class="ui-input w-full pl-8 pr-8 py-1.5 bg-muted rounded-[0.625rem] border border-input text-xs"
                   :placeholder="t('debug.request_search')"
                 />
                 <button v-if="requestSearch" @click="requestSearch = ''" class="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
@@ -1479,7 +1479,7 @@ onMounted(() => {
           <div class="flex gap-2">
             <input
               v-model="decoderInput"
-              class="flex-1 px-3 py-2 bg-muted rounded border border-border font-mono text-xs"
+              class="ui-input min-w-0 flex-1 px-3 py-2 bg-muted rounded-[0.625rem] border border-border font-mono text-xs"
               :placeholder="t('debug.decoder_placeholder')"
               @keydown.enter="decodeBase64"
             />
@@ -1489,7 +1489,7 @@ onMounted(() => {
             {{ decoderError }}
           </div>
           <div v-if="decoderResult" class="space-y-2">
-            <div class="flex items-center justify-between">
+            <div class="flex flex-wrap items-center justify-between gap-3">
               <span class="text-sm font-medium">{{ t('debug.decoder_result') }}</span>
               <Button variant="ghost" size="sm" @click="copyToClipboard(JSON.stringify(decoderResult, null, 2), 'decoder_json')">
                 <Check v-if="copied === 'decoder_json'" class="w-4 h-4 mr-1 text-green-500" />

@@ -457,9 +457,9 @@ async function handleStopGame() {
 <template>
   <div class="game-simulator-view fade-in space-y-6" :class="mode === 'idle' && (idleStore.isActive || idleStore.loading) && 'is-idle-immersive'">
     <div v-if="!(mode === 'idle' && (idleStore.isActive || idleStore.loading))" class="flex justify-between items-center flex-wrap gap-3">
-      <h2 class="text-2xl font-bold tracking-tight">{{ t('game_sim.title') }}</h2>
+      <h2 class="ui-page-heading text-2xl font-semibold">{{ t('game_sim.title') }}</h2>
       <!-- Mode toggle -->
-      <div class="flex rounded-lg border p-1 gap-1 bg-muted/50">
+      <div class="ui-tab-tray flex max-w-full flex-wrap gap-1">
         <Button
           size="sm"
           :variant="mode === 'select' ? 'default' : 'ghost'"
@@ -561,7 +561,7 @@ async function handleStopGame() {
                   <div ref="exeDropdownRef" class="relative">
                     <button
                       type="button"
-                      class="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                      class="ui-input flex h-10 w-full items-center justify-between rounded-[0.625rem] border border-input bg-background px-3 py-2 text-sm ring-offset-background transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                       @click="toggleExeDropdown"
                     >
                       <span :class="selectedExecutable ? 'text-foreground' : 'text-muted-foreground'">
@@ -580,7 +580,7 @@ async function handleStopGame() {
                     >
                       <div
                         v-if="exeDropdownOpen"
-                        class="absolute z-50 mt-1 w-full rounded-md border bg-popover text-popover-foreground shadow-md overflow-hidden"
+                        class="ui-popover absolute z-50 mt-1 w-full rounded-xl border bg-popover text-popover-foreground overflow-hidden"
                       >
                         <div class="max-h-48 overflow-y-auto p-1">
                           <button

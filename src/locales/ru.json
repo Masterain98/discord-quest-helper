@@ -65,7 +65,7 @@
     "cdp_client_vesktop": "Vesktop"
   },
   "nav": {
-    "home": "Главная",
+    "home": "Мои задания",
     "game_simulator": "Симулятор игр",
     "settings": "Настройки",
     "debug": "Отладка",
@@ -73,7 +73,7 @@
     "discord_console": "Консоль Discord"
   },
   "home": {
-    "dashboard_title": "Quest Панель мониторинга",
+    "dashboard_title": "Мои задания",
     "dashboard_desc": "Проверьте состояние заданий и отфильтруйте список, чтобы выполнить нужные действия.",
     "advanced_filters": "Расширенные фильтры",
     "reset_filters": "Сбросить фильтры",
@@ -152,6 +152,8 @@
     "discord_rewards": "Награды Discord",
     "active_progress": "Прогресс текущего квеста",
     "collapse_progress": "Свернуть",
+    "show_progress": "Показать ход задачи",
+    "hide_progress": "Скрыть окно прогресса",
     "up_next": "Далее",
     "submitted": "Отправлено",
     "pending": "Ожидание"
@@ -188,6 +190,9 @@
     "in_game": "Внутриигровая награда"
   },
   "settings": {
+    "navigation_expand": "Развернуть боковую панель настроек",
+    "navigation_collapse": "Свернуть боковую панель настроек",
+    "navigation_close": "Закрыть боковую панель настроек",
     "title": "Настройки",
     "control_center_desc": "Проверьте состояние учетной записи, поведение при завершении, интеграцию Discord, диагностику и расширенные внутренние функции из одного места.",
     "nav_account": "Аккаунт",
@@ -477,6 +482,13 @@
     "nitro": "Nitro",
     "nitro_classic": "Nitro Classic",
     "nitro_basic": "Nitro Basic"
+  },
+  "sidebar": {
+    "utilities": "Инструменты",
+    "mode": "Текущий режим",
+    "light": "Светлая",
+    "dark": "Тёмная",
+    "orbs_unavailable": "Не удалось загрузить Orbs. Попробуйте обновить."
   },
   "header": {
     "toggle_theme": "Сменить тему",

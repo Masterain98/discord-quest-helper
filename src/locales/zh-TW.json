@@ -65,7 +65,7 @@
     "cdp_client_vesktop": "Vesktop"
   },
   "nav": {
-    "home": "首頁",
+    "home": "我的任務",
     "game_simulator": "遊戲模擬",
     "settings": "設定",
     "debug": "偵錯",
@@ -73,7 +73,7 @@
     "discord_console": "Discord 控制台"
   },
   "home": {
-    "dashboard_title": "Quest 儀表板",
+    "dashboard_title": "我的任務",
     "dashboard_desc": "查看任務狀態，然後透過篩選任務列表執行操作。",
     "advanced_filters": "進階過濾器",
     "reset_filters": "重置過濾器",
@@ -152,6 +152,8 @@
     "discord_rewards": "Discord 獎勵",
     "active_progress": "當前任務進度",
     "collapse_progress": "收合",
+    "show_progress": "顯示任務進度",
+    "hide_progress": "隱藏任務進度視窗",
     "up_next": "隊列中",
     "submitted": "已提交",
     "pending": "待提交"
@@ -188,6 +190,9 @@
     "in_game": "遊戲內獎勵"
   },
   "settings": {
+    "navigation_expand": "展開設定側欄",
+    "navigation_collapse": "收起設定側欄",
+    "navigation_close": "關閉設定側欄",
     "title": "設定",
     "control_center_desc": "從一處檢查帳戶運行狀況、完成行為、Discord 整合、診斷和高階內部結構。",
     "nav_account": "帳戶",
@@ -477,6 +482,13 @@
     "nitro": "Nitro",
     "nitro_classic": "Nitro Classic",
     "nitro_basic": "Nitro Basic"
+  },
+  "sidebar": {
+    "utilities": "工具",
+    "mode": "目前執行模式",
+    "light": "淺色",
+    "dark": "深色",
+    "orbs_unavailable": "無法載入 Orbs，請重新整理。"
   },
   "header": {
     "toggle_theme": "切換主題",

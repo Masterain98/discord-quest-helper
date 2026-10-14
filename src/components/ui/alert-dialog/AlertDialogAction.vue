@@ -10,7 +10,7 @@ defineProps<{
 </script>
 
 <template>
-  <AlertDialogAction :class="cn(buttonVariants(), $props.class)">
+  <AlertDialogAction data-variant="default" :class="cn(buttonVariants(), $props.class)">
     <slot />
   </AlertDialogAction>
 </template>

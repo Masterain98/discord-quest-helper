@@ -1,17 +1,23 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch, onUnmounted } from 'vue'
 import { useQuestsStore } from '@/stores/quests'
+import { useAuthStore } from '@/stores/auth'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { AlertCircle, ChevronDown, ChevronUp, GripVertical, ListChecks, LoaderCircle, Trash2 } from 'lucide-vue-next'
+import { AlertCircle, ChevronDown, ChevronUp, Gift, GripVertical, LoaderCircle, Trash2, X } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
+import { getQuestRewardViews } from '@/utils/questRewards'
+import IconTooltip from '@/components/IconTooltip.vue'
 
 const { t } = useI18n()
 const questsStore = useQuestsStore()
+const authStore = useAuthStore()
 const expanded = ref(false)
 const floatingRef = ref<HTMLElement | null>(null)
+const triggerRef = ref<HTMLButtonElement | null>(null)
+const hideButtonRef = ref<HTMLButtonElement | null>(null)
 const floatingPosition = ref<{ left: number, top: number } | null>(null)
-const draggedDuringPointer = ref(false)
+const initialPlacementPending = ref(false)
 const FLOATING_POSITION_KEY = 'questHelper_progressFloatingPosition'
 const EDGE_MARGIN = 12
 
@@ -28,6 +34,8 @@ const activeQuest = computed(() => {
   if (!questsStore.activeQuestId) return null
   return questsStore.quests.find(quest => quest.id === questsStore.activeQuestId) ?? null
 })
+
+const trackedQuest = computed(() => activeQuest.value ?? questsStore.questQueue[0] ?? null)
 
 const hasFloatingContent = computed(() =>
   !!questsStore.activeQuestId || questsStore.questQueue.length > 0 || !!questsStore.error
@@ -192,15 +200,60 @@ const floatingTitle = computed(() => {
   return `${t('quest.up_next')} (${questsStore.questQueue.length})`
 })
 
-const floatingSubtitle = computed(() => {
-  if (questsStore.activeQuestId) {
-    return activeQuest.value?.config.messages.quest_name ?? t('quest.active_progress')
+const sidebarProgress = computed(() => questsStore.activeQuestId
+  ? Math.max(0, Math.min(100, questsStore.localProgress))
+  : 0)
+
+const sidebarRewardImage = computed(() => {
+  const quest = trackedQuest.value
+  if (!quest) return null
+
+  const rewards = getQuestRewardViews(quest, authStore.user?.premium_type)
+  // A quest may include an Orb bonus before its primary Discord collectible.
+  // Prefer the actual item artwork so the rail represents the quest reward.
+  const hasAsset = (reward: typeof rewards[number]) => !!reward.asset
+  const imageReward = rewards.find(reward => reward.kind === 'collectible' && hasAsset(reward))
+    ?? rewards.find(reward => reward.kind !== 'orbs' && hasAsset(reward))
+    ?? rewards.find(hasAsset)
+  if (imageReward?.asset) {
+    return /^https?:\/\//i.test(imageReward.asset)
+      ? imageReward.asset
+      : `https://cdn.discordapp.com/${imageReward.asset.replace(/^\/+/, '')}`
   }
-  if (questsStore.questQueue.length > 0) {
-    return questsStore.questQueue[0]?.config.messages.quest_name ?? t('quest.up_next')
+
+  if (rewards.some(reward => reward.icon === 'orbs')) return '/icons/orbs.png'
+
+  const application = quest.config.application
+  if (application?.id && application.icon) {
+    return `https://cdn.discordapp.com/app-icons/${application.id}/${application.icon}.png?size=64`
   }
-  return questsStore.error ?? ''
+
+  return '/icons/orbs.png'
 })
+
+const sidebarProgressLabel = computed(() => {
+  const action = t(expanded.value ? 'quest.hide_progress' : 'quest.show_progress')
+  const name = trackedQuest.value?.config.messages.quest_name ?? floatingTitle.value
+  const progress = questsStore.activeQuestId ? ` · ${Math.round(sidebarProgress.value)}%` : ''
+  return `${action}: ${name}${progress}`
+})
+
+const progressFrameStyle = computed(() => ({
+  strokeDashoffset: `${100 - sidebarProgress.value}`,
+}))
+const failedRewardImage = ref<string | null>(null)
+const displayedRewardAsset = computed(() => {
+  const image = sidebarRewardImage.value
+  if (!image) return null
+  if (failedRewardImage.value !== image) return image
+  return image === '/icons/orbs.png' ? null : '/icons/orbs.png'
+})
+const displayedRewardIsVideo = computed(() => !!displayedRewardAsset.value?.toLowerCase().endsWith('.mp4'))
+watch(sidebarRewardImage, () => { failedRewardImage.value = null })
+
+function handleRewardImageError() {
+  failedRewardImage.value = displayedRewardAsset.value
+}
 
 const floatingStyle = computed(() => {
   if (!floatingPosition.value) return {}
@@ -235,7 +288,6 @@ async function reconcileFloatingPosition() {
   const rect = floatingRef.value?.getBoundingClientRect()
   if (!rect) return
   floatingPosition.value = clampPosition(rect.left, rect.top)
-  saveFloatingPosition()
 }
 
 function startDrag(event: PointerEvent) {
@@ -250,8 +302,6 @@ function startDrag(event: PointerEvent) {
     originLeft: rect.left,
     originTop: rect.top,
   }
-  draggedDuringPointer.value = false
-
   if (event.currentTarget instanceof HTMLElement) {
     event.currentTarget.setPointerCapture(event.pointerId)
   }
@@ -266,10 +316,6 @@ function handleDragMove(event: PointerEvent) {
   if (event.pointerId !== dragState.pointerId) return
   const dx = event.clientX - dragState.startX
   const dy = event.clientY - dragState.startY
-
-  if (Math.abs(dx) + Math.abs(dy) > 4) {
-    draggedDuringPointer.value = true
-  }
 
   floatingPosition.value = clampPosition(dragState.originLeft + dx, dragState.originTop + dy)
 }
@@ -291,25 +337,54 @@ function stopDrag(event: PointerEvent) {
   window.removeEventListener('pointercancel', stopDrag)
 }
 
-function handleCollapsedClick() {
-  if (draggedDuringPointer.value) {
-    draggedDuringPointer.value = false
+function toggleProgressWindow(event: MouseEvent) {
+  if (expanded.value) {
+    void hideProgressWindow()
     return
   }
+  if (!floatingPosition.value) {
+    const triggerRect = triggerRef.value?.getBoundingClientRect()
+    if (triggerRect) {
+      floatingPosition.value = clampPosition(
+        triggerRect.right + 14,
+        triggerRect.top + triggerRect.height / 2 - 240,
+        384,
+        Math.min(window.innerHeight - EDGE_MARGIN * 2, 520),
+      )
+      initialPlacementPending.value = true
+    }
+  }
   expanded.value = true
+  if (event.detail === 0) {
+    void nextTick(() => hideButtonRef.value?.focus())
+  }
 }
 
-function collapseToCorner() {
+async function hideProgressWindow() {
   expanded.value = false
-  floatingPosition.value = null
-  localStorage.removeItem(FLOATING_POSITION_KEY)
+  await nextTick()
+  triggerRef.value?.focus()
 }
 
 function handlePanelEnter(element: Element) {
   if (!expanded.value || !floatingPosition.value || !(element instanceof HTMLElement)) return
 
-  // Clamp using the expanded panel's real dimensions before the enter
-  // transition starts, so it never renders low and then jumps upward.
+  if (initialPlacementPending.value) {
+    const triggerRect = triggerRef.value?.getBoundingClientRect()
+    if (triggerRect) {
+      floatingPosition.value = clampPosition(
+        triggerRect.right + 14,
+        triggerRect.top + triggerRect.height / 2 - element.offsetHeight / 2,
+        element.offsetWidth,
+        element.offsetHeight,
+      )
+    }
+    initialPlacementPending.value = false
+    return
+  }
+
+  // Re-clamp restored positions against the panel's real dimensions before
+  // the enter transition starts.
   floatingPosition.value = clampPosition(
     floatingPosition.value.left,
     floatingPosition.value.top,
@@ -357,16 +432,22 @@ watch(() => questsStore.activeQuestProgress, (next) => {
 onUnmounted(() => { if (_raf !== null) cancelAnimationFrame(_raf) })
 
 onMounted(() => {
-  // Always start new progress sessions in the bottom-right corner. Older saved
-  // positions may have been captured while the expanded panel was open.
-  localStorage.removeItem(FLOATING_POSITION_KEY)
+  try {
+    const saved = localStorage.getItem(FLOATING_POSITION_KEY)
+    if (!saved) return
+    const position = JSON.parse(saved) as { left?: unknown, top?: unknown }
+    if (typeof position.left === 'number' && Number.isFinite(position.left)
+      && typeof position.top === 'number' && Number.isFinite(position.top)) {
+      floatingPosition.value = clampPosition(position.left, position.top)
+    }
+  } catch {
+    localStorage.removeItem(FLOATING_POSITION_KEY)
+  }
 })
 
 watch(hasFloatingContent, (visible) => {
   if (!visible) {
     expanded.value = false
-    floatingPosition.value = null
-    localStorage.removeItem(FLOATING_POSITION_KEY)
   }
 })
 
@@ -405,51 +486,55 @@ const progressBarStyle = computed(() => {
 </script>
 
 <template>
-  <div
-    ref="floatingRef"
-    v-if="hasFloatingContent"
-    class="fixed bottom-5 right-5 z-50 w-[calc(100vw-2rem)] max-w-sm"
-    :style="floatingStyle"
-  >
-    <Transition name="quest-progress-panel" mode="out-in" @enter="handlePanelEnter">
-      <button
-        v-if="!expanded"
-        key="collapsed"
-        type="button"
-        class="w-full cursor-grab rounded-lg border bg-card px-4 py-3 text-left shadow-lg transition-shadow hover:shadow-xl active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        @pointerdown="startDrag"
-        @click="handleCollapsedClick"
-      >
-      <div class="flex items-center gap-3">
-        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-          <AlertCircle v-if="questsStore.error && !questsStore.activeQuestId" class="h-4 w-4" />
-          <ListChecks v-else class="h-4 w-4" />
-        </div>
-        <div class="min-w-0 flex-1">
-          <div class="flex items-center justify-between gap-3">
-            <p class="truncate text-sm font-semibold">{{ floatingTitle }}</p>
-            <div class="flex shrink-0 items-center gap-2">
-              <span v-if="queuedBehindCount > 0" class="rounded-full bg-secondary px-2 py-0.5 text-[11px] font-medium text-secondary-foreground">
-                {{ t('home.queue_count', { count: queuedBehindCount }) }}
-              </span>
-              <span v-if="questsStore.activeQuestId" class="text-sm font-semibold">
-                {{ Math.floor(questsStore.activeQuestProgress) }}%
-              </span>
-            </div>
-          </div>
-          <p class="mt-0.5 truncate text-xs text-muted-foreground">{{ floatingSubtitle }}</p>
-          <div v-if="questsStore.activeQuestId" class="mt-2 h-1.5 rounded-full bg-secondary">
-            <div
-              class="h-full rounded-full transition-all duration-300"
-              :style="progressBarStyle"
-            />
-          </div>
-        </div>
-        <ChevronUp class="h-4 w-4 shrink-0 text-muted-foreground" />
-      </div>
-      </button>
+  <IconTooltip v-if="hasFloatingContent" :label="sidebarProgressLabel" side="right">
+    <button
+      ref="triggerRef"
+      type="button"
+      :aria-label="sidebarProgressLabel"
+      :aria-expanded="expanded"
+      :aria-controls="expanded ? 'quest-progress-floating-window' : undefined"
+      :class="['app-rail-button', 'rail-task-progress-trigger', expanded && 'app-rail-button-active']"
+      @click="toggleProgressWindow"
+    >
+      <video
+        v-if="trackedQuest && displayedRewardAsset && displayedRewardIsVideo"
+        :src="displayedRewardAsset"
+        class="rail-task-progress-image"
+        aria-hidden="true"
+        autoplay
+        loop
+        muted
+        playsinline
+        @error="handleRewardImageError"
+      />
+      <img
+        v-else-if="trackedQuest && displayedRewardAsset"
+        :src="displayedRewardAsset"
+        alt=""
+        class="rail-task-progress-image"
+        aria-hidden="true"
+        @error="handleRewardImageError"
+      />
+      <Gift v-else-if="trackedQuest" class="h-5 w-5 text-pink-400" aria-hidden="true" />
+      <AlertCircle v-else class="h-5 w-5 text-destructive" aria-hidden="true" />
+      <svg class="rail-task-progress-frame" viewBox="0 0 44 44" aria-hidden="true">
+        <rect class="rail-task-progress-track" x="2.5" y="2.5" width="39" height="39" rx="14" pathLength="100" />
+        <rect class="rail-task-progress-frame-value" x="2.5" y="2.5" width="39" height="39" rx="14" pathLength="100" :style="progressFrameStyle" />
+      </svg>
+    </button>
+  </IconTooltip>
 
-    <Card v-else key="expanded" class="max-h-[calc(100dvh-2.5rem)] overflow-y-auto border-border/50 shadow-xl">
+  <Teleport to="body">
+    <Transition name="quest-progress-panel" @enter="handlePanelEnter">
+      <div
+        v-if="expanded && hasFloatingContent"
+        id="quest-progress-floating-window"
+        ref="floatingRef"
+        class="fixed bottom-5 right-5 z-[55] w-[calc(100vw-2rem)] max-w-sm"
+        :style="floatingStyle"
+        @keydown.esc.stop.prevent="hideProgressWindow"
+      >
+      <Card class="max-h-[calc(100dvh-2.5rem)] overflow-y-auto border-border/50 shadow-xl">
       <CardHeader
         class="flex cursor-grab flex-row items-center justify-between space-y-0 pb-3 active:cursor-grabbing"
         @pointerdown="startDrag"
@@ -460,17 +545,17 @@ const progressBarStyle = computed(() => {
             {{ t('home.queue_count', { count: queuedBehindCount }) }}
           </span>
         </CardTitle>
-        <Button
-          variant="ghost"
-          size="icon"
-          class="h-8 w-8 shrink-0"
-          :aria-label="t('quest.collapse_progress')"
-          :title="t('quest.collapse_progress')"
+        <button
+          ref="hideButtonRef"
+          type="button"
+          class="app-toolbar-button h-8 w-8 shrink-0"
+          :aria-label="t('quest.hide_progress')"
+          :title="t('quest.hide_progress')"
           @pointerdown.stop
-          @click="collapseToCorner"
+          @click="hideProgressWindow"
         >
-          <ChevronDown class="h-4 w-4" />
-        </Button>
+          <X class="h-4 w-4" aria-hidden="true" />
+        </button>
       </CardHeader>
       <CardContent>
         <div v-if="questsStore.activeQuestId" class="space-y-4">
@@ -605,9 +690,10 @@ const progressBarStyle = computed(() => {
           <span class="break-words">{{ questsStore.error }}</span>
         </div>
       </CardContent>
-    </Card>
+      </Card>
+      </div>
     </Transition>
-  </div>
+  </Teleport>
   <Teleport to="body">
     <div
       v-if="draggedQueueQuest"

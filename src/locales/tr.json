@@ -65,7 +65,7 @@
     "cdp_client_vesktop": "Vesktop"
   },
   "nav": {
-    "home": "Ana sayfa",
+    "home": "Görevlerim",
     "game_simulator": "Oyun Simülatörü",
     "settings": "Ayarlar",
     "debug": "Hata ayıklama",
@@ -73,7 +73,7 @@
     "discord_console": "Discord Konsolu"
   },
   "home": {
-    "dashboard_title": "Quest Kontrol Paneli",
+    "dashboard_title": "Görevlerim",
     "dashboard_desc": "Görev durumunu inceleyin, ardından işlem yapmak için listeyi filtreleyin.",
     "advanced_filters": "Gelişmiş filtreler",
     "reset_filters": "Filtreleri sıfırla",
@@ -152,6 +152,8 @@
     "discord_rewards": "Discord Ödüller",
     "active_progress": "Aktif Quest İlerleme",
     "collapse_progress": "Daralt",
+    "show_progress": "Görev ilerlemesini göster",
+    "hide_progress": "İlerleme penceresini gizle",
     "up_next": "Sonraki",
     "submitted": "Gönderildi",
     "pending": "Yerel Beklemede"
@@ -188,6 +190,9 @@
     "in_game": "Oyun İçi Ödül"
   },
   "settings": {
+    "navigation_expand": "Ayarlar kenar çubuğunu genişlet",
+    "navigation_collapse": "Ayarlar kenar çubuğunu daralt",
+    "navigation_close": "Ayarlar kenar çubuğunu kapat",
     "title": "Ayarlar",
     "control_center_desc": "Hesabın durumunu, tamamlama davranışını, Discord entegrasyonunu, tanılamayı ve gelişmiş dahili özellikleri tek yerden kontrol edin.",
     "nav_account": "Hesap",
@@ -477,6 +482,13 @@
     "nitro": "Nitro",
     "nitro_classic": "Nitro Classic",
     "nitro_basic": "Nitro Basic"
+  },
+  "sidebar": {
+    "utilities": "Araçlar",
+    "mode": "Geçerli mod",
+    "light": "Açık",
+    "dark": "Koyu",
+    "orbs_unavailable": "Orbs yüklenemedi. Yenilemeyi deneyin."
   },
   "header": {
     "toggle_theme": "Temayı değiştir",

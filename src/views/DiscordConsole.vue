@@ -51,7 +51,7 @@ async function copy(entry: ConsoleEntry) {
   <section class="flex min-w-0 flex-col gap-4 pb-4">
     <div class="flex flex-wrap items-center justify-between gap-3">
       <div>
-        <h2 class="flex items-center gap-2 text-xl font-semibold"><Terminal class="h-5 w-5" />{{ t('nav.discord_console') }}</h2>
+        <h2 class="ui-page-heading flex items-center gap-2 text-2xl font-semibold"><Terminal class="h-5 w-5 text-primary" :stroke-width="1.7" />{{ t('nav.discord_console') }}</h2>
         <p class="mt-1 text-sm text-muted-foreground">{{ t('discord_console.description') }}</p>
       </div>
       <div class="flex min-w-0 items-center gap-2 text-sm text-muted-foreground" role="status">
@@ -62,7 +62,7 @@ async function copy(entry: ConsoleEntry) {
       </div>
     </div>
 
-    <div class="overflow-hidden rounded-lg border bg-card">
+    <div class="ui-panel overflow-hidden rounded-2xl border bg-card">
       <div class="flex flex-wrap items-center gap-2 border-b p-3">
         <Input v-model="store.search" class="h-9 min-w-40 flex-1" :placeholder="t('discord_console.search')" :aria-label="t('discord_console.search')" />
         <DropdownMenu>
@@ -110,7 +110,7 @@ async function copy(entry: ConsoleEntry) {
       <div class="border-t p-3">
         <label for="discord-console-expression" class="sr-only">{{ t('discord_console.command') }}</label>
         <textarea id="discord-console-expression" ref="editor" v-model="store.input" spellcheck="false" autocapitalize="off" autocomplete="off"
-          class="min-h-28 w-full resize-y rounded-md border bg-background p-3 font-mono text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          class="ui-input min-h-28 w-full resize-y rounded-xl border bg-background p-3 font-mono text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           :placeholder="t('discord_console.placeholder')" @keydown="keyboard" />
         <div class="mt-2 flex flex-wrap items-center justify-between gap-2">
           <p class="text-xs text-muted-foreground">{{ t('discord_console.shortcuts') }}</p>

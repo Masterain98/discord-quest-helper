@@ -19,7 +19,7 @@ import { Label } from '@/components/ui/label'
 import { useVersionStore } from '@/stores/version'
 import SettingsSectionCard from './SettingsSectionCard.vue'
 import SettingsStatusPanel from './SettingsStatusPanel.vue'
-import SettingsSwitch from './SettingsSwitch.vue'
+import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { settingToneClass } from './settingTones'
 import { isDebugModeEnabled, persistDebugMode } from '@/utils/debugMode'
@@ -176,7 +176,7 @@ function removeBubble(id: number) {
         <a
           href="#"
           @click.prevent="openExternal('https://github.com/Masterain98/discord-quest-helper')"
-          class="flex items-center justify-between rounded-lg border bg-muted/30 px-3 py-2 transition-colors hover:bg-muted/60"
+          class="ui-setting flex items-center justify-between rounded-xl border px-3 py-3 transition-colors hover:bg-muted/60"
         >
           <span class="flex min-w-0 items-center gap-2">
             <img src="/icons/github-mark.svg" alt="GitHub" class="h-5 w-5 shrink-0 dark:hidden" />
@@ -207,13 +207,14 @@ function removeBubble(id: number) {
           </Button>
         </div>
 
-        <div class="rounded-lg border px-4 py-3">
+        <div class="ui-setting rounded-xl border px-4 py-4">
           <div class="flex items-center justify-between gap-3">
             <div class="space-y-0.5">
               <Label class="text-sm font-medium">{{ t('settings.check_prerelease') }}</Label>
               <p class="text-xs text-muted-foreground">{{ t('settings.check_prerelease_desc') }}</p>
             </div>
-            <SettingsSwitch
+            <Switch
+              :aria-label="t('settings.check_prerelease')"
               :model-value="versionStore.checkPreRelease"
               @update:model-value="versionStore.setCheckPreRelease"
             />

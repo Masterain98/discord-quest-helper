@@ -65,7 +65,7 @@
     }
   },
   "nav": {
-    "home": "Home",
+    "home": "My Tasks",
     "game_simulator": "Game Simulator",
     "settings": "Settings",
     "debug": "Debug",
@@ -73,7 +73,7 @@
     "discord_console": "Discord Console"
   },
   "home": {
-    "dashboard_title": "Quest Dashboard",
+    "dashboard_title": "My Tasks",
     "dashboard_desc": "Review quest status, then filter the list to take action.",
     "advanced_filters": "Advanced filters",
     "reset_filters": "Reset filters",
@@ -154,6 +154,8 @@
     "discord_rewards": "Discord Rewards",
     "active_progress": "Active Quest Progress",
     "collapse_progress": "Collapse",
+    "show_progress": "Show task progress",
+    "hide_progress": "Hide task progress",
     "up_next": "Up Next",
     "submitted": "Submitted",
     "pending": "Local Pending"
@@ -190,6 +192,9 @@
     "in_game": "In-Game Reward"
   },
   "settings": {
+    "navigation_expand": "Expand settings sidebar",
+    "navigation_collapse": "Collapse settings sidebar",
+    "navigation_close": "Close settings sidebar",
     "title": "Settings",
     "control_center_desc": "Check account health, completion behavior, Discord integration, diagnostics, and advanced internals from one place.",
     "nav_account": "Account",
@@ -479,6 +484,13 @@
     "nitro": "Nitro",
     "nitro_classic": "Nitro Classic",
     "nitro_basic": "Nitro Basic"
+  },
+  "sidebar": {
+    "utilities": "Utilities",
+    "mode": "Current mode",
+    "light": "Light",
+    "dark": "Dark",
+    "orbs_unavailable": "Unable to load Orbs. Try refreshing."
   },
   "header": {
     "toggle_theme": "Toggle theme",

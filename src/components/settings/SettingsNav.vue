@@ -26,39 +26,25 @@ const sections = computed<Array<{ key: SettingsSection, label: string, icon: Com
   { key: 'about', label: t('settings.nav_about'), icon: Info },
 ])
 
-function handleSelect(event: Event) {
-  emit('update:selected', (event.target as HTMLSelectElement).value as SettingsSection)
-}
 </script>
 
 <template>
-  <div class="space-y-3">
-    <select
-      class="w-full rounded-md border border-border bg-card px-3 py-2 text-sm shadow-sm lg:hidden"
-      :value="selected"
-      @change="handleSelect"
+  <nav class="space-y-1 p-2" :aria-label="t('settings.title')">
+    <button
+      v-for="section in sections"
+      :key="section.key"
+      type="button"
+      :aria-current="selected === section.key ? 'page' : undefined"
+      :class="cn(
+        'flex min-h-10 w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        props.selected === section.key
+          ? 'ui-tab-active font-medium'
+          : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+      )"
+      @click="emit('update:selected', section.key)"
     >
-      <option v-for="section in sections" :key="section.key" :value="section.key">
-        {{ section.label }}
-      </option>
-    </select>
-
-    <nav class="hidden rounded-lg border bg-card p-2 shadow-sm lg:block">
-      <button
-        v-for="section in sections"
-        :key="section.key"
-        type="button"
-        :class="cn(
-          'mb-1 flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors last:mb-0',
-          props.selected === section.key
-            ? 'border border-primary/30 bg-primary/10 text-primary shadow-sm'
-            : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-        )"
-        @click="emit('update:selected', section.key)"
-      >
-        <component :is="section.icon" class="h-4 w-4 shrink-0" />
-        <span class="truncate">{{ section.label }}</span>
-      </button>
-    </nav>
-  </div>
+      <component :is="section.icon" class="h-4 w-4 shrink-0" :stroke-width="1.7" />
+      <span class="min-w-0 leading-snug">{{ section.label }}</span>
+    </button>
+  </nav>
 </template>
