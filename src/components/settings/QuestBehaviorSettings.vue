@@ -108,24 +108,23 @@ onMounted(() => {
 
 <template>
   <SettingsSectionCard
-    :title="t('settings.quest_behavior_title')"
+    :title="t('settings.nav_quest_behavior')"
     :description="t('settings.quest_behavior_desc')"
     :icon="Gamepad2"
     tone="violet"
     content-class="space-y-6"
   >
-      <SettingsStatusPanel v-if="questsStore.gameQuestMode === 'cdp'" tone="info" :icon="AlertTriangle">
-        {{ t('settings.video_config_cdp_notice') }}
-      </SettingsStatusPanel>
-
-      <div class="space-y-3">
-        <Label>{{ t('settings.video_task_settings') }}</Label>
-        <div class="rounded-lg border px-4">
+      <div id="video-quest-settings" class="grid gap-3" data-settings-search :data-search-label="t('settings.video_task_settings')">
+        <h3 class="text-sm font-medium leading-snug">{{ t('settings.video_task_settings') }}</h3>
+        <SettingsStatusPanel v-if="questsStore.gameQuestMode === 'cdp'" tone="info" :icon="AlertTriangle">
+          {{ t('settings.video_config_cdp_notice') }}
+        </SettingsStatusPanel>
+        <div class="ui-recess rounded-xl border border-border/60 px-4">
           <SettingRow
             :label="t('settings.completion_speed')"
             :description="t('settings.speed_hint')"
           >
-            <div class="flex items-center gap-3">
+            <div class="settings-range-control">
               <input
                 type="range"
                 v-model.number="questsStore.speedMultiplier"
@@ -134,9 +133,9 @@ onMounted(() => {
                 step="0.1"
                 :disabled="questsStore.gameQuestMode === 'cdp'"
                 :aria-label="t('settings.completion_speed')"
-                class="w-48 accent-primary disabled:opacity-50"
+                class="accent-primary disabled:opacity-50"
               />
-              <Badge variant="outline" :class="settingToneClass.primary.badge">
+              <Badge variant="outline" class="settings-range-value" :class="settingToneClass.primary.badge">
                 {{ questsStore.speedMultiplier }}x
               </Badge>
             </div>
@@ -146,7 +145,7 @@ onMounted(() => {
             :label="t('settings.request_interval')"
             :description="t('settings.interval_hint')"
           >
-            <div class="flex items-center gap-3">
+            <div class="settings-range-control">
               <input
                 type="range"
                 v-model.number="questsStore.heartbeatInterval"
@@ -155,9 +154,9 @@ onMounted(() => {
                 step="1"
                 :disabled="questsStore.gameQuestMode === 'cdp'"
                 :aria-label="t('settings.request_interval')"
-                class="w-48 accent-primary disabled:opacity-50"
+                class="accent-primary disabled:opacity-50"
               />
-              <Badge variant="outline" :class="settingToneClass.primary.badge">
+              <Badge variant="outline" class="settings-range-value" :class="settingToneClass.primary.badge">
                 {{ questsStore.heartbeatInterval }}s
               </Badge>
             </div>
@@ -165,14 +164,14 @@ onMounted(() => {
         </div>
       </div>
 
-      <div class="space-y-3">
-        <Label>{{ t('settings.general_task_settings') }}</Label>
-        <div class="rounded-lg border px-4">
+      <div class="grid gap-3">
+        <h3 class="text-sm font-medium leading-snug">{{ t('settings.general_task_settings') }}</h3>
+        <div class="ui-recess rounded-xl border border-border/60 px-4">
           <SettingRow
             :label="t('settings.game_polling_interval')"
             :description="t('settings.game_polling_hint')"
           >
-            <div class="flex items-center gap-3">
+            <div class="settings-range-control">
               <input
                 type="range"
                 v-model.number="questsStore.gamePollingInterval"
@@ -180,9 +179,9 @@ onMounted(() => {
                 max="300"
                 step="1"
                 :aria-label="t('settings.game_polling_interval')"
-                class="w-48 accent-primary"
+                class="accent-primary"
               />
-              <Badge variant="outline" :class="settingToneClass.violet.badge">
+              <Badge variant="outline" class="settings-range-value" :class="settingToneClass.violet.badge">
                 {{ questsStore.gamePollingInterval }}s
               </Badge>
             </div>
@@ -190,7 +189,7 @@ onMounted(() => {
         </div>
       </div>
 
-      <div class="space-y-3 rounded-lg border border-sky-500/25 bg-sky-500/5 p-4">
+      <div class="ui-recess space-y-3 rounded-xl border border-border/60 p-4" data-settings-search :data-search-label="t('settings.simulation_directory')" :data-search-description="t('settings.simulation_directory_desc')">
         <div>
           <Label>{{ t('settings.simulation_directory') }}</Label>
           <p class="mt-1 text-xs text-muted-foreground">{{ t('settings.simulation_directory_desc') }}</p>
@@ -235,32 +234,32 @@ onMounted(() => {
           {{ t('settings.activity_cdp_required') }}
         </SettingsStatusPanel>
         <div class="grid gap-4 md:grid-cols-2">
-          <div class="space-y-2">
+          <div class="space-y-2" data-settings-search :data-search-label="t('settings.activity_checkpoint_min')">
             <Label>{{ t('settings.activity_checkpoint_min') }}</Label>
-            <div class="flex items-center gap-2">
+            <div class="flex flex-wrap items-center gap-2">
               <Input
                 type="number"
                 :model-value="questsStore.activityCheckpointMin"
                 min="30"
                 :max="questsStore.activityCheckpointMax"
                 :aria-label="t('settings.activity_checkpoint_min')"
-                class="w-24"
+                class="w-24 max-w-full"
                 @blur="commitCheckpointMin"
               />
               <span class="text-sm text-muted-foreground">{{ t('settings.activity_checkpoint_unit') }}</span>
             </div>
           </div>
 
-          <div class="space-y-2">
+          <div class="space-y-2" data-settings-search :data-search-label="t('settings.activity_checkpoint_max')">
             <Label>{{ t('settings.activity_checkpoint_max') }}</Label>
-            <div class="flex items-center gap-2">
+            <div class="flex flex-wrap items-center gap-2">
               <Input
                 type="number"
                 :model-value="questsStore.activityCheckpointMax"
                 :min="questsStore.activityCheckpointMin"
                 max="900"
                 :aria-label="t('settings.activity_checkpoint_max')"
-                class="w-24"
+                class="w-24 max-w-full"
                 @blur="commitCheckpointMax"
               />
               <span class="text-sm text-muted-foreground">{{ t('settings.activity_checkpoint_unit') }}</span>

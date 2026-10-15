@@ -1,40 +1,30 @@
 <script setup lang="ts">
 import type { Component, HTMLAttributes } from 'vue'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
-import { settingToneClass, type SettingsTone } from './settingTones'
+import type { SettingsTone } from './settingTones'
 
-const props = withDefaults(defineProps<{
+const props = defineProps<{
   title: string
   description?: string
   icon?: Component
   tone?: SettingsTone
   contentClass?: HTMLAttributes['class']
-}>(), {
-  tone: 'neutral',
-})
+}>()
 </script>
 
 <template>
-  <Card :class="cn('overflow-hidden', settingToneClass[tone].card)">
-    <CardHeader class="pb-4">
-      <div class="flex items-start gap-3">
-        <div
-          v-if="icon"
-          :class="cn('ui-icon-tile mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl', settingToneClass[tone].icon)"
-        >
-          <component :is="icon" class="h-5 w-5" :stroke-width="1.7" />
-        </div>
-        <div class="min-w-0">
-          <CardTitle>{{ title }}</CardTitle>
-          <CardDescription v-if="description" class="mt-1">
-            {{ description }}
-          </CardDescription>
-        </div>
+  <div class="settings-section-block">
+    <header class="settings-section-heading">
+      <span v-if="icon" class="settings-section-glyph ui-icon-tile">
+        <component :is="icon" class="h-4 w-4" :stroke-width="1.7" aria-hidden="true" />
+      </span>
+      <div class="min-w-0">
+        <h2 class="settings-section-title">{{ title }}</h2>
+        <p v-if="description" class="settings-section-description">{{ description }}</p>
       </div>
-    </CardHeader>
-    <CardContent :class="cn('space-y-4', props.contentClass)">
+    </header>
+    <div :class="cn('settings-section-surface ui-panel space-y-5', props.contentClass)">
       <slot />
-    </CardContent>
-  </Card>
+    </div>
+  </div>
 </template>

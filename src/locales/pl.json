@@ -195,11 +195,14 @@
     "in_game": "Nagroda w grze"
   },
   "settings": {
+    "search_settings": "Szukaj ustawień…",
+    "search_no_results": "Nie znaleziono ustawień",
+    "search_results": "Znaleziono {count} ustawień",
     "navigation_expand": "Rozwiń panel ustawień",
     "navigation_collapse": "Zwiń panel ustawień",
     "navigation_close": "Zamknij panel ustawień",
     "title": "Ustawienia",
-    "control_center_desc": "Sprawdź stan konta, zachowanie podczas kończenia, integrację Discord, diagnostykę i zaawansowane funkcje wewnętrzne w jednym miejscu.",
+    "control_center_desc": "Przeglądaj wszystkie ustawienia lub wybierz kategorię, aby przejść do sekcji.",
     "nav_account": "Konto",
     "nav_quest_behavior": "Quest Zachowanie",
     "nav_discord_integration": "Discord Integracja",

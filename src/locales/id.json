@@ -195,11 +195,14 @@
     "in_game": "Hadiah Dalam Game"
   },
   "settings": {
+    "search_settings": "Cari pengaturan…",
+    "search_no_results": "Pengaturan tidak ditemukan",
+    "search_results": "{count} pengaturan ditemukan",
     "navigation_expand": "Buka bilah samping pengaturan",
     "navigation_collapse": "Ciutkan bilah samping pengaturan",
     "navigation_close": "Tutup bilah samping pengaturan",
     "title": "Pengaturan",
-    "control_center_desc": "Periksa kesehatan akun, perilaku penyelesaian, integrasi Discord, diagnostik, dan internal tingkat lanjut dari satu tempat.",
+    "control_center_desc": "Jelajahi semua pengaturan atau gunakan kategori untuk menuju bagian tertentu.",
     "nav_account": "Akun",
     "nav_quest_behavior": "Quest Perilaku",
     "nav_discord_integration": "Discord Integrasi",

@@ -195,11 +195,14 @@
     "in_game": "Phần thưởng trong trò chơi"
   },
   "settings": {
+    "search_settings": "Tìm cài đặt…",
+    "search_no_results": "Không tìm thấy cài đặt",
+    "search_results": "Tìm thấy {count} cài đặt",
     "navigation_expand": "Mở rộng thanh bên cài đặt",
     "navigation_collapse": "Thu gọn thanh bên cài đặt",
     "navigation_close": "Đóng thanh bên cài đặt",
     "title": "Cài đặt",
-    "control_center_desc": "Kiểm tra tình trạng tài khoản, hành vi hoàn thành, tích hợp Discord, chẩn đoán và nội bộ nâng cao từ một nơi.",
+    "control_center_desc": "Duyệt tất cả cài đặt hoặc dùng danh mục để chuyển đến phần mong muốn.",
     "nav_account": "Tài khoản",
     "nav_quest_behavior": "Quest Hành vi",
     "nav_discord_integration": "Discord Tích hợp",

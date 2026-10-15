@@ -195,11 +195,14 @@
     "in_game": "ゲーム内報酬"
   },
   "settings": {
+    "search_settings": "設定を検索…",
+    "search_no_results": "設定が見つかりません",
+    "search_results": "{count} 件の設定が見つかりました",
     "navigation_expand": "設定サイドバーを展開",
     "navigation_collapse": "設定サイドバーを折りたたむ",
     "navigation_close": "設定サイドバーを閉じる",
     "title": "設定",
-    "control_center_desc": "アカウントの健全性、完了動作、Discord の統合、診断、および高度な内部機能を 1 か所から確認できます。",
+    "control_center_desc": "すべての設定をスクロールして確認するか、カテゴリから各項目に移動できます。",
     "nav_account": "アカウント",
     "nav_quest_behavior": "Quest の動作",
     "nav_discord_integration": "Discord 統合",

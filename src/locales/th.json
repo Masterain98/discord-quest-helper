@@ -195,11 +195,14 @@
     "in_game": "รางวัลในเกม"
   },
   "settings": {
+    "search_settings": "ค้นหาการตั้งค่า…",
+    "search_no_results": "ไม่พบการตั้งค่า",
+    "search_results": "พบการตั้งค่า {count} รายการ",
     "navigation_expand": "ขยายแถบด้านข้างการตั้งค่า",
     "navigation_collapse": "ยุบแถบด้านข้างการตั้งค่า",
     "navigation_close": "ปิดแถบด้านข้างการตั้งค่า",
     "title": "การตั้งค่า",
-    "control_center_desc": "ตรวจสอบความสมบูรณ์ของบัญชี พฤติกรรมการเสร็จสมบูรณ์ การบูรณาการ Discord การวินิจฉัย และการทำงานภายในขั้นสูงได้จากที่เดียว",
+    "control_center_desc": "เลื่อนดูการตั้งค่าทั้งหมด หรือใช้หมวดหมู่เพื่อไปยังส่วนที่ต้องการ",
     "nav_account": "บัญชี",
     "nav_quest_behavior": "Quest พฤติกรรม",
     "nav_discord_integration": "Discord บูรณาการ",

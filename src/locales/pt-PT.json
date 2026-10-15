@@ -195,11 +195,14 @@
     "in_game": "Recompensa no jogo"
   },
   "settings": {
+    "search_settings": "Pesquisar definições…",
+    "search_no_results": "Não foram encontradas definições",
+    "search_results": "{count} definições encontradas",
     "navigation_expand": "Expandir barra lateral de definições",
     "navigation_collapse": "Recolher barra lateral de definições",
     "navigation_close": "Fechar barra lateral de definições",
     "title": "Definições",
-    "control_center_desc": "Verifique a integridade da conta, o comportamento de conclusão, a integração Discord, os diagnósticos e os detalhes internos avançados num único local.",
+    "control_center_desc": "Explore todas as definições ou use as categorias para aceder a uma secção.",
     "nav_account": "Conta",
     "nav_quest_behavior": "Quest Comportamento",
     "nav_discord_integration": "Discord Integração",

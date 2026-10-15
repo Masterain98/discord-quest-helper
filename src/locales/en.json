@@ -197,11 +197,14 @@
     "in_game": "In-Game Reward"
   },
   "settings": {
+    "search_settings": "Search settings…",
+    "search_no_results": "No settings found",
+    "search_results": "Matches: {count}",
     "navigation_expand": "Expand settings sidebar",
     "navigation_collapse": "Collapse settings sidebar",
     "navigation_close": "Close settings sidebar",
     "title": "Settings",
-    "control_center_desc": "Check account health, completion behavior, Discord integration, diagnostics, and advanced internals from one place.",
+    "control_center_desc": "Browse all settings below, or use the categories to jump to a section.",
     "nav_account": "Account",
     "nav_quest_behavior": "Quest Behavior",
     "nav_discord_integration": "Discord Integration",

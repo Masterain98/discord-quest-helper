@@ -34,6 +34,7 @@ import LoginPanel from './components/auth/LoginPanel.vue'
 import { useSettingsNavigation, type SettingsSection } from '@/composables/useSettingsNavigation'
 import { useSettingsSidebar } from '@/composables/useSettingsSidebar'
 import SettingsNav from './components/settings/SettingsNav.vue'
+import type { SettingsSearchResult } from '@/composables/useSettingsSearch'
 import IconTooltip from './components/IconTooltip.vue'
 import IconMenu from './components/IconMenu.vue'
 import { supportedLocales } from '@/locales/meta'
@@ -78,7 +79,9 @@ watch(() => authStore.user?.id ?? null, id => {
 }, { immediate: true, flush: 'sync' })
 const gameIdleStore = useGameIdleStore()
 const immersiveGameIdle = computed(() => currentTab.value === 'game' && (gameIdleStore.isActive || gameIdleStore.loading))
-const { selectedSection, setSection } = useSettingsNavigation()
+const { selectedSection, setSection, navigationRequest, navigationTarget } = useSettingsNavigation()
+const settingsQuery = ref('')
+const settingsResults = ref<SettingsSearchResult[]>([])
 const { wide, expanded, drawerOpen, toggle: toggleSettingsSidebar } = useSettingsSidebar()
 const sidebarToggle = ref<HTMLButtonElement | null>(null)
 const sidebarVisible = computed(() => currentTab.value === 'settings' && (wide.value ? expanded.value : drawerOpen.value))
@@ -90,6 +93,11 @@ const sidebarToggleLabel = computed(() => t(sidebarVisible.value ? 'settings.nav
 
 function selectSettingsSection(section: SettingsSection) {
   setSection(section)
+  drawerOpen.value = false
+}
+
+function selectSettingsResult(result: SettingsSearchResult) {
+  setSection(result.section, result.id)
   drawerOpen.value = false
 }
 
@@ -309,7 +317,7 @@ watch(
           <aside v-if="wide && expanded && currentTab === 'settings' && !immersiveGameIdle" id="settings-navigation-panel" class="app-settings-panel">
             <div class="flex h-12 shrink-0 items-center border-b border-border/50 px-5 text-sm font-semibold">{{ t('settings.title') }}</div>
             <div class="min-h-0 flex-1 overflow-y-auto py-2">
-              <SettingsNav :selected="selectedSection" @update:selected="selectSettingsSection" />
+              <SettingsNav v-model:query="settingsQuery" :results="settingsResults" :selected="selectedSection" @update:selected="selectSettingsSection" @select-result="selectSettingsResult" />
             </div>
           </aside>
 
@@ -344,7 +352,7 @@ watch(
                 <GlobalQuests v-else-if="currentTab === 'global'" />
                 <GameSimulator v-else-if="currentTab === 'game'" />
                 <DiscordConsole v-else-if="currentTab === 'console' && consoleEnabled" />
-                <Settings v-else-if="currentTab === 'settings'" :selected-section="selectedSection" @update:selected-section="selectSettingsSection" @navigate-to-home="currentTab = 'home'" @debug-unlocked="debugModeEnabled = true; currentTab = 'debug'" @debug-disabled="handleDebugDisabled" />
+                <Settings v-else-if="currentTab === 'settings'" :selected-section="selectedSection" :navigation-request="navigationRequest" :navigation-target="navigationTarget" :search-query="settingsQuery" @search-results="settingsResults = $event" @update:selected-section="selectedSection = $event" @navigate-to-home="currentTab = 'home'" @debug-unlocked="debugModeEnabled = true; currentTab = 'debug'" @debug-disabled="handleDebugDisabled" />
                 <Debug v-else-if="currentTab === 'debug'" />
               </div>
             </main>
@@ -361,7 +369,7 @@ watch(
             <DialogTitle class="text-sm font-semibold">{{ t('settings.title') }}</DialogTitle>
             <button type="button" class="app-toolbar-button" :aria-label="t('settings.navigation_close')" @click="drawerOpen = false"><X class="h-4 w-4" aria-hidden="true" /></button>
           </div>
-          <div class="min-h-0 flex-1 overflow-y-auto py-2"><SettingsNav :selected="selectedSection" @update:selected="selectSettingsSection" /></div>
+          <div class="min-h-0 flex-1 overflow-y-auto py-2"><SettingsNav v-model:query="settingsQuery" :results="settingsResults" :selected="selectedSection" @update:selected="selectSettingsSection" @select-result="selectSettingsResult" /></div>
         </DialogContent>
       </DialogPortal>
     </DialogRoot>

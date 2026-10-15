@@ -195,11 +195,14 @@
     "in_game": "Belohnung im Spiel"
   },
   "settings": {
+    "search_settings": "Einstellungen suchen…",
+    "search_no_results": "Keine Einstellungen gefunden",
+    "search_results": "{count} Einstellungen gefunden",
     "navigation_expand": "Einstellungsseitenleiste erweitern",
     "navigation_collapse": "Einstellungsseitenleiste einklappen",
     "navigation_close": "Einstellungsseitenleiste schließen",
     "title": "Einstellungen",
-    "control_center_desc": "Überprüfen Sie den Kontozustand, das Abschlussverhalten, die Discord-Integration, Diagnosen und erweiterte Interna von einem Ort aus.",
+    "control_center_desc": "Durchsuchen Sie alle Einstellungen oder springen Sie über die Kategorien zu einem Abschnitt.",
     "nav_account": "Konto",
     "nav_quest_behavior": "Quest Verhalten",
     "nav_discord_integration": "Discord Integration",

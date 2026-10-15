@@ -36,15 +36,19 @@ async function handleManualLogin() {
 
 <template>
   <SettingsSectionCard
-    :title="t('settings.account_title')"
+    :title="t('settings.nav_account')"
     :description="t('settings.account_desc')"
     :icon="authStore.user ? ShieldCheck : UserRound"
     :tone="authStore.user ? 'success' : 'primary'"
   >
-      <div v-if="authStore.user" class="space-y-3">
-        <SettingsStatusPanel tone="success" :icon="CheckCircle2">
-          {{ t('auth.authenticated_as') }} <span class="font-semibold">{{ authStore.user.username }}</span>
-        </SettingsStatusPanel>
+      <div v-if="authStore.user" class="flex flex-wrap items-center justify-between gap-4">
+        <div class="flex min-w-0 items-center gap-3">
+          <CheckCircle2 class="h-5 w-5 shrink-0 text-emerald-700 dark:text-emerald-300" aria-hidden="true" />
+          <div class="min-w-0">
+            <p class="text-xs text-muted-foreground">{{ t('auth.authenticated_as') }}</p>
+            <p class="mt-1 break-words text-sm font-semibold">{{ authStore.user.username }}</p>
+          </div>
+        </div>
         <Button variant="outline" :class="['gap-2', settingToneClass.danger.buttonSoft]" @click="authStore.logout">
           <LogOut class="h-4 w-4" />
           {{ t('general.logout') }}
@@ -55,8 +59,7 @@ async function handleManualLogin() {
         <Button
           @click="handleAutoDetect"
           :disabled="authStore.loading"
-          size="lg"
-          class="w-full gap-2 shadow-sm"
+          class="h-auto min-h-10 max-w-full gap-2 whitespace-normal"
         >
           <Loader2 v-if="authStore.loading" class="h-4 w-4 animate-spin" />
           {{ t('auth.auto_detect') }}
@@ -69,7 +72,7 @@ async function handleManualLogin() {
         >
           <div class="space-y-2">
             <div class="flex gap-2">
-              <div class="relative flex-1">
+              <div class="relative min-w-0 flex-1">
                 <Input
                   id="token"
                   v-model="manualToken"

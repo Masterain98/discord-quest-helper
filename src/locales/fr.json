@@ -195,11 +195,14 @@
     "in_game": "Récompense en jeu"
   },
   "settings": {
+    "search_settings": "Rechercher un réglage…",
+    "search_no_results": "Aucun réglage trouvé",
+    "search_results": "{count} réglages trouvés",
     "navigation_expand": "Développer la barre latérale des paramètres",
     "navigation_collapse": "Réduire la barre latérale des paramètres",
     "navigation_close": "Fermer la barre latérale des paramètres",
     "title": "Paramètres",
-    "control_center_desc": "Vérifiez l'état du compte, le comportement d'achèvement, l'intégration de Discord, les diagnostics et les composants internes avancés à partir d'un seul endroit.",
+    "control_center_desc": "Parcourez tous les réglages ou utilisez les catégories pour accéder à une section.",
     "nav_account": "Compte",
     "nav_quest_behavior": "Quest Comportement",
     "nav_discord_integration": "Discord Intégration",

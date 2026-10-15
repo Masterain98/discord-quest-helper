@@ -195,11 +195,14 @@
     "in_game": "Recompensa del Juego"
   },
   "settings": {
+    "search_settings": "Buscar ajustes…",
+    "search_no_results": "No se encontraron ajustes",
+    "search_results": "{count} ajustes encontrados",
     "navigation_expand": "Expandir barra lateral de ajustes",
     "navigation_collapse": "Contraer barra lateral de ajustes",
     "navigation_close": "Cerrar barra lateral de ajustes",
     "title": "Configuración",
-    "control_center_desc": "Verifique el estado de la cuenta, el comportamiento de finalización, la integración Discord, los diagnósticos y los aspectos internos avanzados desde un solo lugar.",
+    "control_center_desc": "Explore todos los ajustes o use las categorías para ir a una sección.",
     "nav_account": "Cuenta",
     "nav_quest_behavior": "Quest Comportamiento",
     "nav_discord_integration": "Discord Integración",

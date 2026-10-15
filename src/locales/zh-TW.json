@@ -195,11 +195,14 @@
     "in_game": "遊戲內獎勵"
   },
   "settings": {
+    "search_settings": "搜尋設定…",
+    "search_no_results": "找不到相關設定",
+    "search_results": "找到 {count} 項設定",
     "navigation_expand": "展開設定側欄",
     "navigation_collapse": "收起設定側欄",
     "navigation_close": "關閉設定側欄",
     "title": "設定",
-    "control_center_desc": "從一處檢查帳戶運行狀況、完成行為、Discord 整合、診斷和高階內部結構。",
+    "control_center_desc": "向下瀏覽所有設定，或透過側欄分類快速定位。",
     "nav_account": "帳戶",
     "nav_quest_behavior": "Quest 行為",
     "nav_discord_integration": "Discord 整合",

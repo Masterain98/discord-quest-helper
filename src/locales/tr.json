@@ -195,11 +195,14 @@
     "in_game": "Oyun İçi Ödül"
   },
   "settings": {
+    "search_settings": "Ayarlarda ara…",
+    "search_no_results": "Ayar bulunamadı",
+    "search_results": "{count} ayar bulundu",
     "navigation_expand": "Ayarlar kenar çubuğunu genişlet",
     "navigation_collapse": "Ayarlar kenar çubuğunu daralt",
     "navigation_close": "Ayarlar kenar çubuğunu kapat",
     "title": "Ayarlar",
-    "control_center_desc": "Hesabın durumunu, tamamlama davranışını, Discord entegrasyonunu, tanılamayı ve gelişmiş dahili özellikleri tek yerden kontrol edin.",
+    "control_center_desc": "Tüm ayarlara göz atın veya bir bölüme gitmek için kategorileri kullanın.",
     "nav_account": "Hesap",
     "nav_quest_behavior": "Quest Davranış",
     "nav_discord_integration": "Discord Entegrasyon",

@@ -67,7 +67,7 @@ async function copyDiagnosticsSummary() {
 
 <template>
   <SettingsSectionCard
-    :title="t('settings.diagnostics')"
+    :title="t('settings.nav_diagnostics')"
     :description="t('settings.diagnostics_desc')"
     :icon="Stethoscope"
     tone="info"
@@ -80,6 +80,7 @@ async function copyDiagnosticsSummary() {
           variant="outline"
           :class="cn('gap-2', settingToneClass.info.buttonSoft)"
           @click="exportLogs"
+          data-settings-search :data-search-label="t('settings.export_logs')"
           :disabled="exporting"
         >
           <Download v-if="!exporting" class="h-4 w-4" />
@@ -90,6 +91,7 @@ async function copyDiagnosticsSummary() {
           variant="outline"
           :class="cn('gap-2', settingToneClass.primary.buttonSoft)"
           @click="copyDiagnosticsSummary"
+          data-settings-search :data-search-label="t('settings.copy_diagnostics')"
         >
           <Check v-if="copiedSummary" class="h-4 w-4" />
           <Copy v-else class="h-4 w-4" />

@@ -197,11 +197,14 @@
     "in_game": "游戏内奖励"
   },
   "settings": {
+    "search_settings": "搜索设置…",
+    "search_no_results": "未找到相关设置",
+    "search_results": "找到 {count} 项设置",
     "navigation_expand": "展开设置侧栏",
     "navigation_collapse": "收起设置侧栏",
     "navigation_close": "关闭设置侧栏",
     "title": "设置",
-    "control_center_desc": "在一个地方查看账号状态、任务行为、Discord 集成、诊断与高级内部选项。",
+    "control_center_desc": "向下浏览全部设置，或通过侧栏分类快速定位。",
     "nav_account": "账号",
     "nav_quest_behavior": "任务行为",
     "nav_discord_integration": "Discord 集成",

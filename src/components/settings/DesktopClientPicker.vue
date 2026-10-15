@@ -118,7 +118,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="space-y-3">
+  <div class="space-y-3" data-settings-search :data-search-label="t('settings.desktop_client')" :data-search-description="t('settings.desktop_client_desc')">
     <div class="flex items-start justify-between gap-3">
       <div>
         <p class="text-sm font-medium">{{ t('settings.desktop_client') }}</p>

@@ -1,7 +1,7 @@
 import { onMounted, onUnmounted, ref, watch } from 'vue'
 
 const SETTINGS_SECTION_STORAGE_KEY = 'questHelper_lastSettingsSection'
-const settingsSections = [
+export const settingsSections = [
   'account',
   'quest_behavior',
   'discord_integration',
@@ -40,15 +40,21 @@ export function persistSettingsSection(section: SettingsSection) {
 
 export function useSettingsNavigation() {
   const selectedSection = ref<SettingsSection>(readInitialSection())
+  // A request is distinct from scroll-driven selection, including reselecting
+  // the current category while its heading has scrolled out of view.
+  const navigationRequest = ref(0)
+  const navigationTarget = ref<string | null>(null)
 
-  function setSection(section: SettingsSection) {
+  function setSection(section: SettingsSection, target: string | null = null) {
     selectedSection.value = section
+    navigationTarget.value = target
+    navigationRequest.value++
   }
 
   function handleDeepLink(event: Event) {
     const section = (event as CustomEvent<unknown>).detail
     if (isSettingsSection(section)) {
-      selectedSection.value = section
+      setSection(section)
     }
   }
 
@@ -67,5 +73,7 @@ export function useSettingsNavigation() {
   return {
     selectedSection,
     setSection,
+    navigationRequest,
+    navigationTarget,
   }
 }

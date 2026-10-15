@@ -1,33 +1,37 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { Loader2, RotateCw, SlidersHorizontal } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { useQuestsStore } from '@/stores/quests'
 import { getSuperPropertiesMode, retrySuperProperties, type SuperPropertiesModeInfo } from '@/api/tauri'
 import SettingRow from './SettingRow.vue'
-import { navigateToTab } from '@/utils/navigate'
 import SettingsSectionCard from './SettingsSectionCard.vue'
 import { cn } from '@/lib/utils'
 import { settingToneClass, type SettingsTone } from './settingTones'
 import { isDebugModeEnabled } from '@/utils/debugMode'
 
-function goToPortSection() {
-  navigateToTab('settings', 'discord_integration')
-  nextTick(() => {
-    setTimeout(() => {
-      document.getElementById('custom-port-section')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    }, 100)
-  })
-}
-
 const { t } = useI18n()
+const props = defineProps<{ debugModeEnabled?: boolean }>()
 const questsStore = useQuestsStore()
+
+// Apply the completed port once, without probing each intermediate digit.
+function commitCdpPort(event: FocusEvent) {
+  const input = event.target as HTMLInputElement
+  if (input.value !== '' && input.validity.valid && Number.isInteger(input.valueAsNumber)) {
+    questsStore.cdpPort = input.valueAsNumber
+  }
+  input.value = String(questsStore.cdpPort)
+}
 
 const superPropsMode = ref<SuperPropertiesModeInfo | null>(null)
 const retryingMode = ref(false)
 const debugModeEnabled = ref(isDebugModeEnabled())
+watch(() => props.debugModeEnabled, enabled => {
+  if (enabled !== undefined) debugModeEnabled.value = enabled
+}, { immediate: true })
 
 const superPropsTone = computed<SettingsTone>(() => {
   if (superPropsMode.value?.mode === 'cdp') return 'success'
@@ -65,31 +69,29 @@ onMounted(async () => {
 
 <template>
   <SettingsSectionCard
-    :title="t('settings.advanced_title')"
+    :title="t('settings.nav_advanced')"
     :description="t('settings.advanced_desc')"
     :icon="SlidersHorizontal"
     tone="warning"
     content-class="space-y-5"
   >
-      <div class="rounded-lg border px-4">
-        <SettingRow :label="t('settings.cdp_port')" :description="t('settings.cdp_port_hint')">
-          <div class="flex items-center gap-2">
-            <Badge variant="outline" class="border-primary/40 bg-primary/10 font-mono text-primary">
-              {{ questsStore.cdpPort }}
-            </Badge>
-            <Button
-              variant="outline"
-              size="sm"
-              :class="settingToneClass.primary.buttonSoft"
-              @click="goToPortSection"
-            >
-              {{ t('settings.edit_port') }}
-            </Button>
-          </div>
+      <div class="ui-recess rounded-xl border border-border/60 px-4">
+        <SettingRow :label="t('settings.cdp_port')" :description="`${t('settings.cdp_port_hint')} · ${t('settings.custom_port_desc')}`">
+          <Input
+            type="number"
+            :model-value="questsStore.cdpPort"
+            min="1024"
+            max="65535"
+            step="1"
+            :aria-label="t('settings.cdp_port')"
+            class="w-32 max-w-full font-mono"
+            @blur="commitCdpPort"
+            @keydown.enter="($event.target as HTMLInputElement).blur()"
+          />
         </SettingRow>
 
         <SettingRow :label="t('settings.super_props_mode')" :description="t('settings.super_props_mode_desc')">
-          <div class="flex items-center gap-2">
+          <div class="flex flex-wrap items-center gap-2">
             <Badge
               variant="outline"
               :class="settingToneClass[superPropsTone].badge"

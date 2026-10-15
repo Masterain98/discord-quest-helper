@@ -113,7 +113,7 @@ function removeBubble(id: number) {
 </script>
 
 <template>
-  <div class="grid gap-6 xl:grid-cols-2">
+  <div class="settings-about-grid">
     <AlertDialog :open="disableDialogOpen" @update:open="disableDialogOpen = $event">
       <AlertDialogContent class="max-w-[480px]">
         <AlertDialogHeader>
@@ -130,14 +130,15 @@ function removeBubble(id: number) {
     </AlertDialog>
 
     <SettingsSectionCard
-      :title="t('settings.about')"
+      :title="t('settings.nav_about')"
       :icon="Info"
       tone="primary"
       content-class="space-y-4 text-sm text-muted-foreground"
     >
         <div class="flex flex-wrap items-center gap-2">
-          <span
-            class="relative cursor-pointer select-none text-base font-semibold text-foreground transition-transform active:scale-95"
+          <button
+            type="button"
+            class="relative min-w-0 select-none rounded-md text-left text-base font-semibold text-foreground transition-transform active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             @click="handleVersionTapWithBubble"
             title="Version Info"
           >
@@ -151,7 +152,7 @@ function removeBubble(id: number) {
               :style="bubble.style"
               @animationend="removeBubble(bubble.id)"
             />
-          </span>
+          </button>
           <Badge v-if="versionStore.isPreRelease" variant="outline" :class="cn('gap-1', settingToneClass.warning.badge)">
             {{ t('settings.version_prerelease') }}
           </Badge>
@@ -208,7 +209,7 @@ function removeBubble(id: number) {
         </div>
 
         <div class="ui-setting rounded-xl border px-4 py-4">
-          <div class="flex items-center justify-between gap-3">
+          <div class="flex items-center justify-between gap-3" data-settings-search :data-search-label="t('settings.check_prerelease')" :data-search-description="t('settings.check_prerelease_desc')">
             <div class="space-y-0.5">
               <Label class="text-sm font-medium">{{ t('settings.check_prerelease') }}</Label>
               <p class="text-xs text-muted-foreground">{{ t('settings.check_prerelease_desc') }}</p>
