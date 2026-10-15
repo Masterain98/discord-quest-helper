@@ -170,6 +170,14 @@
     @apply border-border;
   }
 
+  html,
+  body,
+  #app {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-sans);
@@ -362,8 +370,7 @@ html.theme-view-transition::view-transition-new(root) {
   line-height: 1;
   white-space: nowrap;
 }
-.app-titlebar-drag-region { height: 100%; flex: 1; cursor: grab; }
-.app-titlebar-drag-region:active { cursor: grabbing; }
+.app-titlebar-drag-region { height: 100%; flex: 1; cursor: default; }
 .app-titlebar-controls { flex-shrink: 0; }
 .titlebar-button {
   display: inline-flex;
@@ -390,6 +397,7 @@ html.theme-view-transition::view-transition-new(root) {
   display: flex;
   width: var(--app-rail-width);
   flex-shrink: 0;
+  min-height: 0;
   flex-direction: column;
   align-items: center;
   gap: 12px;
@@ -516,7 +524,7 @@ html.theme-view-transition::view-transition-new(root) {
   overflow-y: auto;
   overflow-x: hidden;
   padding: 2px 0;
-  scrollbar-width: thin;
+  scrollbar-width: none;
 }
 .app-primary-link-items {
   display: flex;
@@ -526,7 +534,7 @@ html.theme-view-transition::view-transition-new(root) {
   align-items: center;
   gap: 4px;
 }
-.app-primary-links::-webkit-scrollbar { width: 3px; }
+.app-primary-links::-webkit-scrollbar { display: none; width: 0; height: 0; }
 .app-primary-links .app-rail-button:focus-visible { outline-offset: -2px; }
 .app-rail-divider {
   display: block;

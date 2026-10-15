@@ -33,8 +33,8 @@ const items = computed(() => [
           </button>
         </IconTooltip>
       </div>
-      <span class="app-rail-divider app-rail-navigation-divider" aria-hidden="true" />
     </div>
+    <span class="app-rail-divider app-rail-navigation-divider" aria-hidden="true" />
     <div class="app-rail-bottom-tools">
       <slot />
       <IconTooltip :label="t('nav.settings')" :disabled="suspended">
