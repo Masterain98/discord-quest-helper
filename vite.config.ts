@@ -11,7 +11,7 @@ export default defineConfig({
   
   // Tauri expects a fixed port, fail if that port is not available
   server: {
-    port: 1420,
+    port: 5173,
     strictPort: true,
     watch: {
       // Rust builds replace executables under `target` while Vite is running.
