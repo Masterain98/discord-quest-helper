@@ -329,7 +329,10 @@ html.theme-view-transition::view-transition-new(root) {
 }
 
 /* App geometry is also inherited by portaled navigation drawers. */
-:root { --app-rail-width: 56px; }
+:root {
+  --app-rail-width: 56px;
+  --app-layout-gap: 12px;
+}
 .app-titlebar {
   color: hsl(var(--foreground));
   background: hsl(var(--background));
@@ -351,6 +354,7 @@ html.theme-view-transition::view-transition-new(root) {
   align-items: center;
   justify-content: center;
   background: hsl(var(--background));
+  transform: translateX(calc(var(--app-layout-gap) / 2));
 }
 .app-titlebar-app-name {
   display: flex;
@@ -383,7 +387,7 @@ html.theme-view-transition::view-transition-new(root) {
   display: flex;
   flex: 1;
   min-height: 0;
-  gap: 12px;
+  gap: var(--app-layout-gap);
   padding: 8px 12px 12px 0;
 }
 .app-icon-rail {
@@ -394,6 +398,7 @@ html.theme-view-transition::view-transition-new(root) {
   align-items: center;
   gap: 12px;
   padding: 0 4px 4px;
+  transform: translateX(calc(var(--app-layout-gap) / 2));
 }
 .app-rail-button {
   display: inline-flex;
@@ -477,7 +482,7 @@ html.theme-view-transition::view-transition-new(root) {
   outline: none;
   box-shadow: 8px 0 36px -16px hsl(var(--surface-shadow));
 }
-.app-layout-immersive { padding: 0; gap: 0; }
+.app-layout-immersive { --app-layout-gap: 0px; padding: 0; gap: 0; }
 .app-workspace-immersive { border: 0; border-radius: 0; box-shadow: none; }
 .app-content-immersive { max-width: none; padding: 0; container-type: normal; }
 @media (max-width: 1023px) {
