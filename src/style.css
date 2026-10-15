@@ -534,6 +534,41 @@ html.theme-view-transition::view-transition-new(root) {
   align-items: center;
   gap: 4px;
 }
+.app-rail-sequence-item {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+}
+.rail-theme-icon-sequence {
+  position: relative;
+  display: inline-flex;
+  width: 1rem;
+  height: 1rem;
+  align-items: center;
+  justify-content: center;
+}
+.app-rail-link-item { width: 100%; }
+.app-rail-account-control {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+}
+.app-rail-sequence--leaving { position: relative; }
+.app-rail-sequence-enter-active {
+  transition: opacity 180ms ease, transform 180ms var(--motion-control);
+  transition-delay: 260ms;
+}
+.app-rail-sequence-enter-from { opacity: 0; transform: scale(.88); }
+.app-rail-sequence-leave-active {
+  position: absolute;
+  z-index: 1;
+  pointer-events: none;
+}
+.app-rail-sequence-move { transition: transform 360ms cubic-bezier(0.22, 1, 0.36, 1); }
 .app-primary-links::-webkit-scrollbar { display: none; width: 0; height: 0; }
 .app-primary-links .app-rail-button:focus-visible { outline-offset: -2px; }
 .app-rail-divider {
@@ -874,4 +909,11 @@ html.theme-view-transition::view-transition-new(root) {
   .settings-section-surface { padding: 16px; }
   .settings-sections { gap: 28px; margin-top: 28px; }
   .settings-section-title { font-size: 17px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-rail-sequence-enter-active,
+  .app-rail-sequence-move {
+    transition-duration: 1ms;
+    transition-delay: 0ms;
+  }
 }

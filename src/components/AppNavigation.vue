@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Bug, Gamepad2, Globe2, LayoutDashboard, Settings2, Terminal } from 'lucide-vue-next'
 import IconTooltip from './IconTooltip.vue'
+import AppRailSequence from './AppRailSequence.vue'
 
 export type AppTab = 'home' | 'global' | 'game' | 'console' | 'settings' | 'debug'
 const props = defineProps<{ current: AppTab; debugEnabled: boolean; consoleEnabled: boolean; suspended?: boolean }>()
@@ -20,19 +21,21 @@ const items = computed(() => [
 <template>
   <nav class="app-rail-navigation" :aria-label="t('general.title')">
     <div class="app-primary-links">
-      <div class="app-primary-link-items">
-        <IconTooltip v-for="item in items" :key="item.key" :label="t(item.label)" :disabled="suspended">
-          <button
-            type="button"
-            :aria-label="t(item.label)"
-            :aria-current="current === item.key ? 'page' : undefined"
-            :class="['app-rail-button', current === item.key && 'app-rail-button-active']"
-            @click="emit('navigate', item.key)"
-          >
-            <component :is="item.icon" class="h-4 w-4" :stroke-width="1.7" aria-hidden="true" />
-          </button>
-        </IconTooltip>
-      </div>
+      <AppRailSequence class="app-primary-link-items">
+        <div v-for="item in items" :key="item.key" class="app-rail-sequence-item app-rail-link-item">
+          <IconTooltip :label="t(item.label)" :disabled="suspended">
+            <button
+              type="button"
+              :aria-label="t(item.label)"
+              :aria-current="current === item.key ? 'page' : undefined"
+              :class="['app-rail-button', current === item.key && 'app-rail-button-active']"
+              @click="emit('navigate', item.key)"
+            >
+              <component :is="item.icon" class="h-4 w-4" :stroke-width="1.7" aria-hidden="true" />
+            </button>
+          </IconTooltip>
+        </div>
+      </AppRailSequence>
     </div>
     <span class="app-rail-divider app-rail-navigation-divider" aria-hidden="true" />
     <div class="app-rail-bottom-tools">

@@ -24,6 +24,7 @@ import { DialogContent, DialogOverlay, DialogPortal, DialogRoot, DialogTitle, To
 import { open } from '@tauri-apps/plugin-shell'
 import AccountMenu from './components/AccountMenu.vue'
 import AppNavigation, { type AppTab } from './components/AppNavigation.vue'
+import AppRailSequence from './components/AppRailSequence.vue'
 import QuestModeIndicator from './components/QuestModeIndicator.vue'
 import OrbsNitroStatus from './components/OrbsNitroStatus.vue'
 import QuestProgress from './components/QuestProgress.vue'
@@ -280,18 +281,26 @@ watch(
         <div class="app-layout" :class="{ 'app-layout-immersive': immersiveGameIdle }">
           <aside v-show="!immersiveGameIdle" class="app-icon-rail">
             <AppNavigation :current="currentTab" :debug-enabled="debugModeEnabled" :console-enabled="consoleAvailable" :suspended="immersiveGameIdle" @navigate="currentTab = $event">
-              <div class="app-rail-tools" role="group" :aria-label="t('sidebar.utilities')">
-                <QuestProgress v-if="authStore.user" />
-                <div class="app-rail-tool-group">
-                  <QuestModeIndicator v-if="authStore.user" :suspended="immersiveGameIdle" />
-                  <OrbsNitroStatus v-if="authStore.user" :suspended="immersiveGameIdle" />
+              <AppRailSequence class="app-rail-tools" role="group" :aria-label="t('sidebar.utilities')">
+                <div v-if="authStore.user && (questsStore.activeQuestId || questsStore.questQueue.length || questsStore.error)" key="quest-progress" class="app-rail-sequence-item">
+                  <QuestProgress />
                 </div>
-                <span v-if="authStore.user" class="app-rail-divider" aria-hidden="true" />
-                <div class="app-rail-display-actions">
+                <AppRailSequence v-if="authStore.user" key="quest-tools" class="app-rail-tool-group">
+                  <div key="quest-mode" class="app-rail-sequence-item">
+                    <QuestModeIndicator :suspended="immersiveGameIdle" />
+                  </div>
+                  <div v-if="authStore.nitroStatus !== null || questsStore.showOrbsBalance" key="orbs-status" class="app-rail-sequence-item">
+                    <OrbsNitroStatus :suspended="immersiveGameIdle" />
+                  </div>
+                </AppRailSequence>
+                <span v-if="authStore.user" key="utility-divider" class="app-rail-divider" aria-hidden="true" />
+                <div key="display-actions" class="app-rail-display-actions app-rail-sequence-item">
                   <IconTooltip :label="themeLabel" :disabled="immersiveGameIdle">
                     <button type="button" class="app-rail-button rail-tool-button" :aria-label="themeLabel" :aria-pressed="isDark" @click="toggleTheme">
-                      <Moon v-if="isDark" class="h-4 w-4" aria-hidden="true" />
-                      <Sun v-else class="h-4 w-4" aria-hidden="true" />
+                      <AppRailSequence tag="span" class="rail-theme-icon-sequence">
+                        <Moon v-if="isDark" key="moon" class="h-4 w-4" aria-hidden="true" />
+                        <Sun v-else key="sun" class="h-4 w-4" aria-hidden="true" />
+                      </AppRailSequence>
                     </button>
                   </IconTooltip>
                   <IconMenu :label="languageLabel" side="right" :suspended="immersiveGameIdle" content-class="rail-language-menu">
@@ -312,14 +321,20 @@ watch(
                     </DropdownMenuRadioGroup>
                   </IconMenu>
                 </div>
-              </div>
+              </AppRailSequence>
             </AppNavigation>
-            <AccountMenu v-if="authStore.user" compact :suspended="immersiveGameIdle" @logout="authStore.logout" />
-            <IconTooltip v-else :label="t('auth.login')" :disabled="immersiveGameIdle">
-              <button type="button" class="app-rail-button" :aria-label="t('auth.login')" @click="currentTab = 'home'">
-                <LogIn class="h-4 w-4" :stroke-width="1.7" aria-hidden="true" />
-              </button>
-            </IconTooltip>
+            <AppRailSequence class="app-rail-account-control">
+              <div v-if="authStore.user" key="account" class="app-rail-sequence-item">
+                <AccountMenu compact :suspended="immersiveGameIdle" @logout="authStore.logout" />
+              </div>
+              <div v-else key="login" class="app-rail-sequence-item">
+                <IconTooltip :label="t('auth.login')" :disabled="immersiveGameIdle">
+                  <button type="button" class="app-rail-button" :aria-label="t('auth.login')" @click="currentTab = 'home'">
+                    <LogIn class="h-4 w-4" :stroke-width="1.7" aria-hidden="true" />
+                  </button>
+                </IconTooltip>
+              </div>
+            </AppRailSequence>
           </aside>
 
           <aside v-if="wide && expanded && currentTab === 'settings' && !immersiveGameIdle" id="settings-navigation-panel" class="app-settings-panel">
