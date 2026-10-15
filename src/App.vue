@@ -326,8 +326,8 @@ watch(
             </header>
 
             <main class="app-workspace-scroll" tabindex="-1">
-              <div class="app-content" :class="{ 'app-content-immersive': immersiveGameIdle, 'app-content-login': currentTab === 'home' && !authStore.user }">
-                <div v-if="!immersiveGameIdle && versionStore.hasUpdate && versionStore.latestRelease" role="status" class="mb-6 flex flex-col items-start justify-between gap-3 rounded-xl border border-primary/30 bg-primary/10 p-4 sm:flex-row sm:items-center">
+              <div class="app-content" :class="{ 'app-content-immersive': immersiveGameIdle, 'app-content-login': currentTab === 'home' && !authStore.user, 'app-content-game': currentTab === 'game' }">
+                <div v-if="!immersiveGameIdle && versionStore.hasUpdate && versionStore.latestRelease" role="status" class="mb-6 flex shrink-0 flex-col items-start justify-between gap-3 rounded-xl border border-primary/30 bg-primary/10 p-4 sm:flex-row sm:items-center">
                   <div class="flex items-center gap-3">
                     <ArrowUpCircle class="h-5 w-5 shrink-0 text-primary" />
                     <div>

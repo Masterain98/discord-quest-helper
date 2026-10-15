@@ -455,8 +455,8 @@ async function handleStopGame() {
 </script>
 
 <template>
-  <div class="game-simulator-view fade-in space-y-6" :class="mode === 'idle' && (idleStore.isActive || idleStore.loading) && 'is-idle-immersive'">
-    <div v-if="!(mode === 'idle' && (idleStore.isActive || idleStore.loading))" class="flex justify-between items-center flex-wrap gap-3">
+  <div class="game-simulator-view fade-in" :class="{ 'is-manual-simulator': mode !== 'idle', 'space-y-6': mode === 'idle', 'is-idle-immersive': mode === 'idle' && (idleStore.isActive || idleStore.loading) }">
+    <div v-if="!(mode === 'idle' && (idleStore.isActive || idleStore.loading))" class="flex shrink-0 justify-between items-center flex-wrap gap-3">
       <h2 class="ui-page-heading text-2xl font-semibold">{{ t('game_sim.title') }}</h2>
       <!-- Mode toggle -->
       <div class="ui-tab-tray flex max-w-full flex-wrap gap-1">
@@ -495,16 +495,16 @@ async function handleStopGame() {
 
     <GameIdlePanel v-if="mode === 'idle'" />
 
-    <div v-else class="grid grid-cols-1 gap-6" :class="mode === 'select' ? 'lg:grid-cols-2' : ''">
+    <div v-else class="game-simulator-panels grid grid-cols-1 gap-6" :class="mode === 'select' ? 'game-simulator-panels-select lg:grid-cols-2' : ''">
       <GameSelector v-if="mode === 'select'" :disabled="hasActiveSimulation || simulatorBusy" @select="selectGame" />
 
-      <Card>
-        <CardHeader>
+      <Card class="game-simulator-config flex min-h-0 flex-col">
+        <CardHeader class="shrink-0">
           <CardTitle>{{ t('game_sim.config_title') }}</CardTitle>
           <CardDescription>{{ mode === 'custom' ? t('game_sim.custom_config_desc') : t('game_sim.config_desc') }}</CardDescription>
         </CardHeader>
 
-        <CardContent>
+        <CardContent class="min-h-0 flex-1 overflow-y-auto">
           <div
             v-if="activeSimulationMode === 'cdp' && activeCdpSession"
             class="mb-6 p-3 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 rounded-md text-sm border border-emerald-500/20"
@@ -624,18 +624,31 @@ async function handleStopGame() {
               <div v-if="success" class="p-3 bg-green-500/10 text-green-600 rounded-md text-sm">{{ success }}</div>
             </div>
           </template>
+
+          <div v-if="mode === 'custom' || selectedGame" class="game-simulator-create mt-3 flex justify-end">
+            <Button
+              @click="openCreateDialog"
+              variant="outline"
+              size="sm"
+              class="h-auto min-h-9 min-w-0 gap-2 whitespace-normal border-primary/30 bg-primary/5 text-primary hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
+              :disabled="!effectiveExecutable || hasActiveSimulation || simulatorBusy"
+            >
+              <Hammer class="h-4 w-4 shrink-0" />
+              {{ t('game_sim.create_game') }}
+            </Button>
+          </div>
         </CardContent>
 
-        <CardFooter v-if="canProceed" class="flex flex-col gap-2">
-          <div class="grid grid-cols-2 gap-2 w-full">
+        <CardFooter v-if="canProceed" class="flex shrink-0 flex-col gap-2">
+          <div class="game-simulator-actions grid w-full gap-2" :class="mode === 'select' && !hasActiveSimulation ? 'grid-cols-2' : 'grid-cols-1'">
             <Button
               v-if="!hasActiveSimulation"
               @click="handleRunGame"
-              class="w-full bg-green-600 hover:bg-green-700 text-white"
+              class="h-auto min-h-10 min-w-0 w-full whitespace-normal bg-green-600 hover:bg-green-700 text-white"
               :disabled="!effectiveExecutable || simulatorBusy || !!store.activeQuestId"
             >
-              <Play v-if="!running" class="w-4 h-4 mr-2" />
-              <Loader2 v-else class="w-4 h-4 mr-2 animate-spin" />
+              <Play v-if="!running" class="w-4 h-4 mr-2 shrink-0" />
+              <Loader2 v-else class="w-4 h-4 mr-2 shrink-0 animate-spin" />
               {{ running ? t('game_sim.starting') : t('game_sim.run_game') }}
             </Button>
 
@@ -643,13 +656,13 @@ async function handleStopGame() {
               v-if="mode === 'select' && !hasActiveSimulation"
               @click="handleRunCdpGame"
               variant="outline"
-              class="w-full border-emerald-500/50 text-emerald-700 hover:bg-emerald-500/10 dark:text-emerald-300"
+              class="h-auto min-h-10 min-w-0 w-full whitespace-normal border-emerald-500/50 text-emerald-700 hover:bg-emerald-500/10 dark:text-emerald-300"
               :disabled="!selectedGame || !store.cdpAvailable || simulatorBusy || !!store.activeQuestId"
               :title="store.cdpAvailable ? t('game_sim.cdp_button_hint') : t('game_sim.cdp_unavailable')"
             >
-              <MonitorPlay v-if="store.cdpAvailable && !cdpStarting" class="w-4 h-4 mr-2" />
-              <WifiOff v-else-if="!store.cdpAvailable && !cdpStarting" class="w-4 h-4 mr-2" />
-              <Loader2 v-else class="w-4 h-4 mr-2 animate-spin" />
+              <MonitorPlay v-if="store.cdpAvailable && !cdpStarting" class="w-4 h-4 mr-2 shrink-0" />
+              <WifiOff v-else-if="!store.cdpAvailable && !cdpStarting" class="w-4 h-4 mr-2 shrink-0" />
+              <Loader2 v-else class="w-4 h-4 mr-2 shrink-0 animate-spin" />
               {{ cdpStarting ? t('game_sim.cdp_starting') : t('game_sim.run_cdp_game') }}
             </Button>
 
@@ -665,15 +678,6 @@ async function handleStopGame() {
               {{ stopping ? t('game_sim.stopping') : t('game_sim.stop_game') }}
             </Button>
 
-            <Button
-              @click="openCreateDialog"
-              variant="outline"
-              class="w-full"
-              :disabled="!effectiveExecutable || hasActiveSimulation || simulatorBusy"
-            >
-              <Hammer class="w-4 h-4 mr-2" />
-              {{ t('game_sim.create_game') }}
-            </Button>
           </div>
         </CardFooter>
       </Card>
@@ -721,6 +725,25 @@ async function handleStopGame() {
 </template>
 
 <style scoped>
+.is-manual-simulator {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 24px;
+}
+.game-simulator-panels {
+  flex: 1;
+  min-height: 20rem;
+  grid-auto-rows: minmax(0, 1fr);
+}
+.game-simulator-panels-select { min-height: calc(40rem + 24px); }
+@media (min-width: 1024px) {
+  .game-simulator-panels,
+  .game-simulator-panels-select {
+    min-height: 16rem;
+  }
+}
 .is-idle-immersive {
   min-height: 100%;
   width: 100%;
