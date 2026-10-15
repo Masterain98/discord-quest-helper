@@ -173,8 +173,8 @@ export const useAuthStore = defineStore('auth', () => {
     questsStore.getDetectableGames().catch(err => {
       console.warn('Background game list fetch failed:', err)
     })
-    questsStore.fetchOrbsBalance().catch(err => {
-      console.warn('Background Orbs balance fetch failed:', err)
+    questsStore.fetchOrbsSummary().catch(err => {
+      console.warn('Background Orbs summary fetch failed:', err)
     })
     fetchNitroProgramReward().catch(err => {
       console.warn('Background Nitro program reward fetch failed:', err)

@@ -441,6 +441,7 @@ impl DiscordApiClient {
 
         if path.starts_with("/api/v9/quests")
             || path == "/api/v9/users/@me/virtual-currency/balance"
+            || path == "/api/v9/users/@me/virtual-currency/total-redeemed"
             || path.starts_with("/api/v9/users/@me/billing/subscriptions")
             || path == "/api/v9/users/@me/program-rewards"
         {
@@ -728,6 +729,30 @@ impl DiscordApiClient {
         }
 
         serde_json::from_str(&body).context("Failed to parse virtual currency balance")
+    }
+
+    pub async fn get_virtual_currency_total_redeemed(&self) -> Result<serde_json::Value> {
+        let url = format!(
+            "{}/users/@me/virtual-currency/total-redeemed",
+            DISCORD_API_BASE
+        );
+        let response = self
+            .request(Method::GET, &url)
+            .send()
+            .await
+            .context("Request for virtual currency total redeemed failed")?;
+
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        if !status.is_success() {
+            anyhow::bail!(
+                "Failed to get virtual currency total redeemed: {} - {}",
+                status,
+                body
+            );
+        }
+
+        serde_json::from_str(&body).context("Failed to parse virtual currency total redeemed")
     }
 
     /// Get the current user's billing subscriptions.
@@ -1391,6 +1416,12 @@ mod tests {
     fn quest_referer_is_only_added_for_quest_context_routes() {
         assert_eq!(
             DiscordApiClient::quest_referer_for_url("https://discord.com/api/v9/quests/@me"),
+            Some(QUEST_HOME_REFERER)
+        );
+        assert_eq!(
+            DiscordApiClient::quest_referer_for_url(
+                "https://discord.com/api/v9/users/@me/virtual-currency/total-redeemed"
+            ),
             Some(QUEST_HOME_REFERER)
         );
         assert_eq!(

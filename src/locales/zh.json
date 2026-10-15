@@ -118,6 +118,11 @@
     "include_expired": "包含已过期任务",
     "include_expired_desc": "显示已过期条目，用于检查或恢复。",
     "current_orbs": "当前 Orbs",
+    "orbs_title": "Orbs",
+    "orbs_total_redeemed": "累计兑换",
+    "orbs_redeemed_unavailable": "无法加载累计兑换量，请刷新重试。",
+    "orbs_no_airdrop": "暂无待发放的 Orbs 空投",
+    "orbs_airdrop_unavailable": "无法加载空投时间，请刷新重试。",
     "nitro_next_orbs_title": "Nitro 每月 Orbs — 下次领取倒计时",
     "nitro_next_orbs_days": "下次 Orbs 空投剩余 {days} 天",
 

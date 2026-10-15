@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => ({
     gameQuestMode: 'simulate',
     initCdpMode: vi.fn(),
     getDetectableGames: vi.fn(),
-    fetchOrbsBalance: vi.fn(),
+    fetchOrbsSummary: vi.fn(),
     stop: vi.fn(),
     resetForLogout: vi.fn(),
   },
@@ -87,7 +87,7 @@ describe('auth login quest mode selection', () => {
     mocks.stopAllGameSimulations.mockResolvedValue(undefined)
     mocks.questsStore.initCdpMode.mockResolvedValue(undefined)
     mocks.questsStore.getDetectableGames.mockResolvedValue(undefined)
-    mocks.questsStore.fetchOrbsBalance.mockResolvedValue(undefined)
+    mocks.questsStore.fetchOrbsSummary.mockResolvedValue(undefined)
     mocks.questsStore.stop.mockResolvedValue(undefined)
     mocks.gameIdleStore.stopForAccountChange.mockResolvedValue(undefined)
   })

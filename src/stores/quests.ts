@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import type { Quest, DetectableGame, DesktopClientArg, ExcludedQuest, GameQuestMode, PlatformCapabilities } from '@/api/tauri'
 import { getQuestKind, playActivityProgressPercentage } from '@/utils/questTasks'
 import { resolveSimulationExecutable } from '@/utils/executables'
+import { commandErrorMessage } from '@/utils/commandError'
 
 /** Quest with optional pre-selected executable name for batch game quest processing */
 interface QueueItem extends Quest {
@@ -53,6 +54,7 @@ import {
   startCdpQuest,
   checkCdpStatus,
   getVirtualCurrencyBalance,
+  getVirtualCurrencyTotalRedeemed,
   getPlatformCapabilities,
   startGameSimulationUsage,
   stopGameSimulationUsage,
@@ -82,6 +84,11 @@ export const useQuestsStore = defineStore('quests', () => {
   const orbsBalanceFetchedAt = ref<string | null>(null)
   const orbsBalanceLoading = ref(false)
   const orbsBalanceError = ref<string | null>(null)
+  const orbsTotalRedeemed = ref<number | null>(null)
+  const orbsTotalRedeemedFetchedAt = ref<string | null>(null)
+  const orbsTotalRedeemedLoading = ref(false)
+  const orbsTotalRedeemedError = ref<string | null>(null)
+  const orbsSummaryLoading = computed(() => orbsBalanceLoading.value || orbsTotalRedeemedLoading.value)
 
   // Single source of truth for every process-simulation entry point. The
   // asynchronous default is resolved lazily by initSimulationPath().
@@ -312,7 +319,7 @@ export const useQuestsStore = defineStore('quests', () => {
   watch(showOrbsBalance, (enabled) => {
     localStorage.setItem(STORAGE_SHOW_ORBS_BALANCE_KEY, String(enabled))
     if (enabled && orbsBalance.value == null) {
-      fetchOrbsBalance().catch(err => {
+      fetchOrbsSummary().catch(err => {
         console.warn('Background Orbs balance fetch failed:', err)
       })
     }
@@ -384,6 +391,7 @@ export const useQuestsStore = defineStore('quests', () => {
   // Account changes invalidate both cached rows and requests from the old session.
   function setQuestAccount(accountId: string | null) {
     if (questAccountId.value === accountId) return
+    resetOrbsState()
     questAccountId.value = accountId
     questsFetchGeneration++
     questsFetchInFlight = null
@@ -461,29 +469,75 @@ export const useQuestsStore = defineStore('quests', () => {
   }
 
   let orbsFetchGeneration = 0
+  let orbsSummaryAttempted = false
+  let orbsFetchInFlight: Promise<void> | null = null
 
-  async function fetchOrbsBalance(force = false) {
+  async function fetchOrbsSummary(force = false) {
     const generationAtStart = orbsFetchGeneration
     if (!showOrbsBalance.value && !force) return
-    if (orbsBalanceLoading.value) return
-    if (!force && orbsBalance.value != null) return
+    if (orbsFetchInFlight) return orbsFetchInFlight
+    // Bootstrap and the persistent shell share one attempt per account. A
+    // failed endpoint is retried only through an explicit manual refresh.
+    if (!force && orbsSummaryAttempted) return
+    orbsSummaryAttempted = true
 
     orbsBalanceLoading.value = true
+    orbsTotalRedeemedLoading.value = true
     orbsBalanceError.value = null
-    try {
-      const balance = await getVirtualCurrencyBalance()
-      if (generationAtStart !== orbsFetchGeneration) return
-      orbsBalance.value = balance
-      orbsBalanceFetchedAt.value = new Date().toISOString()
-    } catch (e) {
-      if (generationAtStart !== orbsFetchGeneration) return
-      orbsBalanceError.value = e as string
-      throw e
-    } finally {
-      if (generationAtStart === orbsFetchGeneration) {
-        orbsBalanceLoading.value = false
+    orbsTotalRedeemedError.value = null
+    const balanceRequest = (async () => {
+      try {
+        const balance = await getVirtualCurrencyBalance()
+        if (generationAtStart !== orbsFetchGeneration) return
+        orbsBalance.value = balance
+        orbsBalanceFetchedAt.value = new Date().toISOString()
+      } catch (e) {
+        if (generationAtStart !== orbsFetchGeneration) return
+        orbsBalanceError.value = commandErrorMessage(e)
+        throw e
+      } finally {
+        if (generationAtStart === orbsFetchGeneration) orbsBalanceLoading.value = false
       }
+    })()
+    const redeemedRequest = (async () => {
+      try {
+        const redeemed = await getVirtualCurrencyTotalRedeemed()
+        if (generationAtStart !== orbsFetchGeneration) return
+        orbsTotalRedeemed.value = redeemed
+        orbsTotalRedeemedFetchedAt.value = new Date().toISOString()
+      } catch (e) {
+        if (generationAtStart !== orbsFetchGeneration) return
+        orbsTotalRedeemedError.value = commandErrorMessage(e)
+        throw e
+      } finally {
+        if (generationAtStart === orbsFetchGeneration) orbsTotalRedeemedLoading.value = false
+      }
+    })()
+    const request = Promise.allSettled([balanceRequest, redeemedRequest]).then(results => {
+      if (generationAtStart !== orbsFetchGeneration) return
+      const failure = results.find(result => result.status === 'rejected')
+      if (failure?.status === 'rejected') throw failure.reason
+    })
+    orbsFetchInFlight = request
+    try {
+      await request
+    } finally {
+      if (orbsFetchInFlight === request) orbsFetchInFlight = null
     }
+  }
+
+  function resetOrbsState() {
+    orbsFetchGeneration++
+    orbsSummaryAttempted = false
+    orbsFetchInFlight = null
+    orbsBalance.value = null
+    orbsBalanceFetchedAt.value = null
+    orbsBalanceLoading.value = false
+    orbsBalanceError.value = null
+    orbsTotalRedeemed.value = null
+    orbsTotalRedeemedFetchedAt.value = null
+    orbsTotalRedeemedLoading.value = false
+    orbsTotalRedeemedError.value = null
   }
 
   async function finishQueuedQuest(questId: string) {
@@ -1544,7 +1598,7 @@ export const useQuestsStore = defineStore('quests', () => {
     stopDialogQuestId.value = null
     completingQuestId.value = null
     questAccountId.value = null
-    orbsFetchGeneration++
+    resetOrbsState()
     questsFetchGeneration++
     questsFetchInFlight = null
     quests.value = []
@@ -1556,10 +1610,6 @@ export const useQuestsStore = defineStore('quests', () => {
     hasLoadedQuests.value = false
     startingQuestId.value = null
     error.value = null
-    orbsBalance.value = null
-    orbsBalanceFetchedAt.value = null
-    orbsBalanceLoading.value = false
-    orbsBalanceError.value = null
     activeQuestId.value = null
     activeQuestType.value = null
     activeQuestProgress.value = 0
@@ -1674,6 +1724,11 @@ export const useQuestsStore = defineStore('quests', () => {
     orbsBalanceFetchedAt,
     orbsBalanceLoading,
     orbsBalanceError,
+    orbsTotalRedeemed,
+    orbsTotalRedeemedFetchedAt,
+    orbsTotalRedeemedLoading,
+    orbsTotalRedeemedError,
+    orbsSummaryLoading,
     showOrbsBalance,
     simulationPath,
     initSimulationPath,
@@ -1707,7 +1762,7 @@ export const useQuestsStore = defineStore('quests', () => {
     reorderQueuedQuest,
     clearUpcomingQueue,
     fetchQuests,
-    fetchOrbsBalance,
+    fetchOrbsSummary,
     updateQuestEnrollment,
     startVideo,
     startStream,

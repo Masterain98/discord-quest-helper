@@ -118,6 +118,11 @@
     "include_expired": "Include expired quests",
     "include_expired_desc": "Show expired entries for inspection and recovery.",
     "current_orbs": "Current Orbs",
+    "orbs_title": "Orbs",
+    "orbs_total_redeemed": "Redeemed all time",
+    "orbs_redeemed_unavailable": "Unable to load redeemed total. Try refreshing.",
+    "orbs_no_airdrop": "No upcoming Orbs airdrop",
+    "orbs_airdrop_unavailable": "Unable to load airdrop schedule. Try refreshing.",
     "nitro_next_orbs_title": "Monthly Nitro Orbs — next claim countdown",
     "nitro_next_orbs_days": "Next Orbs airdrop in {days} days",
 

@@ -264,6 +264,7 @@ function questBaselineCategory(path: string): QuestBaselineEndpoint['category'] 
   if (
     path.includes('/billing/subscriptions')
     || path.includes('/virtual-currency/balance')
+    || path.includes('/virtual-currency/total-redeemed')
     || path.includes('/entitlements')
     || path.includes('/program-rewards')
     || path.includes('/library')
