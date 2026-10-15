@@ -619,7 +619,8 @@ html.theme-view-transition::view-transition-new(root) {
   transition: stroke-dashoffset 320ms var(--motion-control);
   filter: drop-shadow(0 0 1.5px hsl(var(--primary) / .35));
 }
-.rail-mode-trigger { --mode-light: var(--muted-foreground); }
+.rail-mode-trigger { --mode-light: var(--muted-foreground); color: hsl(var(--mode-light)); }
+.app-rail-button.rail-mode-trigger:hover { color: hsl(var(--mode-light)); }
 :is(.rail-mode-trigger, .rail-mode-summary)[data-tone="success"] { --mode-light: 155 72% 37%; }
 :is(.rail-mode-trigger, .rail-mode-summary)[data-tone="warning"] { --mode-light: 36 85% 43%; }
 :is(.rail-mode-trigger, .rail-mode-summary)[data-tone="danger"] { --mode-light: var(--destructive); }
@@ -635,7 +636,6 @@ html.theme-view-transition::view-transition-new(root) {
   background: hsl(var(--mode-light));
   box-shadow: 0 0 0 3px hsl(var(--mode-light) / .10);
 }
-.rail-mode-trigger > .rail-mode-light { position: absolute; right: 7px; bottom: 7px; border: 1px solid hsl(var(--card)); }
 .rail-utility-panel {
   z-index: 50;
   width: 320px;

@@ -83,7 +83,6 @@ function handleAction() {
     <template #trigger>
       <button type="button" :aria-label="`${t('sidebar.mode')}: ${modeState.label}`" :data-tone="modeState.tone" :class="['app-rail-button rail-tool-button rail-mode-trigger', open && 'rail-tool-button-open']">
         <component :is="modeState.icon" class="h-4 w-4" :stroke-width="1.7" aria-hidden="true" />
-        <span class="rail-mode-light" aria-hidden="true" />
       </button>
     </template>
     <div class="rail-panel-heading">
