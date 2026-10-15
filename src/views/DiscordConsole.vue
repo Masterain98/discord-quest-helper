@@ -1,36 +1,79 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Check, ChevronDown, Copy, Loader2, Pause, Play, Terminal, Trash2, Wifi } from 'lucide-vue-next'
+import { Check, ChevronDown, Copy, Loader2, Pause, Play, Power, Terminal, Trash2, Wifi } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import ConsoleObject from '@/components/console/ConsoleObject.vue'
 import { useDiscordConsoleStore, type ConsoleEntry } from '@/stores/discordConsole'
-import { useQuestsStore } from '@/stores/quests'
 import { useToastStore } from '@/stores/toast'
 
 const store = useDiscordConsoleStore()
-const quests = useQuestsStore()
 const toast = useToastStore()
 const { t } = useI18n()
 const output = ref<HTMLElement | null>(null)
 const editor = ref<HTMLTextAreaElement | null>(null)
 const copied = ref<number | null>(null)
 const follow = ref(true)
+const renderLimit = ref(120)
+const renderStart = ref(0)
+const loadingOlder = ref(false)
+const props = defineProps<{ active: boolean; enabled: boolean; port: number }>()
+const emit = defineEmits<{ enable: []; disable: [] }>()
 const ready = computed(() => store.connected && !store.executing && !!store.input.trim())
+const renderedEntries = computed(() => {
+  const total = store.visibleEntries.length
+  const start = follow.value ? Math.max(0, total - renderLimit.value) : Math.min(renderStart.value, total)
+  return store.visibleEntries.slice(start, start + renderLimit.value)
+})
 const levels = ['all', 'log', 'info', 'debug', 'warn', 'error'] as const
 const errorText = (code: string) => t(`discord_console.errors.${code}`)
 
-onMounted(() => { void store.connect(quests.cdpPort); editor.value?.focus() })
+watch(() => [props.enabled, props.port] as const, ([enabled, port]) => {
+  if (enabled) void store.connect(port)
+}, { immediate: true })
+watch(() => props.active, async active => {
+  if (!active) return
+  await nextTick()
+  editor.value?.focus()
+  if (output.value) output.value.scrollTop = output.value.scrollHeight
+}, { immediate: true })
+watch(() => [store.search, store.level] as const, async () => {
+  renderLimit.value = 120
+  renderStart.value = 0
+  follow.value = true
+  await nextTick()
+  if (output.value) output.value.scrollTop = output.value.scrollHeight
+})
 watch(() => store.visibleEntries[store.visibleEntries.length - 1]?.id, async () => {
   if (!follow.value) return
   await nextTick()
   if (output.value) output.value.scrollTop = output.value.scrollHeight
 })
-function trackScroll() {
+async function trackScroll() {
   const element = output.value
-  if (element) follow.value = element.scrollHeight - element.scrollTop - element.clientHeight < 40
+  if (!element) return
+  const atBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 40
+  if (atBottom) {
+    follow.value = true
+    return
+  }
+  if (follow.value) {
+    const total = store.visibleEntries.length
+    renderStart.value = Math.max(0, total - renderLimit.value)
+  }
+  follow.value = false
+  if (element.scrollTop > 32 || loadingOlder.value || renderStart.value === 0) return
+
+  loadingOlder.value = true
+  const previousHeight = element.scrollHeight
+  const previousEnd = renderStart.value + renderLimit.value
+  renderStart.value = Math.max(0, renderStart.value - 100)
+  renderLimit.value = previousEnd - renderStart.value
+  await nextTick()
+  element.scrollTop += element.scrollHeight - previousHeight
+  loadingOlder.value = false
 }
 function keyboard(event: KeyboardEvent) {
   if (event.isComposing) return
@@ -62,7 +105,16 @@ async function copy(entry: ConsoleEntry) {
       </div>
     </div>
 
-    <div class="ui-panel overflow-hidden rounded-2xl border bg-card">
+    <div v-if="!props.enabled" class="ui-panel flex min-h-[clamp(20rem,55vh,38rem)] flex-col items-center justify-center rounded-2xl border bg-card px-8 py-12 text-center" role="status">
+      <div class="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border border-muted-foreground/15 bg-muted/50 text-muted-foreground">
+        <Terminal class="h-8 w-8" :stroke-width="1.6" aria-hidden="true" />
+      </div>
+      <h3 class="text-xl font-semibold">{{ t('discord_console.disabled_title') }}</h3>
+      <p class="mt-2 max-w-lg text-sm leading-6 text-muted-foreground">{{ t('discord_console.disabled_description') }}</p>
+      <Button class="mt-6 gap-2" @click="emit('enable')"><Power class="h-4 w-4" aria-hidden="true" />{{ t('discord_console.enable') }}</Button>
+    </div>
+
+    <div v-else class="ui-panel overflow-hidden rounded-2xl border bg-card">
       <div class="flex flex-wrap items-center gap-2 border-b p-3">
         <Input v-model="store.search" class="h-9 min-w-40 flex-1" :placeholder="t('discord_console.search')" :aria-label="t('discord_console.search')" />
         <DropdownMenu>
@@ -83,6 +135,7 @@ async function copy(entry: ConsoleEntry) {
           {{ t(store.paused ? 'discord_console.resume' : 'discord_console.pause') }}
         </Button>
         <Button variant="outline" size="sm" class="gap-2" @click="store.clearOutput"><Trash2 class="h-4 w-4" />{{ t('discord_console.clear') }}</Button>
+        <Button variant="outline" size="sm" class="gap-2 text-destructive hover:text-destructive" @click="emit('disable')"><Power class="h-4 w-4" />{{ t('discord_console.disable') }}</Button>
       </div>
       <p v-if="store.paused" class="border-b bg-muted/40 px-3 py-2 text-xs text-muted-foreground" role="status">
         {{ t('discord_console.paused_notice', { count: store.pendingCount }) }}
@@ -90,7 +143,7 @@ async function copy(entry: ConsoleEntry) {
 
       <div ref="output" class="h-[clamp(16rem,43vh,34rem)] overflow-auto font-mono text-sm" role="region" :aria-label="t('discord_console.output')" tabindex="0" @scroll="trackScroll">
         <p v-if="!store.visibleEntries.length" class="p-6 text-center font-sans text-muted-foreground">{{ t(store.entries.length ? 'discord_console.no_matches' : 'discord_console.empty') }}</p>
-        <div v-for="entry in store.visibleEntries" :key="entry.id" class="group flex items-start gap-2 border-b border-border/40 px-3 py-2"
+        <div v-for="entry in renderedEntries" :key="entry.id" class="group flex items-start gap-2 border-b border-border/40 px-3 py-2"
           :class="entry.level === 'error' ? 'bg-destructive/5 text-destructive' : entry.level === 'warn' ? 'bg-amber-500/5 text-amber-700 dark:text-amber-400' : ''">
           <time class="mt-0.5 shrink-0 text-[10px] text-muted-foreground" :datetime="new Date(entry.timestamp).toISOString()">{{ new Date(entry.timestamp).toLocaleTimeString() }}</time>
           <span class="shrink-0 text-muted-foreground" aria-hidden="true">{{ entry.kind === 'command' ? '›' : entry.kind === 'result' ? '‹' : '·' }}</span>

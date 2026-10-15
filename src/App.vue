@@ -48,7 +48,9 @@ const questsStore = useQuestsStore()
 const globalQuestsStore = useGlobalQuestsStore()
 const discordConsole = useDiscordConsoleStore()
 const toastStore = useToastStore()
-const consoleEnabled = computed(() => consoleTabEnabled(questsStore.gameQuestMode, questsStore.cdpAvailable))
+const consoleFeatureEnabled = ref(localStorage.getItem('questHelper_discordConsoleEnabled') === 'true')
+const consoleAvailable = computed(() => consoleTabEnabled(questsStore.gameQuestMode, questsStore.cdpAvailable))
+const consoleEnabled = computed(() => consoleAvailable.value && consoleFeatureEnabled.value)
 const consoleLifecycle = createDiscordConsoleLifecycle({
   snapshot: () => ({ mode: questsStore.gameQuestMode, port: questsStore.cdpPort, account: authStore.user?.id ?? null }),
   check: checkCdpStatus,
@@ -65,11 +67,11 @@ watch(() => [questsStore.gameQuestMode, questsStore.cdpPort, authStore.user?.id 
     await consoleLifecycle.refresh()
   }, { immediate: true, flush: 'sync' })
 watch(() => discordConsole.session, (current, previous) => {
-  if (!current && previous && questsStore.gameQuestMode === 'cdp') questsStore.cdpAvailable = false
+  if (!current && previous && consoleFeatureEnabled.value && questsStore.gameQuestMode === 'cdp') questsStore.cdpAvailable = false
 })
-watch(consoleEnabled, enabled => {
-  if (!enabled && currentTab.value === 'console') {
-    currentTab.value = consoleFallbackTab(currentTab.value, enabled)
+watch(consoleAvailable, available => {
+  if (!available && currentTab.value === 'console') {
+    currentTab.value = consoleFallbackTab(currentTab.value, available)
     toastStore.warning({ title: t('nav.discord_console'), description: t('discord_console.unavailable') })
   }
 }, { flush: 'sync' })
@@ -224,10 +226,16 @@ onUnmounted(() => {
 
 function handleAppNavigate(e: Event) {
   const tab = (e as CustomEvent<string>).detail
-  if (tab === 'console' && consoleEnabled.value) currentTab.value = tab
+  if (tab === 'console' && consoleAvailable.value) currentTab.value = tab
   if (tab === 'home' || tab === 'global' || tab === 'game' || tab === 'settings' || (tab === 'debug' && debugModeEnabled.value)) {
     currentTab.value = tab
   }
+}
+
+function setConsoleFeatureEnabled(enabled: boolean) {
+  consoleFeatureEnabled.value = enabled
+  try { localStorage.setItem('questHelper_discordConsoleEnabled', String(enabled)) } catch { /* Keep the in-memory preference. */ }
+  if (!enabled) void consoleLifecycle.invalidate(true)
 }
 
 function handleDebugDisabled() {
@@ -271,14 +279,14 @@ watch(
         <TitleBar :brand-visible="!immersiveGameIdle" />
         <div class="app-layout" :class="{ 'app-layout-immersive': immersiveGameIdle }">
           <aside v-show="!immersiveGameIdle" class="app-icon-rail">
-            <AppNavigation :current="currentTab" :debug-enabled="debugModeEnabled" :console-enabled="consoleEnabled" :suspended="immersiveGameIdle" @navigate="currentTab = $event">
+            <AppNavigation :current="currentTab" :debug-enabled="debugModeEnabled" :console-enabled="consoleAvailable" :suspended="immersiveGameIdle" @navigate="currentTab = $event">
               <div class="app-rail-tools" role="group" :aria-label="t('sidebar.utilities')">
                 <QuestProgress v-if="authStore.user" />
                 <div class="app-rail-tool-group">
                   <QuestModeIndicator v-if="authStore.user" :suspended="immersiveGameIdle" />
                   <OrbsNitroStatus v-if="authStore.user" :suspended="immersiveGameIdle" />
                 </div>
-                <span class="app-rail-divider app-rail-tools-divider" aria-hidden="true" />
+                <span v-if="authStore.user" class="app-rail-divider" aria-hidden="true" />
                 <div class="app-rail-display-actions">
                   <IconTooltip :label="themeLabel" :disabled="immersiveGameIdle">
                     <button type="button" class="app-rail-button rail-tool-button" :aria-label="themeLabel" :aria-pressed="isDark" @click="toggleTheme">
@@ -351,9 +359,9 @@ watch(
                 </template>
                 <GlobalQuests v-else-if="currentTab === 'global'" />
                 <GameSimulator v-else-if="currentTab === 'game'" />
-                <DiscordConsole v-else-if="currentTab === 'console' && consoleEnabled" />
                 <Settings v-else-if="currentTab === 'settings'" :selected-section="selectedSection" :navigation-request="navigationRequest" :navigation-target="navigationTarget" :search-query="settingsQuery" @search-results="settingsResults = $event" @update:selected-section="selectedSection = $event" @navigate-to-home="currentTab = 'home'" @debug-unlocked="debugModeEnabled = true; currentTab = 'debug'" @debug-disabled="handleDebugDisabled" />
                 <Debug v-else-if="currentTab === 'debug'" />
+                <DiscordConsole v-if="consoleAvailable" v-show="currentTab === 'console'" :active="currentTab === 'console'" :enabled="consoleEnabled" :port="questsStore.cdpPort" @enable="setConsoleFeatureEnabled(true)" @disable="setConsoleFeatureEnabled(false)" />
               </div>
             </main>
           </section>

@@ -576,9 +576,6 @@ html.theme-view-transition::view-transition-new(root) {
   align-items: center;
   gap: 4px;
 }
-.app-rail-tools-divider {
-  width: 20px;
-}
 .rail-tool-button {
   position: relative;
   border-radius: 13px;
