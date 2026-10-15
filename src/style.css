@@ -469,6 +469,7 @@ html.theme-view-transition::view-transition-new(root) {
 }
 .app-content-login { display: flex; flex-direction: column; }
 .app-content-game { display: flex; height: 100%; flex-direction: column; }
+.app-content-console { display: flex; flex-direction: column; }
 .app-settings-overlay {
   position: fixed;
   z-index: 60;

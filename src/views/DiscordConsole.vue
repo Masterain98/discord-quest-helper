@@ -91,8 +91,8 @@ async function copy(entry: ConsoleEntry) {
 </script>
 
 <template>
-  <section class="flex min-w-0 flex-col gap-4 pb-4">
-    <div class="flex flex-wrap items-center justify-between gap-3">
+<section class="flex min-w-0 flex-1 flex-col gap-4 pb-4">
+  <div class="flex flex-wrap items-center justify-between gap-3">
       <div>
         <h2 class="ui-page-heading flex items-center gap-2 text-2xl font-semibold"><Terminal class="h-5 w-5 text-primary" :stroke-width="1.7" />{{ t('nav.discord_console') }}</h2>
         <p class="mt-1 text-sm text-muted-foreground">{{ t('discord_console.description') }}</p>
@@ -105,7 +105,7 @@ async function copy(entry: ConsoleEntry) {
       </div>
     </div>
 
-    <div v-if="!props.enabled" class="ui-panel flex min-h-[clamp(20rem,55vh,38rem)] flex-col items-center justify-center rounded-2xl border bg-card px-8 py-12 text-center" role="status">
+  <div v-if="!props.enabled" class="ui-panel flex min-h-[clamp(20rem,55vh,38rem)] flex-1 flex-col items-center justify-center rounded-2xl border bg-card px-8 py-12 text-center" role="status">
       <div class="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border border-muted-foreground/15 bg-muted/50 text-muted-foreground">
         <Terminal class="h-8 w-8" :stroke-width="1.6" aria-hidden="true" />
       </div>
