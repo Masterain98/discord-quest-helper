@@ -223,7 +223,7 @@
     "advanced_login_desc": "La saisie manuelle du jeton est disponible pour la récupération ou les configurations inhabituelles.",
     "token_storage_note": "Les Tokens sont stockés localement par l'application et ne doivent pas être partagés.",
     "quest_behavior_title": "Quest Comportement",
-    "quest_behavior_desc": "Choisissez le mode d'achèvement, ajustez le timing des quêtes et configurez le répertoire de simulation de jeu.",
+    "quest_behavior_desc": "Ajustez le timing des quêtes et configurez le répertoire de simulation de jeu.",
     "video_task_settings": "Paramètres des quêtes vidéo",
     "general_task_settings": "Paramètres généraux",
     "completion_speed": "Vitesse d'achèvement vidéo",

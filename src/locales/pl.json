@@ -223,7 +223,7 @@
     "advanced_login_desc": "Ręczne wprowadzanie tokenów jest dostępne w przypadku odzyskiwania lub nietypowych konfiguracji.",
     "token_storage_note": "Tokensą przechowywane lokalnie przez aplikację i nie należy ich udostępniać.",
     "quest_behavior_title": "Quest Zachowanie",
-    "quest_behavior_desc": "Wybierz tryb ukończenia, dostosuj czas zadania i skonfiguruj katalog symulacji gry.",
+    "quest_behavior_desc": "Dostosuj czas zadania i skonfiguruj katalog symulacji gry.",
     "video_task_settings": "Ustawienia questów wideo",
     "general_task_settings": "Ustawienia ogólne",
     "completion_speed": "Szybkość ukończenia questów wideo",

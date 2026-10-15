@@ -534,7 +534,7 @@ const progressBarStyle = computed(() => {
         :style="floatingStyle"
         @keydown.esc.stop.prevent="hideProgressWindow"
       >
-      <Card class="max-h-[calc(100dvh-2.5rem)] overflow-y-auto border-border/50 shadow-xl">
+      <Card class="ui-floating-panel max-h-[calc(100dvh-2.5rem)] overflow-y-auto">
       <CardHeader
         class="flex cursor-grab flex-row items-center justify-between space-y-0 pb-3 active:cursor-grabbing"
         @pointerdown="startDrag"
@@ -698,7 +698,7 @@ const progressBarStyle = computed(() => {
     <div
       v-if="draggedQueueQuest"
       aria-hidden="true"
-      class="pointer-events-none fixed z-[100] flex items-center gap-2 rounded-md border border-primary/40 bg-card p-2.5 text-sm shadow-xl ring-1 ring-primary/10"
+      class="ui-floating-panel pointer-events-none fixed z-[100] flex items-center gap-2 rounded-md border p-2.5 text-sm ring-1 ring-primary/10"
       :style="{ left: `${queueDragPreview.left}px`, top: `${queueDragPreview.top}px`, width: `${queueDragPreview.width}px` }"
     >
       <GripVertical class="h-4 w-4 shrink-0 text-primary" />

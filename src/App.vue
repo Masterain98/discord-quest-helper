@@ -31,7 +31,7 @@ import QuestStopDialog from './components/QuestStopDialog.vue'
 import Toaster from './components/Toaster.vue'
 import DiscordCdpExitDialog from './components/DiscordCdpExitDialog.vue'
 import LoginPanel from './components/auth/LoginPanel.vue'
-import { persistSettingsSection, useSettingsNavigation, type SettingsSection } from '@/composables/useSettingsNavigation'
+import { useSettingsNavigation, type SettingsSection } from '@/composables/useSettingsNavigation'
 import { useSettingsSidebar } from '@/composables/useSettingsSidebar'
 import SettingsNav from './components/settings/SettingsNav.vue'
 import IconTooltip from './components/IconTooltip.vue'
@@ -235,11 +235,6 @@ async function openUpdatePage() {
   }
 }
 
-function openSettingsSection(section: 'discord_integration' | 'quest_behavior' | 'advanced' | 'account') {
-  persistSettingsSection(section)
-  currentTab.value = 'settings'
-}
-
 watch(
   () => Boolean(authStore.user),
   (authenticated, wasAuthenticated) => {
@@ -272,7 +267,7 @@ watch(
               <div class="app-rail-tools" role="group" :aria-label="t('sidebar.utilities')">
                 <QuestProgress v-if="authStore.user" />
                 <div class="app-rail-tool-group">
-                  <QuestModeIndicator v-if="authStore.user" :suspended="immersiveGameIdle" @open-settings="openSettingsSection('quest_behavior')" />
+                  <QuestModeIndicator v-if="authStore.user" :suspended="immersiveGameIdle" />
                   <OrbsNitroStatus v-if="authStore.user" :suspended="immersiveGameIdle" />
                 </div>
                 <span class="app-rail-divider app-rail-tools-divider" aria-hidden="true" />
@@ -361,7 +356,7 @@ watch(
 
       <DialogPortal>
         <DialogOverlay class="app-settings-overlay" @click="drawerOpen = false" />
-        <DialogContent id="settings-navigation-panel" class="app-settings-drawer" :aria-describedby="undefined" @pointer-down-outside.prevent @close-auto-focus="restoreSidebarFocus">
+        <DialogContent id="settings-navigation-panel" class="ui-dialog app-settings-drawer" :aria-describedby="undefined" @pointer-down-outside.prevent @close-auto-focus="restoreSidebarFocus">
           <div class="flex h-12 shrink-0 items-center justify-between border-b border-border/50 px-4">
             <DialogTitle class="text-sm font-semibold">{{ t('settings.title') }}</DialogTitle>
             <button type="button" class="app-toolbar-button" :aria-label="t('settings.navigation_close')" @click="drawerOpen = false"><X class="h-4 w-4" aria-hidden="true" /></button>

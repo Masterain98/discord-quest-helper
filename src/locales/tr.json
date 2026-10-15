@@ -223,7 +223,7 @@
     "advanced_login_desc": "Kurtarma veya olağandışı kurulumlar için manuel jeton girişi mevcuttur.",
     "token_storage_note": "Token'lar uygulama tarafından yerel olarak depolanır ve paylaşılmamalıdır.",
     "quest_behavior_title": "Quest Davranış",
-    "quest_behavior_desc": "Tamamlama modunu seçin, görev zamanlamasını ayarlayın ve oyun simülasyonu dizinini yapılandırın.",
+    "quest_behavior_desc": "Görev zamanlamasını ayarlayın ve oyun simülasyonu dizinini yapılandırın.",
     "video_task_settings": "Video Quest Ayarları",
     "general_task_settings": "Genel Ayarlar",
     "completion_speed": "Video Quest Tamamlanma Hızı",

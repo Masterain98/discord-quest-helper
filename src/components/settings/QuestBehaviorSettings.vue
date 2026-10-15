@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { AlertTriangle, Bot, Check, Copy, FolderOpen, Gamepad2, MonitorPlay, RotateCw, Wifi } from 'lucide-vue-next'
+import { AlertTriangle, Check, Copy, FolderOpen, Gamepad2, RotateCw } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { invoke } from '@tauri-apps/api/core'
 import { open as openFolderPicker } from '@tauri-apps/plugin-dialog'
@@ -10,7 +10,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useQuestsStore } from '@/stores/quests'
-import { navigateToTab } from '@/utils/navigate'
 import AdvancedDisclosure from './AdvancedDisclosure.vue'
 import SettingRow from './SettingRow.vue'
 import SettingsSectionCard from './SettingsSectionCard.vue'
@@ -115,74 +114,6 @@ onMounted(() => {
     tone="violet"
     content-class="space-y-6"
   >
-      <div class="space-y-3">
-        <Label>{{ t('settings.game_quest_mode') }}</Label>
-        <div class="grid gap-3 md:grid-cols-2">
-          <button
-            @click="questsStore.gameQuestMode = 'simulate'"
-            :class="cn(
-              'rounded-lg border-2 p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-sm',
-              questsStore.gameQuestMode === 'simulate'
-                ? 'border-primary bg-primary/10 text-primary'
-                : 'border-border bg-card hover:border-primary/40 hover:bg-primary/5',
-            )"
-          >
-            <div class="flex items-start justify-between gap-3">
-              <div class="flex min-w-0 gap-3">
-                <div :class="cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-md', settingToneClass.primary.icon)">
-                  <Bot class="h-5 w-5" />
-                </div>
-                <div class="min-w-0">
-                  <div class="font-semibold">{{ t('settings.game_mode_simulate') }}</div>
-                  <div class="mt-1 text-xs text-muted-foreground">{{ t('settings.game_mode_simulate_desc') }}</div>
-                </div>
-              </div>
-              <Badge
-                v-if="questsStore.gameQuestMode === 'simulate'"
-                variant="outline"
-                :class="cn('shrink-0 text-[10px]', settingToneClass.primary.badge)"
-              >
-                {{ t('settings.status_ok') }}
-              </Badge>
-            </div>
-          </button>
-
-          <button
-            @click="questsStore.cdpAvailable ? questsStore.gameQuestMode = 'cdp' : navigateToTab('settings', 'discord_integration')"
-            :class="cn(
-              'rounded-lg border-2 p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-sm',
-              questsStore.gameQuestMode === 'cdp'
-                ? 'border-emerald-500 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-                : questsStore.cdpAvailable
-                  ? 'border-border bg-card hover:border-emerald-500/40 hover:bg-emerald-500/5'
-                  : 'border-border bg-card opacity-80 hover:border-amber-500/40 hover:bg-amber-500/5',
-            )"
-          >
-            <div class="flex items-start justify-between gap-3">
-              <div class="flex min-w-0 gap-3">
-                <div :class="cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-md', settingToneClass[questsStore.cdpAvailable ? 'success' : 'warning'].icon)">
-                  <MonitorPlay v-if="questsStore.cdpAvailable" class="h-5 w-5" />
-                  <Wifi v-else class="h-5 w-5" />
-                </div>
-                <div class="min-w-0">
-                  <div class="font-semibold">{{ t('settings.game_mode_cdp') }}</div>
-                  <div class="mt-1 text-xs text-muted-foreground">
-                    <template v-if="questsStore.cdpAvailable">{{ t('settings.game_mode_cdp_desc') }}</template>
-                    <template v-else>{{ t('settings.game_mode_cdp_unavailable') }}</template>
-                  </div>
-                </div>
-              </div>
-              <Badge
-                variant="outline"
-                :class="cn('shrink-0 text-[10px]', settingToneClass[questsStore.cdpAvailable ? 'success' : 'warning'].badge)"
-              >
-                {{ questsStore.cdpAvailable ? t('settings.game_mode_cdp_connected') : t('settings.status_attention') }}
-              </Badge>
-            </div>
-          </button>
-        </div>
-      </div>
-
       <SettingsStatusPanel v-if="questsStore.gameQuestMode === 'cdp'" tone="info" :icon="AlertTriangle">
         {{ t('settings.video_config_cdp_notice') }}
       </SettingsStatusPanel>

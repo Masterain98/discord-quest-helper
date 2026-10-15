@@ -12,10 +12,10 @@ const iconMap = {
 }
 
 const styleMap = {
-  success: 'border-green-500/30 bg-green-500/10 text-green-600 dark:text-green-400',
-  error: 'border-destructive/30 bg-destructive/10 text-destructive',
-  warning: 'border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400',
-  info: 'border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-400',
+  success: 'text-green-600 dark:text-green-400',
+  error: 'text-destructive',
+  warning: 'text-amber-600 dark:text-amber-400',
+  info: 'text-blue-600 dark:text-blue-400',
 }
 </script>
 
@@ -35,11 +35,11 @@ const styleMap = {
       <div
         v-for="toast in toastStore.toasts"
         :key="toast.id"
-        class="pointer-events-auto rounded-lg border bg-popover/95 backdrop-blur-sm shadow-lg p-3 flex gap-2.5 items-start"
-        :class="styleMap[toast.type]"
+        class="ui-floating-panel pointer-events-auto rounded-lg border p-3 flex gap-2.5 items-start"
       >
         <component
           :is="iconMap[toast.type]"
+          :class="styleMap[toast.type]"
           class="w-5 h-5 shrink-0 mt-0.5"
         />
 

@@ -223,7 +223,7 @@
     "advanced_login_desc": "A entrada manual de token está disponível para recuperação ou configurações incomuns.",
     "token_storage_note": "Tokens são armazenados localmente pelo aplicativo e não devem ser compartilhados.",
     "quest_behavior_title": "Quest Comportamento",
-    "quest_behavior_desc": "Escolha o modo de conclusão, ajuste o tempo da missão e configure o diretório de simulação de jogos.",
+    "quest_behavior_desc": "Ajuste o tempo da missão e configure o diretório de simulação de jogos.",
     "video_task_settings": "Configurações de missões de vídeo",
     "general_task_settings": "Configurações gerais",
     "completion_speed": "Velocidade de conclusão de vídeo",

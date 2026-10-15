@@ -223,7 +223,7 @@
     "advanced_login_desc": "手動令牌輸入可用於復原或異常設定。",
     "token_storage_note": "Token 由應用程式本地存儲，不應共用。",
     "quest_behavior_title": "Quest 行為",
-    "quest_behavior_desc": "選擇完成模式、調整任務時間，並設定遊戲模擬目錄。",
+    "quest_behavior_desc": "調整任務時間，並設定遊戲模擬目錄。",
     "video_task_settings": "影片任務設定",
     "general_task_settings": "通用設定",
     "completion_speed": "影片任務完成速度",

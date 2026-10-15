@@ -223,7 +223,7 @@
     "advanced_login_desc": "Für die Wiederherstellung oder ungewöhnliche Setups ist eine manuelle Token-Eingabe verfügbar.",
     "token_storage_note": "Tokens werden lokal von der App gespeichert und sollten nicht geteilt werden.",
     "quest_behavior_title": "Quest Verhalten",
-    "quest_behavior_desc": "Wählen Sie den Abschlussmodus, passen Sie das Quest-Timing an und konfigurieren Sie das Spielsimulationsverzeichnis.",
+    "quest_behavior_desc": "Passen Sie das Quest-Timing an und konfigurieren Sie das Spielsimulationsverzeichnis.",
     "video_task_settings": "Videoquest-Einstellungen",
     "general_task_settings": "Allgemeine Einstellungen",
     "completion_speed": "Videoquest-Abschlussgeschwindigkeit",

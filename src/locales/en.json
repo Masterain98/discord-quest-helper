@@ -225,7 +225,7 @@
     "advanced_login_desc": "Manual token entry is available for recovery or unusual setups.",
     "token_storage_note": "Tokens are stored locally by the app and should not be shared.",
     "quest_behavior_title": "Quest Behavior",
-    "quest_behavior_desc": "Choose the completion mode, adjust quest timing, and configure the game simulation directory.",
+    "quest_behavior_desc": "Adjust quest timing and configure the game simulation directory.",
     "video_task_settings": "Video Quest Settings",
     "general_task_settings": "General Settings",
     "completion_speed": "Video Quest Completion Speed",

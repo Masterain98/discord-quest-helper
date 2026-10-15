@@ -223,7 +223,7 @@
     "advanced_login_desc": "Entri token manual tersedia untuk pemulihan atau pengaturan yang tidak biasa.",
     "token_storage_note": "Token disimpan secara lokal oleh aplikasi dan tidak boleh dibagikan.",
     "quest_behavior_title": "Quest Perilaku",
-    "quest_behavior_desc": "Pilih mode penyelesaian, sesuaikan waktu misi, dan konfigurasikan direktori simulasi game.",
+    "quest_behavior_desc": "Sesuaikan waktu misi dan konfigurasikan direktori simulasi game.",
     "video_task_settings": "Pengaturan Quest Video",
     "general_task_settings": "Pengaturan Umum",
     "completion_speed": "Kecepatan Penyelesaian Quest Video",

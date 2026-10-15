@@ -225,7 +225,7 @@
     "advanced_login_desc": "手动 Token 输入仅用于恢复或特殊环境。",
     "token_storage_note": "Token 仅由应用本地保存，请不要分享给他人。",
     "quest_behavior_title": "任务行为",
-    "quest_behavior_desc": "选择完成模式、调整任务计时，并配置游戏模拟目录。",
+    "quest_behavior_desc": "调整任务计时，并配置游戏模拟目录。",
     "video_task_settings": "视频任务设置",
     "general_task_settings": "通用设置",
     "completion_speed": "视频任务完成速度",

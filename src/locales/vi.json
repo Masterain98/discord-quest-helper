@@ -223,7 +223,7 @@
     "advanced_login_desc": "Mục nhập mã thông báo thủ công có sẵn để khôi phục hoặc thiết lập bất thường.",
     "token_storage_note": "Token được ứng dụng lưu trữ cục bộ và không được chia sẻ.",
     "quest_behavior_title": "Quest Hành vi",
-    "quest_behavior_desc": "Chọn chế độ hoàn thành, điều chỉnh thời gian nhiệm vụ và cấu hình thư mục mô phỏng trò chơi.",
+    "quest_behavior_desc": "Điều chỉnh thời gian nhiệm vụ và cấu hình thư mục mô phỏng trò chơi.",
     "video_task_settings": "Cài đặt quest video",
     "general_task_settings": "Cài đặt chung",
     "completion_speed": "Tốc độ hoàn thành quest video",
