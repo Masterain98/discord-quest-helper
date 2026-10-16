@@ -156,6 +156,7 @@
     "in_game_rewards": "รางวัลในเกม",
     "discord_rewards": "Discord รางวัล",
     "active_progress": "ความคืบหน้า Quest ที่ใช้งานอยู่",
+    "task_count": "ทั้งหมด {count} งาน",
     "collapse_progress": "ยุบ",
     "show_progress": "แสดงความคืบหน้าของงาน",
     "hide_progress": "ซ่อนหน้าต่างความคืบหน้า",
@@ -492,6 +493,14 @@
     "nitro_basic": "Nitro Basic"
   },
   "sidebar": {
+    "current_task": "งานปัจจุบัน: {name}",
+    "next_task": "งานถัดไป: {name}",
+    "task_error": "งานเกิดข้อผิดพลาด — คลิกเพื่อดูรายละเอียด",
+    "switch_to_light": "เปลี่ยนเป็นธีมสว่าง",
+    "switch_to_dark": "เปลี่ยนเป็นธีมมืด",
+    "change_language": "เปลี่ยนภาษา (ปัจจุบัน: {language})",
+    "account_menu": "เมนูบัญชี: {name}",
+    "nitro_status": "การสมัครสมาชิก: {plan}",
     "utilities": "เครื่องมือ",
     "mode": "โหมดปัจจุบัน",
     "light": "สว่าง",

@@ -116,8 +116,8 @@ watch([wide, currentTab, immersiveGameIdle], () => { drawerOpen.value = false })
 
 // Theme Logic
 const isDark = ref(true) // Default to dark
-const themeLabel = computed(() => `${t('header.toggle_theme')} · ${t(isDark.value ? 'sidebar.dark' : 'sidebar.light')}`)
-const languageLabel = computed(() => `${t('header.change_language')} · ${supportedLocales.find(item => item.code === locale.value)?.label ?? locale.value}`)
+const themeLabel = computed(() => t(isDark.value ? 'sidebar.switch_to_light' : 'sidebar.switch_to_dark'))
+const languageLabel = computed(() => t('sidebar.change_language', { language: supportedLocales.find(item => item.code === locale.value)?.label ?? locale.value }))
 
 // Debug mode state
 const debugModeEnabled = ref(false)

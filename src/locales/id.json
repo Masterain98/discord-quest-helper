@@ -156,6 +156,7 @@
     "in_game_rewards": "Hadiah Dalam Game",
     "discord_rewards": "Discord Hadiah",
     "active_progress": "Kemajuan Quest Aktif",
+    "task_count": "Total {count} tugas",
     "collapse_progress": "Ciutkan",
     "show_progress": "Tampilkan progres tugas",
     "hide_progress": "Sembunyikan jendela progres",
@@ -492,6 +493,14 @@
     "nitro_basic": "Nitro Basic"
   },
   "sidebar": {
+    "current_task": "Tugas saat ini: {name}",
+    "next_task": "Tugas berikutnya: {name}",
+    "task_error": "Tugas bermasalah — klik untuk detail",
+    "switch_to_light": "Beralih ke tema terang",
+    "switch_to_dark": "Beralih ke tema gelap",
+    "change_language": "Ubah bahasa (saat ini: {language})",
+    "account_menu": "Menu akun: {name}",
+    "nitro_status": "Langganan: {plan}",
     "utilities": "Alat",
     "mode": "Mode saat ini",
     "light": "Terang",

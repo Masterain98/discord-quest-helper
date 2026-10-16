@@ -156,6 +156,7 @@
     "in_game_rewards": "Внутриигровые награды",
     "discord_rewards": "Награды Discord",
     "active_progress": "Прогресс текущего квеста",
+    "task_count": "Всего задач: {count}",
     "collapse_progress": "Свернуть",
     "show_progress": "Показать ход задачи",
     "hide_progress": "Скрыть окно прогресса",
@@ -492,6 +493,14 @@
     "nitro_basic": "Nitro Basic"
   },
   "sidebar": {
+    "current_task": "Текущее задание: {name}",
+    "next_task": "Следующее задание: {name}",
+    "task_error": "Ошибка задания — нажмите для подробностей",
+    "switch_to_light": "Включить светлую тему",
+    "switch_to_dark": "Включить тёмную тему",
+    "change_language": "Изменить язык (текущий: {language})",
+    "account_menu": "Меню аккаунта: {name}",
+    "nitro_status": "Подписка: {plan}",
     "utilities": "Инструменты",
     "mode": "Текущий режим",
     "light": "Светлая",

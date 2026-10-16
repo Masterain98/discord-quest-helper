@@ -156,6 +156,7 @@
     "in_game_rewards": "Belohnungen im Spiel",
     "discord_rewards": "Discord Belohnungen",
     "active_progress": "Aktiver Quest Fortschritt",
+    "task_count": "{count} Aufgaben insgesamt",
     "collapse_progress": "Einklappen",
     "show_progress": "Fortschritt anzeigen",
     "hide_progress": "Fortschrittsfenster ausblenden",
@@ -492,6 +493,14 @@
     "nitro_basic": "Nitro Basic"
   },
   "sidebar": {
+    "current_task": "Aktuelle Aufgabe: {name}",
+    "next_task": "Nächste Aufgabe: {name}",
+    "task_error": "Aufgabenfehler – für Details klicken",
+    "switch_to_light": "Zum hellen Design wechseln",
+    "switch_to_dark": "Zum dunklen Design wechseln",
+    "change_language": "Sprache ändern (aktuell: {language})",
+    "account_menu": "Kontomenü: {name}",
+    "nitro_status": "Abonnement: {plan}",
     "utilities": "Werkzeuge",
     "mode": "Aktueller Modus",
     "light": "Hell",

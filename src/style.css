@@ -635,6 +635,26 @@ html.theme-view-transition::view-transition-new(root) {
 .rail-orbs-trigger { flex-direction: column; gap: 2px; }
 .rail-orbs-trigger { color: hsl(var(--primary)); }
 .rail-task-progress-trigger { position: relative; overflow: visible; margin-top: 3px; }
+.rail-task-count-badge {
+  position: absolute;
+  top: -4px;
+  right: -5px;
+  display: inline-flex;
+  min-width: 19px;
+  height: 19px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  border: 2px solid hsl(var(--background));
+  border-radius: 999px;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
 .rail-task-progress-image {
   width: 26px;
   height: 26px;

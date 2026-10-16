@@ -158,6 +158,7 @@
     "in_game_rewards": "游戏内奖励",
     "discord_rewards": "Discord 奖励",
     "active_progress": "当前任务进度",
+    "task_count": "共 {count} 个任务",
     "collapse_progress": "折叠",
     "show_progress": "显示任务进度",
     "hide_progress": "隐藏任务进度窗口",
@@ -494,6 +495,14 @@
     "nitro_basic": "Nitro Basic"
   },
   "sidebar": {
+    "current_task": "当前任务：{name}",
+    "next_task": "下一个任务：{name}",
+    "task_error": "任务执行出错，点击查看详情",
+    "switch_to_light": "切换为浅色主题",
+    "switch_to_dark": "切换为深色主题",
+    "change_language": "切换语言（当前：{language}）",
+    "account_menu": "账号菜单：{name}",
+    "nitro_status": "订阅状态：{plan}",
     "utilities": "工具",
     "mode": "当前运行模式",
     "light": "浅色",

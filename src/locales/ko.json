@@ -156,6 +156,7 @@
     "in_game_rewards": "게임 내 보상",
     "discord_rewards": "Discord 보상",
     "active_progress": "현재 진행 상황",
+    "task_count": "총 {count}개 작업",
     "collapse_progress": "접기",
     "show_progress": "작업 진행 상황 표시",
     "hide_progress": "진행 창 숨기기",
@@ -492,6 +493,14 @@
     "nitro_basic": "Nitro Basic"
   },
   "sidebar": {
+    "current_task": "현재 작업: {name}",
+    "next_task": "다음 작업: {name}",
+    "task_error": "작업 오류 — 클릭하여 세부 정보 보기",
+    "switch_to_light": "밝은 테마로 전환",
+    "switch_to_dark": "어두운 테마로 전환",
+    "change_language": "언어 변경 (현재: {language})",
+    "account_menu": "계정 메뉴: {name}",
+    "nitro_status": "구독: {plan}",
     "utilities": "도구",
     "mode": "현재 모드",
     "light": "밝게",

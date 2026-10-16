@@ -156,6 +156,7 @@
     "in_game_rewards": "Nagrody w grze",
     "discord_rewards": "Discord Nagrody",
     "active_progress": "Aktywny Quest Postęp",
+    "task_count": "Łącznie {count} zadań",
     "collapse_progress": "Zwiń",
     "show_progress": "Pokaż postęp zadania",
     "hide_progress": "Ukryj okno postępu",
@@ -492,6 +493,14 @@
     "nitro_basic": "Nitro Basic"
   },
   "sidebar": {
+    "current_task": "Bieżące zadanie: {name}",
+    "next_task": "Następne zadanie: {name}",
+    "task_error": "Błąd zadania — kliknij, aby zobaczyć szczegóły",
+    "switch_to_light": "Przełącz na jasny motyw",
+    "switch_to_dark": "Przełącz na ciemny motyw",
+    "change_language": "Zmień język (obecny: {language})",
+    "account_menu": "Menu konta: {name}",
+    "nitro_status": "Subskrypcja: {plan}",
     "utilities": "Narzędzia",
     "mode": "Bieżący tryb",
     "light": "Jasny",

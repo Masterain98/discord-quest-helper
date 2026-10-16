@@ -43,6 +43,12 @@ const hasFloatingContent = computed(() =>
 
 const queuedUpcoming = computed(() => questsStore.upcomingQuests)
 
+const totalTaskCount = computed(() => {
+  const ids = new Set(questsStore.questQueue.map(quest => quest.id))
+  if (questsStore.activeQuestId) ids.add(questsStore.activeQuestId)
+  return ids.size
+})
+
 const queueListRef = ref<HTMLElement | null>(null)
 const draggedQueueQuestId = ref<string | null>(null)
 const queueDropTarget = ref<{ id: string, placement: 'before' | 'after' } | null>(null)
@@ -231,11 +237,18 @@ const sidebarRewardImage = computed(() => {
   return '/icons/orbs.png'
 })
 
+const sidebarProgressTooltip = computed(() => {
+  if (questsStore.activeQuestId) {
+    return t('sidebar.current_task', { name: trackedQuest.value?.config.messages.quest_name ?? t('quest.active_progress') })
+  }
+  if (trackedQuest.value) return t('sidebar.next_task', { name: trackedQuest.value.config.messages.quest_name })
+  return t('sidebar.task_error')
+})
+
 const sidebarProgressLabel = computed(() => {
   const action = t(expanded.value ? 'quest.hide_progress' : 'quest.show_progress')
-  const name = trackedQuest.value?.config.messages.quest_name ?? floatingTitle.value
-  const progress = questsStore.activeQuestId ? ` · ${Math.round(sidebarProgress.value)}%` : ''
-  return `${action}: ${name}${progress}`
+  const count = totalTaskCount.value > 1 ? ` · ${t('quest.task_count', { count: totalTaskCount.value })}` : ''
+  return `${action} · ${sidebarProgressTooltip.value}${count}`
 })
 
 const progressFrameStyle = computed(() => ({
@@ -486,7 +499,7 @@ const progressBarStyle = computed(() => {
 </script>
 
 <template>
-  <IconTooltip v-if="hasFloatingContent" :label="sidebarProgressLabel" side="right">
+  <IconTooltip v-if="hasFloatingContent" :label="sidebarProgressTooltip" side="right">
     <button
       ref="triggerRef"
       type="button"
@@ -521,6 +534,9 @@ const progressBarStyle = computed(() => {
         <rect class="rail-task-progress-track" x="2.5" y="2.5" width="39" height="39" rx="14" pathLength="100" />
         <rect class="rail-task-progress-frame-value" x="2.5" y="2.5" width="39" height="39" rx="14" pathLength="100" :style="progressFrameStyle" />
       </svg>
+      <span v-if="totalTaskCount > 1" class="rail-task-count-badge" aria-hidden="true">
+        {{ totalTaskCount > 99 ? '99+' : totalTaskCount }}
+      </span>
     </button>
   </IconTooltip>
 
@@ -530,7 +546,7 @@ const progressBarStyle = computed(() => {
         v-if="expanded && hasFloatingContent"
         id="quest-progress-floating-window"
         ref="floatingRef"
-        class="fixed bottom-5 right-5 z-[55] w-[calc(100vw-2rem)] max-w-sm"
+        class="fixed bottom-5 right-5 z-40 w-[calc(100vw-2rem)] max-w-sm"
         :style="floatingStyle"
         @keydown.esc.stop.prevent="hideProgressWindow"
       >
@@ -698,7 +714,7 @@ const progressBarStyle = computed(() => {
     <div
       v-if="draggedQueueQuest"
       aria-hidden="true"
-      class="ui-floating-panel pointer-events-none fixed z-[100] flex items-center gap-2 rounded-md border p-2.5 text-sm ring-1 ring-primary/10"
+      class="ui-floating-panel pointer-events-none fixed z-40 flex items-center gap-2 rounded-md border p-2.5 text-sm ring-1 ring-primary/10"
       :style="{ left: `${queueDragPreview.left}px`, top: `${queueDragPreview.top}px`, width: `${queueDragPreview.width}px` }"
     >
       <GripVertical class="h-4 w-4 shrink-0 text-primary" />

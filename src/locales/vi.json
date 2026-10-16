@@ -156,6 +156,7 @@
     "in_game_rewards": "Phần thưởng trong trò chơi",
     "discord_rewards": "Discord Phần thưởng",
     "active_progress": "Tiến trình đang hoạt động Quest",
+    "task_count": "Tổng cộng {count} nhiệm vụ",
     "collapse_progress": "Thu gọn",
     "show_progress": "Hiện tiến độ tác vụ",
     "hide_progress": "Ẩn cửa sổ tiến độ",
@@ -492,6 +493,14 @@
     "nitro_basic": "Nitro Basic"
   },
   "sidebar": {
+    "current_task": "Nhiệm vụ hiện tại: {name}",
+    "next_task": "Nhiệm vụ tiếp theo: {name}",
+    "task_error": "Lỗi nhiệm vụ — nhấp để xem chi tiết",
+    "switch_to_light": "Chuyển sang giao diện sáng",
+    "switch_to_dark": "Chuyển sang giao diện tối",
+    "change_language": "Đổi ngôn ngữ (hiện tại: {language})",
+    "account_menu": "Menu tài khoản: {name}",
+    "nitro_status": "Gói đăng ký: {plan}",
     "utilities": "Công cụ",
     "mode": "Chế độ hiện tại",
     "light": "Sáng",

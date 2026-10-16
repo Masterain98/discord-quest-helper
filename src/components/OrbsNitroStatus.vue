@@ -18,7 +18,12 @@ watch(() => showOrbs.value || showNitro.value, visible => { if (!visible) open.v
 const balance = computed(() => questsStore.orbsBalance == null ? '—' : questsStore.orbsBalance.toLocaleString(locale.value))
 const totalRedeemed = computed(() => questsStore.orbsTotalRedeemed == null ? '—' : questsStore.orbsTotalRedeemed.toLocaleString(locale.value))
 const compactBalance = computed(() => questsStore.orbsBalance == null ? '—' : new Intl.NumberFormat(locale.value, { notation: 'compact', maximumFractionDigits: 1 }).format(questsStore.orbsBalance))
-const label = computed(() => showOrbs.value ? `${t('home.current_orbs')}: ${balance.value}` : authStore.nitroStatus?.label ?? t('home.nitro_next_orbs_title'))
+const label = computed(() => {
+  if (!showOrbs.value) return t('sidebar.nitro_status', { plan: authStore.nitroStatus?.label ?? t('user.nitro') })
+  if (questsStore.orbsBalanceLoading) return `${t('home.current_orbs')}: ${t('general.loading')}`
+  if (questsStore.orbsBalanceError || questsStore.orbsBalance == null) return t('sidebar.orbs_unavailable')
+  return `${t('home.current_orbs')}: ${balance.value}`
+})
 const claimText = computed(() => {
   const claim = authStore.nextOrbsClaim
   return claim ? t(`home.nitro_next_orbs_${claim.unit}`, { [claim.unit]: claim.value }, claim.value) : ''

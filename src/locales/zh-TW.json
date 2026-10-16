@@ -156,6 +156,7 @@
     "in_game_rewards": "遊戲內獎勵",
     "discord_rewards": "Discord 獎勵",
     "active_progress": "當前任務進度",
+    "task_count": "共 {count} 個任務",
     "collapse_progress": "收合",
     "show_progress": "顯示任務進度",
     "hide_progress": "隱藏任務進度視窗",
@@ -492,6 +493,14 @@
     "nitro_basic": "Nitro Basic"
   },
   "sidebar": {
+    "current_task": "目前任務：{name}",
+    "next_task": "下一個任務：{name}",
+    "task_error": "任務執行發生錯誤，點擊查看詳情",
+    "switch_to_light": "切換為淺色主題",
+    "switch_to_dark": "切換為深色主題",
+    "change_language": "切換語言（目前：{language}）",
+    "account_menu": "帳號選單：{name}",
+    "nitro_status": "訂閱狀態：{plan}",
     "utilities": "工具",
     "mode": "目前執行模式",
     "light": "淺色",

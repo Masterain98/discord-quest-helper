@@ -158,6 +158,7 @@
     "in_game_rewards": "In-Game Rewards",
     "discord_rewards": "Discord Rewards",
     "active_progress": "Active Quest Progress",
+    "task_count": "{count} tasks in total",
     "collapse_progress": "Collapse",
     "show_progress": "Show task progress",
     "hide_progress": "Hide task progress",
@@ -494,6 +495,14 @@
     "nitro_basic": "Nitro Basic"
   },
   "sidebar": {
+    "current_task": "Current task: {name}",
+    "next_task": "Next task: {name}",
+    "task_error": "Task error — click for details",
+    "switch_to_light": "Switch to light theme",
+    "switch_to_dark": "Switch to dark theme",
+    "change_language": "Change language (current: {language})",
+    "account_menu": "Account menu: {name}",
+    "nitro_status": "Subscription: {plan}",
     "utilities": "Utilities",
     "mode": "Current mode",
     "light": "Light",

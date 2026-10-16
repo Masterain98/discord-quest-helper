@@ -156,6 +156,7 @@
     "in_game_rewards": "ゲーム内報酬",
     "discord_rewards": "Discord報酬",
     "active_progress": "アクティブなクエスト進捗",
+    "task_count": "合計 {count} 件のタスク",
     "collapse_progress": "折りたたむ",
     "show_progress": "タスクの進捗を表示",
     "hide_progress": "進捗ウィンドウを非表示",
@@ -492,6 +493,14 @@
     "nitro_basic": "Nitro Basic"
   },
   "sidebar": {
+    "current_task": "現在のタスク：{name}",
+    "next_task": "次のタスク：{name}",
+    "task_error": "タスクエラー — クリックして詳細を表示",
+    "switch_to_light": "ライトテーマに切り替え",
+    "switch_to_dark": "ダークテーマに切り替え",
+    "change_language": "言語を変更（現在：{language}）",
+    "account_menu": "アカウントメニュー：{name}",
+    "nitro_status": "サブスクリプション：{plan}",
     "utilities": "ツール",
     "mode": "現在のモード",
     "light": "ライト",

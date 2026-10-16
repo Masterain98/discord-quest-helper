@@ -12,6 +12,7 @@ const { t } = useI18n()
 const authStore = useAuthStore()
 const emit = defineEmits<{ logout: [] }>()
 const user = computed(() => authStore.user)
+const label = computed(() => t('sidebar.account_menu', { name: user.value?.global_name || user.value?.username }))
 const open = ref(false)
 const avatarUrl = computed(() => user.value?.avatar
   ? `https://cdn.discordapp.com/avatars/${user.value.id}/${user.value.avatar}.png?size=128` : undefined)
@@ -19,9 +20,9 @@ function handleLogout() { open.value = false; emit('logout') }
 </script>
 
 <template>
-  <IconMenu v-if="user" v-model:open="open" :label="user.global_name || user.username" :side="compact ? 'right' : 'bottom'" :suspended="suspended" content-class="w-56">
+  <IconMenu v-if="user" v-model:open="open" :label="label" :side="compact ? 'right' : 'bottom'" :suspended="suspended" content-class="w-56">
     <template #trigger>
-        <button type="button" :aria-label="`${t('settings.nav_account')}: ${user.global_name || user.username}`" :class="compact ? 'app-rail-button' : 'inline-flex h-10 items-center gap-2 rounded-lg px-2 hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'">
+        <button type="button" :aria-label="label" :class="compact ? 'app-rail-button' : 'inline-flex h-10 items-center gap-2 rounded-lg px-2 hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'">
           <Avatar class="h-8 w-8 shrink-0">
             <AvatarImage v-if="avatarUrl" :src="avatarUrl" :alt="user.username" />
             <AvatarFallback>{{ user.username[0]?.toUpperCase() }}</AvatarFallback>

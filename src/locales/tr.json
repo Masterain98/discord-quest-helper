@@ -156,6 +156,7 @@
     "in_game_rewards": "Oyun İçi Ödüller",
     "discord_rewards": "Discord Ödüller",
     "active_progress": "Aktif Quest İlerleme",
+    "task_count": "Toplam {count} görev",
     "collapse_progress": "Daralt",
     "show_progress": "Görev ilerlemesini göster",
     "hide_progress": "İlerleme penceresini gizle",
@@ -492,6 +493,14 @@
     "nitro_basic": "Nitro Basic"
   },
   "sidebar": {
+    "current_task": "Geçerli görev: {name}",
+    "next_task": "Sonraki görev: {name}",
+    "task_error": "Görev hatası — ayrıntılar için tıklayın",
+    "switch_to_light": "Açık temaya geç",
+    "switch_to_dark": "Koyu temaya geç",
+    "change_language": "Dili değiştir (geçerli: {language})",
+    "account_menu": "Hesap menüsü: {name}",
+    "nitro_status": "Abonelik: {plan}",
     "utilities": "Araçlar",
     "mode": "Geçerli mod",
     "light": "Açık",
