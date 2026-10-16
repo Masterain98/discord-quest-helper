@@ -739,5 +739,34 @@
       "console_object_expired": "Referencia caducada",
       "console_session_invalidated": "Desconectado"
     }
+  },
+  "quest_group": {
+    "members": "Grupo · {count}",
+    "expand": "Expandir",
+    "collapse": "Contraer",
+    "accepted": "Aceptadas {count}/{total}",
+    "completed": "Completadas {count}/{total}",
+    "claimable": "{count} por reclamar",
+    "linked_progress": "Visualización de progreso vinculado",
+    "accept": "Aceptar grupo ({count})",
+    "queue": "Añadir grupo a la cola ({count})",
+    "start": "Iniciar grupo ({count})",
+    "stop": "Detener grupo",
+    "remove": "Quitar de la cola ({count})",
+    "claim": "Reclamar grupo ({count})",
+    "activity_manual": "Expande para iniciar las misiones Activity por separado.",
+    "accept_result": "Aceptadas: {success}; fallidas: {fail}",
+    "claim_result": "Reclamadas: {success}; fallidas: {fail}",
+    "operation_failed": "Error en la operación de grupo",
+    "guide_disconnected": "Discord se desconectó. Vuelve a conectarte y abre esta misión de nuevo.",
+    "guide_unclaimed": "Aún no se ha confirmado la reclamación. Reclama en Discord y vuelve a comprobar.",
+    "guide_title": "Reclamar recompensas del grupo",
+    "guide_desc": "Reclama cada recompensa en Discord y comprueba su estado para continuar con la siguiente misión.",
+    "guide_step": "Misión {current} de {total}",
+    "guide_open": "Abrir en Discord",
+    "guide_continue": "Comprobar y continuar",
+    "resume": "Reanudar cola",
+    "average_progress": "Progreso medio",
+    "visible_members": "Visibles {count}/{total}"
   }
 }

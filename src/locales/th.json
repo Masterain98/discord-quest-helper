@@ -739,5 +739,34 @@
       "console_object_expired": "การอ้างอิงหมดอายุ",
       "console_session_invalidated": "ตัดการเชื่อมต่อแล้ว"
     }
+  },
+  "quest_group": {
+    "members": "กลุ่ม · {count}",
+    "expand": "ขยาย",
+    "collapse": "ย่อ",
+    "accepted": "รับแล้ว {count}/{total}",
+    "completed": "เสร็จแล้ว {count}/{total}",
+    "claimable": "รอรับรางวัล {count} รายการ",
+    "linked_progress": "แสดงความคืบหน้าที่เชื่อมโยง",
+    "accept": "รับทั้งกลุ่ม ({count})",
+    "queue": "เพิ่มกลุ่มเข้าคิว ({count})",
+    "start": "เริ่มทั้งกลุ่ม ({count})",
+    "stop": "หยุดทั้งกลุ่ม",
+    "remove": "นำออกจากคิว ({count})",
+    "claim": "รับรางวัลทั้งกลุ่ม ({count})",
+    "activity_manual": "ขยายเพื่อเริ่มภารกิจ Activity ทีละรายการ",
+    "accept_result": "รับสำเร็จ {success} รายการ ล้มเหลว {fail} รายการ",
+    "claim_result": "รับรางวัลสำเร็จ {success} รายการ ล้มเหลว {fail} รายการ",
+    "operation_failed": "การดำเนินการกลุ่มล้มเหลว",
+    "guide_disconnected": "Discord ถูกตัดการเชื่อมต่อ เชื่อมต่อใหม่แล้วเปิดภารกิจนี้อีกครั้ง",
+    "guide_unclaimed": "ยังไม่ยืนยันการรับรางวัล โปรดรับใน Discord แล้วตรวจสอบอีกครั้ง",
+    "guide_title": "รับรางวัลของกลุ่ม",
+    "guide_desc": "รับรางวัลทีละรายการใน Discord แล้วตรวจสอบสถานะเพื่อไปยังภารกิจถัดไป",
+    "guide_step": "ภารกิจ {current} จาก {total}",
+    "guide_open": "เปิดใน Discord",
+    "guide_continue": "ตรวจสอบและดำเนินการต่อ",
+    "resume": "ดำเนินคิวต่อ",
+    "average_progress": "ความคืบหน้าเฉลี่ย",
+    "visible_members": "แสดง {count}/{total}"
   }
 }

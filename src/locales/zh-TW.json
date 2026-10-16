@@ -739,5 +739,34 @@
       "console_object_expired": "參照已失效",
       "console_session_invalidated": "連線已中斷"
     }
+  },
+  "quest_group": {
+    "members": "同組任務 · {count}",
+    "expand": "展開",
+    "collapse": "收合",
+    "accepted": "已接受 {count}/{total}",
+    "completed": "已完成 {count}/{total}",
+    "claimable": "{count} 項待領取",
+    "linked_progress": "進度連動顯示",
+    "accept": "接受整組（{count}）",
+    "queue": "整組加入佇列（{count}）",
+    "start": "開始整組（{count}）",
+    "stop": "停止整組",
+    "remove": "移出佇列（{count}）",
+    "claim": "領取整組（{count}）",
+    "activity_manual": "展開後可單獨啟動 Activity 任務。",
+    "accept_result": "接受成功 {success} 項，失敗 {fail} 項",
+    "claim_result": "領取成功 {success} 項，失敗 {fail} 項",
+    "operation_failed": "群組操作失敗",
+    "guide_disconnected": "Discord 已中斷連線。重新連線後，再次開啟此任務。",
+    "guide_unclaimed": "尚未確認此獎勵已領取。請在 Discord 中領取後再次檢查。",
+    "guide_title": "領取整組獎勵",
+    "guide_desc": "請在 Discord 中逐一領取獎勵，檢查領取狀態後繼續下一個任務。",
+    "guide_step": "第 {current} / {total} 個任務",
+    "guide_open": "在 Discord 中開啟",
+    "guide_continue": "檢查並繼續",
+    "resume": "繼續任務佇列",
+    "average_progress": "平均進度",
+    "visible_members": "目前顯示 {count}/{total}"
   }
 }

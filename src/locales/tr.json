@@ -739,5 +739,34 @@
       "console_object_expired": "Referansın süresi doldu",
       "console_session_invalidated": "Bağlantı kesildi"
     }
+  },
+  "quest_group": {
+    "members": "Grup · {count}",
+    "expand": "Genişlet",
+    "collapse": "Daralt",
+    "accepted": "Kabul edilen {count}/{total}",
+    "completed": "Tamamlanan {count}/{total}",
+    "claimable": "Alınabilir ödül: {count}",
+    "linked_progress": "Bağlantılı ilerleme görünümü",
+    "accept": "Grubu kabul et ({count})",
+    "queue": "Grubu sıraya ekle ({count})",
+    "start": "Grubu başlat ({count})",
+    "stop": "Grubu durdur",
+    "remove": "Sıradan çıkar ({count})",
+    "claim": "Grup ödüllerini al ({count})",
+    "activity_manual": "Activity görevlerini tek tek başlatmak için genişletin.",
+    "accept_result": "Kabul edilen: {success}; başarısız: {fail}",
+    "claim_result": "Alınan: {success}; başarısız: {fail}",
+    "operation_failed": "Grup işlemi başarısız",
+    "guide_disconnected": "Discord bağlantısı kesildi. Yeniden bağlanıp bu görevi tekrar açın.",
+    "guide_unclaimed": "Ödül alımı henüz doğrulanmadı. Discord üzerinden alıp tekrar kontrol edin.",
+    "guide_title": "Grup ödüllerini al",
+    "guide_desc": "Her ödülü Discord üzerinden alın ve sonraki göreve geçmek için durumunu kontrol edin.",
+    "guide_step": "Görev {current}/{total}",
+    "guide_open": "Discord üzerinde aç",
+    "guide_continue": "Kontrol et ve devam et",
+    "resume": "Sırayı sürdür",
+    "average_progress": "Ortalama ilerleme",
+    "visible_members": "Görünen {count}/{total}"
   }
 }

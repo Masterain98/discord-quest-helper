@@ -739,5 +739,34 @@
       "console_object_expired": "Référence expirée",
       "console_session_invalidated": "Déconnecté"
     }
+  },
+  "quest_group": {
+    "members": "Groupe · {count}",
+    "expand": "Développer",
+    "collapse": "Réduire",
+    "accepted": "Acceptées {count}/{total}",
+    "completed": "Terminées {count}/{total}",
+    "claimable": "{count} à récupérer",
+    "linked_progress": "Affichage de progression lié",
+    "accept": "Accepter le groupe ({count})",
+    "queue": "Ajouter le groupe ({count})",
+    "start": "Lancer le groupe ({count})",
+    "stop": "Arrêter le groupe",
+    "remove": "Retirer de la file ({count})",
+    "claim": "Récupérer le groupe ({count})",
+    "activity_manual": "Développez pour lancer les quêtes Activity individuellement.",
+    "accept_result": "Acceptées : {success} ; échecs : {fail}",
+    "claim_result": "Récupérées : {success} ; échecs : {fail}",
+    "operation_failed": "Échec de l’opération de groupe",
+    "guide_disconnected": "Discord est déconnecté. Reconnectez-vous, puis rouvrez cette quête.",
+    "guide_unclaimed": "La récupération n’est pas encore confirmée. Récupérez la récompense dans Discord, puis vérifiez à nouveau.",
+    "guide_title": "Récupérer les récompenses du groupe",
+    "guide_desc": "Récupérez chaque récompense dans Discord, puis vérifiez son statut pour passer à la quête suivante.",
+    "guide_step": "Quête {current} sur {total}",
+    "guide_open": "Ouvrir dans Discord",
+    "guide_continue": "Vérifier et continuer",
+    "resume": "Reprendre la file",
+    "average_progress": "Progression moyenne",
+    "visible_members": "Affichées {count}/{total}"
   }
 }

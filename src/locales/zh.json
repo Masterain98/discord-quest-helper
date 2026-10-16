@@ -741,5 +741,34 @@
       "console_object_expired": "引用已失效",
       "console_session_invalidated": "连接已断开"
     }
+  },
+  "quest_group": {
+    "members": "同组任务 · {count}",
+    "expand": "展开",
+    "collapse": "收起",
+    "accepted": "已接受 {count}/{total}",
+    "completed": "已完成 {count}/{total}",
+    "claimable": "{count} 项待领取",
+    "linked_progress": "进度联动展示",
+    "accept": "接受整组（{count}）",
+    "queue": "整组加入队列（{count}）",
+    "start": "开始整组（{count}）",
+    "stop": "停止整组",
+    "remove": "移出队列（{count}）",
+    "claim": "领取整组（{count}）",
+    "activity_manual": "展开后可单独启动 Activity 任务。",
+    "accept_result": "接受成功 {success} 项，失败 {fail} 项",
+    "claim_result": "领取成功 {success} 项，失败 {fail} 项",
+    "operation_failed": "组级操作失败",
+    "guide_disconnected": "Discord 已断开连接。重新连接后，再次打开此任务。",
+    "guide_unclaimed": "尚未确认此奖励已领取。请在 Discord 中领取后再次检查。",
+    "guide_title": "领取整组奖励",
+    "guide_desc": "请在 Discord 中逐个领取奖励，检查领取状态后继续下一个任务。",
+    "guide_step": "第 {current} / {total} 个任务",
+    "guide_open": "在 Discord 中打开",
+    "guide_continue": "检查并继续",
+    "resume": "继续任务队列",
+    "average_progress": "平均进度",
+    "visible_members": "当前显示 {count}/{total}"
   }
 }

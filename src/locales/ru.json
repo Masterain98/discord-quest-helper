@@ -739,5 +739,34 @@
       "console_object_expired": "Ссылка устарела",
       "console_session_invalidated": "Отключено"
     }
+  },
+  "quest_group": {
+    "members": "Группа · {count}",
+    "expand": "Развернуть",
+    "collapse": "Свернуть",
+    "accepted": "Принято {count}/{total}",
+    "completed": "Выполнено {count}/{total}",
+    "claimable": "Наград к получению: {count}",
+    "linked_progress": "Связанное отображение прогресса",
+    "accept": "Принять группу ({count})",
+    "queue": "Добавить группу в очередь ({count})",
+    "start": "Начать группу ({count})",
+    "stop": "Остановить группу",
+    "remove": "Убрать из очереди ({count})",
+    "claim": "Получить награды ({count})",
+    "activity_manual": "Разверните группу, чтобы запускать задания Activity по отдельности.",
+    "accept_result": "Принято: {success}; ошибок: {fail}",
+    "claim_result": "Получено: {success}; ошибок: {fail}",
+    "operation_failed": "Ошибка групповой операции",
+    "guide_disconnected": "Discord отключён. Подключитесь и снова откройте задание.",
+    "guide_unclaimed": "Получение ещё не подтверждено. Получите награду в Discord и проверьте снова.",
+    "guide_title": "Получение наград группы",
+    "guide_desc": "Получайте награды в Discord по одной и проверяйте статус для перехода к следующему заданию.",
+    "guide_step": "Задание {current} из {total}",
+    "guide_open": "Открыть в Discord",
+    "guide_continue": "Проверить и продолжить",
+    "resume": "Продолжить очередь",
+    "average_progress": "Средний прогресс",
+    "visible_members": "Показано {count}/{total}"
   }
 }

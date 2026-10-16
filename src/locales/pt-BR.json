@@ -739,5 +739,34 @@
       "console_object_expired": "Referência expirada",
       "console_session_invalidated": "Desconectado"
     }
+  },
+  "quest_group": {
+    "members": "Grupo · {count}",
+    "expand": "Expandir",
+    "collapse": "Recolher",
+    "accepted": "Aceitas {count}/{total}",
+    "completed": "Concluídas {count}/{total}",
+    "claimable": "{count} para resgatar",
+    "linked_progress": "Exibição de progresso vinculado",
+    "accept": "Aceitar grupo ({count})",
+    "queue": "Adicionar grupo à fila ({count})",
+    "start": "Iniciar grupo ({count})",
+    "stop": "Parar grupo",
+    "remove": "Remover da fila ({count})",
+    "claim": "Resgatar grupo ({count})",
+    "activity_manual": "Expanda para iniciar as missões Activity individualmente.",
+    "accept_result": "Aceitas: {success}; falhas: {fail}",
+    "claim_result": "Resgatadas: {success}; falhas: {fail}",
+    "operation_failed": "Falha na operação do grupo",
+    "guide_disconnected": "Discord desconectado. Reconecte e abra esta missão novamente.",
+    "guide_unclaimed": "O resgate ainda não foi confirmado. Resgate no Discord e verifique novamente.",
+    "guide_title": "Resgatar recompensas do grupo",
+    "guide_desc": "Resgate cada recompensa no Discord e verifique o status para continuar com a próxima missão.",
+    "guide_step": "Missão {current} de {total}",
+    "guide_open": "Abrir no Discord",
+    "guide_continue": "Verificar e continuar",
+    "resume": "Retomar fila",
+    "average_progress": "Progresso médio",
+    "visible_members": "Visíveis {count}/{total}"
   }
 }

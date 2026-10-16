@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   getPlatformCapabilities: vi.fn(),
   startVideoQuest: vi.fn(),
   stopQuest: vi.fn(),
+  getQuestsFull: vi.fn(),
   forceVideoProgress: vi.fn(),
 }))
 
@@ -21,7 +22,7 @@ vi.mock('@/api/tauri', () => ({
   onQuestComplete: mocks.onQuestComplete,
   onQuestError: vi.fn().mockResolvedValue(() => undefined),
   stopGameSimulationUsage: mocks.stopGameSimulationUsage,
-  getQuestsFull: vi.fn().mockResolvedValue({ quests: [], excluded_quests: [] }),
+  getQuestsFull: mocks.getQuestsFull,
 }))
 
 vi.mock('@tauri-apps/api/event', () => ({ emit: vi.fn() }))
@@ -62,6 +63,7 @@ describe('queued quest completion', () => {
     mocks.getPlatformCapabilities.mockResolvedValue({
       os: 'windows', defaultGameQuestMode: 'simulate', executableOsPriority: ['win32'],
     })
+    mocks.getQuestsFull.mockImplementation(async () => ({ quests: [quest('first'), quest('second'), quest('third')], excluded_quests: [] }))
     mocks.startVideoQuest.mockResolvedValue(undefined)
     mocks.stopQuest.mockResolvedValue(undefined)
     mocks.forceVideoProgress.mockResolvedValue(undefined)
@@ -255,4 +257,98 @@ describe('queued quest completion', () => {
     expect(store.isQueueRunning).toBe(false)
     expect(mocks.startVideoQuest).toHaveBeenCalledTimes(1)
   })
+  it('adds visible group IDs once, preserves selections, and appends behind a manual active task', async () => {
+    const store = useQuestsStore()
+    store.quests = [quest('first'), quest('second'), quest('third'), quest('activity', 'PLAY_ACTIVITY')]
+    await store.startVideo('first', 60, 0)
+    expect(store.addGroupToQueue(['first', 'second', 'second', 'activity'], new Map([['second', 'game.exe']]))).toBe(1)
+    expect(store.addGroupToQueue(['second', 'third'])).toBe(1)
+    expect(store.questQueue.map(q => q.id)).toEqual(['first', 'second', 'third'])
+    expect(store.questQueue[1].selectedExeName).toBe('game.exe')
+  })
+
+  it('stops the selected group and continues unrelated queued tasks', async () => {
+    const store = await queuedStore()
+    store.addToQueue(quest('third'))
+    expect(await store.stopGroup(['first', 'second'])).toBe(true)
+    expect(store.questQueue.map(q => q.id)).toEqual(['third'])
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(store.activeQuestId).toBe('third')
+  })
+
+  it('removes only selected pending members without stopping an unrelated active task', async () => {
+    const store = await queuedStore()
+    store.addToQueue(quest('third'))
+    expect(await store.stopGroup(['second'])).toBe(true)
+    expect(store.questQueue.map(q => q.id)).toEqual(['first', 'third'])
+    expect(store.activeQuestId).toBe('first')
+    expect(mocks.stopQuest).not.toHaveBeenCalled()
+  })
+
+  it('refreshes queued tasks, skips server-completed members, and starts from actual progress', async () => {
+    const store = useQuestsStore()
+    store.quests = [quest('first'), quest('second')]
+    store.addGroupToQueue(['first', 'second'])
+    const done = quest('first'); done.user_status!.completed_at = '2026-10-10'
+    const partial = quest('second'); partial.user_status!.progress = { WATCH_VIDEO: { value: 42 } }
+    mocks.getQuestsFull.mockResolvedValue({ quests: [done, partial], excluded_quests: [] })
+    await store.startQueue()
+    expect(mocks.startVideoQuest).toHaveBeenCalledTimes(1)
+    expect(mocks.startVideoQuest.mock.calls[0].slice(0, 3)).toEqual(['second', 60, 70])
+    expect(store.questQueue.map(q => q.id)).toEqual(['second'])
+  })
+
+  it('skips missing, expired, unaccepted and unsupported members after refresh', async () => {
+    const store = useQuestsStore()
+    for (const id of ['missing', 'expired', 'unaccepted', 'unsupported']) store.addToQueue(quest(id))
+    const expired = quest('expired'); expired.config.expires_at = '2020-01-01'
+    const unaccepted = quest('unaccepted'); unaccepted.user_status = null
+    const unsupported = quest('unsupported', 'PLAY_ON_XBOX')
+    mocks.getQuestsFull.mockResolvedValue({ quests: [expired, unaccepted, unsupported], excluded_quests: [] })
+    await store.startQueue()
+    expect(mocks.startVideoQuest).not.toHaveBeenCalled()
+    expect(store.questQueue).toEqual([])
+    expect(store.isQueueRunning).toBe(false)
+  })
+
+  it('preserves queued tasks on refresh failure and supports an explicit retry', async () => {
+    const store = useQuestsStore()
+    store.addToQueue(quest('first'))
+    mocks.getQuestsFull.mockRejectedValueOnce(new Error('offline'))
+    await store.startQueue()
+    expect(store.questQueue.map(q => q.id)).toEqual(['first'])
+    expect(store.queuePauseReason).toBe('refresh_failed')
+    expect(store.isQueueRunning).toBe(false)
+    expect(mocks.startVideoQuest).not.toHaveBeenCalled()
+    await store.startQueue()
+    expect(store.activeQuestId).toBe('first')
+    expect(store.queuePauseReason).toBeNull()
+  })
+
+  it('does not start a task after stopping during its preflight refresh', async () => {
+    let resolve!: (value: unknown) => void
+    mocks.getQuestsFull.mockReturnValueOnce(new Promise(r => { resolve = r }))
+    const store = useQuestsStore()
+    store.addToQueue(quest('first'))
+    const starting = store.startQueue()
+    expect(store.queueEditingDisabled).toBe(true)
+    const stopping = store.stop('all')
+    resolve({ quests: [quest('first')], excluded_quests: [] })
+    await Promise.all([starting, stopping])
+    expect(mocks.startVideoQuest).not.toHaveBeenCalled()
+    expect(store.questQueue).toEqual([])
+  })
+
+  it('invalidates a preflight refresh when the account changes', async () => {
+    let resolve!: (value: unknown) => void
+    mocks.getQuestsFull.mockReturnValueOnce(new Promise(r => { resolve = r }))
+    const store = useQuestsStore()
+    store.addToQueue(quest('first'))
+    const starting = store.startQueue()
+    store.setQuestAccount('another-account')
+    resolve({ quests: [quest('first')], excluded_quests: [] })
+    await starting
+    expect(mocks.startVideoQuest).not.toHaveBeenCalled()
+  })
+
 })

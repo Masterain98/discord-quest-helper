@@ -739,5 +739,34 @@
       "console_object_expired": "Referensi kedaluwarsa",
       "console_session_invalidated": "Terputus"
     }
+  },
+  "quest_group": {
+    "members": "Grup · {count}",
+    "expand": "Perluas",
+    "collapse": "Ciutkan",
+    "accepted": "Diterima {count}/{total}",
+    "completed": "Selesai {count}/{total}",
+    "claimable": "{count} hadiah siap diklaim",
+    "linked_progress": "Tampilan progres tertaut",
+    "accept": "Terima grup ({count})",
+    "queue": "Antrekan grup ({count})",
+    "start": "Mulai grup ({count})",
+    "stop": "Hentikan grup",
+    "remove": "Hapus dari antrean ({count})",
+    "claim": "Klaim grup ({count})",
+    "activity_manual": "Perluas untuk memulai misi Activity satu per satu.",
+    "accept_result": "Diterima: {success}; gagal: {fail}",
+    "claim_result": "Diklaim: {success}; gagal: {fail}",
+    "operation_failed": "Operasi grup gagal",
+    "guide_disconnected": "Discord terputus. Sambungkan kembali, lalu buka misi ini lagi.",
+    "guide_unclaimed": "Klaim belum dikonfirmasi. Klaim di Discord, lalu periksa lagi.",
+    "guide_title": "Klaim hadiah grup",
+    "guide_desc": "Klaim setiap hadiah di Discord, lalu periksa statusnya untuk melanjutkan ke misi berikutnya.",
+    "guide_step": "Misi {current} dari {total}",
+    "guide_open": "Buka di Discord",
+    "guide_continue": "Periksa dan lanjutkan",
+    "resume": "Lanjutkan antrean",
+    "average_progress": "Progres rata-rata",
+    "visible_members": "Terlihat {count}/{total}"
   }
 }

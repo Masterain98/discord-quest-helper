@@ -25,6 +25,7 @@ import {
   isPlayActivityTask,
 } from '@/utils/questTasks'
 import { getQuestRewardViews, type QuestRewardView } from '@/utils/questRewards'
+import { hasLinkedQuestProgress } from '@/utils/questGroups'
 
 const { t } = useI18n()
 
@@ -56,6 +57,10 @@ const questTypeLabel = computed(() => {
 
 // Check if this quest is currently active
 const isActiveQuest = computed(() => questsStore.activeQuestId === props.quest.id)
+const hasLiveProgress = computed(() => isActiveQuest.value || hasLinkedQuestProgress(
+  props.quest,
+  questsStore.quests.find(quest => quest.id === questsStore.activeQuestId),
+))
 
 const targetDuration = computed(() => {
   // For active quests, use the store's target duration (includes calculated checkpoint times)
@@ -80,7 +85,7 @@ const progress = computed(() => {
   if (props.quest.user_status?.completed_at) return 100
   
   // If this quest is active, use real-time progress from store (already a percentage 0-100)
-  if (isActiveQuest.value && questsStore.activeQuestId) {
+  if (hasLiveProgress.value && questsStore.activeQuestId) {
     return Math.min(100, questsStore.activeQuestProgress)
   }
   
@@ -121,6 +126,13 @@ const rewardSummary = computed(() => {
   if (rewardViews.value.length === 0) return t('filter.reward')
   return rewardViews.value.map(reward => reward.amountText).join(' + ')
 })
+const heroImageUrl = computed(() => {
+  const asset = props.quest.config.assets?.hero
+  if (!asset) return null
+  return asset.startsWith('/') || /^https?:\/\//i.test(asset)
+    ? asset
+    : `https://cdn.discordapp.com/${asset}`
+})
 
 function formatDate(dateStr: string): string {
   if (!dateStr) return 'N/A'
@@ -149,7 +161,7 @@ function rewardKey(reward: QuestRewardView): string {
 }
 
 const activeLocalPercent = computed(() => {
-  if (isActiveQuest.value) return Math.min(100, questsStore.localProgress)
+  if (hasLiveProgress.value) return Math.min(100, questsStore.localProgress)
   return 0
 })
 
@@ -227,15 +239,15 @@ const activeTimeText = computed(() => {
     <Card
       :aria-busy="busy || undefined"
       :class="[
-        'relative z-10 mb-0 overflow-hidden border-border/50 transition-colors hover:border-primary/25',
+        'quest-card-surface relative z-10 mb-0 overflow-hidden border-border/50 transition-all duration-200 hover:border-primary/25',
         (busy || isActiveQuest) && 'border-primary/50',
       ]"
     >
     <!-- Quest Banner/Hero Image -->
     <div
-      v-if="quest.config.assets?.hero"
+      v-if="heroImageUrl"
       :class="density === 'compact' ? 'relative h-16 bg-cover bg-center sm:h-20' : 'relative h-24 bg-cover bg-center'"
-      :style="{ backgroundImage: `url(https://cdn.discordapp.com/${quest.config.assets.hero})` }"
+      :style="{ backgroundImage: `url(${heroImageUrl})` }"
     >
       <div class="absolute inset-0 bg-gradient-to-t from-card to-transparent" />
     </div>
@@ -347,7 +359,7 @@ const activeTimeText = computed(() => {
         </div>
         
         <!-- Progress Bar for Active Quest: single gradient div, blue→green -->
-        <div v-if="isActiveQuest" class="relative h-1.5 w-full rounded-full bg-secondary">
+        <div v-if="hasLiveProgress" class="relative h-1.5 w-full rounded-full bg-secondary">
           <div
             class="absolute inset-y-0 left-0 rounded-full transition-all duration-300"
             :style="progressBarStyle"
@@ -497,6 +509,19 @@ const activeTimeText = computed(() => {
   position: relative;
   isolation: isolate;
   margin-bottom: 1rem;
+}
+
+.quest-card-surface {
+  box-shadow:
+    0 8px 22px -19px hsl(var(--foreground) / 0.52),
+    inset 0 1px 0 hsl(var(--foreground) / 0.025);
+}
+
+.quest-card-shell:hover .quest-card-surface {
+  transform: translateY(-2px);
+  box-shadow:
+    0 14px 30px -21px hsl(var(--primary) / 0.38),
+    inset 0 1px 0 hsl(var(--foreground) / 0.035);
 }
 
 .quest-card-glow {

@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, ref, watch, onUnmounted } from 'vue'
 import { useQuestsStore } from '@/stores/quests'
 import { useAuthStore } from '@/stores/auth'
+import { useGameIdleStore } from '@/stores/gameIdle'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { AlertCircle, ChevronDown, ChevronUp, Gift, GripVertical, LoaderCircle, Trash2, X } from 'lucide-vue-next'
@@ -12,6 +13,7 @@ import IconTooltip from '@/components/IconTooltip.vue'
 const { t } = useI18n()
 const questsStore = useQuestsStore()
 const authStore = useAuthStore()
+const gameIdleStore = useGameIdleStore()
 const expanded = ref(false)
 const floatingRef = ref<HTMLElement | null>(null)
 const triggerRef = ref<HTMLButtonElement | null>(null)
@@ -705,6 +707,12 @@ const progressBarStyle = computed(() => {
           <AlertCircle class="mt-0.5 h-4 w-4 shrink-0" />
           <span class="break-words">{{ questsStore.error }}</span>
         </div>
+        <Button
+          v-if="questsStore.queuePauseReason === 'refresh_failed' && questsStore.questQueue.length > 0"
+          class="mt-3 w-full"
+          :disabled="questsStore.queueEditingDisabled || gameIdleStore.isActive"
+          @click="questsStore.startQueue()"
+        >{{ t('quest_group.resume') }}</Button>
       </CardContent>
       </Card>
       </div>

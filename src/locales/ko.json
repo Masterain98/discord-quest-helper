@@ -739,5 +739,34 @@
       "console_object_expired": "참조 만료됨",
       "console_session_invalidated": "연결 끊김"
     }
+  },
+  "quest_group": {
+    "members": "같은 그룹 · {count}",
+    "expand": "펼치기",
+    "collapse": "접기",
+    "accepted": "수락 {count}/{total}",
+    "completed": "완료 {count}/{total}",
+    "claimable": "수령 가능 {count}개",
+    "linked_progress": "진행률 연동 표시",
+    "accept": "그룹 수락 ({count})",
+    "queue": "그룹 대기열 추가 ({count})",
+    "start": "그룹 시작 ({count})",
+    "stop": "그룹 중지",
+    "remove": "대기열에서 제거 ({count})",
+    "claim": "그룹 보상 수령 ({count})",
+    "activity_manual": "펼쳐서 Activity 퀘스트를 개별적으로 시작하세요.",
+    "accept_result": "수락 성공 {success}개, 실패 {fail}개",
+    "claim_result": "수령 성공 {success}개, 실패 {fail}개",
+    "operation_failed": "그룹 작업 실패",
+    "guide_disconnected": "Discord 연결이 끊겼습니다. 다시 연결한 후 퀘스트를 다시 여세요.",
+    "guide_unclaimed": "아직 수령이 확인되지 않았습니다. Discord에서 수령 후 다시 확인하세요.",
+    "guide_title": "그룹 보상 수령",
+    "guide_desc": "Discord에서 보상을 하나씩 수령하고 상태를 확인하여 다음 퀘스트로 진행하세요.",
+    "guide_step": "퀘스트 {current}/{total}",
+    "guide_open": "Discord에서 열기",
+    "guide_continue": "확인하고 계속",
+    "resume": "대기열 재개",
+    "average_progress": "평균 진행률",
+    "visible_members": "표시 중 {count}/{total}"
   }
 }

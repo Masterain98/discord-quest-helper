@@ -739,5 +739,34 @@
       "console_object_expired": "Tham chiếu hết hạn",
       "console_session_invalidated": "Đã ngắt kết nối"
     }
+  },
+  "quest_group": {
+    "members": "Nhóm · {count}",
+    "expand": "Mở rộng",
+    "collapse": "Thu gọn",
+    "accepted": "Đã nhận {count}/{total}",
+    "completed": "Hoàn thành {count}/{total}",
+    "claimable": "{count} phần thưởng chờ nhận",
+    "linked_progress": "Hiển thị tiến độ liên kết",
+    "accept": "Nhận cả nhóm ({count})",
+    "queue": "Thêm nhóm vào hàng đợi ({count})",
+    "start": "Bắt đầu nhóm ({count})",
+    "stop": "Dừng nhóm",
+    "remove": "Xóa khỏi hàng đợi ({count})",
+    "claim": "Nhận thưởng cả nhóm ({count})",
+    "activity_manual": "Mở rộng để bắt đầu từng nhiệm vụ Activity.",
+    "accept_result": "Đã nhận: {success}; thất bại: {fail}",
+    "claim_result": "Đã nhận thưởng: {success}; thất bại: {fail}",
+    "operation_failed": "Thao tác nhóm thất bại",
+    "guide_disconnected": "Discord đã ngắt kết nối. Kết nối lại rồi mở lại nhiệm vụ này.",
+    "guide_unclaimed": "Chưa xác nhận đã nhận thưởng. Hãy nhận trong Discord rồi kiểm tra lại.",
+    "guide_title": "Nhận phần thưởng của nhóm",
+    "guide_desc": "Nhận từng phần thưởng trong Discord, rồi kiểm tra trạng thái để chuyển sang nhiệm vụ tiếp theo.",
+    "guide_step": "Nhiệm vụ {current}/{total}",
+    "guide_open": "Mở trong Discord",
+    "guide_continue": "Kiểm tra và tiếp tục",
+    "resume": "Tiếp tục hàng đợi",
+    "average_progress": "Tiến độ trung bình",
+    "visible_members": "Hiển thị {count}/{total}"
   }
 }

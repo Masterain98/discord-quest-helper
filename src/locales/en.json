@@ -741,5 +741,34 @@
       "console_object_expired": "Reference expired",
       "console_session_invalidated": "Disconnected"
     }
+  },
+  "quest_group": {
+    "members": "Group · {count}",
+    "expand": "Expand",
+    "collapse": "Collapse",
+    "accepted": "Accepted {count}/{total}",
+    "completed": "Completed {count}/{total}",
+    "claimable": "{count} ready to claim",
+    "linked_progress": "Linked progress display",
+    "accept": "Accept group ({count})",
+    "queue": "Queue group ({count})",
+    "start": "Start group ({count})",
+    "stop": "Stop group",
+    "remove": "Remove queued ({count})",
+    "claim": "Claim group ({count})",
+    "activity_manual": "Expand to start Activity quests individually.",
+    "accept_result": "Accepted: {success}; failed: {fail}",
+    "claim_result": "Claimed: {success}; failed: {fail}",
+    "operation_failed": "Group operation failed",
+    "guide_disconnected": "Discord disconnected. Reconnect, then open this quest again.",
+    "guide_unclaimed": "This reward is not confirmed as claimed yet. Claim it in Discord, then check again.",
+    "guide_title": "Claim group rewards",
+    "guide_desc": "Claim each reward in Discord, then check its status to continue to the next quest.",
+    "guide_step": "Quest {current} of {total}",
+    "guide_open": "Open in Discord",
+    "guide_continue": "Check and continue",
+    "resume": "Resume queue",
+    "average_progress": "Average progress",
+    "visible_members": "Visible {count}/{total}"
   }
 }

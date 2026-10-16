@@ -739,5 +739,34 @@
       "console_object_expired": "Referenz abgelaufen",
       "console_session_invalidated": "Getrennt"
     }
+  },
+  "quest_group": {
+    "members": "Gruppe · {count}",
+    "expand": "Aufklappen",
+    "collapse": "Zuklappen",
+    "accepted": "Angenommen {count}/{total}",
+    "completed": "Abgeschlossen {count}/{total}",
+    "claimable": "{count} abholbereit",
+    "linked_progress": "Verknüpfte Fortschrittsanzeige",
+    "accept": "Gruppe annehmen ({count})",
+    "queue": "Gruppe einreihen ({count})",
+    "start": "Gruppe starten ({count})",
+    "stop": "Gruppe stoppen",
+    "remove": "Aus Warteschlange entfernen ({count})",
+    "claim": "Gruppe abholen ({count})",
+    "activity_manual": "Aufklappen, um Activity-Quests einzeln zu starten.",
+    "accept_result": "Angenommen: {success}; fehlgeschlagen: {fail}",
+    "claim_result": "Abgeholt: {success}; fehlgeschlagen: {fail}",
+    "operation_failed": "Gruppenaktion fehlgeschlagen",
+    "guide_disconnected": "Discord ist getrennt. Erneut verbinden und diese Quest wieder öffnen.",
+    "guide_unclaimed": "Die Abholung ist noch nicht bestätigt. In Discord abholen und erneut prüfen.",
+    "guide_title": "Gruppenbelohnungen abholen",
+    "guide_desc": "Jede Belohnung in Discord abholen und den Status prüfen, um mit der nächsten Quest fortzufahren.",
+    "guide_step": "Quest {current} von {total}",
+    "guide_open": "In Discord öffnen",
+    "guide_continue": "Prüfen und fortfahren",
+    "resume": "Warteschlange fortsetzen",
+    "average_progress": "Durchschnittlicher Fortschritt",
+    "visible_members": "Sichtbar {count}/{total}"
   }
 }

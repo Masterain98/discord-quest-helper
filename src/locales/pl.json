@@ -739,5 +739,34 @@
       "console_object_expired": "Odwołanie wygasło",
       "console_session_invalidated": "Rozłączono"
     }
+  },
+  "quest_group": {
+    "members": "Grupa · {count}",
+    "expand": "Rozwiń",
+    "collapse": "Zwiń",
+    "accepted": "Przyjęte {count}/{total}",
+    "completed": "Ukończone {count}/{total}",
+    "claimable": "Do odebrania: {count}",
+    "linked_progress": "Powiązany widok postępu",
+    "accept": "Przyjmij grupę ({count})",
+    "queue": "Dodaj grupę do kolejki ({count})",
+    "start": "Uruchom grupę ({count})",
+    "stop": "Zatrzymaj grupę",
+    "remove": "Usuń z kolejki ({count})",
+    "claim": "Odbierz nagrody ({count})",
+    "activity_manual": "Rozwiń, aby uruchamiać zadania Activity pojedynczo.",
+    "accept_result": "Przyjęto: {success}; błędy: {fail}",
+    "claim_result": "Odebrano: {success}; błędy: {fail}",
+    "operation_failed": "Operacja grupowa nie powiodła się",
+    "guide_disconnected": "Discord rozłączony. Połącz ponownie i otwórz to zadanie.",
+    "guide_unclaimed": "Odbiór nie został potwierdzony. Odbierz nagrodę w Discordzie i sprawdź ponownie.",
+    "guide_title": "Odbieranie nagród grupy",
+    "guide_desc": "Odbieraj nagrody w Discordzie pojedynczo i sprawdzaj ich stan, aby przejść do następnego zadania.",
+    "guide_step": "Zadanie {current} z {total}",
+    "guide_open": "Otwórz w Discordzie",
+    "guide_continue": "Sprawdź i kontynuuj",
+    "resume": "Wznów kolejkę",
+    "average_progress": "Średni postęp",
+    "visible_members": "Widoczne {count}/{total}"
   }
 }

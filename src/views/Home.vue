@@ -157,75 +157,97 @@
         
         <template v-else>
           <TransitionGroup name="quest-list" tag="div" class="relative space-y-3">
-            <QuestCard
-              v-for="quest in filteredQuests"
-              :key="quest.id"
-              :quest="quest"
-              :quest-type="getQuestType(quest)"
-              :show-developer-details="props.debugModeEnabled"
-              :busy="startingQuestId === quest.id || acceptingQuest === quest.id || acceptingAllQuestIds.has(quest.id) || claimingQuest === quest.id || (questsStore.stopping && questsStore.activeQuestId === quest.id)"
-              density="compact"
+            <QuestGroup
+              v-for="group in displayGroups"
+              :key="group.key"
+              :group="group"
+              :expanded="expandedGroups.has(group.key)"
+              @update:expanded="setGroupExpanded(group.key, $event)"
             >
               <template #actions>
-                <Transition name="quest-action" mode="out-in">
-                  <Button
-                    v-if="!quest.user_status?.enrolled_at"
-                    @click="acceptQuest(quest)"
-                    :disabled="acceptingQuest === quest.id || acceptingAllQuestIds.has(quest.id)"
-                  >
-                    <Loader2 v-if="acceptingQuest === quest.id || acceptingAllQuestIds.has(quest.id)" class="w-4 h-4 mr-2 animate-spin" />
-                    {{ (acceptingQuest === quest.id || acceptingAllQuestIds.has(quest.id)) ? t('home.accepting') : t('home.accept_quest') }}
-                  </Button>
-
-                  <Button
-                    v-else-if="questsStore.activeQuestId === quest.id && startingQuestId !== quest.id"
-                    @click="questsStore.requestStop()"
-                    variant="destructive"
-                    :disabled="questsStore.stopping || isBatchAccepting"
-                  >
-                    <Loader2 v-if="questsStore.stopping" class="w-4 h-4 mr-2 animate-spin" />
-                    {{ t('home.stop') }}
-                  </Button>
-
-                  <QuestQueueAction
-                    v-else-if="getQuestType(quest) !== 'activity' && !quest.user_status?.completed_at && canStartQuest(quest) && (questsStore.questQueue.some(item => item.id === quest.id) || (questsStore.activeQuestId && questsStore.activeQuestId !== quest.id))"
-                    :quest="quest"
-                    :disabled="isBatchAccepting || gameIdleStore.isActive"
-                  />
-
-                  <Button
-                    v-else-if="!quest.user_status?.completed_at && canStartQuest(quest)"
-                    @click="startQuest(quest)"
-                    variant="default"
-                    :disabled="questsStore.activeQuestId !== null || startingQuestId !== null || isBatchAccepting || gameIdleStore.isActive"
-                  >
-                    <Loader2 v-if="startingQuestId === quest.id" class="w-4 h-4 mr-2 animate-spin" />
-                    {{ getStartButtonText(quest) }}
-                  </Button>
-
-                  <div v-else-if="quest.user_status?.completed_at && !quest.user_status?.claimed_at" class="relative -mt-1 mb-1">
-                    <Button
-                      :disabled="claimingQuest === quest.id || isBatchAccepting"
-                      class="bg-green-600 hover:bg-green-700 text-white gap-1.5"
-                      @click="claimReward(quest)"
-                    >
-                      <Loader2 v-if="claimingQuest === quest.id" class="w-4 h-4 animate-spin" />
-                      <Gift v-else class="w-4 h-4" />
-                      {{ t('home.claim_reward') }}
-                    </Button>
-                    <span
-                      v-if="claimedNoticeQuestId === quest.id"
-                      class="absolute top-full right-0 mt-1.5 whitespace-nowrap text-[11px] text-green-600 dark:text-green-400 notice-fade"
-                    >
-                      {{ t('home.claim_navigated') }}
-                    </span>
-                  </div>
-                   <span v-else-if="quest.user_status?.completed_at" class="self-center px-2 text-sm font-medium text-green-500">
-                    {{ t('home.completed') }}
-                  </span>
-                </Transition>
+                <QuestGroupActions
+                  :quests="group.quests"
+                  :disabled="groupOperationBlocked || groupBusy"
+                  :busy="group.quests.some(quest => groupBusyIds.has(quest.id))"
+                  :execution-disabled="gameIdleStore.isActive"
+                  @accept="acceptGroup(group.quests)"
+                  @run="runGroup(group.quests)"
+                  @stop="stopGroup(group.quests)"
+                  @remove="removeGroup(group.quests)"
+                  @claim="claimGroup(group.quests)"
+                />
               </template>
-            </QuestCard>
+              <template #default="{ quest }">
+                <QuestCard
+                  :key="quest.id"
+                  :quest="quest"
+                  :quest-type="getQuestType(quest)"
+                  :show-developer-details="props.debugModeEnabled"
+                  :busy="groupBusyIds.has(quest.id) || startingQuestId === quest.id || acceptingQuest === quest.id || acceptingAllQuestIds.has(quest.id) || claimingQuest === quest.id || (questsStore.stopping && questsStore.activeQuestId === quest.id)"
+                  density="compact"
+                >
+                  <template #actions>
+                    <Transition name="quest-action" mode="out-in">
+                      <Button
+                        v-if="!quest.user_status?.enrolled_at"
+                        @click="acceptQuest(quest)"
+                        :disabled="isBatchAccepting || acceptingQuest === quest.id || acceptingAllQuestIds.has(quest.id)"
+                      >
+                        <Loader2 v-if="acceptingQuest === quest.id || acceptingAllQuestIds.has(quest.id)" class="w-4 h-4 mr-2 animate-spin" />
+                        {{ (acceptingQuest === quest.id || acceptingAllQuestIds.has(quest.id)) ? t('home.accepting') : t('home.accept_quest') }}
+                      </Button>
+
+                      <Button
+                        v-else-if="questsStore.activeQuestId === quest.id && startingQuestId !== quest.id"
+                        @click="questsStore.requestStop()"
+                        variant="destructive"
+                        :disabled="questsStore.stopping || isBatchAccepting"
+                      >
+                        <Loader2 v-if="questsStore.stopping" class="w-4 h-4 mr-2 animate-spin" />
+                        {{ t('home.stop') }}
+                      </Button>
+
+                      <QuestQueueAction
+                        v-else-if="getQuestType(quest) !== 'activity' && !quest.user_status?.completed_at && canStartQuest(quest) && (questsStore.questQueue.some(item => item.id === quest.id) || (questsStore.activeQuestId && questsStore.activeQuestId !== quest.id))"
+                        :quest="quest"
+                        :disabled="isBatchAccepting || gameIdleStore.isActive"
+                      />
+
+                      <Button
+                        v-else-if="!quest.user_status?.completed_at && canStartQuest(quest)"
+                        @click="startQuest(quest)"
+                        variant="default"
+                        :disabled="questsStore.activeQuestId !== null || startingQuestId !== null || isBatchAccepting || gameIdleStore.isActive"
+                      >
+                        <Loader2 v-if="startingQuestId === quest.id" class="w-4 h-4 mr-2 animate-spin" />
+                        {{ getStartButtonText(quest) }}
+                      </Button>
+
+                      <div v-else-if="quest.user_status?.completed_at && !quest.user_status?.claimed_at" class="relative -mt-1 mb-1">
+                        <Button
+                          :disabled="claimingQuest === quest.id || isBatchAccepting"
+                          class="bg-green-600 hover:bg-green-700 text-white gap-1.5"
+                          @click="claimReward(quest)"
+                        >
+                          <Loader2 v-if="claimingQuest === quest.id" class="w-4 h-4 animate-spin" />
+                          <Gift v-else class="w-4 h-4" />
+                          {{ t('home.claim_reward') }}
+                        </Button>
+                        <span
+                          v-if="claimedNoticeQuestId === quest.id"
+                          class="absolute top-full right-0 mt-1.5 whitespace-nowrap text-[11px] text-green-600 dark:text-green-400 notice-fade"
+                        >
+                          {{ t('home.claim_navigated') }}
+                        </span>
+                      </div>
+                       <span v-else-if="quest.user_status?.completed_at" class="self-center px-2 text-sm font-medium text-green-500">
+                        {{ t('home.completed') }}
+                      </span>
+                    </Transition>
+                  </template>
+                </QuestCard>
+              </template>
+            </QuestGroup>
           </TransitionGroup>
           <div v-if="filteredQuests.length === 0" class="rounded-lg border border-dashed p-8 text-center">
             <p class="font-medium">{{ emptyStateText }}</p>
@@ -254,12 +276,16 @@
             <div class="space-y-4 my-4">
               <p>{{ t('dialog.accept_quests_desc', { count: pendingAcceptQuests.length }) }}</p>
               <div class="border rounded-md p-3 bg-secondary/20 max-h-[300px] overflow-y-auto space-y-2 text-xs">
-                <div v-for="quest in pendingAcceptQuests" :key="quest.id" class="flex justify-between items-center gap-4">
-                  <span class="font-medium truncate flex-1">{{ quest.config.messages.quest_name }}</span>
-                  <span class="text-muted-foreground whitespace-nowrap font-mono">
-                    {{ quest.config.expires_at ? new Date(quest.config.expires_at).toLocaleString() : t('quest.no_expiry') }}
-                  </span>
-                </div>
+                <QuestGroup v-for="group in groupQuests(pendingAcceptQuests)" :key="group.key" :group="group" compact :expanded="expandedBatchGroups.has(group.key)" @update:expanded="setBatchGroupExpanded(group.key, $event)">
+                  <template #default="{ quest }">
+                    <div class="grid min-w-0 gap-1 sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-4">
+                      <span class="min-w-0 truncate font-medium">{{ quest.config.messages.quest_name }}</span>
+                      <span class="font-mono text-muted-foreground">
+                        {{ quest.config.expires_at ? new Date(quest.config.expires_at).toLocaleString() : t('quest.no_expiry') }}
+                      </span>
+                       </div>
+                  </template>
+                </QuestGroup>
               </div>
             </div>
           </AlertDialogDescription>
@@ -280,16 +306,20 @@
             <div class="space-y-4 my-4">
               <p>{{ t('dialog.complete_quests_desc', { count: pendingCompleteQuests.length }) }}</p>
               <div class="border rounded-md p-3 bg-secondary/20 max-h-[300px] overflow-y-auto space-y-2 text-xs">
-                 <div v-for="q in pendingCompleteQuests" :key="q.id" class="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1">
+                 <QuestGroup v-for="group in groupQuests(pendingCompleteQuests)" :key="group.key" :group="group" compact :expanded="expandedBatchGroups.has(group.key)" @update:expanded="setBatchGroupExpanded(group.key, $event)">
+                  <template #default="{ quest: q }">
+                    <div class="grid min-w-0 grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-[minmax(0,1fr)_auto]">
                     <span class="font-medium truncate text-foreground">{{ q.config.messages.quest_name }}</span>
                     <span :class="cn('font-mono', getExpiryColor(q.config.expires_at))">
                       {{ getExpiryText(q.config.expires_at) }}
                     </span>
-                    <span class="text-xs text-muted-foreground col-span-2 truncate">
+                    <span class="col-span-full truncate text-xs text-muted-foreground">
                       {{ q.config.messages.game_title }}
                       <template v-if="props.debugModeEnabled"> • ID: {{ q.id }}</template>
                     </span>
-                 </div>
+                    </div>
+                  </template>
+                </QuestGroup>
               </div>
             </div>
           </AlertDialogDescription>
@@ -426,16 +456,20 @@
                 {{ t('dialog.activity_excluded_notice') }}
               </p>
               <div class="border rounded-md p-3 bg-secondary/20 max-h-[300px] overflow-y-auto space-y-2 text-xs">
-                 <div v-for="q in pendingBatchCompleteQuests" :key="q.id" class="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1">
+                 <QuestGroup v-for="group in groupQuests(pendingBatchCompleteQuests)" :key="group.key" :group="group" compact :expanded="expandedBatchGroups.has(group.key)" @update:expanded="setBatchGroupExpanded(group.key, $event)">
+                  <template #default="{ quest: q }">
+                    <div class="grid min-w-0 grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-[minmax(0,1fr)_auto]">
                     <span class="font-medium truncate text-foreground">{{ q.config.messages.quest_name }}</span>
                     <span :class="cn('font-mono', getExpiryColor(q.config.expires_at))">
                       {{ getExpiryText(q.config.expires_at) }}
                     </span>
-                    <span class="text-xs text-muted-foreground col-span-2 truncate">
+                    <span class="col-span-full truncate text-xs text-muted-foreground">
                       {{ q.config.messages.game_title }} • {{ getQuestType(q) === 'video' ? t('filter.video') : t('filter.play') }}
                       <template v-if="props.debugModeEnabled"> • ID: {{ q.id }}</template>
                     </span>
-                 </div>
+                    </div>
+                  </template>
+                </QuestGroup>
               </div>
             </div>
           </AlertDialogDescription>
@@ -446,6 +480,26 @@
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+
+    <Dialog :open="!!claimGuide" @update:open="value => { if (!value) cancelGroupAction() }">
+      <DialogContent class="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{{ t('quest_group.guide_title') }}</DialogTitle>
+          <DialogDescription>{{ t('quest_group.guide_desc') }}</DialogDescription>
+        </DialogHeader>
+        <div v-if="claimGuide" class="space-y-2 rounded-lg bg-secondary/40 p-4">
+          <p class="text-xs tabular-nums text-muted-foreground">{{ t('quest_group.guide_step', { current: claimGuide.index + 1, total: claimGuide.ids.length }) }}</p>
+          <p class="break-words font-medium">{{ currentGuideQuest?.config.messages.quest_name }}</p>
+          <p class="text-xs text-muted-foreground">ID: {{ claimGuide.ids[claimGuide.index] }}</p>
+        </div>
+        <p v-if="claimGuideMessage" role="status" class="break-words text-sm text-muted-foreground">{{ claimGuideMessage }}</p>
+        <DialogFooter class="flex-wrap gap-2">
+          <Button variant="ghost" @click="cancelGroupAction()">{{ t('dialog.cancel') }}</Button>
+          <Button variant="outline" :disabled="claimGuideBusy" @click="reopenGuideMember">{{ t('quest_group.guide_open') }}</Button>
+          <Button :disabled="claimGuideBusy" @click="checkAndContinue"><Loader2 v-if="claimGuideBusy" class="mr-2 h-4 w-4 animate-spin" />{{ t('quest_group.guide_continue') }}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
 
     <!-- Batch Exe Selection Dialog -->
     <Dialog :open="showBatchExeSelectDialog" @update:open="cancelBatchExeSelect">
@@ -515,6 +569,10 @@ import { useQuestsStore } from '@/stores/quests'
 import { useGameIdleStore } from '@/stores/gameIdle'
 import QuestListHeader from '@/components/home/QuestListHeader.vue'
 import QuestViewTabs from '@/components/home/QuestViewTabs.vue'
+import QuestGroup from '@/components/home/QuestGroup.vue'
+import QuestGroupActions from '@/components/home/QuestGroupActions.vue'
+import { groupQuests } from '@/utils/questGroups'
+import { useQuestGroupActions } from '@/composables/useQuestGroupActions'
 import QuestCard from '@/components/QuestCard.vue'
 import QuestQueueAction from '@/components/QuestQueueAction.vue'
 import type { DetectableGame, PlatformCapabilities, Quest } from '@/api/tauri'
@@ -714,6 +772,44 @@ const activityLaunchQuest = ref<Quest | null>(null)
 const activityLaunchError = ref<string | null>(null)
 const activityNavigatingToDiscord = ref(false)
 
+const expandedGroups = ref(new Set<string>())
+const expandedBatchGroups = ref(new Set<string>())
+function setGroupExpanded(key: string, expanded: boolean) {
+  if (expanded) expandedGroups.value.add(key)
+  else expandedGroups.value.delete(key)
+}
+function setBatchGroupExpanded(key: string, expanded: boolean) {
+  if (expanded) expandedBatchGroups.value.add(key)
+  else expandedBatchGroups.value.delete(key)
+}
+const groupOperationBlocked = computed(() => !authStore.user || !!acceptingQuest.value || !!claimingQuest.value || !!startingQuestId.value || acceptingAllQuestIds.value.size > 0 || questsStore.queueEditingDisabled)
+const {
+  busyIds: groupBusyIds, busy: groupBusy, guide: claimGuide, guideBusy: claimGuideBusy,
+  guideMessage: claimGuideMessage, currentGuideQuest, accept: acceptGroup, run: runGroup,
+  stop: stopGroup, remove: removeGroup, claim: claimGroup, cancel: cancelGroupAction,
+  checkAndContinue, reopenGuideMember,
+} = useQuestGroupActions({
+  blocked: () => groupOperationBlocked.value,
+  t: (key, params) => params ? t(key, params) : t(key),
+  prepareExecutables: async members => {
+    batchExeSelections.value = new Map()
+    try {
+      const gameMembers = members.filter(quest => getQuestKind(quest) === 'stream')
+      if (questsStore.gameQuestMode === 'simulate' && gameMembers.length) {
+        await preselectExesForGameQuests(gameMembers)
+      }
+      return new Map(batchExeSelections.value)
+    } finally {
+      batchExeSelections.value = new Map()
+    }
+  },
+})
+watch(() => authStore.user?.id, () => {
+  cancelGroupAction()
+  expandedGroups.value.clear()
+  expandedBatchGroups.value.clear()
+})
+
 const activeFilterCount = computed(() => {
   let count = 0
   if (advancedFilters.value.query.trim()) count++
@@ -878,6 +974,8 @@ const filteredQuests = computed(() => {
   return quests.sort(sortByExpiry)
 })
 
+const displayGroups = computed(() => groupQuests(filteredQuests.value))
+
 const unenrolledCount = computed(() => {
   return filteredQuests.value.filter(q => !q.user_status?.enrolled_at && !isQuestExpired(q)).length
 })
@@ -914,7 +1012,7 @@ const enrolledAllCount = computed(() => {
   }).length
 })
 
-const isBatchAccepting = computed(() => acceptingAllQuestIds.value.size > 0)
+const isBatchAccepting = computed(() => acceptingAllQuestIds.value.size > 0 || groupBusy.value)
 
 const emptyStateText = computed(() => {
   if (hasActiveFilters.value) return t('home.empty_filtered')
@@ -1244,6 +1342,7 @@ function canStartQuest(quest: Quest): boolean {
 }
 
 async function startQuest(quest: Quest) {
+  if (groupBusy.value) return
   // Blur the focused button before DOM mutation to prevent scroll-to-top
   // when the button is removed from the DOM by the v-else-if condition change.
   if (document.activeElement instanceof HTMLElement) {
@@ -1368,7 +1467,7 @@ async function startQuest(quest: Quest) {
 
 // Accept Quest handler
 async function acceptQuest(quest: Quest) {
-  if (acceptingQuest.value) return
+  if (groupBusy.value || acceptingQuest.value) return
   
   try {
     acceptingQuest.value = quest.id
@@ -1431,7 +1530,7 @@ function cancelActivityLaunch() {
 }
 
 async function claimReward(quest: Quest) {
-  if (claimingQuest.value) return
+  if (groupBusy.value || claimingQuest.value) return
   claimingQuest.value = quest.id
 
   try {

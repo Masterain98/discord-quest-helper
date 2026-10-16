@@ -739,5 +739,34 @@
       "console_object_expired": "参照が無効です",
       "console_session_invalidated": "切断"
     }
+  },
+  "quest_group": {
+    "members": "同じグループ · {count}",
+    "expand": "展開",
+    "collapse": "折りたたむ",
+    "accepted": "参加済み {count}/{total}",
+    "completed": "完了 {count}/{total}",
+    "claimable": "受取可能 {count} 件",
+    "linked_progress": "進捗を連動表示",
+    "accept": "まとめて参加（{count}）",
+    "queue": "まとめてキューへ（{count}）",
+    "start": "まとめて開始（{count}）",
+    "stop": "グループを停止",
+    "remove": "キューから削除（{count}）",
+    "claim": "まとめて受取（{count}）",
+    "activity_manual": "展開すると Activity クエストを個別に開始できます。",
+    "accept_result": "参加成功 {success} 件、失敗 {fail} 件",
+    "claim_result": "受取成功 {success} 件、失敗 {fail} 件",
+    "operation_failed": "グループ操作に失敗しました",
+    "guide_disconnected": "Discord が切断されました。再接続してクエストを開き直してください。",
+    "guide_unclaimed": "受取を確認できません。Discord で受け取ってから再確認してください。",
+    "guide_title": "グループの報酬を受け取る",
+    "guide_desc": "Discord で報酬を一つずつ受け取り、受取状況を確認して次に進んでください。",
+    "guide_step": "{total} 件中 {current} 件目",
+    "guide_open": "Discord で開く",
+    "guide_continue": "確認して続行",
+    "resume": "キューを再開",
+    "average_progress": "平均進捗",
+    "visible_members": "表示中 {count}/{total}"
   }
 }
