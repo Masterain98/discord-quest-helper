@@ -14,7 +14,7 @@ import {
   CardFooter,
 } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Clock, Gift, MonitorPlay, Gamepad2, Activity, Cloud } from 'lucide-vue-next'
+import { Clock, Gift, MonitorPlay, Gamepad2, Activity, Cloud, Link2 } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import {
   firstProgressValue,
@@ -57,7 +57,7 @@ const questTypeLabel = computed(() => {
 
 // Check if this quest is currently active
 const isActiveQuest = computed(() => questsStore.activeQuestId === props.quest.id)
-const hasLiveProgress = computed(() => isActiveQuest.value || hasLinkedQuestProgress(
+const hasLinkedProgress = computed(() => !isActiveQuest.value && hasLinkedQuestProgress(
   props.quest,
   questsStore.quests.find(quest => quest.id === questsStore.activeQuestId),
 ))
@@ -161,7 +161,7 @@ function rewardKey(reward: QuestRewardView): string {
 }
 
 const activeLocalPercent = computed(() => {
-  if (hasLiveProgress.value) return Math.min(100, questsStore.localProgress)
+  if (isActiveQuest.value) return Math.min(100, questsStore.localProgress)
   return 0
 })
 
@@ -351,6 +351,10 @@ const activeTimeText = computed(() => {
         <div class="flex justify-between text-sm">
           <span class="text-muted-foreground">
             {{ t('quest.progress') }}: {{ Math.round(progress) }}%
+            <span v-if="hasLinkedProgress" class="ml-2 inline-flex items-center gap-1 text-xs text-primary">
+              <Link2 class="h-3 w-3" aria-hidden="true" />
+              {{ t('quest_group.linked_progress') }} · {{ Math.round(questsStore.activeQuestProgress) }}%
+            </span>
             <span v-if="isActiveQuest" class="ml-2 font-mono text-xs text-muted-foreground/80">
                ({{ activeTimeText }})
             </span>
@@ -359,7 +363,7 @@ const activeTimeText = computed(() => {
         </div>
         
         <!-- Progress Bar for Active Quest: single gradient div, blue→green -->
-        <div v-if="hasLiveProgress" class="relative h-1.5 w-full rounded-full bg-secondary">
+        <div v-if="isActiveQuest" class="relative h-1.5 w-full rounded-full bg-secondary">
           <div
             class="absolute inset-y-0 left-0 rounded-full transition-all duration-300"
             :style="progressBarStyle"
