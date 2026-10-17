@@ -743,6 +743,7 @@
     }
   },
   "quest_group": {
+    "total_rewards": "Total hadiah grup: {rewards}",
     "members": "Grup · {count}",
     "expand": "Perluas",
     "collapse": "Ciutkan",

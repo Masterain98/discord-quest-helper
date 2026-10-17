@@ -1497,6 +1497,11 @@ export const useQuestsStore = defineStore('quests', () => {
       const refreshed = await fetchQuests(true, true)
       // Stop/account changes invalidate pending refreshes before native startup.
       if (revision !== queueStartRevision || !isQueueRunning.value || stopping.value) return
+      // Another entry point may have claimed execution while refresh was pending.
+      if (activeQuestId.value || startingQuestId.value || completingQuestId.value) {
+        isQueueRunning.value = false
+        return
+      }
       if (!refreshed) {
         isQueueRunning.value = false
         queuePauseReason.value = 'refresh_failed'
@@ -1759,6 +1764,7 @@ export const useQuestsStore = defineStore('quests', () => {
     questAccountId,
     setQuestAccount,
     startingQuestId,
+    preparingQueuedQuestId,
     error,
     orbsBalance,
     orbsBalanceFetchedAt,

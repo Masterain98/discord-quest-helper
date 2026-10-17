@@ -339,6 +339,32 @@ describe('queued quest completion', () => {
     expect(store.questQueue).toEqual([])
   })
 
+  it.each([false, true])('preserves a competing manual start after refresh (native start pending: %s)', async pending => {
+    let resolveRefresh!: (value: unknown) => void
+    let resolveStart!: () => void
+    mocks.getQuestsFull.mockReturnValueOnce(new Promise(resolve => { resolveRefresh = resolve }))
+    if (pending) mocks.startVideoQuest.mockReturnValueOnce(new Promise<void>(resolve => { resolveStart = resolve }))
+    const store = useQuestsStore()
+    store.quests = [quest('first'), quest('second')]
+    store.addToQueue(quest('first'))
+    const queued = store.startQueue()
+    expect(store.preparingQueuedQuestId).toBe('first')
+    expect(store.queueEditingDisabled).toBe(true)
+
+    // A different entry point has already claimed execution when refresh returns.
+    const manual = store.startVideo('second', 60, 0)
+    if (!pending) await manual
+    resolveRefresh({ quests: [quest('first'), quest('second')], excluded_quests: [] })
+    await queued
+    expect(mocks.startVideoQuest.mock.calls.map(args => args[0])).toEqual(['second'])
+    expect(store.questQueue.map(item => item.id)).toEqual(['first'])
+    expect(store.isQueueRunning).toBe(false)
+    expect(store.preparingQueuedQuestId).toBeNull()
+    if (pending) resolveStart()
+    await manual
+    expect(store.activeQuestId).toBe('second')
+  })
+
   it('invalidates a preflight refresh when the account changes', async () => {
     let resolve!: (value: unknown) => void
     mocks.getQuestsFull.mockReturnValueOnce(new Promise(r => { resolve = r }))

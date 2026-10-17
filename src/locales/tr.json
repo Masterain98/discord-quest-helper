@@ -743,6 +743,7 @@
     }
   },
   "quest_group": {
+    "total_rewards": "Grup ödülleri toplamı: {rewards}",
     "members": "Grup · {count}",
     "expand": "Genişlet",
     "collapse": "Daralt",

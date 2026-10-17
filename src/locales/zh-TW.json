@@ -743,6 +743,7 @@
     }
   },
   "quest_group": {
+    "total_rewards": "分組總獎勵：{rewards}",
     "members": "同組任務 · {count}",
     "expand": "展開",
     "collapse": "收合",

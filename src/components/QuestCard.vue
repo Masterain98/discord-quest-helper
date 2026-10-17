@@ -85,7 +85,7 @@ const progress = computed(() => {
   if (props.quest.user_status?.completed_at) return 100
   
   // If this quest is active, use real-time progress from store (already a percentage 0-100)
-  if (hasLiveProgress.value && questsStore.activeQuestId) {
+  if (isActiveQuest.value) {
     return Math.min(100, questsStore.activeQuestProgress)
   }
   

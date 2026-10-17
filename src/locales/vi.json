@@ -743,6 +743,7 @@
     }
   },
   "quest_group": {
+    "total_rewards": "Tổng phần thưởng nhóm: {rewards}",
     "members": "Nhóm · {count}",
     "expand": "Mở rộng",
     "collapse": "Thu gọn",

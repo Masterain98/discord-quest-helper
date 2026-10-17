@@ -735,7 +735,7 @@ const acceptingAllQuestIds = ref<Set<string>>(new Set())
 
 // Loading state for the Start button (fetching detectable games, etc.)
 const preparingQuestId = ref<string | null>(null)
-const startingQuestId = computed(() => preparingQuestId.value ?? questsStore.startingQuestId)
+const startingQuestId = computed(() => preparingQuestId.value ?? questsStore.startingQuestId ?? questsStore.preparingQueuedQuestId)
 
 // Confirmation dialogs state
 const showAcceptAllDialog = ref(false)
@@ -1177,6 +1177,7 @@ async function confirmBatchComplete() {
 
 /**
  * Pre-select executables for all game quests in a batch.
+ * Selects once per game and shares the result across its queued quests.
  * Shows selection dialogs sequentially for games that have multiple
  * simulator-compatible executables; for games with none, shows a custom input
  * dialog (except on Linux, where startPlay's recoverable soft error steers the
@@ -1190,10 +1191,17 @@ async function preselectExesForGameQuests(gameQuests: Quest[]): Promise<void> {
   const capabilities = await questsStore.initPlatformCapabilities()
   if (!capabilities) throw new Error(t('game_sim.platform_capabilities_unavailable'))
   const gamesList = await questsStore.getDetectableGames()
+  const selectionsByApplication = new Map<string, string>()
 
   for (const quest of gameQuests) {
     const appId = quest.config.application?.id
     if (!appId) continue
+
+    const previousSelection = selectionsByApplication.get(appId)
+    if (previousSelection !== undefined) {
+      batchExeSelections.value.set(quest.id, previousSelection)
+      continue
+    }
 
     const game = gamesList.find(g => g.id === appId)
     if (!game) continue
@@ -1219,6 +1227,7 @@ async function preselectExesForGameQuests(gameQuests: Quest[]): Promise<void> {
       // Exactly one executable — auto-select
       batchExeSelections.value.set(quest.id, simExes[0].name)
     }
+    selectionsByApplication.set(appId, batchExeSelections.value.get(quest.id)!)
   }
 }
 

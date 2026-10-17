@@ -743,6 +743,7 @@
     }
   },
   "quest_group": {
+    "total_rewards": "รางวัลรวมของกลุ่ม: {rewards}",
     "members": "กลุ่ม · {count}",
     "expand": "ขยาย",
     "collapse": "ย่อ",

@@ -743,6 +743,7 @@
     }
   },
   "quest_group": {
+    "total_rewards": "グループ報酬の合計：{rewards}",
     "members": "同じグループ · {count}",
     "expand": "展開",
     "collapse": "折りたたむ",

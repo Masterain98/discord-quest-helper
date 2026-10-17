@@ -743,6 +743,7 @@
     }
   },
   "quest_group": {
+    "total_rewards": "Łączne nagrody grupy: {rewards}",
     "members": "Grupa · {count}",
     "expand": "Rozwiń",
     "collapse": "Zwiń",

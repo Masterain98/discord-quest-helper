@@ -745,6 +745,7 @@
     }
   },
   "quest_group": {
+    "total_rewards": "分组总奖励：{rewards}",
     "members": "同组任务 · {count}",
     "expand": "展开",
     "collapse": "收起",

@@ -743,6 +743,7 @@
     }
   },
   "quest_group": {
+    "total_rewards": "Total des récompenses du groupe : {rewards}",
     "members": "Groupe · {count}",
     "expand": "Développer",
     "collapse": "Réduire",

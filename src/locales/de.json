@@ -743,6 +743,7 @@
     }
   },
   "quest_group": {
+    "total_rewards": "Gruppenbelohnungen insgesamt: {rewards}",
     "members": "Gruppe · {count}",
     "expand": "Aufklappen",
     "collapse": "Zuklappen",

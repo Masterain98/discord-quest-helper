@@ -743,6 +743,7 @@
     }
   },
   "quest_group": {
+    "total_rewards": "그룹 총 보상: {rewards}",
     "members": "같은 그룹 · {count}",
     "expand": "펼치기",
     "collapse": "접기",

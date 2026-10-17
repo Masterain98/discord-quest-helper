@@ -745,6 +745,7 @@
     }
   },
   "quest_group": {
+    "total_rewards": "Group rewards total: {rewards}",
     "members": "Group · {count}",
     "expand": "Expand",
     "collapse": "Collapse",

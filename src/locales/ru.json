@@ -743,6 +743,7 @@
     }
   },
   "quest_group": {
+    "total_rewards": "Всего наград группы: {rewards}",
     "members": "Группа · {count}",
     "expand": "Развернуть",
     "collapse": "Свернуть",

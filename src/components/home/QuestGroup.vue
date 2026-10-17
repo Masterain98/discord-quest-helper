@@ -6,7 +6,7 @@ import QuestTaskBadges from '@/components/QuestTaskBadges.vue'
 import { useQuestsStore } from '@/stores/quests'
 import { useAuthStore } from '@/stores/auth'
 import { groupProgress, groupStats, hasLinkedQuestProgress, questGroupKey, type QuestDisplayGroup } from '@/utils/questGroups'
-import { formatQuestReward, type QuestRewardView } from '@/utils/questRewards'
+import { getQuestGroupRewardViews, type QuestRewardView } from '@/utils/questRewards'
 
 const props = defineProps<{ group: QuestDisplayGroup, expanded: boolean, compact?: boolean }>()
 defineEmits<{ 'update:expanded': [value: boolean] }>()
@@ -22,9 +22,6 @@ const heroImage = computed(() => {
     ? asset
     : `https://cdn.discordapp.com/${asset}`
 })
-const rawRewards = computed(() => first.value.config.rewards_config?.rewards || [])
-const rewards = computed(() => rawRewards.value
-  .map(reward => formatQuestReward(reward, null, authStore.user?.premium_type)))
 function rewardKey(reward: QuestRewardView): string {
   return `${reward.skuId}-${reward.type}-${reward.name}`
 }
@@ -38,6 +35,7 @@ const allMembers = computed(() => {
   }
   return [...members.values()]
 })
+const rewards = computed(() => getQuestGroupRewardViews(allMembers.value, authStore.user?.premium_type))
 const stats = computed(() => groupStats(allMembers.value))
 const expiryDate = computed(() => {
   const dates = allMembers.value
@@ -64,24 +62,7 @@ const progress = computed(() => groupProgress(allMembers.value, {
 }))
 const rewardSummary = computed(() => {
   if (!rewards.value.length) return t('filter.reward')
-  const count = progress.value.total
-  return rewards.value.map((reward, index) => {
-    const source = rawRewards.value[index]
-    if (reward.kind === 'orbs' && source.orb_quantity != null) {
-      const baseAmount = source.orb_quantity * count
-      const premiumAmount = source.premium_orb_quantity != null ? source.premium_orb_quantity * count : null
-      const hasPremiumBonus = !!authStore.user?.premium_type
-        && premiumAmount != null
-        && premiumAmount > baseAmount
-      return hasPremiumBonus
-        ? `${baseAmount.toLocaleString()} -> ${premiumAmount.toLocaleString()} Orbs`
-        : `${baseAmount.toLocaleString()} Orbs`
-    }
-    if (reward.kind !== 'orbs') {
-      return `${((source.quantity ?? 1) * count).toLocaleString()}x ${reward.name}`
-    }
-    return reward.amountText
-  }).join(' · ')
+  return t('quest_group.total_rewards', { rewards: rewards.value.map(reward => reward.amountText).join(' · ') })
 })
 const live = computed(() => {
   const active = store.quests.find(quest => quest.id === store.activeQuestId)
