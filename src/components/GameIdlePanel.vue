@@ -16,12 +16,12 @@ import {
 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import AnimatedSegmentedControl from '@/components/AnimatedSegmentedControl.vue'
+import GameIdlePlaylistEditor from '@/components/GameIdlePlaylistEditor.vue'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAuthStore } from '@/stores/auth'
 import { useGameIdleStore, formatSimulationDuration } from '@/stores/gameIdle'
 import { useQuestsStore } from '@/stores/quests'
-import { getSimulationExecutables } from '@/utils/executables'
 import type { GameIdleItem } from '@/api/tauri'
 
 const { t } = useI18n()
@@ -49,18 +49,7 @@ function canEditItem(item: GameIdleItem) {
   // must remain in place until startup succeeds or fails.
   return current.phase !== 'starting' || current.upcoming[0]?.occurrenceId !== item.occurrenceId
 }
-const games = computed(() => quests.detectableGames)
-const uniqueGameCount = computed(() => new Set(games.value.map(game => game.id)).size)
-const processCandidateCount = computed(() => {
-  const capabilities = quests.platformCapabilities
-  if (!capabilities) return 0
-  return new Set(games.value.filter(game => getSimulationExecutables(
-      game.executables,
-      capabilities.os,
-      capabilities.executableOsPriority
-    ).length > 0).map(game => game.id)).size
-})
-const candidateCount = computed(() => idle.mode === 'cdp' ? uniqueGameCount.value : processCandidateCount.value)
+const candidateCount = computed(() => idle.candidateCount)
 
 const maxVisibleDistance = computed(() => {
   if (stageWidth.value >= 1050) return 5
@@ -73,7 +62,7 @@ const carouselItems = computed(() => {
   const status = idle.status
   if (!status) return []
   const recent = status.recent.slice(-5)
-  const currentId = status.current?.id
+  const currentOccurrenceId = status.current?.occurrenceId
   const items: Array<{ item: GameIdleItem; offset: number; upcoming: boolean }> = []
   if (recent.length > 0) {
     recent.forEach((item, index) => {
@@ -84,7 +73,7 @@ const carouselItems = computed(() => {
   }
   status.upcoming.forEach((item, index) => {
     if (currentIsQueued.value && index === 0) return
-    if (item.id !== currentId || index > 0) {
+    if (item.occurrenceId !== currentOccurrenceId) {
       items.push({ item, offset: currentIsQueued.value ? index : index + 1, upcoming: true })
     }
   })
@@ -283,6 +272,28 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
+    <div v-if="!immersive" class="space-y-4">
+      <div class="flex flex-wrap items-end gap-4">
+        <div class="space-y-1.5">
+          <Label class="text-xs">{{ t('game_idle.selection_mode') }}</Label>
+          <AnimatedSegmentedControl :value="idle.selectionMode" class="flex h-10 rounded-md border bg-background p-1" style="--segment-radius: 0.28rem" :aria-label="t('game_idle.selection_mode')">
+            <button v-for="choice in (['random', 'manual'] as const)" :key="choice" type="button" class="idle-mode-button" :data-segment="choice" :aria-pressed="idle.selectionMode === choice" @click="idle.selectionMode = choice">
+              {{ t(`game_idle.selection_${choice}`) }}
+            </button>
+          </AnimatedSegmentedControl>
+        </div>
+        <div v-if="idle.selectionMode === 'random'" class="space-y-1.5">
+          <Label class="text-xs">{{ t('game_idle.candidate_type') }}</Label>
+          <AnimatedSegmentedControl :value="idle.candidateType" class="flex h-10 rounded-md border bg-background p-1" style="--segment-radius: 0.28rem" :aria-label="t('game_idle.candidate_type')">
+            <button v-for="choice in (['all', 'game', 'app'] as const)" :key="choice" type="button" class="idle-mode-button" :data-segment="choice" :aria-pressed="idle.candidateType === choice" @click="idle.candidateType = choice">
+              {{ t(`game_idle.type_${choice}`) }}
+            </button>
+          </AnimatedSegmentedControl>
+        </div>
+      </div>
+      <GameIdlePlaylistEditor v-if="idle.selectionMode === 'manual'" />
+    </div>
+
     <div v-if="!immersive" class="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-muted-foreground">
       <span>{{ t('game_idle.candidate_count', { count: candidateCount }) }}</span>
       <span v-if="!auth.user" class="text-amber-600 dark:text-amber-300">{{ t('game_idle.sign_in_required') }}</span>
@@ -291,7 +302,7 @@ onBeforeUnmount(() => {
     </div>
 
     <div v-if="idle.error || idle.status?.warning" class="idle-warning" role="status">
-      {{ idle.error || idle.status?.warning }}
+      {{ idle.error && ['playlist_empty', 'playlist_unavailable'].includes(idle.error) ? t(`game_idle.${idle.error}_error`) : idle.error || idle.status?.warning }}
     </div>
 
     <div v-if="idle.status?.current || idle.status?.upcoming.length" class="idle-machine">
@@ -378,7 +389,7 @@ onBeforeUnmount(() => {
       </Button>
     </div>
 
-    <div v-else class="idle-empty">
+    <div v-else-if="idle.selectionMode === 'random'" class="idle-empty">
       <div class="idle-empty-icon">
         <Loader2 v-if="active" class="h-7 w-7 animate-spin" />
         <RotateCcw v-else class="h-7 w-7" />
@@ -401,7 +412,7 @@ onBeforeUnmount(() => {
           <div class="idle-context-title">{{ contextMenu.item.name }}</div>
           <button data-idle-context-action type="button" role="menuitem" @click="removeContextItem">
             <Trash2 class="h-4 w-4" />
-            {{ t('game_idle.remove_from_cycle') }}
+            {{ t(idle.status?.selectionMode === 'manual' ? 'game_idle.skip_occurrence' : 'game_idle.remove_from_cycle') }}
           </button>
         </div>
       </Transition>
@@ -433,6 +444,15 @@ onBeforeUnmount(() => {
     radial-gradient(circle at 50% 38%, hsl(var(--primary) / 0.15), transparent 30rem),
     hsl(var(--background));
   box-shadow: none;
+}
+
+.idle-shell:not(.is-immersive) {
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.idle-shell:not(.is-immersive) > * {
+  flex-shrink: 0;
 }
 
 .idle-shell.is-immersive .idle-machine {

@@ -1431,7 +1431,6 @@ async fn start_game_idle(
         .clone()
         .ok_or_else(|| "Sign in before starting game idle mode".to_string())?;
 
-    let _gate = state.activity_gate.lock().await;
     state.game_idle.ensure_idle().await?;
     ensure_no_active_quest(&state).await?;
     state.manual_cdp_game.lock().await.ensure_idle()?;

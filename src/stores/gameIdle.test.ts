@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   onGameIdleStatus: vi.fn(),
   onGameSimulationHistoryUpdated: vi.fn(),
   quests: {
+    detectableGames: [] as import('@/api/tauri').DetectableGame[],
+    platformCapabilities: { os: 'windows' },
     cdpAvailable: true,
     cdpPort: 9223,
     initPlatformCapabilities: vi.fn().mockResolvedValue(undefined),
@@ -45,6 +47,7 @@ describe('game idle store', () => {
       removeItem: (key: string) => storage.delete(key),
     })
     vi.clearAllMocks()
+    mocks.quests.detectableGames = []
     mocks.getGameIdleStatus.mockResolvedValue(null)
     mocks.stopGameIdle.mockResolvedValue(null)
     mocks.quests.getDetectableGames.mockResolvedValue([])
@@ -97,6 +100,7 @@ describe('game idle store', () => {
     const stopped: GameIdleStatus = {
       sessionId: 'session',
       mode: 'cdp',
+      selectionMode: 'random', candidateType: 'all', selectedAppIds: [],
       phase: 'stopped',
       playMinutes: 60,
       restMinutes: 0,
@@ -142,6 +146,7 @@ describe('game idle store', () => {
     }))
     const active: GameIdleStatus = {
       sessionId: 'new-session', mode: 'process', phase: 'starting',
+      selectionMode: 'random', candidateType: 'all', selectedAppIds: [],
       playMinutes: 60, restMinutes: 0, current: null, recent: [], upcoming: [],
       phaseStartedAt: 0, phaseEndsAt: null, accumulatedPlayedSeconds: 0, warning: null,
     }
@@ -157,6 +162,150 @@ describe('game idle store', () => {
     expect(mocks.stopGameIdle).toHaveBeenCalledOnce()
     expect(store.status).toBeNull()
   })
+
+  function game(id: string, type_name = 'Game', os = 'win32') {
+    return { id, name: `Item ${id}`, icon: 'icon', type_name, executables: os ? [{ name: `${id}.exe`, os }] : [] }
+  }
+
+  it('defaults to random selection of all types', () => {
+    const store = useGameIdleStore()
+    expect(store.selectionMode).toBe('random')
+    expect(store.candidateType).toBe('all')
+    expect(store.playlist).toEqual([])
+  })
+
+  it('filters types before deduplication and applies process compatibility', () => {
+    mocks.quests.detectableGames = [game('1'), game('1', 'App'), game('2', 'App', ''), game('3', 'Game', 'linux')]
+    const store = useGameIdleStore()
+    store.mode = 'cdp'
+    expect(store.candidateCount).toBe(3)
+    store.candidateType = 'app'
+    expect(store.candidateCount).toBe(2)
+    store.mode = 'process'
+    expect(store.candidateCount).toBe(1)
+    store.candidateType = 'game'
+    expect(store.candidateCount).toBe(1)
+  })
+
+  it('adds unique items, reorders and removes them and persists immediately', () => {
+    const store = useGameIdleStore()
+    store.selectionMode = 'manual'
+    store.candidateType = 'app'
+    store.addToPlaylist(game('a'))
+    store.addToPlaylist(game('b'))
+    store.addToPlaylist(game('a'))
+    store.movePlaylistItem('b', -1)
+    expect(store.playlist.map(item => item.id)).toEqual(['b', 'a'])
+    store.movePlaylistItem('b', -1)
+    expect(store.playlist.map(item => item.id)).toEqual(['b', 'a'])
+    expect(JSON.parse(storage.get('questHelper_gameIdlePlaylist')!)).toEqual([
+      { id: 'b', name: 'Item b', icon: 'icon', type_name: 'Game' },
+      { id: 'a', name: 'Item a', icon: 'icon', type_name: 'Game' },
+    ])
+    expect(storage.get('questHelper_gameIdleSelectionMode')).toBe('manual')
+    expect(storage.get('questHelper_gameIdleCandidateType')).toBe('app')
+    store.removeFromPlaylist('a')
+    expect(JSON.parse(storage.get('questHelper_gameIdlePlaylist')!)).toHaveLength(1)
+  })
+
+  it('restores saved snapshots and reports missing items instead of dropping them', () => {
+    storage.set('questHelper_gameIdleSelectionMode', 'manual')
+    storage.set('questHelper_gameIdleCandidateType', 'game')
+    storage.set('questHelper_gameIdlePlaylist', JSON.stringify([game('old'), game('present')]))
+    mocks.quests.detectableGames = [game('present')]
+    const store = useGameIdleStore()
+    store.mode = 'cdp'
+    expect(store.playlist.map(item => item.id)).toEqual(['old', 'present'])
+    expect(store.playlistEntries[0]?.unavailable).toBe('missing')
+    expect(store.validateConfig()).toBe('playlist_unavailable')
+    store.removeFromPlaylist('old')
+    expect(store.validateConfig()).toBeNull()
+    store.removeFromPlaylist('present')
+    expect(store.validateConfig()).toBe('playlist_empty')
+  })
+
+  it('ignores malformed saved data and sanitizes duplicated snapshots', () => {
+    storage.set('questHelper_gameIdlePlaylist', '{broken')
+    expect(useGameIdleStore().playlist).toEqual([])
+    setActivePinia(createPinia())
+    storage.set('questHelper_gameIdlePlaylist', JSON.stringify([null, {}, game('a'), game('a'), { id: 2, name: 'bad' }]))
+    const store = useGameIdleStore()
+    expect(store.playlist.map(item => item.id)).toEqual(['a'])
+    expect(store.playlist[0]).not.toHaveProperty('executables')
+  })
+
+  it('validates the current metadata and keeps incompatible selections when modes change', () => {
+    mocks.quests.detectableGames = [game('a', 'App', '')]
+    const store = useGameIdleStore()
+    store.selectionMode = 'manual'
+    store.candidateType = 'game'
+    store.mode = 'cdp'
+    store.addToPlaylist(game('a'))
+    expect(store.candidateCount).toBe(1)
+    expect(store.validateConfig()).toBeNull()
+    store.mode = 'process'
+    expect(store.candidateCount).toBe(0)
+    expect(store.validateConfig()).toBe('playlist_unavailable')
+    expect(store.playlistEntries[0]?.unavailable).toBe('incompatible')
+    expect(store.playlist).toHaveLength(1)
+  })
+
+  it('rejects missing or incompatible selected IDs before invoking the backend', async () => {
+    const store = useGameIdleStore()
+    store.selectionMode = 'manual'
+    store.addToPlaylist(game('a'))
+    await expect(store.start()).rejects.toThrow('playlist_unavailable')
+    mocks.quests.getDetectableGames.mockResolvedValue([game('a', 'Game', '')])
+    await expect(store.start()).rejects.toThrow('playlist_unavailable')
+    store.removeFromPlaylist('a')
+    await expect(store.start()).rejects.toThrow('playlist_empty')
+    expect(mocks.startGameIdle).not.toHaveBeenCalled()
+  })
+
+  it('freezes start parameters while async preparation is pending and sends the full catalog', async () => {
+    let release!: (games: ReturnType<typeof game>[]) => void
+    mocks.quests.getDetectableGames.mockReturnValueOnce(new Promise(resolve => { release = resolve }))
+    const store = useGameIdleStore()
+    store.mode = 'cdp'
+    store.selectionMode = 'manual'
+    store.candidateType = 'app'
+    store.addToPlaylist(game('b'))
+    store.addToPlaylist(game('a'))
+    const pending = store.start()
+    store.mode = 'process'
+    store.selectionMode = 'random'
+    store.playMinutes = 90
+    store.addToPlaylist(game('c')) // Editing methods are locked during startup.
+    const catalog = [game('a'), game('b'), game('c')]
+    release(catalog)
+    await pending
+    expect(mocks.startGameIdle).toHaveBeenCalledWith(expect.objectContaining({
+      mode: 'cdp', selectionMode: 'manual', candidateType: 'app', selectedAppIds: ['b', 'a'],
+      playMinutes: 60, restMinutes: 0,
+    }), catalog)
+    expect(store.playlist).toHaveLength(2)
+  })
+
+  it('restores an active playlist configuration and protects saved entries from queue skips', async () => {
+    const status: GameIdleStatus = {
+      sessionId: 'active', mode: 'cdp', selectionMode: 'manual', candidateType: 'app', selectedAppIds: ['b', 'a'],
+      phase: 'playing', playMinutes: 1, restMinutes: 1, current: null, recent: [], upcoming: [],
+      phaseStartedAt: 0, phaseEndsAt: null, accumulatedPlayedSeconds: 0, warning: null,
+    }
+    mocks.getGameIdleStatus.mockResolvedValue(status)
+    mocks.quests.detectableGames = [game('a'), game('b')]
+    const store = useGameIdleStore()
+    await store.initialize()
+    expect(store.selectionMode).toBe('manual')
+    expect(store.candidateType).toBe('app')
+    expect(store.playlist.map(item => item.id)).toEqual(['b', 'a'])
+    store.removeFromPlaylist('a')
+    store.movePlaylistItem('a', -1)
+    expect(store.playlist.map(item => item.id)).toEqual(['b', 'a'])
+    await store.removeUpcoming({ id: 'a', name: 'Item a', occurrenceId: 'future-a' })
+    expect(store.playlist.map(item => item.id)).toEqual(['b', 'a'])
+  })
+
 })
 
 describe('game idle duration formatting', () => {
