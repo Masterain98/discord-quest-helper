@@ -167,7 +167,7 @@ async function copy(entry: ConsoleEntry) {
           :placeholder="t('discord_console.placeholder')" @keydown="keyboard" />
         <div class="mt-2 flex flex-wrap items-center justify-between gap-2">
           <p class="text-xs text-muted-foreground">{{ t('discord_console.shortcuts') }}</p>
-          <Button class="gap-2" :disabled="!ready" @click="store.execute">
+          <Button class="ui-button-neomorphic gap-2" :disabled="!ready" @click="store.execute">
             <Loader2 v-if="store.executing" class="h-4 w-4 animate-spin" /><Play v-else class="h-4 w-4" />
             {{ t(store.executing ? 'discord_console.executing' : 'discord_console.execute') }}
           </Button>
