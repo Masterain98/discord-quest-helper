@@ -594,7 +594,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div class="fade-in space-y-6">
     <div class="flex flex-wrap items-center justify-between gap-3">
       <div>
         <h2 class="ui-page-heading text-2xl font-semibold">{{ t('debug.title') }}</h2>

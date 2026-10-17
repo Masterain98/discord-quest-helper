@@ -91,7 +91,7 @@ async function copy(entry: ConsoleEntry) {
 </script>
 
 <template>
-<section class="flex min-h-0 min-w-0 flex-1 flex-col gap-4 pb-4">
+<section class="flex min-h-0 min-w-0 flex-1 flex-col gap-4 pb-4" :class="{ 'fade-in': props.active }">
   <div class="flex flex-wrap items-center justify-between gap-3">
       <div>
         <h2 class="ui-page-heading flex items-center gap-2 text-2xl font-semibold"><Terminal class="h-5 w-5 text-primary" :stroke-width="1.7" />{{ t('nav.discord_console') }}</h2>

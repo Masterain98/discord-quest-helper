@@ -157,7 +157,7 @@ async function refresh() {
 </script>
 
 <template>
-  <div class="space-y-4 pb-6">
+  <div class="fade-in space-y-4 pb-6">
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div class="min-w-0 space-y-1.5">
         <h2 class="ui-page-heading flex items-center gap-2 text-2xl font-semibold"><Globe2 class="h-6 w-6 text-primary" :stroke-width="1.7" />{{ t('nav.global_quests') }}</h2>
