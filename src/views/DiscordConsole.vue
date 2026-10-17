@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Check, ChevronDown, Copy, Loader2, Pause, Play, Power, Terminal, Trash2, Wifi } from 'lucide-vue-next'
+import hljs from 'highlight.js/lib/core'
+import javascript from 'highlight.js/lib/languages/javascript'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu'
@@ -15,6 +17,12 @@ const { t } = useI18n()
 const output = ref<HTMLElement | null>(null)
 const editor = ref<HTMLTextAreaElement | null>(null)
 const copied = ref<number | null>(null)
+const editorHeight = ref(180)
+const editorScrollTop = ref(0)
+const editorScrollLeft = ref(0)
+const resizing = ref(false)
+let resizeStartY = 0
+let resizeStartHeight = 0
 const follow = ref(true)
 const renderLimit = ref(120)
 const renderStart = ref(0)
@@ -29,6 +37,12 @@ const renderedEntries = computed(() => {
 })
 const levels = ['all', 'log', 'info', 'debug', 'warn', 'error'] as const
 const errorText = (code: string) => t(`discord_console.errors.${code}`)
+const highlightedInput = computed(() => hljs.highlight(store.input, { language: 'javascript' }).value)
+const editorCodeStyle = computed(() => ({ transform: `translate(${-editorScrollLeft.value}px, ${-editorScrollTop.value}px)` }))
+const minEditorHeight = 120
+const maxEditorHeight = 560
+
+hljs.registerLanguage('javascript', javascript)
 
 watch(() => [props.enabled, props.port] as const, ([enabled, port]) => {
   if (enabled) void store.connect(port)
@@ -82,12 +96,42 @@ function keyboard(event: KeyboardEvent) {
     event.preventDefault(); store.recall(event.key === 'ArrowUp' ? -1 : 1)
   }
 }
+function startResize(event: PointerEvent) {
+  event.preventDefault()
+  resizing.value = true
+  resizeStartY = event.clientY
+  resizeStartHeight = editorHeight.value
+  ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+}
+function resizeEditor(event: PointerEvent) {
+  if (!resizing.value) return
+  editorHeight.value = Math.min(maxEditorHeight, Math.max(minEditorHeight, resizeStartHeight + resizeStartY - event.clientY))
+}
+function stopResize() {
+  resizing.value = false
+}
+function resizeWithKeyboard(event: KeyboardEvent) {
+  const step = event.shiftKey ? 40 : 16
+  if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+    event.preventDefault()
+    editorHeight.value = Math.min(maxEditorHeight, Math.max(minEditorHeight,
+      editorHeight.value + (event.key === 'ArrowUp' ? step : -step)))
+  } else if (event.key === 'Home' || event.key === 'End') {
+    event.preventDefault()
+    editorHeight.value = event.key === 'Home' ? minEditorHeight : maxEditorHeight
+  }
+}
+function syncEditorScroll() {
+  editorScrollTop.value = editor.value?.scrollTop ?? 0
+  editorScrollLeft.value = editor.value?.scrollLeft ?? 0
+}
 async function copy(entry: ConsoleEntry) {
   try {
     await navigator.clipboard.writeText(entry.errorCode ? errorText(entry.errorCode) : entry.text)
     copied.value = entry.id
   } catch { toast.error({ title: t('discord_console.copy_failed') }) }
 }
+onUnmounted(stopResize)
 </script>
 
 <template>
@@ -162,9 +206,17 @@ async function copy(entry: ConsoleEntry) {
 
       <div class="border-t p-3">
         <label for="discord-console-expression" class="sr-only">{{ t('discord_console.command') }}</label>
-        <textarea id="discord-console-expression" ref="editor" v-model="store.input" spellcheck="false" autocapitalize="off" autocomplete="off"
-          class="ui-input min-h-28 w-full resize-y rounded-xl border bg-background p-3 font-mono text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          :placeholder="t('discord_console.placeholder')" @keydown="keyboard" />
+        <div class="console-editor-resize" role="separator" aria-orientation="horizontal" tabindex="0"
+          :aria-label="t('discord_console.resize_editor')" :aria-valuenow="editorHeight" :aria-valuemin="minEditorHeight" :aria-valuemax="maxEditorHeight"
+          @pointerdown="startResize" @pointermove="resizeEditor" @pointerup="stopResize" @pointercancel="stopResize" @lostpointercapture="stopResize" @keydown="resizeWithKeyboard">
+          <span />
+        </div>
+        <div class="console-editor relative w-full overflow-hidden rounded-xl border bg-background" :style="{ height: `${editorHeight}px` }">
+          <pre class="console-editor-highlight" aria-hidden="true"><code :style="editorCodeStyle" v-html="highlightedInput" /></pre>
+          <textarea id="discord-console-expression" ref="editor" v-model="store.input" spellcheck="false" autocapitalize="off" autocomplete="off"
+            class="console-editor-input ui-input absolute inset-0 h-full w-full resize-none rounded-xl border-0 bg-transparent p-3 font-mono text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+            :placeholder="t('discord_console.placeholder')" @keydown="keyboard" @scroll="syncEditorScroll" />
+        </div>
         <div class="mt-2 flex flex-wrap items-center justify-between gap-2">
           <p class="text-xs text-muted-foreground">{{ t('discord_console.shortcuts') }}</p>
           <Button class="ui-button-neomorphic gap-2" :disabled="!ready" @click="store.execute">
@@ -177,3 +229,125 @@ async function copy(entry: ConsoleEntry) {
     </div>
   </section>
 </template>
+
+<style scoped>
+.console-editor-highlight,
+.console-editor-input {
+  box-sizing: border-box;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+  font-size: 0.875rem;
+  line-height: 1.5rem;
+  tab-size: 2;
+  white-space: pre;
+}
+
+.console-editor-highlight {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  margin: 0;
+  padding: 0.75rem;
+  pointer-events: none;
+}
+
+.console-editor-highlight code {
+  display: block;
+  min-width: max-content;
+  transform-origin: top left;
+}
+
+.console-editor-input {
+  color: transparent;
+  caret-color: hsl(var(--foreground));
+  -webkit-text-fill-color: transparent;
+}
+
+.console-editor-input::selection {
+  background: hsl(var(--primary) / 0.25);
+  -webkit-text-fill-color: transparent;
+}
+
+.console-editor-input::placeholder {
+  color: hsl(var(--muted-foreground));
+  -webkit-text-fill-color: hsl(var(--muted-foreground));
+}
+
+.console-editor-highlight :deep(.hljs-keyword),
+.console-editor-highlight :deep(.hljs-literal),
+.console-editor-highlight :deep(.hljs-type) {
+  color: hsl(var(--primary));
+}
+
+.console-editor-highlight :deep(.hljs-title),
+.console-editor-highlight :deep(.hljs-title.function_),
+.console-editor-highlight :deep(.hljs-built_in) {
+  color: #0f766e;
+}
+
+.console-editor-highlight :deep(.hljs-string),
+.console-editor-highlight :deep(.hljs-regexp),
+.console-editor-highlight :deep(.hljs-template-tag) {
+  color: #15803d;
+}
+
+.console-editor-highlight :deep(.hljs-number),
+.console-editor-highlight :deep(.hljs-variable.language_),
+.console-editor-highlight :deep(.hljs-attr) {
+  color: #b45309;
+}
+
+.console-editor-highlight :deep(.hljs-comment),
+.console-editor-highlight :deep(.hljs-doctag) {
+  color: hsl(var(--muted-foreground));
+  font-style: italic;
+}
+
+.console-editor-highlight :deep(.hljs-params),
+.console-editor-highlight :deep(.hljs-property),
+.console-editor-highlight :deep(.hljs-punctuation),
+.console-editor-highlight :deep(.hljs-operator) {
+  color: hsl(var(--foreground));
+}
+
+.console-editor-resize {
+  display: flex;
+  height: 14px;
+  align-items: center;
+  justify-content: center;
+  cursor: ns-resize;
+  touch-action: none;
+  outline: none;
+}
+
+.console-editor-resize span {
+  width: 42px;
+  height: 3px;
+  border-radius: 9999px;
+  background: hsl(var(--border));
+  transition: background-color 120ms ease, width 120ms ease;
+}
+
+.dark .console-editor-highlight :deep(.hljs-title),
+.dark .console-editor-highlight :deep(.hljs-title.function_),
+.dark .console-editor-highlight :deep(.hljs-built_in) {
+  color: #5eead4;
+}
+
+.dark .console-editor-highlight :deep(.hljs-string),
+.dark .console-editor-highlight :deep(.hljs-regexp),
+.dark .console-editor-highlight :deep(.hljs-template-tag) {
+  color: #86efac;
+}
+
+.dark .console-editor-highlight :deep(.hljs-number),
+.dark .console-editor-highlight :deep(.hljs-variable.language_),
+.dark .console-editor-highlight :deep(.hljs-attr) {
+  color: #fbbf24;
+}
+
+.console-editor-resize:hover span,
+.console-editor-resize:focus-visible span {
+  width: 56px;
+  background: hsl(var(--primary));
+}
+</style>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { AlertTriangle, CheckCircle2, ExternalLink, Info, Link2, XCircle } from 'lucide-vue-next'
+import { AlertTriangle, CheckCircle2, ExternalLink, Heart, Info, Link2, XCircle } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { open } from '@tauri-apps/plugin-shell'
 import {
@@ -191,6 +191,15 @@ function removeBubble(id: number) {
           <Button
             variant="outline"
             size="sm"
+            :class="cn('gap-1.5', settingToneClass.violet.buttonSoft)"
+            @click="openExternal('https://github.com/sponsors/Masterain98')"
+          >
+            <Heart class="h-3.5 w-3.5 fill-current" aria-hidden="true" />
+            {{ t('settings.sponsor') }}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
             :class="settingToneClass.info.buttonSoft"
             @click="openExternal('https://github.com/Masterain98/discord-quest-helper/issues/new/choose')"
           >
@@ -290,11 +299,26 @@ function removeBubble(id: number) {
         <div>
           <p class="mb-1 font-medium text-foreground">{{ t('settings.tech_stack') }}</p>
           <div class="flex flex-wrap gap-2">
-            <Badge variant="outline">Tauri</Badge>
-            <Badge variant="outline">Vue 3</Badge>
-            <Badge variant="outline">shadcn-vue</Badge>
-            <Badge variant="outline">TailwindCSS</Badge>
-            <Badge variant="outline">vue-i18n</Badge>
+            <Button as="a" href="https://v2.tauri.app/" variant="outline" size="sm" class="gap-1.5" @click.prevent="openExternal('https://v2.tauri.app/')">
+              <img src="/icons/tech/tauri.svg" alt="" class="h-4 w-4 object-contain" aria-hidden="true" />
+              Tauri
+            </Button>
+            <Button as="a" href="https://vuejs.org/" variant="outline" size="sm" class="gap-1.5" @click.prevent="openExternal('https://vuejs.org/')">
+              <img src="/icons/tech/vue.svg" alt="" class="h-4 w-4 object-contain" aria-hidden="true" />
+              Vue 3
+            </Button>
+            <Button as="a" href="https://www.shadcn-vue.com/" variant="outline" size="sm" class="gap-1.5" @click.prevent="openExternal('https://www.shadcn-vue.com/')">
+              <img src="/icons/tech/shadcn.svg" alt="" class="h-4 w-4 object-contain dark:invert" aria-hidden="true" />
+              shadcn-vue
+            </Button>
+            <Button as="a" href="https://tailwindcss.com/" variant="outline" size="sm" class="gap-1.5" @click.prevent="openExternal('https://tailwindcss.com/')">
+              <img src="/icons/tech/tailwindcss.svg" alt="" class="h-4 w-4 object-contain" aria-hidden="true" />
+              TailwindCSS
+            </Button>
+            <Button as="a" href="https://vue-i18n.intlify.dev/" variant="outline" size="sm" class="gap-1.5" @click.prevent="openExternal('https://vue-i18n.intlify.dev/')">
+              <img src="/icons/tech/vue-i18n.svg" alt="" class="h-4 w-4 object-contain" aria-hidden="true" />
+              vue-i18n
+            </Button>
           </div>
         </div>
     </SettingsSectionCard>
