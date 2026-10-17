@@ -598,7 +598,8 @@
     "remove_item": "Retirer {name}",
     "search_limit": "{count} éléments sur {total}. Affinez avec la recherche.",
     "catalog_error": "Impossible de charger le catalogue. Essayez de l’actualiser.",
-    "skip_occurrence": "Ignorer cette occurrence"
+    "skip_occurrence": "Ignorer cette occurrence",
+    "persistence_error": "Impossible d’enregistrer les paramètres du mode inactif. Les modifications peuvent être perdues après un redémarrage."
   },
   "desktop_clients": {
     "ask_each_time": "Me demander à chaque fois",

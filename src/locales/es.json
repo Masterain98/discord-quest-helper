@@ -598,7 +598,8 @@
     "remove_item": "Eliminar {name}",
     "search_limit": "Se muestran {count} de {total}. Busca para filtrar.",
     "catalog_error": "No se pudo cargar el catálogo. Intenta actualizarlo.",
-    "skip_occurrence": "Omitir esta vez"
+    "skip_occurrence": "Omitir esta vez",
+    "persistence_error": "No se pudo guardar la configuración de inactividad. Los cambios pueden perderse al reiniciar."
   },
   "desktop_clients": {
     "ask_each_time": "Preguntarme cada vez",

@@ -598,7 +598,8 @@
     "remove_item": "Remover {name}",
     "search_limit": "A mostrar {count} de {total}. Pesquise para filtrar.",
     "catalog_error": "Não foi possível carregar o catálogo. Tente atualizar.",
-    "skip_occurrence": "Saltar esta ocorrência"
+    "skip_occurrence": "Saltar esta ocorrência",
+    "persistence_error": "Não foi possível guardar as definições de inatividade. As alterações podem perder-se ao reiniciar."
   },
   "desktop_clients": {
     "ask_each_time": "Perguntar sempre",

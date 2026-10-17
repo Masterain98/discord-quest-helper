@@ -16,9 +16,7 @@ const type = ref<GameIdleCandidateType>('all')
 const loading = ref(false)
 const error = ref('')
 const selectedIds = computed(() => new Set(idle.playlist.map(item => item.id)))
-const matches = computed(() => idle.detectableGames.filter(game =>
-  (type.value === 'all' || game.type_name === (type.value === 'game' ? 'Game' : 'App')) &&
-  (game.name.toLocaleLowerCase().includes(query.value.trim().toLocaleLowerCase()) || game.id.includes(query.value.trim()))))
+const matches = computed(() => idle.searchCatalog(type.value, query.value))
 const displayed = computed(() => matches.value.slice(0, 50))
 const locked = computed(() => idle.isActive || idle.loading)
 

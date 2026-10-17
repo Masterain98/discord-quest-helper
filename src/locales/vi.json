@@ -598,7 +598,8 @@
     "remove_item": "Xóa {name}",
     "search_limit": "Hiển thị {count} trong {total} mục. Tìm kiếm để thu hẹp kết quả.",
     "catalog_error": "Không tải được danh mục. Hãy thử làm mới.",
-    "skip_occurrence": "Bỏ qua lần này"
+    "skip_occurrence": "Bỏ qua lần này",
+    "persistence_error": "Không thể lưu cài đặt treo máy. Các thay đổi có thể bị mất sau khi khởi động lại."
   },
   "desktop_clients": {
     "ask_each_time": "Luôn hỏi tôi",

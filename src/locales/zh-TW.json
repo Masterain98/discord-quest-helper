@@ -598,7 +598,8 @@
     "remove_item": "移除 {name}",
     "search_limit": "顯示 {total} 項中的前 {count} 項，可搜尋縮小範圍。",
     "catalog_error": "候選清單載入失敗，請嘗試重新整理。",
-    "skip_occurrence": "略過這一次"
+    "skip_occurrence": "略過這一次",
+    "persistence_error": "無法儲存掛機設定，重新啟動後可能遺失本次修改。"
   },
   "desktop_clients": {
     "ask_each_time": "每次詢問我",

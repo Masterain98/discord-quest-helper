@@ -598,7 +598,8 @@
     "remove_item": "Hapus {name}",
     "search_limit": "Menampilkan {count} dari {total}. Cari untuk mempersempit hasil.",
     "catalog_error": "Katalog gagal dimuat. Coba muat ulang.",
-    "skip_occurrence": "Lewati kali ini"
+    "skip_occurrence": "Lewati kali ini",
+    "persistence_error": "Pengaturan idle tidak dapat disimpan. Perubahan mungkin hilang setelah memulai ulang."
   },
   "desktop_clients": {
     "ask_each_time": "Tanya saya setiap kali",

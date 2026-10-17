@@ -598,7 +598,8 @@
     "remove_item": "{name} を削除",
     "search_limit": "{total} 件中 {count} 件を表示。検索で絞り込めます。",
     "catalog_error": "候補一覧を読み込めませんでした。更新してください。",
-    "skip_occurrence": "今回のみスキップ"
+    "skip_occurrence": "今回のみスキップ",
+    "persistence_error": "放置モードの設定を保存できませんでした。再起動後に変更が失われる可能性があります。"
   },
   "desktop_clients": {
     "ask_each_time": "毎回確認する",

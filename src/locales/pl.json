@@ -598,7 +598,8 @@
     "remove_item": "Usuń {name}",
     "search_limit": "Wyświetlono {count} z {total}. Użyj wyszukiwania, aby zawęzić wyniki.",
     "catalog_error": "Nie udało się wczytać katalogu. Spróbuj odświeżyć.",
-    "skip_occurrence": "Pomiń to wystąpienie"
+    "skip_occurrence": "Pomiń to wystąpienie",
+    "persistence_error": "Nie udało się zapisać ustawień bezczynności. Zmiany mogą zostać utracone po ponownym uruchomieniu."
   },
   "desktop_clients": {
     "ask_each_time": "Pytaj za każdym razem",

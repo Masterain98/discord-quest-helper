@@ -598,7 +598,8 @@
     "remove_item": "{name} kaldır",
     "search_limit": "{total} sonuçtan {count} tanesi gösteriliyor. Daraltmak için arayın.",
     "catalog_error": "Katalog yüklenemedi. Yenilemeyi deneyin.",
-    "skip_occurrence": "Bu sefer atla"
+    "skip_occurrence": "Bu sefer atla",
+    "persistence_error": "Boşta kalma ayarları kaydedilemedi. Değişiklikler yeniden başlatıldıktan sonra kaybolabilir."
   },
   "desktop_clients": {
     "ask_each_time": "Her seferinde sor",

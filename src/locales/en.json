@@ -600,7 +600,8 @@
     "remove_item": "Remove {name}",
     "search_limit": "Showing {count} of {total}. Search to narrow the results.",
     "catalog_error": "Could not load the catalog. Try refreshing.",
-    "skip_occurrence": "Skip this occurrence"
+    "skip_occurrence": "Skip this occurrence",
+    "persistence_error": "Idle settings could not be saved. Changes may be lost after restarting."
   },
   "desktop_clients": {
     "ask_each_time": "Ask me every time",

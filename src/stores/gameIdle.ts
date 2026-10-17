@@ -98,6 +98,9 @@ export const useGameIdleStore = defineStore('gameIdle', () => {
   const stopping = ref(false)
   const stopRequested = ref(false)
   const error = ref<string | null>(null)
+  const selectionPersistenceError = ref(false)
+  const configPersistenceError = ref(false)
+  const persistenceError = computed(() => selectionPersistenceError.value || configPersistenceError.value)
   let initialized = false
   let accountGeneration = 0
   let pendingStart: Promise<void> | null = null
@@ -109,11 +112,22 @@ export const useGameIdleStore = defineStore('gameIdle', () => {
     return phase !== undefined && phase !== 'stopped'
   })
 
-  watch([selectionMode, candidateType, playlist], () => {
-    localStorage.setItem(SELECTION_KEY, selectionMode.value)
-    localStorage.setItem(CANDIDATE_TYPE_KEY, candidateType.value)
-    localStorage.setItem(PLAYLIST_KEY, JSON.stringify(playlist.value))
-  }, { deep: true, flush: 'sync' })
+  function persistSelection(config = {
+    selectionMode: selectionMode.value,
+    candidateType: candidateType.value,
+    playlist: playlist.value,
+  }) {
+    try {
+      localStorage.setItem(SELECTION_KEY, config.selectionMode)
+      localStorage.setItem(CANDIDATE_TYPE_KEY, config.candidateType)
+      localStorage.setItem(PLAYLIST_KEY, JSON.stringify(config.playlist))
+      selectionPersistenceError.value = false
+    } catch {
+      selectionPersistenceError.value = true
+    }
+  }
+
+  watch([selectionMode, candidateType, playlist], () => persistSelection(), { deep: true, flush: 'sync' })
 
   function isCompatible(game: DetectableGame, selectedMode = mode.value): boolean {
     if (selectedMode === 'cdp') return true
@@ -126,9 +140,16 @@ export const useGameIdleStore = defineStore('gameIdle', () => {
   }
 
   const detectableGames = computed(() => uniqueGames(quests.detectableGames))
+  function searchCatalog(type: GameIdleCandidateType, query: string): DetectableGame[] {
+    const search = query.trim().toLocaleLowerCase()
+    return uniqueGames(quests.detectableGames.filter(game => matchesType(game, type) &&
+      (game.name.toLocaleLowerCase().includes(search) || game.id.includes(search))))
+  }
   const playlistEntries = computed(() => playlist.value.map(saved => {
     const matching = quests.detectableGames.filter(item => item.id === saved.id)
-    const game = matching.find(item => isCompatible(item)) ?? matching[0]
+    const game = matching.find(item => item.type_name === saved.type_name && isCompatible(item)) ??
+      matching.find(item => isCompatible(item)) ??
+      matching.find(item => item.type_name === saved.type_name) ?? matching[0]
     return { ...saved, ...(game ?? {}), unavailable: !game ? 'missing' : !isCompatible(game) ? 'incompatible' : null }
   }))
   const candidates = computed(() => selectionMode.value === 'manual'
@@ -151,8 +172,10 @@ export const useGameIdleStore = defineStore('gameIdle', () => {
     const index = playlist.value.findIndex(item => item.id === id)
     const target = index + direction
     if (index < 0 || target < 0 || target >= playlist.value.length) return
-    const [item] = playlist.value.splice(index, 1)
-    playlist.value.splice(target, 0, item!)
+    const reordered = [...playlist.value]
+    const [item] = reordered.splice(index, 1)
+    reordered.splice(target, 0, item!)
+    playlist.value = reordered
   }
 
   const sessionTotalSeconds = computed(() => {
@@ -163,10 +186,15 @@ export const useGameIdleStore = defineStore('gameIdle', () => {
     return current.accumulatedPlayedSeconds + elapsed
   })
 
-  function persistConfig() {
-    localStorage.setItem(PLAY_MINUTES_KEY, String(playMinutes.value))
-    localStorage.setItem(REST_MINUTES_KEY, String(restMinutes.value))
-    localStorage.setItem(MODE_KEY, mode.value)
+  function persistConfig(config: { playMinutes: number; restMinutes: number; mode: GameIdleMode }) {
+    try {
+      localStorage.setItem(PLAY_MINUTES_KEY, String(config.playMinutes))
+      localStorage.setItem(REST_MINUTES_KEY, String(config.restMinutes))
+      localStorage.setItem(MODE_KEY, config.mode)
+      configPersistenceError.value = false
+    } catch {
+      configPersistenceError.value = true
+    }
   }
 
   function validateDurations(): string | null {
@@ -215,8 +243,10 @@ export const useGameIdleStore = defineStore('gameIdle', () => {
         candidateType.value = activeStatus.candidateType
         if (activeStatus.selectionMode === 'manual') {
           const saved = new Map(playlist.value.map(item => [item.id, item]))
-          playlist.value = activeStatus.selectedAppIds.map(id => {
-            const item = quests.detectableGames.find(game => game.id === id) ?? saved.get(id) ?? { id, name: id }
+          playlist.value = [...new Set(activeStatus.selectedAppIds)].map(id => {
+            const previous = saved.get(id)
+            const item = quests.detectableGames.find(game => game.id === id && game.type_name === previous?.type_name) ??
+              quests.detectableGames.find(game => game.id === id) ?? previous ?? { id, name: id }
             return { id: item.id, name: item.name, icon: item.icon, type_name: item.type_name }
           })
         }
@@ -244,7 +274,8 @@ export const useGameIdleStore = defineStore('gameIdle', () => {
     const selectedMode = mode.value
     const selectedSelectionMode = selectionMode.value
     const selectedCandidateType = candidateType.value
-    const selectedAppIds = playlist.value.map(item => item.id)
+    const selectedPlaylist = playlist.value.map(item => ({ ...item }))
+    const selectedAppIds = selectedPlaylist.map(item => item.id)
     const selectedPlayMinutes = playMinutes.value
     const selectedRestMinutes = restMinutes.value
     const cdpPort = quests.cdpPort
@@ -265,7 +296,8 @@ export const useGameIdleStore = defineStore('gameIdle', () => {
             throw new Error('playlist_unavailable')
           }
         }
-        persistConfig()
+        persistSelection({ selectionMode: selectedSelectionMode, candidateType: selectedCandidateType, playlist: selectedPlaylist })
+        persistConfig({ mode: selectedMode, playMinutes: selectedPlayMinutes, restMinutes: selectedRestMinutes })
         status.value = await startGameIdle(
           {
             mode: selectedMode,
@@ -378,6 +410,7 @@ export const useGameIdleStore = defineStore('gameIdle', () => {
     stopping,
     stopRequested,
     error,
+    persistenceError,
     isActive,
     sessionTotalSeconds,
     initialize,
@@ -387,6 +420,7 @@ export const useGameIdleStore = defineStore('gameIdle', () => {
     removeUpcoming,
     stopForAccountChange,
     validateConfig,
+    searchCatalog,
     dispose,
   }
 })

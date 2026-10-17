@@ -112,6 +112,32 @@ pub struct GameIdleStatus {
     pub warning: Option<String>,
 }
 
+impl GameIdleStatus {
+    fn starting(config: &GameIdleConfig, candidates: &[GameIdleItem]) -> Self {
+        Self {
+            session_id: uuid::Uuid::new_v4().to_string(),
+            mode: config.mode,
+            selection_mode: config.selection_mode,
+            candidate_type: config.candidate_type,
+            selected_app_ids: if config.selection_mode == GameIdleSelectionMode::Manual {
+                candidates.iter().map(|item| item.id.clone()).collect()
+            } else {
+                Vec::new()
+            },
+            phase: GameIdlePhase::Starting,
+            play_minutes: config.play_minutes,
+            rest_minutes: config.rest_minutes,
+            current: None,
+            recent: Vec::new(),
+            upcoming: Vec::new(),
+            phase_started_at: now_millis(),
+            phase_ends_at: None,
+            accumulated_played_seconds: 0,
+            warning: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 enum RunningSimulation {
     Process { executable_name: String },
@@ -285,25 +311,7 @@ impl GameIdleManager {
             });
         }
 
-        let session_id = uuid::Uuid::new_v4().to_string();
-        let now = now_millis();
-        let status = GameIdleStatus {
-            session_id,
-            mode: config.mode,
-            selection_mode: config.selection_mode,
-            candidate_type: config.candidate_type,
-            selected_app_ids: config.selected_app_ids.clone(),
-            phase: GameIdlePhase::Starting,
-            play_minutes: config.play_minutes,
-            rest_minutes: config.rest_minutes,
-            current: None,
-            recent: Vec::new(),
-            upcoming: Vec::new(),
-            phase_started_at: now,
-            phase_ends_at: None,
-            accumulated_played_seconds: 0,
-            warning: None,
-        };
+        let status = GameIdleStatus::starting(&config, &candidates);
         let mut shared_value = IdleShared {
             status,
             all: candidates,
@@ -953,6 +961,10 @@ mod tests {
         config.selected_app_ids = vec!["b".into(), "a".into(), "b".into()];
         let selected =
             configured_candidates(&config, vec![game("a", "win32"), game("b", "win32")]).unwrap();
+        let status = GameIdleStatus::starting(&config, &selected);
+        assert_eq!(status.selected_app_ids, vec!["b", "a"]);
+        let serialized = serde_json::to_value(status).unwrap();
+        assert_eq!(serialized["selectedAppIds"], serde_json::json!(["b", "a"]));
         assert_eq!(
             selected
                 .iter()

@@ -598,7 +598,8 @@
     "remove_item": "{name} entfernen",
     "search_limit": "{count} von {total} angezeigt. Suche zum Eingrenzen.",
     "catalog_error": "Katalog konnte nicht geladen werden. Bitte aktualisieren.",
-    "skip_occurrence": "Diesen Durchlauf überspringen"
+    "skip_occurrence": "Diesen Durchlauf überspringen",
+    "persistence_error": "Die Leerlaufeinstellungen konnten nicht gespeichert werden. Änderungen können nach einem Neustart verloren gehen."
   },
   "desktop_clients": {
     "ask_each_time": "Jedes Mal fragen",

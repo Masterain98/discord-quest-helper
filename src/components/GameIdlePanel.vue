@@ -301,6 +301,10 @@ onBeforeUnmount(() => {
       <span v-else-if="idle.mode === 'cdp' && !quests.cdpAvailable" class="text-amber-600 dark:text-amber-300">{{ t('game_idle.cdp_unavailable') }}</span>
     </div>
 
+    <div v-if="idle.persistenceError" class="idle-warning" role="status">
+      {{ t('game_idle.persistence_error') }}
+    </div>
+
     <div v-if="idle.error || idle.status?.warning" class="idle-warning" role="status">
       {{ idle.error && ['playlist_empty', 'playlist_unavailable'].includes(idle.error) ? t(`game_idle.${idle.error}_error`) : idle.error || idle.status?.warning }}
     </div>

@@ -598,7 +598,8 @@
     "remove_item": "นำ {name} ออก",
     "search_limit": "แสดง {count} จาก {total} รายการ ค้นหาเพื่อจำกัดผลลัพธ์",
     "catalog_error": "โหลดรายการไม่สำเร็จ โปรดลองรีเฟรช",
-    "skip_occurrence": "ข้ามครั้งนี้"
+    "skip_occurrence": "ข้ามครั้งนี้",
+    "persistence_error": "บันทึกการตั้งค่าโหมดว่างไม่ได้ การเปลี่ยนแปลงอาจหายไปหลังเริ่มใหม่"
   },
   "desktop_clients": {
     "ask_each_time": "ถามฉันทุกครั้ง",

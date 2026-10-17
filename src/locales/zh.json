@@ -600,7 +600,8 @@
     "remove_item": "移除 {name}",
     "search_limit": "显示 {total} 项中的前 {count} 项，可搜索缩小范围。",
     "catalog_error": "候选列表加载失败，请尝试刷新。",
-    "skip_occurrence": "跳过这一次"
+    "skip_occurrence": "跳过这一次",
+    "persistence_error": "无法保存挂机设置，重启后可能丢失本次修改。"
   },
   "desktop_clients": {
     "ask_each_time": "每次询问我",
