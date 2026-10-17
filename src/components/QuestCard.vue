@@ -14,7 +14,7 @@ import {
   CardFooter,
 } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Clock, Gift, MonitorPlay, Gamepad2, Activity, Cloud } from 'lucide-vue-next'
+import { Clock, Gift, MonitorPlay, Gamepad2, Activity, Cloud, Link2 } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import {
   firstProgressValue,
@@ -25,6 +25,7 @@ import {
   isPlayActivityTask,
 } from '@/utils/questTasks'
 import { getQuestRewardViews, type QuestRewardView } from '@/utils/questRewards'
+import { hasLinkedQuestProgress } from '@/utils/questGroups'
 
 const { t } = useI18n()
 
@@ -56,6 +57,10 @@ const questTypeLabel = computed(() => {
 
 // Check if this quest is currently active
 const isActiveQuest = computed(() => questsStore.activeQuestId === props.quest.id)
+const hasLinkedProgress = computed(() => !isActiveQuest.value && hasLinkedQuestProgress(
+  props.quest,
+  questsStore.quests.find(quest => quest.id === questsStore.activeQuestId),
+))
 
 const targetDuration = computed(() => {
   // For active quests, use the store's target duration (includes calculated checkpoint times)
@@ -80,7 +85,7 @@ const progress = computed(() => {
   if (props.quest.user_status?.completed_at) return 100
   
   // If this quest is active, use real-time progress from store (already a percentage 0-100)
-  if (isActiveQuest.value && questsStore.activeQuestId) {
+  if (isActiveQuest.value) {
     return Math.min(100, questsStore.activeQuestProgress)
   }
   
@@ -120,6 +125,13 @@ const compactRewardViews = computed(() => rewardViews.value.slice(0, 3))
 const rewardSummary = computed(() => {
   if (rewardViews.value.length === 0) return t('filter.reward')
   return rewardViews.value.map(reward => reward.amountText).join(' + ')
+})
+const heroImageUrl = computed(() => {
+  const asset = props.quest.config.assets?.hero
+  if (!asset) return null
+  return asset.startsWith('/') || /^https?:\/\//i.test(asset)
+    ? asset
+    : `https://cdn.discordapp.com/${asset}`
 })
 
 function formatDate(dateStr: string): string {
@@ -227,23 +239,22 @@ const activeTimeText = computed(() => {
     <Card
       :aria-busy="busy || undefined"
       :class="[
-        'relative z-10 mb-0 overflow-hidden border-border/50 transition-all hover:shadow-md',
-        density === 'compact' && 'hover:shadow-sm',
+        'quest-card-surface relative z-10 mb-0 overflow-hidden border-border/50 transition-all duration-200 hover:border-primary/25',
         (busy || isActiveQuest) && 'border-primary/50',
       ]"
     >
     <!-- Quest Banner/Hero Image -->
     <div
-      v-if="quest.config.assets?.hero"
+      v-if="heroImageUrl"
       :class="density === 'compact' ? 'relative h-16 bg-cover bg-center sm:h-20' : 'relative h-24 bg-cover bg-center'"
-      :style="{ backgroundImage: `url(https://cdn.discordapp.com/${quest.config.assets.hero})` }"
+      :style="{ backgroundImage: `url(${heroImageUrl})` }"
     >
       <div class="absolute inset-0 bg-gradient-to-t from-card to-transparent" />
     </div>
     
     <CardHeader :class="density === 'compact' ? 'pb-2' : 'pb-3'">
-      <div class="flex justify-between items-start gap-4">
-        <div class="flex gap-3 items-start">
+      <div class="flex min-w-0 flex-wrap justify-between items-start gap-2 sm:flex-nowrap sm:gap-4">
+        <div class="flex min-w-0 w-full flex-1 gap-3 items-start sm:w-auto">
           <!-- Application Icon -->
           <img 
             v-if="quest.config.application?.icon"
@@ -340,6 +351,10 @@ const activeTimeText = computed(() => {
         <div class="flex justify-between text-sm">
           <span class="text-muted-foreground">
             {{ t('quest.progress') }}: {{ Math.round(progress) }}%
+            <span v-if="hasLinkedProgress" class="ml-2 inline-flex items-center gap-1 text-xs text-primary">
+              <Link2 class="h-3 w-3" aria-hidden="true" />
+              {{ t('quest_group.linked_progress') }} · {{ Math.round(questsStore.activeQuestProgress) }}%
+            </span>
             <span v-if="isActiveQuest" class="ml-2 font-mono text-xs text-muted-foreground/80">
                ({{ activeTimeText }})
             </span>
@@ -498,6 +513,19 @@ const activeTimeText = computed(() => {
   position: relative;
   isolation: isolate;
   margin-bottom: 1rem;
+}
+
+.quest-card-surface {
+  box-shadow:
+    0 8px 22px -19px hsl(var(--foreground) / 0.52),
+    inset 0 1px 0 hsl(var(--foreground) / 0.025);
+}
+
+.quest-card-shell:hover .quest-card-surface {
+  transform: translateY(-2px);
+  box-shadow:
+    0 14px 30px -21px hsl(var(--primary) / 0.38),
+    inset 0 1px 0 hsl(var(--foreground) / 0.035);
 }
 
 .quest-card-glow {

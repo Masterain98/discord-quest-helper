@@ -10,7 +10,7 @@ defineProps<{
 </script>
 
 <template>
-  <AlertDialogCancel :class="cn(buttonVariants({ variant: 'outline' }), 'mt-2 sm:mt-0', $props.class)">
+  <AlertDialogCancel data-variant="outline" :class="cn(buttonVariants({ variant: 'outline' }), 'mt-2 sm:mt-0', $props.class)">
     <slot />
   </AlertDialogCancel>
 </template>

@@ -16,6 +16,7 @@ import {
 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -624,10 +625,6 @@ watch(() => questsStore.cdpPort, () => {
     class="login-panel-stage mx-auto my-auto flex w-full max-w-2xl flex-col gap-6 py-4 sm:py-8"
     aria-labelledby="login-heading"
   >
-    <div class="flex justify-center">
-      <slot name="toolbar" />
-    </div>
-
     <div class="login-brand-stage flex justify-center py-2 sm:py-4">
       <div class="flex items-center gap-3 sm:gap-4">
         <img src="/icons/logo.png" :alt="t('general.title')" class="h-12 w-12 select-none sm:h-14 sm:w-14" />
@@ -845,16 +842,12 @@ watch(() => questsStore.cdpPort, () => {
         </div>
 
         <div class="space-y-4 px-6 py-5 sm:px-8 sm:py-6">
-          <label class="group flex cursor-pointer items-center gap-3 rounded-xl border border-border/70 bg-card/60 px-3.5 py-3 transition-colors duration-200 hover:border-primary/35 hover:bg-primary/[0.035]">
-            <input
+          <label class="group flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-border/70 bg-card/60 px-3.5 py-3 transition-colors duration-200 hover:border-primary/35 hover:bg-primary/[0.035]">
+            <span class="min-w-0 text-sm font-medium text-foreground">{{ t('auth.cdp_remember_choice') }}</span>
+            <Switch
               v-model="rememberCdpChoice"
-              type="checkbox"
-              class="peer sr-only"
+              :aria-label="t('auth.cdp_remember_choice')"
             />
-            <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-[6px] border border-muted-foreground/35 bg-background text-transparent transition-all duration-200 peer-checked:border-primary peer-checked:bg-primary peer-checked:text-primary-foreground peer-focus-visible:ring-2 peer-focus-visible:ring-primary/40 peer-focus-visible:ring-offset-2">
-              <Check class="h-3.5 w-3.5" :stroke-width="3" aria-hidden="true" />
-            </span>
-            <span class="text-sm font-medium text-foreground">{{ t('auth.cdp_remember_choice') }}</span>
           </label>
 
           <div class="grid gap-2.5">
@@ -926,7 +919,7 @@ watch(() => questsStore.cdpPort, () => {
 
 <style scoped>
 .login-brand-stage {
-  view-transition-name: app-brand;
+  view-transition-name: login-brand;
 }
 
 .login-methods {

@@ -60,6 +60,46 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('quest list loading and refresh', () => {
+  it('drops cached completion and ignores late responses when accounts change', async () => {
+    const store = useQuestsStore()
+    store.setQuestAccount('old')
+    const oldRequest = deferred<ReturnType<typeof response>>()
+    mocks.getQuestsFull.mockReturnValueOnce(oldRequest.promise)
+    const oldFetch = store.fetchQuests(true, true)
+    store.quests = [{ ...quest('old-completed'), user_status: { completed_at: 'done' } }]
+    store.setQuestAccount('new')
+    expect(store.quests).toEqual([])
+    expect(store.hasLoadedQuests).toBe(false)
+    const newRequest = deferred<ReturnType<typeof response>>()
+    mocks.getQuestsFull.mockReturnValueOnce(newRequest.promise)
+    const newFetch = store.fetchQuests()
+    oldRequest.resolve(response([quest('old-completed')]))
+    await oldFetch
+    expect(store.quests).toEqual([])
+    expect(store.loading).toBe(true)
+    newRequest.resolve(response([quest('new-quest')]))
+    await newFetch
+    expect(store.quests.map(q => q.id)).toEqual(['new-quest'])
+    expect(store.questAccountId).toBe('new')
+  })
+
+  it('invalidates requests on logout and preserves state when the same account is selected', async () => {
+    const store = useQuestsStore()
+    store.setQuestAccount('account')
+    store.quests = [quest('existing')]
+    store.setQuestAccount('account')
+    expect(store.quests).toHaveLength(1)
+    const pending = deferred<ReturnType<typeof response>>()
+    mocks.getQuestsFull.mockReturnValueOnce(pending.promise)
+    const fetch = store.fetchQuests(true, true)
+    store.setQuestAccount(null)
+    pending.resolve(response([quest('late')]))
+    await fetch
+    expect(store.quests).toEqual([])
+    expect(store.questAccountId).toBeNull()
+    expect(store.hasLoadedQuests).toBe(false)
+  })
+
   it('uses list loading only until the first fetch completes', async () => {
     const pending = deferred<ReturnType<typeof response>>()
     mocks.getQuestsFull.mockReturnValueOnce(pending.promise)

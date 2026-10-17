@@ -76,8 +76,8 @@ onMounted(async () => {
 </script>
 
 <template>
-  <Card class="bg-card flex flex-col h-[600px]">
-    <CardHeader>
+  <Card class="bg-card flex min-h-0 flex-col">
+    <CardHeader class="shrink-0">
        <CardTitle class="text-lg flex items-center justify-between gap-2">
         <div class="flex items-center gap-2">
           <Gamepad2 class="w-5 h-5"/>
@@ -104,7 +104,7 @@ onMounted(async () => {
       </div>
     </CardHeader>
     
-    <CardContent class="flex-1 overflow-hidden p-0 px-6 pb-6">
+    <CardContent class="min-h-0 flex-1 overflow-hidden p-0 px-6 pb-6">
       <div v-if="loading && games.length === 0" class="flex justify-center py-8">
         <Loader2 class="w-6 h-6 animate-spin text-muted-foreground" />
       </div>

@@ -441,6 +441,7 @@ impl DiscordApiClient {
 
         if path.starts_with("/api/v9/quests")
             || path == "/api/v9/users/@me/virtual-currency/balance"
+            || path == "/api/v9/users/@me/virtual-currency/total-redeemed"
             || path.starts_with("/api/v9/users/@me/billing/subscriptions")
             || path == "/api/v9/users/@me/program-rewards"
         {
@@ -730,6 +731,30 @@ impl DiscordApiClient {
         serde_json::from_str(&body).context("Failed to parse virtual currency balance")
     }
 
+    pub async fn get_virtual_currency_total_redeemed(&self) -> Result<serde_json::Value> {
+        let url = format!(
+            "{}/users/@me/virtual-currency/total-redeemed",
+            DISCORD_API_BASE
+        );
+        let response = self
+            .request(Method::GET, &url)
+            .send()
+            .await
+            .context("Request for virtual currency total redeemed failed")?;
+
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        if !status.is_success() {
+            anyhow::bail!(
+                "Failed to get virtual currency total redeemed: {} - {}",
+                status,
+                body
+            );
+        }
+
+        serde_json::from_str(&body).context("Failed to parse virtual currency total redeemed")
+    }
+
     /// Get the current user's billing subscriptions.
     ///
     /// Kept for callers that need billing-period information. Nitro Orbs
@@ -1009,71 +1034,43 @@ impl DiscordApiClient {
         );
     }
 
-    /// Get detectable games list
-    /// Get detectable games list (merges games and non-games)
+    /// Fetch the complete games and non-games catalog; partial results are not cached.
     pub async fn fetch_detectable_games(&self) -> Result<Vec<DetectableGame>> {
         let games_url = format!("{}/applications/detectable", DISCORD_API_BASE);
         let apps_url = format!("{}/applications/non-games/detectable", DISCORD_API_BASE);
-
-        println!("Requesting detectable games and apps lists...");
-
-        // Helper to fetch a single URL
-        let fetch_list = |url: String| async move {
-            println!("Requesting: {}", url);
-            let response = self
-                .request(Method::GET, &url)
-                .send()
-                .await
-                .context(format!("Failed to request {}", url))?;
-
-            if !response.status().is_success() {
-                let status = response.status();
-                let body = response.text().await.unwrap_or_default();
-                // Don't fail the whole process if one list fails, just return empty?
-                // For now, let's log error and return empty vector to be robust
-                println!("Failed to fetch list from {}: {} - {}", url, status, body);
-                return Ok(Vec::<DetectableGame>::new());
-            }
-
-            let list: Vec<DetectableGame> = response
-                .json()
-                .await
-                .context(format!("Failed to parse list from {}", url))?;
-
-            Ok::<Vec<DetectableGame>, anyhow::Error>(list)
-        };
-
-        // Fetch both concurrently
-        let (games_res, apps_res) = tokio::join!(fetch_list(games_url), fetch_list(apps_url));
-
-        let mut all_items = Vec::new();
-
-        match games_res {
-            Ok(mut games) => {
-                println!("Retrieved {} games", games.len());
-                for game in &mut games {
-                    game.type_name = Some("Game".to_string());
-                }
-                all_items.extend(games);
-            }
-            Err(e) => println!("Error fetching games: {}", e),
-        }
-
-        match apps_res {
-            Ok(mut apps) => {
-                println!("Retrieved {} non-game apps", apps.len());
-                for app in &mut apps {
-                    app.type_name = Some("App".to_string());
-                }
-                all_items.extend(apps);
-            }
-            Err(e) => println!("Error fetching apps: {}", e),
-        }
-
-        println!("Total detectable items merged: {}", all_items.len());
-
-        Ok(all_items)
+        fetch_detectable_catalog(
+            self.request(Method::GET, &games_url),
+            self.request(Method::GET, &apps_url),
+        )
+        .await
     }
+}
+
+async fn fetch_detectable_catalog(
+    games_request: reqwest::RequestBuilder,
+    apps_request: reqwest::RequestBuilder,
+) -> Result<Vec<DetectableGame>> {
+    let fetch_list = |request: reqwest::RequestBuilder| async move {
+        request
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<Vec<DetectableGame>>()
+            .await
+            .context("Invalid detectable catalog response")
+    };
+    let (games_result, apps_result) =
+        tokio::join!(fetch_list(games_request), fetch_list(apps_request));
+    let mut games = games_result.context("Failed to fetch detectable games")?;
+    let mut apps = apps_result.context("Failed to fetch detectable applications")?;
+    for game in &mut games {
+        game.type_name = Some("Game".to_string());
+    }
+    for app in &mut apps {
+        app.type_name = Some("App".to_string());
+    }
+    games.extend(apps);
+    Ok(games)
 }
 
 #[allow(dead_code)]
@@ -1167,6 +1164,97 @@ fn convert_api_quest_to_quest(quest_json: &serde_json::Value) -> Option<Quest> {
 mod tests {
     use super::*;
     use std::sync::Mutex;
+
+    async fn detectable_catalog_response(
+        games_status: u16,
+        apps_status: u16,
+        games_body: &str,
+        apps_body: &str,
+    ) -> Result<Vec<DetectableGame>> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let games_body = games_body.to_string();
+        let apps_body = apps_body.to_string();
+        let server = tokio::spawn(async move {
+            for _ in 0..2 {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut request = Vec::new();
+                while !request.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
+                    let mut buffer = [0; 4096];
+                    let count = stream.read(&mut buffer).await.unwrap();
+                    assert!(count > 0, "request ended before the headers were received");
+                    request.extend_from_slice(&buffer[..count]);
+                }
+                let is_app = String::from_utf8_lossy(&request).starts_with("GET /apps ");
+                let (status, body) = if is_app {
+                    (apps_status, &apps_body)
+                } else {
+                    (games_status, &games_body)
+                };
+                let response = format!(
+                    "HTTP/1.1 {status} Test\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                stream.write_all(response.as_bytes()).await.unwrap();
+                // Like the CDP HTTP fixtures, retain the socket so Windows does
+                // not reset a just-written response before the peer receives it.
+                tokio::time::sleep(Duration::from_millis(400)).await;
+            }
+        });
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let result = tokio::time::timeout(
+            Duration::from_secs(5),
+            fetch_detectable_catalog(
+                client.get(format!("http://{address}/games")),
+                client.get(format!("http://{address}/apps")),
+            ),
+        )
+        .await
+        .unwrap();
+        server.await.unwrap();
+        result
+    }
+
+    const DETECTABLE_ITEM: &str = r#"[{"id":"same","name":"Example","executables":[]}]"#;
+
+    #[tokio::test]
+    async fn detectable_catalog_merges_both_categories_without_dropping_shared_ids() {
+        let items = detectable_catalog_response(200, 200, DETECTABLE_ITEM, DETECTABLE_ITEM)
+            .await
+            .unwrap();
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].type_name.as_deref(), Some("Game"));
+        assert_eq!(items[1].type_name.as_deref(), Some("App"));
+        assert_eq!(items[0].id, items[1].id);
+    }
+
+    #[tokio::test]
+    async fn detectable_catalog_rejects_partial_http_failures_in_either_category() {
+        for (games_status, apps_status, expected) in
+            [(503, 200, "games"), (200, 503, "applications")]
+        {
+            let error = detectable_catalog_response(
+                games_status,
+                apps_status,
+                DETECTABLE_ITEM,
+                DETECTABLE_ITEM,
+            )
+            .await
+            .unwrap_err();
+            assert!(error.to_string().contains(expected));
+            assert!(format!("{error:#}").contains("503"));
+        }
+    }
+
+    #[tokio::test]
+    async fn detectable_catalog_rejects_invalid_json_instead_of_returning_partial_data() {
+        assert!(
+            detectable_catalog_response(200, 200, DETECTABLE_ITEM, "invalid-json")
+                .await
+                .is_err()
+        );
+    }
 
     #[test]
     fn play_activity_payload_matches_start_and_terminal_har_shapes() {
@@ -1391,6 +1479,12 @@ mod tests {
     fn quest_referer_is_only_added_for_quest_context_routes() {
         assert_eq!(
             DiscordApiClient::quest_referer_for_url("https://discord.com/api/v9/quests/@me"),
+            Some(QUEST_HOME_REFERER)
+        );
+        assert_eq!(
+            DiscordApiClient::quest_referer_for_url(
+                "https://discord.com/api/v9/users/@me/virtual-currency/total-redeemed"
+            ),
             Some(QUEST_HOME_REFERER)
         );
         assert_eq!(

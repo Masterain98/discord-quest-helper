@@ -40,48 +40,48 @@ const hasActions = computed(() =>
         v-if="acceptCount > 0"
         size="sm"
         variant="secondary"
-        class="shrink-0 gap-2"
+        class="min-w-0 max-w-full gap-2"
         :disabled="disabled"
         @click="emit('acceptAll')"
       >
         <Check class="h-4 w-4" />
-        {{ t('home.accept_all') }}
-        <span class="tabular-nums opacity-70">{{ acceptCount }}</span>
+        <span class="min-w-0 truncate">{{ t('home.accept_all') }}</span>
+        <span class="shrink-0 tabular-nums opacity-70">{{ acceptCount }}</span>
       </Button>
       <Button
         v-if="completeAllCount > 0"
         size="sm"
-        class="shrink-0 gap-2"
+        class="min-w-0 max-w-full gap-2"
         :disabled="disabled"
         @click="emit('completeAll')"
       >
         <ListChecks class="h-4 w-4" />
-        {{ t('home.complete_all_tasks') }}
-        <span class="tabular-nums opacity-80">{{ completeAllCount }}</span>
+        <span class="min-w-0 truncate">{{ t('home.complete_all_tasks') }}</span>
+        <span class="shrink-0 tabular-nums opacity-80">{{ completeAllCount }}</span>
       </Button>
       <Button
         v-if="videoCount > 0"
         size="sm"
         variant="outline"
-        class="shrink-0 gap-2"
+        class="min-w-0 max-w-full gap-2"
         :disabled="disabled"
         @click="emit('completeVideo')"
       >
         <MonitorPlay class="h-4 w-4" />
-        {{ t('home.complete_all_video') }}
-        <span class="tabular-nums opacity-70">{{ videoCount }}</span>
+        <span class="min-w-0 truncate">{{ t('home.complete_all_video') }}</span>
+        <span class="shrink-0 tabular-nums opacity-70">{{ videoCount }}</span>
       </Button>
       <Button
         v-if="gameCount > 0"
         size="sm"
         variant="outline"
-        class="shrink-0 gap-2"
+        class="min-w-0 max-w-full gap-2"
         :disabled="disabled"
         @click="emit('completeGame')"
       >
         <Gamepad2 class="h-4 w-4" />
-        {{ t('home.complete_all_game') }}
-        <span class="tabular-nums opacity-70">{{ gameCount }}</span>
+        <span class="min-w-0 truncate">{{ t('home.complete_all_game') }}</span>
+        <span class="shrink-0 tabular-nums opacity-70">{{ gameCount }}</span>
       </Button>
     </div>
   </div>

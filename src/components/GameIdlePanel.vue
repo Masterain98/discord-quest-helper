@@ -15,12 +15,13 @@ import {
   Trash2,
 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
+import AnimatedSegmentedControl from '@/components/AnimatedSegmentedControl.vue'
+import GameIdlePlaylistEditor from '@/components/GameIdlePlaylistEditor.vue'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAuthStore } from '@/stores/auth'
 import { useGameIdleStore, formatSimulationDuration } from '@/stores/gameIdle'
 import { useQuestsStore } from '@/stores/quests'
-import { getSimulationExecutables } from '@/utils/executables'
 import type { GameIdleItem } from '@/api/tauri'
 
 const { t } = useI18n()
@@ -48,18 +49,7 @@ function canEditItem(item: GameIdleItem) {
   // must remain in place until startup succeeds or fails.
   return current.phase !== 'starting' || current.upcoming[0]?.occurrenceId !== item.occurrenceId
 }
-const games = computed(() => quests.detectableGames)
-const uniqueGameCount = computed(() => new Set(games.value.map(game => game.id)).size)
-const processCandidateCount = computed(() => {
-  const capabilities = quests.platformCapabilities
-  if (!capabilities) return 0
-  return new Set(games.value.filter(game => getSimulationExecutables(
-      game.executables,
-      capabilities.os,
-      capabilities.executableOsPriority
-    ).length > 0).map(game => game.id)).size
-})
-const candidateCount = computed(() => idle.mode === 'cdp' ? uniqueGameCount.value : processCandidateCount.value)
+const candidateCount = computed(() => idle.candidateCount)
 
 const maxVisibleDistance = computed(() => {
   if (stageWidth.value >= 1050) return 5
@@ -72,7 +62,7 @@ const carouselItems = computed(() => {
   const status = idle.status
   if (!status) return []
   const recent = status.recent.slice(-5)
-  const currentId = status.current?.id
+  const currentOccurrenceId = status.current?.occurrenceId
   const items: Array<{ item: GameIdleItem; offset: number; upcoming: boolean }> = []
   if (recent.length > 0) {
     recent.forEach((item, index) => {
@@ -83,7 +73,7 @@ const carouselItems = computed(() => {
   }
   status.upcoming.forEach((item, index) => {
     if (currentIsQueued.value && index === 0) return
-    if (item.id !== currentId || index > 0) {
+    if (item.occurrenceId !== currentOccurrenceId) {
       items.push({ item, offset: currentIsQueued.value ? index : index + 1, upcoming: true })
     }
   })
@@ -239,11 +229,12 @@ onBeforeUnmount(() => {
         </div>
         <div class="space-y-1.5">
           <Label class="text-xs">{{ t('game_idle.simulation_mode') }}</Label>
-          <div class="flex h-10 rounded-md border bg-background p-1">
+          <AnimatedSegmentedControl :value="idle.mode" class="flex h-10 rounded-md border bg-background p-1" style="--segment-radius: 0.28rem" :aria-label="t('game_idle.simulation_mode')">
             <button
               type="button"
               class="idle-mode-button"
-              :class="idle.mode === 'process' && 'is-active'"
+              data-segment="process"
+              :aria-pressed="idle.mode === 'process'"
               :disabled="active"
               @click="idle.mode = 'process'"
             >
@@ -253,14 +244,15 @@ onBeforeUnmount(() => {
             <button
               type="button"
               class="idle-mode-button"
-              :class="idle.mode === 'cdp' && 'is-active'"
+              data-segment="cdp"
+              :aria-pressed="idle.mode === 'cdp'"
               :disabled="active || !quests.cdpAvailable"
               @click="idle.mode = 'cdp'"
             >
               <MonitorPlay class="h-3.5 w-3.5" />
               CDP
             </button>
-          </div>
+          </AnimatedSegmentedControl>
         </div>
         <Button
           v-if="!active"
@@ -280,6 +272,28 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
+    <div v-if="!immersive" class="space-y-4">
+      <div class="flex flex-wrap items-end gap-4">
+        <div class="space-y-1.5">
+          <Label class="text-xs">{{ t('game_idle.selection_mode') }}</Label>
+          <AnimatedSegmentedControl :value="idle.selectionMode" class="flex h-10 rounded-md border bg-background p-1" style="--segment-radius: 0.28rem" :aria-label="t('game_idle.selection_mode')">
+            <button v-for="choice in (['random', 'manual'] as const)" :key="choice" type="button" class="idle-mode-button" :data-segment="choice" :aria-pressed="idle.selectionMode === choice" @click="idle.selectionMode = choice">
+              {{ t(`game_idle.selection_${choice}`) }}
+            </button>
+          </AnimatedSegmentedControl>
+        </div>
+        <div v-if="idle.selectionMode === 'random'" class="space-y-1.5">
+          <Label class="text-xs">{{ t('game_idle.candidate_type') }}</Label>
+          <AnimatedSegmentedControl :value="idle.candidateType" class="flex h-10 rounded-md border bg-background p-1" style="--segment-radius: 0.28rem" :aria-label="t('game_idle.candidate_type')">
+            <button v-for="choice in (['all', 'game', 'app'] as const)" :key="choice" type="button" class="idle-mode-button" :data-segment="choice" :aria-pressed="idle.candidateType === choice" @click="idle.candidateType = choice">
+              {{ t(`game_idle.type_${choice}`) }}
+            </button>
+          </AnimatedSegmentedControl>
+        </div>
+      </div>
+      <GameIdlePlaylistEditor v-if="idle.selectionMode === 'manual'" />
+    </div>
+
     <div v-if="!immersive" class="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-muted-foreground">
       <span>{{ t('game_idle.candidate_count', { count: candidateCount }) }}</span>
       <span v-if="!auth.user" class="text-amber-600 dark:text-amber-300">{{ t('game_idle.sign_in_required') }}</span>
@@ -287,8 +301,12 @@ onBeforeUnmount(() => {
       <span v-else-if="idle.mode === 'cdp' && !quests.cdpAvailable" class="text-amber-600 dark:text-amber-300">{{ t('game_idle.cdp_unavailable') }}</span>
     </div>
 
+    <div v-if="idle.persistenceError" class="idle-warning" role="status">
+      {{ t('game_idle.persistence_error') }}
+    </div>
+
     <div v-if="idle.error || idle.status?.warning" class="idle-warning" role="status">
-      {{ idle.error || idle.status?.warning }}
+      {{ idle.error && ['playlist_empty', 'playlist_unavailable'].includes(idle.error) ? t(`game_idle.${idle.error}_error`) : idle.error || idle.status?.warning }}
     </div>
 
     <div v-if="idle.status?.current || idle.status?.upcoming.length" class="idle-machine">
@@ -375,7 +393,7 @@ onBeforeUnmount(() => {
       </Button>
     </div>
 
-    <div v-else class="idle-empty">
+    <div v-else-if="idle.selectionMode === 'random'" class="idle-empty">
       <div class="idle-empty-icon">
         <Loader2 v-if="active" class="h-7 w-7 animate-spin" />
         <RotateCcw v-else class="h-7 w-7" />
@@ -398,7 +416,7 @@ onBeforeUnmount(() => {
           <div class="idle-context-title">{{ contextMenu.item.name }}</div>
           <button data-idle-context-action type="button" role="menuitem" @click="removeContextItem">
             <Trash2 class="h-4 w-4" />
-            {{ t('game_idle.remove_from_cycle') }}
+            {{ t(idle.status?.selectionMode === 'manual' ? 'game_idle.skip_occurrence' : 'game_idle.remove_from_cycle') }}
           </button>
         </div>
       </Transition>
@@ -430,6 +448,15 @@ onBeforeUnmount(() => {
     radial-gradient(circle at 50% 38%, hsl(var(--primary) / 0.15), transparent 30rem),
     hsl(var(--background));
   box-shadow: none;
+}
+
+.idle-shell:not(.is-immersive) {
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.idle-shell:not(.is-immersive) > * {
+  flex-shrink: 0;
 }
 
 .idle-shell.is-immersive .idle-machine {
@@ -490,7 +517,6 @@ onBeforeUnmount(() => {
 .idle-mode-button:hover:not(:disabled) { color: hsl(var(--foreground)); }
 .idle-mode-button:active:not(:disabled) { transform: translateY(1px); }
 .idle-mode-button:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
-.idle-mode-button.is-active { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); box-shadow: 0 5px 16px -10px hsl(var(--primary)); }
 .idle-mode-button:disabled { cursor: not-allowed; opacity: .5; }
 .idle-warning { border-left: 3px solid hsl(38 92% 55%); background: hsl(38 92% 55% / .09); padding: .75rem 1rem; color: hsl(var(--foreground)); font-size: .8rem; }
 
@@ -532,6 +558,7 @@ onBeforeUnmount(() => {
 .idle-metric strong { margin-top: .42rem; font-variant-numeric: tabular-nums; font-size: 1.32rem; letter-spacing: -.025em; }
 .idle-metric small { margin-top: .12rem; color: hsl(var(--muted-foreground)); font-size: .68rem; }
 .idle-empty { display: flex; min-height: 12rem; align-items: center; justify-content: center; gap: 1rem; border: 1px dashed hsl(var(--border)); border-radius: 1rem; background: hsl(var(--muted) / .18); }
+.idle-shell:not(.is-immersive) > .idle-empty { flex: 1; }
 .idle-empty-icon { display: grid; place-items: center; width: 3.4rem; height: 3.4rem; border-radius: 1rem; background: hsl(var(--primary) / .11); color: hsl(var(--primary)); }
 .idle-starting-surface { display: flex; min-height: 12rem; align-items: center; justify-content: center; gap: 1rem; border-radius: 1rem; background: hsl(var(--card) / .52); }
 .idle-starting-copy { min-width: 0; }
@@ -556,6 +583,10 @@ onBeforeUnmount(() => {
   .idle-immersive-footer { align-items: stretch; flex-direction: column; }
   .idle-stop-button { width: 100%; }
   .idle-starting-surface { align-items: stretch; flex-direction: column; padding: 2rem 1rem; }
+}
+
+@media (max-height: 680px) {
+  .idle-shell:not(.is-immersive) > .idle-empty { min-height: 6rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {

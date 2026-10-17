@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { ref, watch } from 'vue'
 import AccountSettings from '@/components/settings/AccountSettings.vue'
 import AdvancedSettings from '@/components/settings/AdvancedSettings.vue'
 import AppearanceSettings from '@/components/settings/AppearanceSettings.vue'
@@ -7,57 +7,72 @@ import AboutSettings from '@/components/settings/AboutSettings.vue'
 import DiagnosticsSettings from '@/components/settings/DiagnosticsSettings.vue'
 import DiscordIntegrationSettings from '@/components/settings/DiscordIntegrationSettings.vue'
 import QuestBehaviorSettings from '@/components/settings/QuestBehaviorSettings.vue'
-import SettingsNav from '@/components/settings/SettingsNav.vue'
 import SettingsOverview from '@/components/settings/SettingsOverview.vue'
-import { useSettingsNavigation } from '@/composables/useSettingsNavigation'
-import { useQuestsStore } from '@/stores/quests'
+import type { SettingsSection } from '@/composables/useSettingsNavigation'
+import { useSettingsScroll } from '@/composables/useSettingsScroll'
+import { useSettingsSearch, type SettingsSearchResult } from '@/composables/useSettingsSearch'
+import { isDebugModeEnabled } from '@/utils/debugMode'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
-const questsStore = useQuestsStore()
-const { selectedSection, setSection } = useSettingsNavigation()
-
+const props = withDefaults(defineProps<{
+  selectedSection: SettingsSection
+  navigationRequest?: number
+  navigationTarget?: string | null
+  searchQuery?: string
+}>(), { navigationRequest: 0, searchQuery: '' })
 const emit = defineEmits<{
+  'update:selectedSection': [section: SettingsSection]
   'navigate-to-home': []
   'debug-unlocked': []
   'debug-disabled': []
+  'search-results': [results: SettingsSearchResult[]]
 }>()
-
-onMounted(() => {
-  questsStore.initCdpMode().catch(err => {
-    console.warn('CDP init failed:', err)
-  })
+const page = ref<HTMLElement | null>(null)
+const developerModeEnabled = ref(isDebugModeEnabled())
+function updateDeveloperMode(enabled: boolean) {
+  developerModeEnabled.value = enabled
+  if (enabled) emit('debug-unlocked')
+  else emit('debug-disabled')
+}
+const { scrollToSection } = useSettingsScroll(page, {
+  initialSection: () => props.selectedSection,
+  hasInitialRequest: () => props.navigationRequest > 0,
+  onVisible: section => emit('update:selectedSection', section),
 })
+watch(() => props.navigationRequest, () => scrollToSection(props.selectedSection, undefined, props.navigationTarget))
+useSettingsSearch(page, () => props.searchQuery, results => emit('search-results', results))
 </script>
 
 <template>
-  <div class="settings-view fade-in space-y-6 select-none">
-    <div class="space-y-2">
-      <h2 class="text-2xl font-bold tracking-tight">{{ t('settings.title') }}</h2>
-      <p class="text-sm text-muted-foreground">{{ t('settings.control_center_desc') }}</p>
-    </div>
-
-    <SettingsOverview @select-section="setSection" />
-
-    <div class="grid gap-6 lg:grid-cols-[220px_1fr] lg:items-start">
-      <SettingsNav :selected="selectedSection" @update:selected="setSection" />
-
-      <div class="min-w-0">
-        <AccountSettings
-          v-if="selectedSection === 'account'"
-          @navigate-to-home="emit('navigate-to-home')"
-        />
-        <QuestBehaviorSettings v-else-if="selectedSection === 'quest_behavior'" />
-        <DiscordIntegrationSettings v-else-if="selectedSection === 'discord_integration'" />
-        <AppearanceSettings v-else-if="selectedSection === 'appearance'" />
-        <DiagnosticsSettings v-else-if="selectedSection === 'diagnostics'" />
-        <AdvancedSettings v-else-if="selectedSection === 'advanced'" />
-        <AboutSettings
-          v-else
-          @debug-unlocked="emit('debug-unlocked')"
-          @debug-disabled="emit('debug-disabled')"
-        />
-      </div>
+  <div ref="page" class="settings-view fade-in">
+    <header class="settings-page-heading">
+      <h1 class="ui-page-heading text-2xl font-semibold">{{ t('settings.title') }}</h1>
+      <p class="mt-2 max-w-3xl text-sm leading-relaxed text-muted-foreground">{{ t('settings.control_center_desc') }}</p>
+    </header>
+    <SettingsOverview @select-section="scrollToSection($event)" />
+    <div class="settings-sections">
+      <section id="settings-section-account" data-settings-section="account" :aria-label="t('settings.nav_account')">
+        <AccountSettings @navigate-to-home="emit('navigate-to-home')" />
+      </section>
+      <section id="settings-section-quest_behavior" data-settings-section="quest_behavior" :aria-label="t('settings.nav_quest_behavior')">
+        <QuestBehaviorSettings />
+      </section>
+      <section id="settings-section-discord_integration" data-settings-section="discord_integration" :aria-label="t('settings.nav_discord_integration')">
+        <DiscordIntegrationSettings />
+      </section>
+      <section id="settings-section-appearance" data-settings-section="appearance" :aria-label="t('settings.nav_appearance')">
+        <AppearanceSettings />
+      </section>
+      <section id="settings-section-diagnostics" data-settings-section="diagnostics" :aria-label="t('settings.nav_diagnostics')">
+        <DiagnosticsSettings />
+      </section>
+      <section id="settings-section-advanced" data-settings-section="advanced" :aria-label="t('settings.nav_advanced')">
+        <AdvancedSettings :debug-mode-enabled="developerModeEnabled" />
+      </section>
+      <section id="settings-section-about" data-settings-section="about" :aria-label="t('settings.nav_about')">
+        <AboutSettings @debug-unlocked="updateDeveloperMode(true)" @debug-disabled="updateDeveloperMode(false)" />
+      </section>
     </div>
   </div>
 </template>

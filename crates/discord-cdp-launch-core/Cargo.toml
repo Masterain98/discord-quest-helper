@@ -15,5 +15,19 @@ url = "2"
 tungstenite = { version = "=0.28.0", default-features = false, features = ["handshake"] }
 sysinfo = { version = "=0.35.2", default-features = false, features = ["system"] }
 
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-core = "0.62"
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_Networking_WinSock",
+    "Win32_System_Threading",
+    "Win32_System_Com",
+    "Win32_System_LibraryLoader",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 nix = { version = "0.30", features = ["signal", "process"] }

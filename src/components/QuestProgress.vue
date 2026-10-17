@@ -1,17 +1,25 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch, onUnmounted } from 'vue'
 import { useQuestsStore } from '@/stores/quests'
+import { useAuthStore } from '@/stores/auth'
+import { useGameIdleStore } from '@/stores/gameIdle'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { AlertCircle, ChevronUp, ListChecks, X } from 'lucide-vue-next'
+import { AlertCircle, ChevronDown, ChevronUp, Gift, GripVertical, LoaderCircle, Trash2, X } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
+import { getQuestRewardViews } from '@/utils/questRewards'
+import IconTooltip from '@/components/IconTooltip.vue'
 
 const { t } = useI18n()
 const questsStore = useQuestsStore()
+const authStore = useAuthStore()
+const gameIdleStore = useGameIdleStore()
 const expanded = ref(false)
 const floatingRef = ref<HTMLElement | null>(null)
+const triggerRef = ref<HTMLButtonElement | null>(null)
+const hideButtonRef = ref<HTMLButtonElement | null>(null)
 const floatingPosition = ref<{ left: number, top: number } | null>(null)
-const draggedDuringPointer = ref(false)
+const initialPlacementPending = ref(false)
 const FLOATING_POSITION_KEY = 'questHelper_progressFloatingPosition'
 const EDGE_MARGIN = 12
 
@@ -29,13 +37,165 @@ const activeQuest = computed(() => {
   return questsStore.quests.find(quest => quest.id === questsStore.activeQuestId) ?? null
 })
 
+const trackedQuest = computed(() => activeQuest.value ?? questsStore.questQueue[0] ?? null)
+
 const hasFloatingContent = computed(() =>
   !!questsStore.activeQuestId || questsStore.questQueue.length > 0 || !!questsStore.error
 )
 
-const queuedUpcoming = computed(() => {
-  if (!questsStore.activeQuestId) return questsStore.questQueue
-  return questsStore.questQueue.filter(quest => quest.id !== questsStore.activeQuestId)
+const queuedUpcoming = computed(() => questsStore.upcomingQuests)
+
+const totalTaskCount = computed(() => {
+  const ids = new Set(questsStore.questQueue.map(quest => quest.id))
+  if (questsStore.activeQuestId) ids.add(questsStore.activeQuestId)
+  return ids.size
+})
+
+const queueListRef = ref<HTMLElement | null>(null)
+const draggedQueueQuestId = ref<string | null>(null)
+const queueDropTarget = ref<{ id: string, placement: 'before' | 'after' } | null>(null)
+const queueOrderAnnouncement = ref('')
+const draggedQueueQuest = computed(() => queuedUpcoming.value.find(item => item.id === draggedQueueQuestId.value))
+const queueDragPreview = ref({ left: 0, top: 0, width: 0 })
+let queuePointerState: {
+  id: string, pointerId: number, startX: number, startY: number,
+  offsetX: number, offsetY: number, width: number, element: HTMLElement,
+} | null = null
+let queuePointerY = 0
+let queueAutoScrollFrame: number | null = null
+let queueScrollTime = 0
+
+function stopQueueAutoScroll() {
+  if (queueAutoScrollFrame !== null) cancelAnimationFrame(queueAutoScrollFrame)
+  queueAutoScrollFrame = null
+  queueScrollTime = 0
+}
+
+function resetQueueDrag() {
+  const state = queuePointerState
+  queuePointerState = null
+  draggedQueueQuestId.value = null
+  queueDropTarget.value = null
+  stopQueueAutoScroll()
+  window.removeEventListener('pointermove', moveQueuePointer)
+  window.removeEventListener('pointerup', dropQueueQuest)
+  window.removeEventListener('pointercancel', resetQueueDrag)
+  window.removeEventListener('keydown', cancelQueueDragOnEscape)
+  if (state?.element.hasPointerCapture(state.pointerId)) state.element.releasePointerCapture(state.pointerId)
+}
+
+function startQueueDrag(event: PointerEvent, questId: string) {
+  if (!event.isPrimary || event.button !== 0 || queuePointerState || questsStore.queueEditingDisabled || queuedUpcoming.value.length < 2) return
+  if (!(event.target instanceof Element) || event.target.closest('button')) return
+  // Touch users can scroll the list normally; the handle reserves touch dragging.
+  if (event.pointerType === 'touch' && !event.target.closest('[data-queue-drag-handle]')) return
+  if (!(event.currentTarget instanceof HTMLElement)) return
+  event.preventDefault()
+  event.stopPropagation()
+  const element = event.currentTarget
+  const rect = element.getBoundingClientRect()
+  queuePointerState = {
+    id: questId, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY,
+    offsetX: event.clientX - rect.left, offsetY: event.clientY - rect.top, width: rect.width, element,
+  }
+  element.setPointerCapture(event.pointerId)
+  window.addEventListener('pointermove', moveQueuePointer)
+  window.addEventListener('pointerup', dropQueueQuest)
+  window.addEventListener('pointercancel', resetQueueDrag)
+  window.addEventListener('keydown', cancelQueueDragOnEscape)
+}
+
+function cancelQueueDragOnEscape(event: KeyboardEvent) {
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    resetQueueDrag()
+  }
+}
+
+function updateQueueDropTarget() {
+  const rows = Array.from(queueListRef.value?.querySelectorAll<HTMLElement>('[data-queue-id]') ?? [])
+  const nextRow = rows.find(row => {
+    const rect = row.getBoundingClientRect()
+    return queuePointerY < rect.top + rect.height / 2
+  })
+  const target = nextRow ?? rows[rows.length - 1]
+  const id = target?.dataset.queueId
+  queueDropTarget.value = id && id !== draggedQueueQuestId.value
+    ? { id, placement: nextRow ? 'before' : 'after' }
+    : null
+}
+
+function scrollQueueWhileDragging(time: number) {
+  queueAutoScrollFrame = null
+  const list = queueListRef.value
+  if (!list || !draggedQueueQuestId.value) return
+  const rect = list.getBoundingClientRect()
+  const edge = Math.min(32, rect.height / 3)
+  const speed = queuePointerY < rect.top + edge
+    ? -Math.min(1, (rect.top + edge - queuePointerY) / edge)
+    : queuePointerY > rect.bottom - edge
+      ? Math.min(1, (queuePointerY - rect.bottom + edge) / edge)
+      : 0
+  const elapsed = queueScrollTime ? Math.min(time - queueScrollTime, 32) : 16
+  queueScrollTime = time
+  const previous = list.scrollTop
+  list.scrollTop += speed * elapsed * 0.4
+  if (list.scrollTop !== previous) updateQueueDropTarget()
+  if (speed !== 0 && list.scrollTop !== previous) queueAutoScrollFrame = requestAnimationFrame(scrollQueueWhileDragging)
+  else queueScrollTime = 0
+}
+
+function updateQueuePointer(x: number, y: number) {
+  queuePointerY = y
+  const list = queueListRef.value
+  if (!list) return
+  const rect = list.getBoundingClientRect()
+  if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+    queueDropTarget.value = null
+    stopQueueAutoScroll()
+    return
+  }
+  updateQueueDropTarget()
+  if (queueAutoScrollFrame === null) queueAutoScrollFrame = requestAnimationFrame(scrollQueueWhileDragging)
+}
+
+function moveQueuePointer(event: PointerEvent) {
+  const state = queuePointerState
+  if (!state || event.pointerId !== state.pointerId) return
+  if (!draggedQueueQuestId.value) {
+    if (Math.hypot(event.clientX - state.startX, event.clientY - state.startY) < 6) return
+    queueOrderAnnouncement.value = ''
+    draggedQueueQuestId.value = state.id
+  }
+  event.preventDefault()
+  queueDragPreview.value = { left: event.clientX - state.offsetX, top: event.clientY - state.offsetY, width: state.width }
+  updateQueuePointer(event.clientX, event.clientY)
+}
+
+function dropQueueQuest(event: PointerEvent) {
+  if (!queuePointerState || event.pointerId !== queuePointerState.pointerId) return
+  if (!draggedQueueQuestId.value) {
+    resetQueueDrag()
+    return
+  }
+  event.preventDefault()
+  updateQueuePointer(event.clientX, event.clientY)
+  const id = draggedQueueQuestId.value
+  const target = queueDropTarget.value
+  resetQueueDrag()
+  if (target && questsStore.reorderQueuedQuest(id, target.id, target.placement)) {
+    queueOrderAnnouncement.value = t('queue.order_updated')
+  }
+}
+
+// Abort stale drops if queue execution or another action changes the list.
+watch(() => queuedUpcoming.value.map(item => item.id).join(','), resetQueueDrag)
+watch(() => questsStore.queueEditingDisabled, disabled => { if (disabled) resetQueueDrag() })
+watch(expanded, value => { if (!value) resetQueueDrag() })
+onMounted(() => window.addEventListener('blur', resetQueueDrag))
+onUnmounted(() => {
+  resetQueueDrag()
+  window.removeEventListener('blur', resetQueueDrag)
 })
 
 const queuedBehindCount = computed(() => {
@@ -48,15 +208,67 @@ const floatingTitle = computed(() => {
   return `${t('quest.up_next')} (${questsStore.questQueue.length})`
 })
 
-const floatingSubtitle = computed(() => {
-  if (questsStore.activeQuestId) {
-    return activeQuest.value?.config.messages.quest_name ?? t('quest.active_progress')
+const sidebarProgress = computed(() => questsStore.activeQuestId
+  ? Math.max(0, Math.min(100, questsStore.localProgress))
+  : 0)
+
+const sidebarRewardImage = computed(() => {
+  const quest = trackedQuest.value
+  if (!quest) return null
+
+  const rewards = getQuestRewardViews(quest, authStore.user?.premium_type)
+  // A quest may include an Orb bonus before its primary Discord collectible.
+  // Prefer the actual item artwork so the rail represents the quest reward.
+  const hasAsset = (reward: typeof rewards[number]) => !!reward.asset
+  const imageReward = rewards.find(reward => reward.kind === 'collectible' && hasAsset(reward))
+    ?? rewards.find(reward => reward.kind !== 'orbs' && hasAsset(reward))
+    ?? rewards.find(hasAsset)
+  if (imageReward?.asset) {
+    return /^https?:\/\//i.test(imageReward.asset)
+      ? imageReward.asset
+      : `https://cdn.discordapp.com/${imageReward.asset.replace(/^\/+/, '')}`
   }
-  if (questsStore.questQueue.length > 0) {
-    return questsStore.questQueue[0]?.config.messages.quest_name ?? t('quest.up_next')
+
+  if (rewards.some(reward => reward.icon === 'orbs')) return '/icons/orbs.png'
+
+  const application = quest.config.application
+  if (application?.id && application.icon) {
+    return `https://cdn.discordapp.com/app-icons/${application.id}/${application.icon}.png?size=64`
   }
-  return questsStore.error ?? ''
+
+  return '/icons/orbs.png'
 })
+
+const sidebarProgressTooltip = computed(() => {
+  if (questsStore.activeQuestId) {
+    return t('sidebar.current_task', { name: trackedQuest.value?.config.messages.quest_name ?? t('quest.active_progress') })
+  }
+  if (trackedQuest.value) return t('sidebar.next_task', { name: trackedQuest.value.config.messages.quest_name })
+  return t('sidebar.task_error')
+})
+
+const sidebarProgressLabel = computed(() => {
+  const action = t(expanded.value ? 'quest.hide_progress' : 'quest.show_progress')
+  const count = totalTaskCount.value > 1 ? ` · ${t('quest.task_count', { count: totalTaskCount.value })}` : ''
+  return `${action} · ${sidebarProgressTooltip.value}${count}`
+})
+
+const progressFrameStyle = computed(() => ({
+  strokeDashoffset: `${100 - sidebarProgress.value}`,
+}))
+const failedRewardImage = ref<string | null>(null)
+const displayedRewardAsset = computed(() => {
+  const image = sidebarRewardImage.value
+  if (!image) return null
+  if (failedRewardImage.value !== image) return image
+  return image === '/icons/orbs.png' ? null : '/icons/orbs.png'
+})
+const displayedRewardIsVideo = computed(() => !!displayedRewardAsset.value?.toLowerCase().endsWith('.mp4'))
+watch(sidebarRewardImage, () => { failedRewardImage.value = null })
+
+function handleRewardImageError() {
+  failedRewardImage.value = displayedRewardAsset.value
+}
 
 const floatingStyle = computed(() => {
   if (!floatingPosition.value) return {}
@@ -68,10 +280,10 @@ const floatingStyle = computed(() => {
   }
 })
 
-function clampPosition(left: number, top: number) {
+function clampPosition(left: number, top: number, measuredWidth?: number, measuredHeight?: number) {
   const rect = floatingRef.value?.getBoundingClientRect()
-  const width = rect?.width ?? 384
-  const height = rect?.height ?? 80
+  const width = measuredWidth ?? rect?.width ?? 384
+  const height = measuredHeight ?? rect?.height ?? 80
   const maxLeft = Math.max(EDGE_MARGIN, window.innerWidth - width - EDGE_MARGIN)
   const maxTop = Math.max(EDGE_MARGIN, window.innerHeight - height - EDGE_MARGIN)
 
@@ -91,7 +303,6 @@ async function reconcileFloatingPosition() {
   const rect = floatingRef.value?.getBoundingClientRect()
   if (!rect) return
   floatingPosition.value = clampPosition(rect.left, rect.top)
-  saveFloatingPosition()
 }
 
 function startDrag(event: PointerEvent) {
@@ -106,8 +317,6 @@ function startDrag(event: PointerEvent) {
     originLeft: rect.left,
     originTop: rect.top,
   }
-  draggedDuringPointer.value = false
-
   if (event.currentTarget instanceof HTMLElement) {
     event.currentTarget.setPointerCapture(event.pointerId)
   }
@@ -122,10 +331,6 @@ function handleDragMove(event: PointerEvent) {
   if (event.pointerId !== dragState.pointerId) return
   const dx = event.clientX - dragState.startX
   const dy = event.clientY - dragState.startY
-
-  if (Math.abs(dx) + Math.abs(dy) > 4) {
-    draggedDuringPointer.value = true
-  }
 
   floatingPosition.value = clampPosition(dragState.originLeft + dx, dragState.originTop + dy)
 }
@@ -147,12 +352,60 @@ function stopDrag(event: PointerEvent) {
   window.removeEventListener('pointercancel', stopDrag)
 }
 
-function handleCollapsedClick() {
-  if (draggedDuringPointer.value) {
-    draggedDuringPointer.value = false
+function toggleProgressWindow(event: MouseEvent) {
+  if (expanded.value) {
+    void hideProgressWindow()
     return
   }
+  if (!floatingPosition.value) {
+    const triggerRect = triggerRef.value?.getBoundingClientRect()
+    if (triggerRect) {
+      floatingPosition.value = clampPosition(
+        triggerRect.right + 14,
+        triggerRect.top + triggerRect.height / 2 - 240,
+        384,
+        Math.min(window.innerHeight - EDGE_MARGIN * 2, 520),
+      )
+      initialPlacementPending.value = true
+    }
+  }
   expanded.value = true
+  if (event.detail === 0) {
+    void nextTick(() => hideButtonRef.value?.focus())
+  }
+}
+
+async function hideProgressWindow() {
+  expanded.value = false
+  await nextTick()
+  triggerRef.value?.focus()
+}
+
+function handlePanelEnter(element: Element) {
+  if (!expanded.value || !floatingPosition.value || !(element instanceof HTMLElement)) return
+
+  if (initialPlacementPending.value) {
+    const triggerRect = triggerRef.value?.getBoundingClientRect()
+    if (triggerRect) {
+      floatingPosition.value = clampPosition(
+        triggerRect.right + 14,
+        triggerRect.top + triggerRect.height / 2 - element.offsetHeight / 2,
+        element.offsetWidth,
+        element.offsetHeight,
+      )
+    }
+    initialPlacementPending.value = false
+    return
+  }
+
+  // Re-clamp restored positions against the panel's real dimensions before
+  // the enter transition starts.
+  floatingPosition.value = clampPosition(
+    floatingPosition.value.left,
+    floatingPosition.value.top,
+    element.offsetWidth,
+    element.offsetHeight,
+  )
 }
 
 function formatTime(seconds: number): string {
@@ -168,8 +421,9 @@ const submittedTimeText = computed(() => {
   return `${formatTime(currentSeconds)} / ${formatTime(total)}`
 })
 
-async function handleStop() {
-  await questsStore.stop()
+function handleStop() {
+  if (questsStore.stopping) return
+  questsStore.requestStop()
 }
 
 // Animate the submitted (blue) progress value so it eases forward instead of jumping
@@ -193,12 +447,13 @@ watch(() => questsStore.activeQuestProgress, (next) => {
 onUnmounted(() => { if (_raf !== null) cancelAnimationFrame(_raf) })
 
 onMounted(() => {
-  const savedPosition = localStorage.getItem(FLOATING_POSITION_KEY)
-  if (!savedPosition) return
   try {
-    const parsed = JSON.parse(savedPosition) as { left?: unknown, top?: unknown }
-    if (typeof parsed.left === 'number' && typeof parsed.top === 'number') {
-      floatingPosition.value = clampPosition(parsed.left, parsed.top)
+    const saved = localStorage.getItem(FLOATING_POSITION_KEY)
+    if (!saved) return
+    const position = JSON.parse(saved) as { left?: unknown, top?: unknown }
+    if (typeof position.left === 'number' && Number.isFinite(position.left)
+      && typeof position.top === 'number' && Number.isFinite(position.top)) {
+      floatingPosition.value = clampPosition(position.left, position.top)
     }
   } catch {
     localStorage.removeItem(FLOATING_POSITION_KEY)
@@ -206,11 +461,13 @@ onMounted(() => {
 })
 
 watch(hasFloatingContent, (visible) => {
-  if (!visible) expanded.value = false
+  if (!visible) {
+    expanded.value = false
+  }
 })
 
-watch([expanded, queuedBehindCount], () => {
-  if (hasFloatingContent.value) {
+watch(queuedBehindCount, () => {
+  if (hasFloatingContent.value && floatingPosition.value) {
     reconcileFloatingPosition()
   }
 })
@@ -244,49 +501,58 @@ const progressBarStyle = computed(() => {
 </script>
 
 <template>
-  <div
-    ref="floatingRef"
-    v-if="hasFloatingContent"
-    class="fixed bottom-5 right-5 z-50 w-[calc(100vw-2rem)] max-w-sm"
-    :style="floatingStyle"
-  >
+  <IconTooltip v-if="hasFloatingContent" :label="sidebarProgressTooltip" side="right">
     <button
-      v-if="!expanded"
+      ref="triggerRef"
       type="button"
-      class="w-full cursor-grab rounded-lg border bg-card px-4 py-3 text-left shadow-lg transition-all hover:-translate-y-0.5 hover:shadow-xl active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      @pointerdown="startDrag"
-      @click="handleCollapsedClick"
+      :aria-label="sidebarProgressLabel"
+      :aria-expanded="expanded"
+      :aria-controls="expanded ? 'quest-progress-floating-window' : undefined"
+      :class="['app-rail-button', 'rail-task-progress-trigger', expanded && 'app-rail-button-active']"
+      @click="toggleProgressWindow"
     >
-      <div class="flex items-center gap-3">
-        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-          <AlertCircle v-if="questsStore.error && !questsStore.activeQuestId" class="h-4 w-4" />
-          <ListChecks v-else class="h-4 w-4" />
-        </div>
-        <div class="min-w-0 flex-1">
-          <div class="flex items-center justify-between gap-3">
-            <p class="truncate text-sm font-semibold">{{ floatingTitle }}</p>
-            <div class="flex shrink-0 items-center gap-2">
-              <span v-if="queuedBehindCount > 0" class="rounded-full bg-secondary px-2 py-0.5 text-[11px] font-medium text-secondary-foreground">
-                {{ t('home.queue_count', { count: queuedBehindCount }) }}
-              </span>
-              <span v-if="questsStore.activeQuestId" class="text-sm font-semibold">
-                {{ Math.floor(questsStore.activeQuestProgress) }}%
-              </span>
-            </div>
-          </div>
-          <p class="mt-0.5 truncate text-xs text-muted-foreground">{{ floatingSubtitle }}</p>
-          <div v-if="questsStore.activeQuestId" class="mt-2 h-1.5 rounded-full bg-secondary">
-            <div
-              class="h-full rounded-full transition-all duration-300"
-              :style="progressBarStyle"
-            />
-          </div>
-        </div>
-        <ChevronUp class="h-4 w-4 shrink-0 text-muted-foreground" />
-      </div>
+      <video
+        v-if="trackedQuest && displayedRewardAsset && displayedRewardIsVideo"
+        :src="displayedRewardAsset"
+        class="rail-task-progress-image"
+        aria-hidden="true"
+        autoplay
+        loop
+        muted
+        playsinline
+        @error="handleRewardImageError"
+      />
+      <img
+        v-else-if="trackedQuest && displayedRewardAsset"
+        :src="displayedRewardAsset"
+        alt=""
+        class="rail-task-progress-image"
+        aria-hidden="true"
+        @error="handleRewardImageError"
+      />
+      <Gift v-else-if="trackedQuest" class="h-5 w-5 text-pink-400" aria-hidden="true" />
+      <AlertCircle v-else class="h-5 w-5 text-destructive" aria-hidden="true" />
+      <svg class="rail-task-progress-frame" viewBox="0 0 44 44" aria-hidden="true">
+        <rect class="rail-task-progress-track" x="2.5" y="2.5" width="39" height="39" rx="14" pathLength="100" />
+        <rect class="rail-task-progress-frame-value" x="2.5" y="2.5" width="39" height="39" rx="14" pathLength="100" :style="progressFrameStyle" />
+      </svg>
+      <span v-if="totalTaskCount > 1" class="rail-task-count-badge" aria-hidden="true">
+        {{ totalTaskCount > 99 ? '99+' : totalTaskCount }}
+      </span>
     </button>
+  </IconTooltip>
 
-    <Card v-else class="border-border/50 shadow-xl">
+  <Teleport to="body">
+    <Transition name="quest-progress-panel" @enter="handlePanelEnter">
+      <div
+        v-if="expanded && hasFloatingContent"
+        id="quest-progress-floating-window"
+        ref="floatingRef"
+        class="fixed bottom-5 right-5 z-40 w-[calc(100vw-2rem)] max-w-sm"
+        :style="floatingStyle"
+        @keydown.esc.stop.prevent="hideProgressWindow"
+      >
+      <Card class="ui-floating-panel max-h-[calc(100dvh-2.5rem)] overflow-y-auto">
       <CardHeader
         class="flex cursor-grab flex-row items-center justify-between space-y-0 pb-3 active:cursor-grabbing"
         @pointerdown="startDrag"
@@ -297,9 +563,17 @@ const progressBarStyle = computed(() => {
             {{ t('home.queue_count', { count: queuedBehindCount }) }}
           </span>
         </CardTitle>
-        <Button variant="ghost" size="icon" class="h-8 w-8 shrink-0" @pointerdown.stop @click="expanded = false">
-          <X class="h-4 w-4" />
-        </Button>
+        <button
+          ref="hideButtonRef"
+          type="button"
+          class="app-toolbar-button h-8 w-8 shrink-0"
+          :aria-label="t('quest.hide_progress')"
+          :title="t('quest.hide_progress')"
+          @pointerdown.stop
+          @click="hideProgressWindow"
+        >
+          <X class="h-4 w-4" aria-hidden="true" />
+        </button>
       </CardHeader>
       <CardContent>
         <div v-if="questsStore.activeQuestId" class="space-y-4">
@@ -336,45 +610,186 @@ const progressBarStyle = computed(() => {
           <Button
             variant="destructive"
             class="w-full"
+            :disabled="questsStore.stopping"
             @click="handleStop"
           >
+            <LoaderCircle v-if="questsStore.stopping" class="mr-2 h-4 w-4 animate-spin" />
             {{ t('home.stop') }}
           </Button>
         </div>
 
-        <div v-if="queuedUpcoming.length > 0" :class="questsStore.activeQuestId && 'mt-6 border-t pt-4'">
-          <div class="mb-2 flex items-center justify-between">
-            <h4 class="text-sm font-semibold">{{ t('quest.up_next') }} ({{ queuedUpcoming.length }})</h4>
+        <section v-if="queuedUpcoming.length > 0" :class="questsStore.activeQuestId && 'mt-6 border-t pt-4'" :aria-label="t('quest.up_next')">
+          <div class="mb-1 flex items-center justify-between gap-2">
+            <h4 class="flex items-center gap-2 text-sm font-semibold">
+              {{ t('quest.up_next') }}
+              <span class="rounded bg-primary/10 px-1.5 py-0.5 text-xs tabular-nums text-primary">{{ queuedUpcoming.length }}</span>
+            </h4>
             <Button
               variant="ghost"
               size="sm"
-              class="h-6 px-2 text-destructive hover:text-destructive"
-              @click="questsStore.clearQueue"
+              class="h-7 px-2 text-xs text-red-600 hover:bg-red-500/10 hover:text-red-700 dark:text-red-400"
+              :disabled="questsStore.queueEditingDisabled"
+              @click="questsStore.clearUpcomingQueue"
             >
-              {{ t('general.clear') }}
+              {{ t('queue.clear_pending') }}
             </Button>
           </div>
+          <p id="quest-queue-order-hint" class="mb-3 text-[11px] leading-relaxed text-muted-foreground">{{ t('queue.order_hint') }}</p>
+          <span class="sr-only" role="status" aria-live="polite">{{ queueOrderAnnouncement }}</span>
 
-          <div class="max-h-[260px] space-y-2 overflow-y-auto pr-1">
-            <div
+          <div
+            ref="queueListRef"
+            class="max-h-[260px] overflow-y-auto p-1 -m-1"
+          >
+          <TransitionGroup name="queue-item" tag="ol" class="space-y-2" aria-describedby="quest-queue-order-hint">
+            <li
               v-for="(quest, index) in queuedUpcoming"
               :key="quest.id"
-              class="flex items-center gap-2 rounded bg-muted/50 p-2 text-sm"
+              :data-queue-id="quest.id"
+              class="queue-row relative flex select-none items-center gap-2 rounded-md border border-primary/10 bg-primary/5 p-2.5 text-sm"
+              :class="{
+                'cursor-grab hover:border-primary/30 active:cursor-grabbing': !questsStore.queueEditingDisabled && queuedUpcoming.length > 1,
+                'queue-row-dragging': draggedQueueQuestId === quest.id,
+                'queue-drop-before': queueDropTarget?.id === quest.id && queueDropTarget.placement === 'before',
+                'queue-drop-after': queueDropTarget?.id === quest.id && queueDropTarget.placement === 'after',
+              }"
+              @pointerdown="startQueueDrag($event, quest.id)"
+              @dragstart.prevent
+              @lostpointercapture="resetQueueDrag"
             >
-              <span class="w-4 shrink-0 text-xs text-muted-foreground">{{ index + 1 }}.</span>
+              <span
+                data-queue-drag-handle
+                class="flex h-6 w-9 shrink-0 items-center justify-center gap-0.5 rounded bg-primary/10 text-[11px] font-medium tabular-nums text-primary"
+                :class="{ 'touch-none': !questsStore.queueEditingDisabled && queuedUpcoming.length > 1 }"
+              >
+                <GripVertical class="h-3.5 w-3.5 text-primary/60" aria-hidden="true" />
+                {{ index + 1 }}
+              </span>
               <div class="min-w-0 flex-1">
-                <div class="truncate font-medium">{{ quest.config.messages.quest_name }}</div>
-                <div class="truncate text-xs text-muted-foreground">{{ quest.config.messages.game_title }}</div>
+                <div class="truncate text-xs font-medium" :title="quest.config.messages.quest_name">{{ quest.config.messages.quest_name }}</div>
+                <div class="mt-0.5 truncate text-[11px] text-muted-foreground">{{ quest.config.messages.game_title }}</div>
               </div>
-            </div>
+              <div class="flex shrink-0 items-center gap-0.5">
+                <Button
+                  variant="ghost" size="icon" class="h-7 w-7 text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                  :title="t('queue.move_up', { name: quest.config.messages.quest_name })"
+                  :aria-label="t('queue.move_up', { name: quest.config.messages.quest_name })"
+                  :disabled="index === 0 || questsStore.queueEditingDisabled"
+                  @click="questsStore.moveQueuedQuest(quest.id, -1)"
+                ><ChevronUp class="h-4 w-4" aria-hidden="true" /></Button>
+                <Button
+                  variant="ghost" size="icon" class="h-7 w-7 text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                  :title="t('queue.move_down', { name: quest.config.messages.quest_name })"
+                  :aria-label="t('queue.move_down', { name: quest.config.messages.quest_name })"
+                  :disabled="index === queuedUpcoming.length - 1 || questsStore.queueEditingDisabled"
+                  @click="questsStore.moveQueuedQuest(quest.id, 1)"
+                ><ChevronDown class="h-4 w-4" aria-hidden="true" /></Button>
+                <Button
+                  variant="ghost" size="icon" class="h-7 w-7 text-red-600/80 hover:bg-red-500/10 hover:text-red-700 dark:text-red-400"
+                  :title="t('queue.remove', { name: quest.config.messages.quest_name })"
+                  :aria-label="t('queue.remove', { name: quest.config.messages.quest_name })"
+                  :disabled="questsStore.queueEditingDisabled"
+                  @click="questsStore.removeQueuedQuest(quest.id)"
+                ><Trash2 class="h-3.5 w-3.5" aria-hidden="true" /></Button>
+              </div>
+            </li>
+          </TransitionGroup>
           </div>
-        </div>
+          <Button
+            v-if="!questsStore.activeQuestId"
+            variant="outline" class="mt-3 w-full border-red-500/25 bg-red-500/5 text-red-700 hover:bg-red-500/10 dark:text-red-300"
+            :disabled="questsStore.queueEditingDisabled"
+            @click="questsStore.requestStop()"
+          >{{ t('queue.stop_all') }}</Button>
+        </section>
 
         <div v-if="questsStore.error" class="mt-4 flex items-start gap-2 rounded border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-500">
           <AlertCircle class="mt-0.5 h-4 w-4 shrink-0" />
           <span class="break-words">{{ questsStore.error }}</span>
         </div>
+        <Button
+          v-if="questsStore.queuePauseReason === 'refresh_failed' && questsStore.questQueue.length > 0"
+          class="mt-3 w-full"
+          :disabled="questsStore.queueEditingDisabled || gameIdleStore.isActive"
+          @click="questsStore.startQueue()"
+        >{{ t('quest_group.resume') }}</Button>
       </CardContent>
-    </Card>
-  </div>
+      </Card>
+      </div>
+    </Transition>
+  </Teleport>
+  <Teleport to="body">
+    <div
+      v-if="draggedQueueQuest"
+      aria-hidden="true"
+      class="ui-floating-panel pointer-events-none fixed z-40 flex items-center gap-2 rounded-md border p-2.5 text-sm ring-1 ring-primary/10"
+      :style="{ left: `${queueDragPreview.left}px`, top: `${queueDragPreview.top}px`, width: `${queueDragPreview.width}px` }"
+    >
+      <GripVertical class="h-4 w-4 shrink-0 text-primary" />
+      <div class="min-w-0 flex-1">
+        <div class="truncate text-xs font-medium">{{ draggedQueueQuest.config.messages.quest_name }}</div>
+        <div class="mt-0.5 truncate text-[11px] text-muted-foreground">{{ draggedQueueQuest.config.messages.game_title }}</div>
+      </div>
+    </div>
+  </Teleport>
 </template>
+
+<style scoped>
+.quest-progress-panel-enter-active,
+.quest-progress-panel-leave-active {
+  transform-origin: bottom right;
+  transition: opacity 180ms ease, transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.quest-progress-panel-enter-from {
+  opacity: 0;
+  transform: scaleY(0.94);
+}
+
+.quest-progress-panel-leave-to {
+  opacity: 0;
+  transform: scaleY(0.96);
+}
+
+.queue-item-move,
+.queue-item-enter-active,
+.queue-item-leave-active {
+  transition: transform 180ms ease, opacity 180ms ease;
+}
+
+.queue-item-enter-from,
+.queue-item-leave-to {
+  opacity: 0;
+  transform: scale(0.98);
+}
+
+.queue-row-dragging {
+  opacity: 0.4;
+  border-style: dashed;
+}
+
+.queue-drop-before::before,
+.queue-drop-after::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  border-radius: 999px;
+  background: hsl(var(--primary));
+  pointer-events: none;
+}
+
+.queue-drop-before::before { top: -5px; }
+.queue-drop-after::after { bottom: -5px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .quest-progress-panel-enter-active,
+  .quest-progress-panel-leave-active,
+  .queue-item-move,
+  .queue-item-enter-active,
+  .queue-item-leave-active {
+    transition: none;
+  }
+}
+</style>

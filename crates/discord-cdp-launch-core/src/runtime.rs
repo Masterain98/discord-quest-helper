@@ -4,7 +4,7 @@ use serde_json::{json, Value};
 use std::io::{self, Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 use std::time::{Duration, Instant};
-use tungstenite::{client::client_with_config, protocol::WebSocketConfig, Message};
+use tungstenite::{client::client_with_config, protocol::WebSocketConfig, Message, WebSocket};
 use url::Url;
 
 struct DeadlineStream {
@@ -64,30 +64,119 @@ fn set_budget(stream: &TcpStream, deadline: Instant) -> Result<(), ()> {
 }
 
 pub(crate) fn verify(port: u16, target: &CdpTarget, round_deadline: Instant) -> CdpRuntime {
+    let flags = match evaluate(port, target, EXPRESSION, round_deadline) {
+        Ok(flags) => flags,
+        Err(failure) => return failure,
+    };
+    runtime_from_flags(&flags).unwrap_or_else(|| failed("evaluate", "invalid_response", true))
+}
+
+fn runtime_from_flags(flags: &Value) -> Option<CdpRuntime> {
+    let flag = |key| flags.get(key).and_then(Value::as_bool);
+    let app_root_present = flag("appRootPresent")?;
+    let module_loader_present = flag("moduleLoaderPresent")?;
+    let native_bridge_present = flag("nativeBridgePresent")?;
+    let focused = flag("focused")?;
+    let loading = flag("loading")?;
+    let runtime_status = if app_root_present && module_loader_present {
+        CdpRuntimeStatus::Ready
+    } else if loading || app_root_present {
+        CdpRuntimeStatus::Loading
+    } else {
+        CdpRuntimeStatus::Unsupported
+    };
+    Some(CdpRuntime {
+        runtime_status,
+        web_socket_reachable: true,
+        app_root_present,
+        module_loader_present,
+        native_bridge_present,
+        focused,
+        failure_stage: None,
+        document_generation: flags
+            .get("documentGeneration")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        reason_code: (runtime_status != CdpRuntimeStatus::Ready)
+            .then(|| "runtime_not_loaded".into()),
+    })
+}
+
+/// Evaluate a bounded expression on an exact loopback discovery target.
+fn evaluate(
+    port: u16,
+    target: &CdpTarget,
+    expression: &str,
+    round_deadline: Instant,
+) -> Result<Value, CdpRuntime> {
+    let request = json!({"id": 1, "method": "Runtime.evaluate", "params": {
+        "expression": expression, "returnByValue": true, "awaitPromise": false,
+        "timeout": budget(round_deadline).map(|d| d.as_millis().min(750) as u64).unwrap_or(1)
+    }});
+    let result = exchange(port, target, request, round_deadline)?;
+    result
+        .pointer("/result/value")
+        .cloned()
+        .ok_or_else(|| failed("evaluate", "invalid_response", true))
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) fn close_browser(port: u16, target: &CdpTarget, deadline: Instant) -> bool {
+    // Electron's DevToolsManagerDelegate handles this with Browser::Quit(),
+    // including applications which expose no renderer-side app.quit bridge.
+    // Electron intentionally does not send an acknowledgment before exiting.
+    browser_close_submitted(exchange(
+        port,
+        target,
+        json!({"id": 1, "method": "Browser.close", "params": {}}),
+        deadline,
+    ))
+}
+
+#[cfg(target_os = "windows")]
+fn browser_close_submitted(outcome: Result<Value, CdpRuntime>) -> bool {
+    match outcome {
+        Ok(_) => true,
+        Err(failure) => {
+            failure.failure_stage.as_deref() == Some("evaluate")
+                && matches!(
+                    failure.reason_code.as_deref(),
+                    Some("read_failed" | "target_closed" | "deadline")
+                )
+        }
+    }
+}
+
+fn exchange(
+    port: u16,
+    target: &CdpTarget,
+    request: Value,
+    round_deadline: Instant,
+) -> Result<Value, CdpRuntime> {
     let deadline = round_deadline.min(Instant::now() + Duration::from_millis(750));
     let Some(ws_url) = target.web_socket_debugger_url.as_deref() else {
-        return failed("discovery", "missing_websocket", false);
+        return Err(failed("discovery", "missing_websocket", false));
     };
     if Url::parse(ws_url).is_err() {
-        return failed("discovery", "invalid_websocket", false);
+        return Err(failed("discovery", "invalid_websocket", false));
     }
     if !is_loopback_websocket(port, ws_url) {
-        return failed("discovery", "non_loopback_websocket", false);
+        return Err(failed("discovery", "non_loopback_websocket", false));
     }
     // No DNS, proxies, TLS or Origin overrides. Dial the exact discovery port.
     let Ok(remaining) = budget(deadline) else {
-        return failed("connect", "deadline", false);
+        return Err(failed("connect", "deadline", false));
     };
     let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
     let Ok(stream) = TcpStream::connect_timeout(&address, remaining) else {
-        return failed("connect", "connection_failed", false);
+        return Err(failed("connect", "connection_failed", false));
     };
     if set_budget(&stream, deadline).is_err() {
-        return failed("connect", "deadline", false);
+        return Err(failed("connect", "deadline", false));
     }
     // The socket owns its stream; dropping it closes TCP even on handshake errors.
     let stream = DeadlineStream { stream, deadline };
-    let Ok((mut socket, _)) = client_with_config(
+    let Ok((socket, _)) = client_with_config(
         ws_url,
         stream,
         Some(
@@ -96,14 +185,19 @@ pub(crate) fn verify(port: u16, target: &CdpTarget, round_deadline: Instant) -> 
                 .max_frame_size(Some(1024 * 1024)),
         ),
     ) else {
-        return failed("handshake", "handshake_failed", false);
+        return Err(failed("handshake", "handshake_failed", false));
     };
-    let request = json!({"id": 1, "method": "Runtime.evaluate", "params": {
-        "expression": EXPRESSION, "returnByValue": true, "awaitPromise": false,
-        "timeout": budget(deadline).map(|d| d.as_millis() as u64).unwrap_or(1)
-    }});
+    exchange_request(socket, request, deadline)
+}
+
+fn exchange_request(
+    mut socket: WebSocket<DeadlineStream>,
+    request: Value,
+    deadline: Instant,
+) -> Result<Value, CdpRuntime> {
     let outcome = (|| {
-        set_budget(&socket.get_ref().stream, deadline).map_err(|_| ("evaluate", "deadline"))?;
+        set_budget(&socket.get_ref().stream, deadline)
+            .map_err(|_| ("evaluate", "deadline_before_send"))?;
         socket
             .send(Message::Text(request.to_string().into()))
             .map_err(|_| ("evaluate", "send_failed"))?;
@@ -126,42 +220,10 @@ pub(crate) fn verify(port: u16, target: &CdpTarget, round_deadline: Instant) -> 
                     if value.pointer("/result/exceptionDetails").is_some() {
                         return Err(("evaluate", "javascript_exception"));
                     }
-                    let flags = value
-                        .pointer("/result/result/value")
+                    let result = value
+                        .get("result")
                         .ok_or(("evaluate", "invalid_response"))?;
-                    let flag = |key| {
-                        flags
-                            .get(key)
-                            .and_then(Value::as_bool)
-                            .ok_or(("evaluate", "invalid_response"))
-                    };
-                    let app_root_present = flag("appRootPresent")?;
-                    let module_loader_present = flag("moduleLoaderPresent")?;
-                    let native_bridge_present = flag("nativeBridgePresent")?;
-                    let focused = flag("focused")?;
-                    let loading = flag("loading")?;
-                    let runtime_status = if app_root_present && module_loader_present {
-                        CdpRuntimeStatus::Ready
-                    } else if loading || app_root_present {
-                        CdpRuntimeStatus::Loading
-                    } else {
-                        CdpRuntimeStatus::Unsupported
-                    };
-                    return Ok(CdpRuntime {
-                        runtime_status,
-                        web_socket_reachable: true,
-                        app_root_present,
-                        module_loader_present,
-                        native_bridge_present,
-                        focused,
-                        failure_stage: None,
-                        document_generation: flags
-                            .get("documentGeneration")
-                            .and_then(Value::as_str)
-                            .map(str::to_owned),
-                        reason_code: (runtime_status != CdpRuntimeStatus::Ready)
-                            .then(|| "runtime_not_loaded".into()),
-                    });
+                    return Ok(result.clone());
                 }
                 Message::Ping(_) => {
                     socket.flush().map_err(|_| ("evaluate", "ping_failed"))?;
@@ -176,7 +238,7 @@ pub(crate) fn verify(port: u16, target: &CdpTarget, round_deadline: Instant) -> 
         let _ = socket.close(None);
         let _ = socket.flush();
     }
-    outcome.unwrap_or_else(|(stage, reason)| failed(stage, reason, true))
+    outcome.map_err(|(stage, reason)| failed(stage, reason, true))
 }
 
 pub(crate) fn is_loopback_websocket(port: u16, ws_url: &str) -> bool {
@@ -443,6 +505,83 @@ mod tests {
             assert_eq!(result.runtime_status, CdpRuntimeStatus::ProbeFailed);
             assert_eq!(result.failure_stage.as_deref(), Some("handshake"));
             assert!(start.elapsed() < Duration::from_millis(850));
+            server.join().unwrap();
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn browser_close_rejects_a_deadline_reached_before_sending() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            let mut socket = tungstenite::accept(stream).unwrap();
+            // The client finishes the handshake but must not send Browser.close.
+            assert!(!matches!(socket.read(), Ok(Message::Text(_))));
+        });
+        let stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+        let (socket, _) = client_with_config(
+            format!("ws://127.0.0.1:{port}/devtools/page/close"),
+            DeadlineStream {
+                stream,
+                deadline: Instant::now() + Duration::from_secs(2),
+            },
+            None,
+        )
+        .unwrap();
+        // Expire the budget at the exact boundary after the completed handshake.
+        let outcome = exchange_request(
+            socket,
+            json!({"id": 1, "method": "Browser.close", "params": {}}),
+            Instant::now(),
+        );
+        server.join().unwrap();
+        assert!(!browser_close_submitted(outcome));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn browser_close_accepts_electron_disconnect_but_rejects_protocol_errors() {
+        for disconnect in [true, false] {
+            let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let server = std::thread::spawn(move || {
+                let (stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(2)))
+                    .unwrap();
+                let mut socket = tungstenite::accept(stream).unwrap();
+                let request: Value =
+                    serde_json::from_str(&socket.read().unwrap().into_text().unwrap()).unwrap();
+                assert_eq!(request["method"], "Browser.close");
+                assert_eq!(request["params"], json!({}));
+                if disconnect {
+                    let _ = socket.close(None);
+                } else {
+                    let _ = socket.send(Message::Text(
+                        json!({"id":1,"error":{
+                            "code":-32601,"message":"unsupported"
+                        }})
+                        .to_string()
+                        .into(),
+                    ));
+                }
+            });
+            let target = CdpTarget {
+                id: "close".into(),
+                target_type: "page".into(),
+                title: "".into(),
+                url: "https://discord.com/app".into(),
+                web_socket_debugger_url: Some(format!("ws://127.0.0.1:{port}/devtools/page/close")),
+            };
+            assert_eq!(
+                close_browser(port, &target, Instant::now() + Duration::from_secs(2)),
+                disconnect
+            );
             server.join().unwrap();
         }
     }

@@ -28,18 +28,19 @@ const tabs = computed(() => [
 </script>
 
 <template>
-  <div class="grid min-w-0 grid-cols-3 gap-2 lg:grid-cols-[repeat(6,minmax(max-content,1fr))]">
+  <div class="ui-tab-tray grid min-w-0 grid-cols-2 gap-1 sm:grid-cols-3 xl:grid-cols-[repeat(6,minmax(max-content,1fr))]">
     <Button
       v-for="tab in tabs"
       :key="tab.key"
       type="button"
-      :variant="selected === tab.key ? 'secondary' : 'ghost'"
-      class="h-9 min-w-max w-full justify-start gap-1.5 px-2.5"
+      variant="ghost"
+      :aria-pressed="selected === tab.key"
+      :class="['h-9 min-w-0 w-full justify-start gap-1.5 px-2.5', selected === tab.key && 'ui-tab-active']"
       :title="tab.label"
       @click="emit('update:selected', tab.key)"
     >
       <component :is="tab.icon" :class="['h-4 w-4 shrink-0', tab.iconClass]" aria-hidden="true" />
-      <span class="shrink-0 whitespace-nowrap">{{ tab.label }}</span>
+      <span class="min-w-0 truncate">{{ tab.label }}</span>
       <Badge variant="outline" class="ml-auto h-5 min-w-5 shrink-0 justify-center px-1.5 text-[10px]">
         {{ counts[tab.key] }}
       </Badge>

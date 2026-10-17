@@ -1,8 +1,10 @@
 import { defineStore } from 'pinia'
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { Quest, DetectableGame, DesktopClientArg, ExcludedQuest, GameQuestMode, PlatformCapabilities } from '@/api/tauri'
-import { getQuestKind, playActivityProgressPercentage } from '@/utils/questTasks'
+import { firstProgressValue, firstStartableTask, getQuestKind, isVideoTask, playActivityProgressPercentage } from '@/utils/questTasks'
+import { canQueueGroupMember } from '@/utils/questGroups'
 import { resolveSimulationExecutable } from '@/utils/executables'
+import { commandErrorMessage } from '@/utils/commandError'
 
 /** Quest with optional pre-selected executable name for batch game quest processing */
 interface QueueItem extends Quest {
@@ -33,6 +35,7 @@ export type QueuePauseReason =
   | 'simulation_incompatible'
   | 'cdp_restart_required'
   | 'authentication_required'
+  | 'refresh_failed'
 import {
   getQuestsFull,
   startVideoQuest,
@@ -53,6 +56,7 @@ import {
   startCdpQuest,
   checkCdpStatus,
   getVirtualCurrencyBalance,
+  getVirtualCurrencyTotalRedeemed,
   getPlatformCapabilities,
   startGameSimulationUsage,
   stopGameSimulationUsage,
@@ -75,11 +79,18 @@ export const useQuestsStore = defineStore('quests', () => {
   const hasLoadedQuests = ref(false)
   const startingQuestId = ref<string | null>(null)
   const stopping = ref(false)
+  const stopDialogOpen = ref(false)
+  const stopDialogQuestId = ref<string | null>(null)
   const error = ref<string | null>(null)
   const orbsBalance = ref<number | null>(null)
   const orbsBalanceFetchedAt = ref<string | null>(null)
   const orbsBalanceLoading = ref(false)
   const orbsBalanceError = ref<string | null>(null)
+  const orbsTotalRedeemed = ref<number | null>(null)
+  const orbsTotalRedeemedFetchedAt = ref<string | null>(null)
+  const orbsTotalRedeemedLoading = ref(false)
+  const orbsTotalRedeemedError = ref<string | null>(null)
+  const orbsSummaryLoading = computed(() => orbsBalanceLoading.value || orbsTotalRedeemedLoading.value)
 
   // Single source of truth for every process-simulation entry point. The
   // asynchronous default is resolved lazily by initSimulationPath().
@@ -87,6 +98,7 @@ export const useQuestsStore = defineStore('quests', () => {
   let simulationPathRevision = 0
 
   const activeQuestId = ref<string | null>(null)
+  const completingQuestId = ref<string | null>(null)
   const activeQuestType = ref<'video' | 'stream' | 'game' | 'activity' | null>(null)
   const activeQuestProgress = ref(0)
   const activeQuestTargetDuration = ref(0)
@@ -309,7 +321,7 @@ export const useQuestsStore = defineStore('quests', () => {
   watch(showOrbsBalance, (enabled) => {
     localStorage.setItem(STORAGE_SHOW_ORBS_BALANCE_KEY, String(enabled))
     if (enabled && orbsBalance.value == null) {
-      fetchOrbsBalance().catch(err => {
+      fetchOrbsSummary().catch(err => {
         console.warn('Background Orbs balance fetch failed:', err)
       })
     }
@@ -358,6 +370,7 @@ export const useQuestsStore = defineStore('quests', () => {
   let completeUnlisten: (() => void) | null = null
   let errorUnlisten: (() => void) | null = null
   let pollingTimer: ReturnType<typeof setInterval> | null = null
+  let queueAdvanceTimer: ReturnType<typeof setTimeout> | null = null
   // Guards against overlapping interval callbacks. `setInterval` keeps firing
   // while an async tick is still awaiting cleanup, and two ticks observing the
   // same completed queue item would each shift the shared queue and schedule
@@ -374,7 +387,27 @@ export const useQuestsStore = defineStore('quests', () => {
   let simCurrentSpeed = 1.0
 
   let questsFetchGeneration = 0
-  let questsFetchInFlight: Promise<void> | null = null
+  let questsFetchInFlight: Promise<boolean> | null = null
+  const questAccountId = ref<string | null>(null)
+
+  // Account changes invalidate both cached rows and requests from the old session.
+  function setQuestAccount(accountId: string | null) {
+    if (questAccountId.value === accountId) return
+    resetOrbsState()
+    questAccountId.value = accountId
+    queueStartRevision++
+    preparingQueuedQuestId.value = null
+    questsFetchGeneration++
+    questsFetchInFlight = null
+    quests.value = []
+    excludedQuests.value = []
+    questEnrollmentBlockedUntil.value = null
+    lastQuestsFetchTime.value = 0
+    loading.value = false
+    refreshing.value = false
+    hasLoadedQuests.value = false
+    error.value = null
+  }
 
   async function fetchQuests(silent = false, force = false) {
     // Manual refresh and polling share a request, so an older response cannot
@@ -391,7 +424,7 @@ export const useQuestsStore = defineStore('quests', () => {
       // 30 minutes cache
       if (now - lastQuestsFetchTime.value < 30 * 60 * 1000) {
         console.log('Using cached quests list')
-        return
+        return true
       }
     }
 
@@ -405,7 +438,7 @@ export const useQuestsStore = defineStore('quests', () => {
       try {
         console.log('Fetching quests from API...')
         const response = await getQuestsFull()
-        if (generation !== questsFetchGeneration) return
+        if (generation !== questsFetchGeneration) return false
         // Keep unchanged quest props stable; keyed cards retain their local state
         // and only cards whose server data changed need to update.
         const previous = new Map(quests.value.map(quest => [quest.id, quest]))
@@ -420,10 +453,12 @@ export const useQuestsStore = defineStore('quests', () => {
         questEnrollmentBlockedUntil.value = response.quest_enrollment_blocked_until || null
         lastQuestsFetchTime.value = Date.now()
         hasLoadedQuests.value = true
+        return true
       } catch (e) {
         if (generation === questsFetchGeneration) {
           error.value = e instanceof Error ? e.message : String(e)
         }
+        return false
       } finally {
         if (generation === questsFetchGeneration) {
           loading.value = false
@@ -433,43 +468,91 @@ export const useQuestsStore = defineStore('quests', () => {
     })()
     questsFetchInFlight = request
     try {
-      await request
+      return await request
     } finally {
       if (questsFetchInFlight === request) questsFetchInFlight = null
     }
   }
 
   let orbsFetchGeneration = 0
+  let orbsSummaryAttempted = false
+  let orbsFetchInFlight: Promise<void> | null = null
 
-  async function fetchOrbsBalance(force = false) {
+  async function fetchOrbsSummary(force = false) {
     const generationAtStart = orbsFetchGeneration
     if (!showOrbsBalance.value && !force) return
-    if (orbsBalanceLoading.value) return
-    if (!force && orbsBalance.value != null) return
+    if (orbsFetchInFlight) return orbsFetchInFlight
+    // Bootstrap and the persistent shell share one attempt per account. A
+    // failed endpoint is retried only through an explicit manual refresh.
+    if (!force && orbsSummaryAttempted) return
+    orbsSummaryAttempted = true
 
     orbsBalanceLoading.value = true
+    orbsTotalRedeemedLoading.value = true
     orbsBalanceError.value = null
-    try {
-      const balance = await getVirtualCurrencyBalance()
-      if (generationAtStart !== orbsFetchGeneration) return
-      orbsBalance.value = balance
-      orbsBalanceFetchedAt.value = new Date().toISOString()
-    } catch (e) {
-      if (generationAtStart !== orbsFetchGeneration) return
-      orbsBalanceError.value = e as string
-      throw e
-    } finally {
-      if (generationAtStart === orbsFetchGeneration) {
-        orbsBalanceLoading.value = false
+    orbsTotalRedeemedError.value = null
+    const balanceRequest = (async () => {
+      try {
+        const balance = await getVirtualCurrencyBalance()
+        if (generationAtStart !== orbsFetchGeneration) return
+        orbsBalance.value = balance
+        orbsBalanceFetchedAt.value = new Date().toISOString()
+      } catch (e) {
+        if (generationAtStart !== orbsFetchGeneration) return
+        orbsBalanceError.value = commandErrorMessage(e)
+        throw e
+      } finally {
+        if (generationAtStart === orbsFetchGeneration) orbsBalanceLoading.value = false
       }
+    })()
+    const redeemedRequest = (async () => {
+      try {
+        const redeemed = await getVirtualCurrencyTotalRedeemed()
+        if (generationAtStart !== orbsFetchGeneration) return
+        orbsTotalRedeemed.value = redeemed
+        orbsTotalRedeemedFetchedAt.value = new Date().toISOString()
+      } catch (e) {
+        if (generationAtStart !== orbsFetchGeneration) return
+        orbsTotalRedeemedError.value = commandErrorMessage(e)
+        throw e
+      } finally {
+        if (generationAtStart === orbsFetchGeneration) orbsTotalRedeemedLoading.value = false
+      }
+    })()
+    const request = Promise.allSettled([balanceRequest, redeemedRequest]).then(results => {
+      if (generationAtStart !== orbsFetchGeneration) return
+      const failure = results.find(result => result.status === 'rejected')
+      if (failure?.status === 'rejected') throw failure.reason
+    })
+    orbsFetchInFlight = request
+    try {
+      await request
+    } finally {
+      if (orbsFetchInFlight === request) orbsFetchInFlight = null
     }
   }
 
+  function resetOrbsState() {
+    orbsFetchGeneration++
+    orbsSummaryAttempted = false
+    orbsFetchInFlight = null
+    orbsBalance.value = null
+    orbsBalanceFetchedAt.value = null
+    orbsBalanceLoading.value = false
+    orbsBalanceError.value = null
+    orbsTotalRedeemed.value = null
+    orbsTotalRedeemedFetchedAt.value = null
+    orbsTotalRedeemedLoading.value = false
+    orbsTotalRedeemedError.value = null
+  }
+
   async function finishQueuedQuest(questId: string) {
+    if (stopping.value) return
     if (!isQueueRunning.value || questQueue.value[0]?.id !== questId || activeQuestId.value !== questId) return
     if (completionClaimedFor === questId) return
     completionClaimedFor = questId
     const completedExecutable = activeGameExe.value
+    completingQuestId.value = questId
     activeQuestId.value = null
     try {
       if (completedExecutable && gameQuestMode.value === 'simulate') {
@@ -486,10 +569,12 @@ export const useQuestsStore = defineStore('quests', () => {
       stopProgressSimulation()
       cleanupListeners()
       stopPolling()
+      completingQuestId.value = null
       return
     }
 
-    questQueue.value.shift()
+    const completedIndex = questQueue.value.findIndex(item => item.id === questId)
+    if (completedIndex >= 0) questQueue.value.splice(completedIndex, 1)
     activeQuestType.value = null
     activeQuestProgress.value = 0
     activeQuestTargetDuration.value = 0
@@ -498,13 +583,13 @@ export const useQuestsStore = defineStore('quests', () => {
     stopProgressSimulation()
     cleanupListeners()
     stopPolling()
+    completingQuestId.value = null
     void fetchQuests(true, true)
-    setTimeout(() => {
-      if (isQueueRunning.value) void processQueue()
-    }, 2000)
+    if (isQueueRunning.value) scheduleNextQueuedQuest()
   }
 
   async function checkActiveQuestStatus() {
+    if (stopping.value) return
     if (!activeQuestId.value) return
     const quest = quests.value.find(q => q.id === activeQuestId.value)
     if (!quest) return
@@ -1050,11 +1135,28 @@ export const useQuestsStore = defineStore('quests', () => {
     stopPolling()
   }
 
-  async function stop() {
+  async function stop(scope: 'current' | 'all' = 'all'): Promise<boolean> {
+    if (stopping.value || (scope === 'current' && !activeQuestId.value)) return false
+    const stoppedQuestId = activeQuestId.value
+    cancelQueueAdvance()
+    queueStartRevision++
+    preparingQueuedQuestId.value = null
+    isQueueRunning.value = false
+    stopDialogOpen.value = false
+
+    // Completion already owns native cleanup; stopping the remaining queue
+    // must not run the same cleanup a second time.
+    if (completingQuestId.value && !stoppedQuestId) {
+      questQueue.value = []
+      return true
+    }
+
     stopping.value = true
+    let stoppedSuccessfully = false
     console.log('questsStore.stop() called')
 
     stopProgressSimulation()
+    stopPolling()
 
     try {
       // Force Save Logic for Video Quests (skip in CDP mode — progress is server-managed)
@@ -1069,12 +1171,6 @@ export const useQuestsStore = defineStore('quests', () => {
         } catch (e) {
           console.error('Failed to force submit progress on stop:', e)
         }
-      }
-
-      // If manually stopping, ensure queue is also stopped/cleared
-      if (isQueueRunning.value || questQueue.value.length > 0) {
-        isQueueRunning.value = false
-        questQueue.value = [] // Clear queue on manual stop
       }
 
       let exeToStop = activeGameExe.value
@@ -1111,7 +1207,7 @@ export const useQuestsStore = defineStore('quests', () => {
           await emit('event_disconnect')
         } catch (e) {
           error.value = e instanceof Error ? e.message : String(e)
-          return
+          return false
         }
         activeGameExe.value = null
       }
@@ -1119,15 +1215,21 @@ export const useQuestsStore = defineStore('quests', () => {
       try {
         await stopQuest()
       } catch (e) {
-        // Ignore error if no quest running
+        error.value = e instanceof Error ? e.message : String(e)
+        return false
       }
       try {
         await stopGameSimulationUsage()
       } catch (historyError) {
         error.value = historyError instanceof Error ? historyError.message : String(historyError)
-        return
+        return false
       }
 
+      if (scope === 'all') {
+        questQueue.value = []
+      } else {
+        questQueue.value = questQueue.value.filter(item => item.id !== stoppedQuestId)
+      }
       activeQuestId.value = null
       activeQuestType.value = null
       activeQuestProgress.value = 0
@@ -1135,12 +1237,18 @@ export const useQuestsStore = defineStore('quests', () => {
       localProgress.value = 0
 
       cleanupListeners()
+      stoppedSuccessfully = true
 
       // Refresh quests to get latest status
       await fetchQuests(true, true)
+      return true
 
     } finally {
       stopping.value = false
+      if (stoppedSuccessfully && scope === 'current' && questQueue.value.length > 0) {
+        isQueueRunning.value = true
+        scheduleNextQueuedQuest()
+      }
     }
   }
 
@@ -1289,63 +1397,207 @@ export const useQuestsStore = defineStore('quests', () => {
   // We can't blocking-wait in the UI thread for 15 mins x N quests.
   // But we can start a "Queue Mode".
   const questQueue = ref<QueueItem[]>([])
+  const preparingQueuedQuestId = ref<string | null>(null)
+  let queueStartRevision = 0
   const isQueueRunning = ref(false)
+  const lockedQueueQuestId = computed(() =>
+    activeQuestId.value ?? startingQuestId.value ?? completingQuestId.value ?? preparingQueuedQuestId.value
+  )
+  const upcomingQuests = computed(() =>
+    questQueue.value.filter(item => item.id !== lockedQueueQuestId.value)
+  )
+  const queueEditingDisabled = computed(() =>
+    stopping.value || startingQuestId.value !== null || completingQuestId.value !== null || preparingQueuedQuestId.value !== null
+  )
+
+  function cancelQueueAdvance() {
+    if (queueAdvanceTimer !== null) clearTimeout(queueAdvanceTimer)
+    queueAdvanceTimer = null
+  }
+
+  function scheduleNextQueuedQuest() {
+    cancelQueueAdvance()
+    queueAdvanceTimer = setTimeout(() => {
+      queueAdvanceTimer = null
+      if (isQueueRunning.value) void processQueue()
+    }, 2000)
+  }
+
+  function requestStop() {
+    if (stopping.value || (!activeQuestId.value && questQueue.value.length === 0)) return
+    if (activeQuestId.value && upcomingQuests.value.length === 0) {
+      void stop('all').catch(stopError => { console.error('Failed to stop quests:', stopError) })
+      return
+    }
+    stopDialogQuestId.value = activeQuestId.value
+    stopDialogOpen.value = true
+  }
+
+  function removeQueuedQuest(questId: string): boolean {
+    if (queueEditingDisabled.value || questId === lockedQueueQuestId.value) return false
+    const index = questQueue.value.findIndex(item => item.id === questId)
+    if (index < 0) return false
+    questQueue.value.splice(index, 1)
+    if (questQueue.value.length === 0) {
+      isQueueRunning.value = false
+      cancelQueueAdvance()
+    }
+    return true
+  }
+
+  function moveQueuedQuest(questId: string, direction: -1 | 1): boolean {
+    if (queueEditingDisabled.value) return false
+    const upcoming = upcomingQuests.value
+    const from = upcoming.findIndex(item => item.id === questId)
+    const to = from + direction
+    if (from < 0 || to < 0 || to >= upcoming.length) return false
+    const fromIndex = questQueue.value.findIndex(item => item.id === upcoming[from].id)
+    const toIndex = questQueue.value.findIndex(item => item.id === upcoming[to].id)
+    const moved = questQueue.value[fromIndex]
+    questQueue.value[fromIndex] = questQueue.value[toIndex]
+    questQueue.value[toIndex] = moved
+    return true
+  }
+
+  function reorderQueuedQuest(questId: string, targetQuestId: string, placement: 'before' | 'after'): boolean {
+    if (queueEditingDisabled.value || questId === targetQuestId) return false
+    const upcoming = upcomingQuests.value
+    if (!upcoming.some(item => item.id === questId) || !upcoming.some(item => item.id === targetQuestId)) return false
+    const from = questQueue.value.findIndex(item => item.id === questId)
+    const target = questQueue.value.findIndex(item => item.id === targetQuestId)
+    const insertion = target + (placement === 'after' ? 1 : 0) - (from < target ? 1 : 0)
+    if (from === insertion) return false
+    const [item] = questQueue.value.splice(from, 1)
+    questQueue.value.splice(insertion, 0, item)
+    return true
+  }
+
+  function clearUpcomingQueue() {
+    if (queueEditingDisabled.value) return
+    questQueue.value = questQueue.value.filter(item => item.id === lockedQueueQuestId.value)
+    if (questQueue.value.length === 0) {
+      isQueueRunning.value = false
+      cancelQueueAdvance()
+    }
+  }
 
   async function processQueue() {
+    if (stopping.value || lockedQueueQuestId.value) return
+    cancelQueueAdvance()
     if (questQueue.value.length === 0) {
       isQueueRunning.value = false
       return
     }
 
+    const revision = ++queueStartRevision
     isQueueRunning.value = true
-    const queueItem = questQueue.value[0]
-
+    queuePauseReason.value = null
     try {
-      console.log(`Queue processing: ${queueItem.id}`)
-
-      // Calculate duration needed
-      let seconds = 0
-      const queueTasks = queueItem.config.task_config_v2?.tasks ?? queueItem.config.task_config?.tasks
-      if (queueTasks) {
-        const taskValues = Object.values(queueTasks)
-        if (taskValues.length > 0) seconds = taskValues[0].target || 0
-      }
-
-      // Check if already partial
-      let progress = 0
-      if (queueItem.user_status?.progress) {
-        const vals = Object.values(queueItem.user_status.progress)
-        if (vals.length > 0) progress = vals[0].value || 0
-      }
-
-      // If completed, skip
-      if (queueItem.user_status?.completed_at) {
-        questQueue.value.shift()
-        processQueue()
+      preparingQueuedQuestId.value = questQueue.value[0].id
+      const refreshed = await fetchQuests(true, true)
+      // Stop/account changes invalidate pending refreshes before native startup.
+      if (revision !== queueStartRevision || !isQueueRunning.value || stopping.value) return
+      // Another entry point may have claimed execution while refresh was pending.
+      if (activeQuestId.value || startingQuestId.value || completingQuestId.value) {
+        isQueueRunning.value = false
         return
       }
-
-      // Route by quest type
-      const questKind = getQuestKind(queueItem)
-      console.log(`Queue item type: ${questKind}`)
-
-      if (questKind === 'video') {
-        await startVideo(queueItem.id, seconds, progress)
-      } else {
-        // Game (stream/play) quests — use startPlay with optional pre-selected exe
-        await startPlay(queueItem, seconds, progress, queueItem.selectedExeName)
+      if (!refreshed) {
+        isQueueRunning.value = false
+        queuePauseReason.value = 'refresh_failed'
+        return
       }
-
-      // Now we wait for completion.
-      // Video quests: handled by onQuestComplete event in setupListeners.
-      // Game quests (simulate): handled by polling in checkActiveQuestStatus.
-      // Game quests (CDP/heartbeat): handled by onQuestComplete event.
-
+      while (questQueue.value.length > 0) {
+        const queued = questQueue.value[0]
+        preparingQueuedQuestId.value = queued.id
+        const latest = quests.value.find(quest => quest.id === queued.id)
+        if (!latest || !canQueueGroupMember(latest)) {
+          questQueue.value.shift()
+          continue
+        }
+        const task = firstStartableTask(latest)!
+        const seconds = task.target!
+        const progress = firstProgressValue(latest, task.key)
+        // Keep the ID locked as ownership passes from refresh to native startup.
+        startingQuestId.value = latest.id
+        preparingQueuedQuestId.value = null
+        if (isVideoTask(task)) {
+          await startVideo(latest.id, seconds, progress)
+        } else {
+          await startPlay(latest, seconds, progress, queued.selectedExeName)
+        }
+        return // Existing completion handlers advance the serial queue.
+      }
+      isQueueRunning.value = false
     } catch (e) {
-      console.error("Queue error:", e)
-      questQueue.value.shift() // Skip failed
-      processQueue()
+      if (revision !== queueStartRevision) return
+      error.value = e instanceof Error ? e.message : String(e)
+      questQueue.value.shift()
+      if (isQueueRunning.value) scheduleNextQueuedQuest()
+    } finally {
+      if (revision === queueStartRevision) preparingQueuedQuestId.value = null
     }
+  }
+
+  function addGroupToQueue(ids: string[], selections = new Map<string, string>()): number {
+    if (queueEditingDisabled.value) return 0
+    let added = 0
+    for (const id of new Set(ids)) {
+      const quest = quests.value.find(item => item.id === id)
+      if (!quest || !canQueueGroupMember(quest) || id === activeQuestId.value || questQueue.value.some(item => item.id === id)) continue
+      const item: QueueItem = { ...quest, selectedExeName: selections.get(id) }
+      if (activeQuestId.value) {
+        if (addToQueueBehindActive(item)) added++
+      } else {
+        questQueue.value.push(item)
+        added++
+      }
+    }
+    return added
+  }
+
+  function removeQueuedQuests(ids: string[]): boolean {
+    if (queueEditingDisabled.value) return false
+    const members = new Set(ids)
+    questQueue.value = questQueue.value.filter(item => item.id === lockedQueueQuestId.value || !members.has(item.id))
+    if (!questQueue.value.length) {
+      isQueueRunning.value = false
+      cancelQueueAdvance()
+    }
+    return true
+  }
+
+  async function stopGroup(ids: string[]): Promise<boolean> {
+    if (!removeQueuedQuests(ids)) return false
+    if (activeQuestId.value && ids.includes(activeQuestId.value)) return stop('current')
+    return true
+  }
+
+  function addToQueueBehindActive(q: Quest): boolean {
+    const activeId = activeQuestId.value
+    if (queueEditingDisabled.value) return false
+    if (!activeId || activeId === q.id || getQuestKind(q) === 'activity' || q.user_status?.completed_at) return false
+    if (questQueue.value.some(item => item.id === q.id)) return false
+
+    const activeQuest = quests.value.find(item => item.id === activeId)
+    if (!activeQuest) return false
+
+    // Manually started quests are not normally stored in the queue. Add the
+    // active quest as the queue head so the existing completion flow advances
+    // to newly queued quests once it finishes.
+    if (questQueue.value[0]?.id !== activeId) {
+      const activeIndex = questQueue.value.findIndex(item => item.id === activeId)
+      if (activeIndex >= 0) {
+        const [queuedActiveQuest] = questQueue.value.splice(activeIndex, 1)
+        questQueue.value.unshift(queuedActiveQuest)
+      } else {
+        questQueue.value.unshift(activeQuest)
+      }
+    }
+
+    questQueue.value.push(q)
+    isQueueRunning.value = true
+    return true
   }
 
   // We need to modify `onQuestComplete` to trigger next in queue.
@@ -1354,37 +1606,44 @@ export const useQuestsStore = defineStore('quests', () => {
   // --- Detectable Games Caching ---
   const detectableGames = ref<DetectableGame[]>([])
   const fetchingGames = ref(false)
+  let detectableGamesInFlight: Promise<DetectableGame[]> | null = null
 
   async function getDetectableGames(force = false): Promise<DetectableGame[]> {
+    if (detectableGamesInFlight) return detectableGamesInFlight
     if (!force && detectableGames.value.length > 0) {
       console.log('Returning cached detectable games')
       return detectableGames.value
     }
 
-    if (fetchingGames.value) {
-      // If already fetching, wait for it (simple poll)
-      while (fetchingGames.value) {
-        await new Promise(r => setTimeout(r, 100))
-      }
-      return detectableGames.value
-    }
-
     fetchingGames.value = true
+    const request = fetchDetectableGames().then(games => {
+      detectableGames.value = games
+      return games
+    })
+    detectableGamesInFlight = request
     try {
       console.log('Fetching detectable games from API...')
-      detectableGames.value = await fetchDetectableGames()
+      await request
       console.log(`Fetched ${detectableGames.value.length} detectable games successfully.`)
       return detectableGames.value
     } catch (e) {
       console.error('Failed to fetch detectable games:', e)
       throw e
     } finally {
+      detectableGamesInFlight = null
       fetchingGames.value = false
     }
   }
 
   function resetForLogout() {
-    orbsFetchGeneration++
+    queueStartRevision++
+    preparingQueuedQuestId.value = null
+    cancelQueueAdvance()
+    stopDialogOpen.value = false
+    stopDialogQuestId.value = null
+    completingQuestId.value = null
+    questAccountId.value = null
+    resetOrbsState()
     questsFetchGeneration++
     questsFetchInFlight = null
     quests.value = []
@@ -1396,10 +1655,6 @@ export const useQuestsStore = defineStore('quests', () => {
     hasLoadedQuests.value = false
     startingQuestId.value = null
     error.value = null
-    orbsBalance.value = null
-    orbsBalanceFetchedAt.value = null
-    orbsBalanceLoading.value = false
-    orbsBalanceError.value = null
     activeQuestId.value = null
     activeQuestType.value = null
     activeQuestProgress.value = 0
@@ -1423,17 +1678,17 @@ export const useQuestsStore = defineStore('quests', () => {
   }
 
   // Check CDP availability and auto-fallback if mode is 'cdp' but CDP isn't reachable
-  async function initCdpMode() {
+  async function initCdpMode(options: { preserveMode?: boolean } = {}) {
     try {
       const status = await checkCdpStatus(cdpPort.value)
       cdpAvailable.value = status.connected
-      if (gameQuestMode.value === 'cdp' && !status.connected) {
+      if (gameQuestMode.value === 'cdp' && !status.connected && !options.preserveMode) {
         console.warn('CDP mode selected but CDP not available — falling back to simulate mode')
         gameQuestMode.value = 'simulate'
       }
     } catch {
       cdpAvailable.value = false
-      if (gameQuestMode.value === 'cdp') {
+      if (gameQuestMode.value === 'cdp' && !options.preserveMode) {
         console.warn('CDP check failed — falling back to simulate mode')
         gameQuestMode.value = 'simulate'
       }
@@ -1506,12 +1761,20 @@ export const useQuestsStore = defineStore('quests', () => {
     loading,
     refreshing,
     hasLoadedQuests,
+    questAccountId,
+    setQuestAccount,
     startingQuestId,
+    preparingQueuedQuestId,
     error,
     orbsBalance,
     orbsBalanceFetchedAt,
     orbsBalanceLoading,
     orbsBalanceError,
+    orbsTotalRedeemed,
+    orbsTotalRedeemedFetchedAt,
+    orbsTotalRedeemedLoading,
+    orbsTotalRedeemedError,
+    orbsSummaryLoading,
     showOrbsBalance,
     simulationPath,
     initSimulationPath,
@@ -1535,8 +1798,17 @@ export const useQuestsStore = defineStore('quests', () => {
     activeGameExe,
     questQueue, // Export queue
     isQueueRunning,
+    upcomingQuests,
+    queueEditingDisabled,
+    stopDialogOpen,
+    stopDialogQuestId,
+    requestStop,
+    removeQueuedQuest,
+    moveQueuedQuest,
+    reorderQueuedQuest,
+    clearUpcomingQueue,
     fetchQuests,
-    fetchOrbsBalance,
+    fetchOrbsSummary,
     updateQuestEnrollment,
     startVideo,
     startStream,
@@ -1549,17 +1821,17 @@ export const useQuestsStore = defineStore('quests', () => {
     acceptAllQuests,
     // Add to queue logic needs integration with listeners
     addToQueue: (q: Quest, selectedExeName?: string) => {
-      if (!questQueue.value.find(x => x.id === q.id)) {
+      if (getQuestKind(q) !== 'activity' && !questQueue.value.find(x => x.id === q.id)) {
         const item: QueueItem = { ...q, selectedExeName }
         questQueue.value.push(item)
       }
     },
+    addToQueueBehindActive,
+    addGroupToQueue,
+    removeQueuedQuests,
+    stopGroup,
     startQueue: processQueue,
-    clearQueue: () => {
-      questQueue.value = []
-      isQueueRunning.value = false
-      stop()
-    },
+    clearQueue: () => stop('all'),
     // Game Process Caching
     detectableGames,
     getDetectableGames,

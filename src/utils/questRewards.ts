@@ -94,6 +94,31 @@ export function getQuestRewardViews(quest: Quest, userPremiumType?: number | nul
   return (quest.config.rewards_config?.rewards || []).map(reward => formatQuestReward(reward, quest.user_status, userPremiumType))
 }
 
+/** Configured rewards for every supplied member, including already claimed rewards. */
+export function getQuestGroupRewardViews(quests: Quest[], userPremiumType?: number | null): QuestRewardView[] {
+  const totals = new Map<string, QuestReward>()
+  for (const quest of quests) {
+    for (const reward of quest.config.rewards_config?.rewards || []) {
+      const knownOrbs = isOrbReward(reward) && reward.orb_quantity != null
+      const key = knownOrbs ? 'orbs' : JSON.stringify([reward.sku_id, reward.type, reward.messages.name])
+      const total = totals.get(key) ?? {
+        ...reward,
+        quantity: 0,
+        ...(knownOrbs ? { orb_quantity: 0, premium_orb_quantity: 0 } : {}),
+      }
+      if (knownOrbs) {
+        total.orb_quantity! += reward.orb_quantity!
+        // A member without a Nitro bonus still contributes its base amount.
+        total.premium_orb_quantity! += Math.max(reward.orb_quantity!, reward.premium_orb_quantity ?? reward.orb_quantity!)
+      } else {
+        total.quantity! += reward.quantity ?? 1
+      }
+      totals.set(key, total)
+    }
+  }
+  return [...totals.values()].map(reward => formatQuestReward(reward, null, userPremiumType))
+}
+
 export function getQuestRewardCategory(quest: Quest): 'orbs' | 'avatar' | 'ingame' {
   const rewards = quest.config.rewards_config?.rewards || []
   if (rewards.some(isOrbReward)) return 'orbs'

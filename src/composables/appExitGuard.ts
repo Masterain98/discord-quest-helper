@@ -102,6 +102,12 @@ export function createAppExitGuard(dependencies: ExitGuardDependencies) {
     await closeApplication()
   }
 
+  function cancelClose() {
+    if (state.checking || state.closing) return
+    state.dialogOpen = false
+    publish()
+  }
+
   async function restoreAndClose() {
     if (state.closing) return
     state.checking = true
@@ -173,5 +179,5 @@ export function createAppExitGuard(dependencies: ExitGuardDependencies) {
   }
 
   publish()
-  return { requestClose, closeOnly, restoreAndClose, restoreManagedAndClose }
+  return { requestClose, closeOnly, cancelClose, restoreAndClose, restoreManagedAndClose }
 }

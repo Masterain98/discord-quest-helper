@@ -233,8 +233,23 @@ export async function getQuestsFull(): Promise<CurrentUserQuestsResponse> {
 }
 
 export async function getVirtualCurrencyBalance(): Promise<number> {
-  const response = await invoke<{ balance?: number }>('get_virtual_currency_balance')
-  return response.balance ?? 0
+  const response = await invoke<unknown>('get_virtual_currency_balance')
+  return readVirtualCurrencyAmount(response, 'balance')
+}
+
+export async function getVirtualCurrencyTotalRedeemed(): Promise<number> {
+  const response = await invoke<unknown>('get_virtual_currency_total_redeemed')
+  return readVirtualCurrencyAmount(response, 'total_redeemed')
+}
+
+function readVirtualCurrencyAmount(response: unknown, field: 'balance' | 'total_redeemed'): number {
+  const amount = response && typeof response === 'object' && !Array.isArray(response)
+    ? (response as Record<string, unknown>)[field] : undefined
+  // An absent or malformed field must not look like a legitimate zero balance.
+  if (typeof amount !== 'number' || !Number.isSafeInteger(amount) || amount < 0) {
+    throw new Error(`Invalid virtual currency ${field} response`)
+  }
+  return amount
 }
 
 export async function getBillingSubscriptions(): Promise<BillingSubscription[]> {
@@ -390,10 +405,15 @@ export async function getManualCdpGameSimulation(): Promise<ManualCdpGameSimulat
 }
 
 export type GameIdleMode = 'process' | 'cdp'
+export type GameIdleSelectionMode = 'random' | 'manual'
+export type GameIdleCandidateType = 'all' | 'game' | 'app'
 export type GameIdlePhase = 'starting' | 'playing' | 'resting' | 'stopping' | 'error' | 'stopped'
 
 export interface GameIdleConfig {
   mode: GameIdleMode
+  selectionMode: GameIdleSelectionMode
+  candidateType: GameIdleCandidateType
+  selectedAppIds: string[]
   playMinutes: number
   restMinutes: number
   cdpPort: number
@@ -411,6 +431,9 @@ export interface GameIdleItem {
 export interface GameIdleStatus {
   sessionId: string
   mode: GameIdleMode
+  selectionMode: GameIdleSelectionMode
+  candidateType: GameIdleCandidateType
+  selectedAppIds: string[]
   phase: GameIdlePhase
   playMinutes: number
   restMinutes: number
@@ -580,6 +603,21 @@ export interface HeaderProfilePreview {
 
 export async function getDebugInfo(): Promise<DebugInfo> {
   return await invoke('get_debug_info')
+}
+
+export type IpInfoDiagnosticLevel = 'debug' | 'info' | 'warn' | 'error'
+
+export async function logIpInfoDiagnostic(
+  level: IpInfoDiagnosticLevel,
+  event: string,
+  details?: Record<string, string | number>,
+): Promise<void> {
+  if (!('__TAURI_INTERNALS__' in window)) return
+  await invoke('log_ip_info_diagnostic', {
+    level,
+    event,
+    details: details ? JSON.stringify(details) : null,
+  })
 }
 
 export type RuntimeIdentityLevel = 'full' | 'degraded' | 'disabled' | 'notApplicable'

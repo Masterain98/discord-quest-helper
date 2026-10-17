@@ -6,6 +6,7 @@ mod cdp_game_spoof;
 mod cdp_quest;
 mod discord_api;
 mod discord_cdp_commands;
+mod discord_console;
 mod discord_gateway;
 mod game_idle;
 mod game_simulator;
@@ -1430,7 +1431,6 @@ async fn start_game_idle(
         .clone()
         .ok_or_else(|| "Sign in before starting game idle mode".to_string())?;
 
-    let _gate = state.activity_gate.lock().await;
     state.game_idle.ensure_idle().await?;
     ensure_no_active_quest(&state).await?;
     state.manual_cdp_game.lock().await.ensure_idle()?;
@@ -1712,6 +1712,24 @@ async fn get_virtual_currency_balance(
         .get_virtual_currency_balance()
         .await
         .map_err(|e| format!("Failed to get virtual currency balance: {}", e))
+}
+
+#[tauri::command]
+async fn get_virtual_currency_total_redeemed(
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let client = {
+        let guard = state.client.lock().unwrap();
+        guard
+            .as_ref()
+            .ok_or_else(|| "Not logged in".to_string())?
+            .clone()
+    };
+
+    client
+        .get_virtual_currency_total_redeemed()
+        .await
+        .map_err(|e| format!("Failed to get virtual currency total redeemed: {}", e))
 }
 
 #[tauri::command]
@@ -2166,6 +2184,9 @@ fn create_main_window(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(std::sync::Arc::new(
+            discord_console::ConsoleManager::default(),
+        ))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
@@ -2214,6 +2235,11 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            discord_console::open_discord_console,
+            discord_console::evaluate_discord_console,
+            discord_console::get_discord_console_properties,
+            discord_console::release_discord_console_objects,
+            discord_console::close_discord_console,
             auto_detect_token,
             set_token,
             auto_login_via_cdp,
@@ -2244,6 +2270,7 @@ pub fn run() {
             fetch_detectable_games,
             accept_quest,
             get_virtual_currency_balance,
+            get_virtual_currency_total_redeemed,
             get_billing_subscriptions,
             get_program_rewards,
             get_quest_decision_debug,
@@ -2254,6 +2281,8 @@ pub fn run() {
             open_in_explorer,
             force_video_progress,
             export_logs,
+            log_ip_info_diagnostic,
+            get_ip_info,
             get_debug_info,
             get_runner_info,
             check_cdp_status,
@@ -2297,6 +2326,9 @@ pub fn run() {
 
 #[tauri::command]
 async fn prepare_app_exit(state: State<'_, AppState>, app: tauri::AppHandle) -> Result<(), String> {
+    app.state::<std::sync::Arc<discord_console::ConsoleManager>>()
+        .close_all()
+        .await;
     prepare_active_work_and_local_cleanup(&state, &app).await
 }
 
@@ -2307,6 +2339,9 @@ async fn prepare_app_exit(state: State<'_, AppState>, app: tauri::AppHandle) -> 
 /// alive with the frontend's close guard latched.
 #[tauri::command]
 async fn exit_app_now(state: State<'_, AppState>, app: tauri::AppHandle) -> Result<(), String> {
+    app.state::<std::sync::Arc<discord_console::ConsoleManager>>()
+        .close_all()
+        .await;
     // The close UI fail-opens after a short prepare deadline so a hung Discord
     // evaluation cannot trap the window. This command is the last chance to
     // finish or retry CDP rollback before the process disappears.
@@ -2492,6 +2527,144 @@ async fn force_video_progress(
 #[tauri::command]
 async fn export_logs() -> Result<String, String> {
     logger::export_logs().map_err(|e| format!("Failed to export logs: {}", e))
+}
+
+/// Forward IP location diagnostics from the WebView to the app's terminal log.
+#[tauri::command]
+fn log_ip_info_diagnostic(level: String, event: String, details: Option<String>) {
+    let level = match level.as_str() {
+        "info" => logger::LogLevel::Info,
+        "warn" => logger::LogLevel::Warn,
+        "error" => logger::LogLevel::Error,
+        _ => logger::LogLevel::Debug,
+    };
+    let event = event
+        .chars()
+        .filter(|character| !character.is_control())
+        .take(100)
+        .collect::<String>();
+    let details = details.map(|details| {
+        details
+            .chars()
+            .filter(|character| !character.is_control())
+            .take(700)
+            .collect::<String>()
+    });
+    logger::log(
+        level,
+        logger::LogCategory::Api,
+        &format!("[IPInfo] {event}"),
+        details.as_deref(),
+    );
+}
+
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct IpInfo {
+    country: String,
+    country_code: String,
+}
+
+/// Resolve the current public IP's country without exposing the lookup to WebView CORS.
+#[tauri::command]
+async fn get_ip_info() -> Result<IpInfo, String> {
+    const ENDPOINT: &str = "https://my.ippure.com/v1/info";
+    const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+    logger::log(
+        logger::LogLevel::Debug,
+        logger::LogCategory::Api,
+        "[IPInfo] starting native HTTP request",
+        Some(ENDPOINT),
+    );
+
+    let client = reqwest::Client::builder()
+        .timeout(TIMEOUT)
+        .build()
+        .map_err(|error| {
+            let message = format!("[IPInfo] failed to create HTTP client: {error}");
+            logger::log(
+                logger::LogLevel::Error,
+                logger::LogCategory::Api,
+                &message,
+                None,
+            );
+            error.to_string()
+        })?;
+
+    let response = client
+        .get(ENDPOINT)
+        .header(reqwest::header::ACCEPT, "application/json")
+        .send()
+        .await
+        .map_err(|error| {
+            let message = format!("[IPInfo] native HTTP request failed: {error}");
+            logger::log(
+                logger::LogLevel::Error,
+                logger::LogCategory::Api,
+                &message,
+                None,
+            );
+            error.to_string()
+        })?;
+
+    let status = response.status();
+    logger::log(
+        logger::LogLevel::Debug,
+        logger::LogCategory::Api,
+        "[IPInfo] received HTTP response",
+        Some(&status.to_string()),
+    );
+    if !status.is_success() {
+        let message = format!("IPPure returned HTTP status {status}");
+        logger::log(
+            logger::LogLevel::Error,
+            logger::LogCategory::Api,
+            &format!("[IPInfo] {message}"),
+            None,
+        );
+        return Err(message);
+    }
+
+    let mut info = response.json::<IpInfo>().await.map_err(|error| {
+        let message = format!("[IPInfo] response JSON could not be decoded: {error}");
+        logger::log(
+            logger::LogLevel::Error,
+            logger::LogCategory::Api,
+            &message,
+            None,
+        );
+        "IPPure returned an invalid response".to_string()
+    })?;
+    info.country = info.country.trim().to_string();
+    info.country_code = info.country_code.trim().to_ascii_uppercase();
+    if info.country.is_empty()
+        || info.country_code.len() != 2
+        || !info
+            .country_code
+            .bytes()
+            .all(|byte| byte.is_ascii_uppercase())
+    {
+        let message = "[IPInfo] response is missing a valid country or country code";
+        logger::log(
+            logger::LogLevel::Error,
+            logger::LogCategory::Api,
+            message,
+            None,
+        );
+        return Err("IPPure returned an invalid country".to_string());
+    }
+
+    logger::log(
+        logger::LogLevel::Info,
+        logger::LogCategory::Api,
+        "[IPInfo] location lookup succeeded",
+        Some(&format!(
+            "country={} country_code={}",
+            info.country, info.country_code
+        )),
+    );
+    Ok(info)
 }
 
 /// Get debug info including X-Super-Properties

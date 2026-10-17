@@ -4,8 +4,6 @@ import { Check, Link2, Loader2, Play, Wifi, WifiOff } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { useQuestsStore } from '@/stores/quests'
 import {
   createDiscordCdpLauncherShortcut,
@@ -293,15 +291,15 @@ watch(() => questsStore.cdpPort, () => {
     content-class="space-y-5"
   >
       <SettingsStatusPanel :tone="cdpStatusTone" :icon="cdpStatusIcon">
-        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <span class="min-w-0">
-            <template v-if="cdpChecking">{{ t('settings.cdp_checking') }}</template>
-            <template v-else-if="cdpStatus?.connected">
-              {{ t('settings.cdp_connected') }}
-              <span v-if="cdpStatus.target_title" class="ml-1 text-muted-foreground">({{ cdpStatus.target_title }})</span>
-            </template>
-            <template v-else>{{ t('settings.cdp_disconnected') }}</template>
-          </span>
+        <span>
+          <template v-if="cdpChecking">{{ t('settings.cdp_checking') }}</template>
+          <template v-else-if="cdpStatus?.connected">
+            {{ t('settings.cdp_connected') }}
+            <span v-if="cdpStatus.target_title" class="ml-1 text-muted-foreground">({{ cdpStatus.target_title }})</span>
+          </template>
+          <template v-else>{{ t('settings.cdp_disconnected') }}</template>
+        </span>
+        <template #actions>
           <Button
             variant="ghost"
             size="sm"
@@ -312,10 +310,10 @@ watch(() => questsStore.cdpPort, () => {
             <Loader2 v-if="cdpChecking" class="h-4 w-4 animate-spin" />
             <template v-else>{{ t('general.refresh') }}</template>
           </Button>
-        </div>
+        </template>
       </SettingsStatusPanel>
 
-      <div class="space-y-3 rounded-lg border border-primary/20 bg-primary/5 p-4">
+      <div class="ui-recess space-y-3 rounded-xl border border-border/60 p-4" data-settings-search :data-search-label="t('settings.integration_setup')">
         <p class="text-sm font-semibold">{{ t('settings.integration_setup') }}</p>
         <DesktopClientPicker @changed="checkCdp" />
         <p class="text-sm text-muted-foreground">{{ t('settings.cdp_launch_desc') }}</p>
@@ -339,7 +337,7 @@ watch(() => questsStore.cdpPort, () => {
         </SettingsStatusPanel>
       </div>
 
-      <div class="space-y-3 rounded-lg border border-sky-500/25 bg-sky-500/5 p-4">
+      <div class="ui-recess space-y-3 rounded-xl border border-border/60 p-4" data-settings-search :data-search-label="t('settings.cdp_shortcut_title')">
         <p class="text-sm font-semibold">{{ t('settings.cdp_shortcut_title') }}</p>
         <p class="text-sm text-muted-foreground">{{ t('settings.cdp_shortcut_desc') }}</p>
         <div class="flex flex-wrap items-center gap-2">
@@ -396,7 +394,7 @@ watch(() => questsStore.cdpPort, () => {
             </Badge>
           </div>
           <template v-if="debugInfo">
-            <div class="flex items-center gap-2">
+            <div class="flex flex-wrap items-center gap-2">
               <Badge
                 variant="outline"
                 :class="settingToneClass[debugInfoSourceTone].badge"
@@ -443,26 +441,5 @@ watch(() => questsStore.cdpPort, () => {
         </div>
       </AdvancedDisclosure>
 
-      <AdvancedDisclosure
-        id="custom-port-section"
-        :title="t('settings.custom_port')"
-        :description="t('settings.custom_port_desc')"
-        tone="warning"
-        default-open
-      >
-        <div class="space-y-2">
-          <Label>{{ t('settings.cdp_port') }}</Label>
-          <div class="flex items-center gap-2">
-            <Input
-              type="number"
-              v-model.number="questsStore.cdpPort"
-              min="1024"
-              max="65535"
-              class="w-32"
-            />
-            <span class="text-xs text-muted-foreground">{{ t('settings.cdp_port_hint') }}</span>
-          </div>
-        </div>
-      </AdvancedDisclosure>
   </SettingsSectionCard>
 </template>

@@ -5,6 +5,8 @@ use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+pub(crate) mod shutdown;
+
 pub(crate) fn find_installs() -> Result<Vec<DiscordInstall>, LaunchError> {
     let Some(local_appdata) = std::env::var_os("LOCALAPPDATA") else {
         return Ok(Vec::new());
@@ -41,20 +43,12 @@ pub(crate) fn is_running(channel: Option<DiscordChannel>) -> Result<bool, Launch
 }
 
 pub(crate) fn terminate(channel: Option<DiscordChannel>) -> Result<(), LaunchError> {
-    for name in process_names_for(channel) {
-        let output = no_window_cmd("taskkill")
-            .args(["/IM", name, "/T", "/F"])
-            .output()
-            .map_err(|source| LaunchError::ProcessInspection {
-                operation: "taskkill",
-                source,
-            })?;
-        if !output.status.success() {
-            let details = String::from_utf8_lossy(&output.stderr);
-            eprintln!("taskkill for {name} returned non-zero: {}", details.trim());
-        }
-    }
-    Ok(())
+    let names = process_names_for(channel);
+    crate::processes::terminate_matching_process_trees(|process| {
+        names
+            .iter()
+            .any(|name| process.name().eq_ignore_ascii_case(name))
+    })
 }
 
 pub(crate) fn spawn(install: &DiscordInstall, mode: DiscordLaunchMode) -> Result<u32, LaunchError> {
