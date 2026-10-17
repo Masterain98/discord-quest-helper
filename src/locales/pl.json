@@ -540,7 +540,7 @@
   "game_idle": {
     "nav": "Tryb bezczynny gier",
     "navigation_locked": "Tryb bezczynności działa. Zatrzymaj go przed opuszczeniem tej strony.",
-    "eyebrow": "Zdobywanie odznak",
+    "eyebrow": "Tryb bezczynny gier",
     "title": "Automatycznie zmieniaj gry",
     "description": "Automatycznie przełączaj gry wykrywane przez Discord z ustalonym czasem gry i opcjonalną przerwą.",
     "play_minutes": "Minuty gry",

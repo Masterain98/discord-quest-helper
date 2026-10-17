@@ -540,7 +540,7 @@
   "game_idle": {
     "nav": "Spiel-Autopilot",
     "navigation_locked": "Der Leerlaufmodus läuft. Beende ihn, bevor du diese Seite verlässt.",
-    "eyebrow": "Badge-Lauf",
+    "eyebrow": "Spiel-Autopilot",
     "title": "Spiele automatisch wechseln",
     "description": "Wechsle automatisch zwischen von Discord erkannten Spielen, mit fester Spielzeit und optionaler Pause.",
     "play_minutes": "Spielminuten",

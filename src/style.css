@@ -786,6 +786,23 @@ html.theme-view-transition::view-transition-new(root) {
   border-radius: 20px;
   outline: none;
 }
+.rail-sidebar-popover { --rail-popup-clip-radius: 12px; }
+.rail-utility-panel { --rail-popup-clip-radius: 20px; }
+.rail-sidebar-popover[data-state="open"] {
+  animation: rail-sidebar-popover-expand 190ms cubic-bezier(.2, .8, .2, 1) both;
+}
+.rail-sidebar-popover[data-state="closed"] {
+  animation: rail-sidebar-popover-collapse 145ms cubic-bezier(.4, 0, 1, 1) both;
+}
+@keyframes rail-sidebar-popover-expand {
+  from { opacity: 0; clip-path: inset(0 100% 0 0 round var(--rail-popup-clip-radius, 12px)); }
+  76% { opacity: 1; clip-path: inset(0 1% 0 0 round var(--rail-popup-clip-radius, 12px)); }
+  to { opacity: 1; clip-path: inset(0 0 0 0 round var(--rail-popup-clip-radius, 12px)); }
+}
+@keyframes rail-sidebar-popover-collapse {
+  from { opacity: 1; clip-path: inset(0 0 0 0 round var(--rail-popup-clip-radius, 12px)); }
+  to { opacity: 0; clip-path: inset(0 100% 0 0 round var(--rail-popup-clip-radius, 12px)); }
+}
 .rail-panel-heading { display: flex; align-items: center; gap: 10px; }
 .rail-panel-glyph {
   display: inline-flex;
@@ -919,6 +936,7 @@ html.theme-view-transition::view-transition-new(root) {
   .orbs-refreshing { animation: none; }
 }
 .rail-language-menu {
+  --rail-popup-clip-radius: 18px;
   width: 256px;
   max-width: calc(100vw - var(--app-rail-width) - 32px);
   max-height: min(34rem, var(--radix-dropdown-menu-content-available-height));
@@ -957,7 +975,7 @@ html.theme-view-transition::view-transition-new(root) {
 .settings-section-heading { display: flex; align-items: flex-start; gap: 12px; margin: 0 2px 14px; }
 .settings-section-glyph { display: flex; width: 34px; height: 34px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 11px; color: hsl(var(--primary)); background-color: hsl(var(--primary) / .065); }
 .settings-section-title { font-size: 18px; font-weight: 600; line-height: 1.4; letter-spacing: -.02em; }
-.settings-section-description { max-width: 68ch; margin-top: 4px; color: hsl(var(--muted-foreground)); font-size: 12px; line-height: 1.65; text-wrap: pretty; }
+.settings-section-description { max-width: 100%; margin-top: 4px; color: hsl(var(--muted-foreground)); font-size: 12px; line-height: 1.65; text-wrap: pretty; }
 .settings-section-surface { min-width: 0; padding: 20px; border: 1px solid hsl(var(--surface-edge)); border-radius: 16px; background-color: hsl(var(--card)); }
 .settings-section-surface .ui-button { max-width: 100%; min-width: 0; }
 .settings-section-surface .ui-button:not([data-size='icon']) { height: auto; min-height: 36px; white-space: normal; }

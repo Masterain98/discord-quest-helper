@@ -540,7 +540,7 @@
   "game_idle": {
     "nav": "Jeu automatique",
     "navigation_locked": "Le mode inactif est en cours. Arrêtez-le avant de quitter cette page.",
-    "eyebrow": "Progression des badges",
+    "eyebrow": "Jeu automatique",
     "title": "Faites tourner les jeux",
     "description": "Alternez automatiquement les jeux détectables par Discord avec une durée fixe et une pause facultative.",
     "play_minutes": "Minutes de jeu",

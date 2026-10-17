@@ -542,7 +542,7 @@
   "game_idle": {
     "nav": "游戏挂机",
     "navigation_locked": "挂机进行中，请先停止再离开此页面。",
-    "eyebrow": "Badge 挂机",
+    "eyebrow": "游戏挂机",
     "title": "让游戏持续轮换",
     "description": "从 Discord 可检测游戏与 App 中自动轮换，并为每款游戏使用固定模拟时长和可选休息时间。",
     "play_minutes": "模拟分钟",

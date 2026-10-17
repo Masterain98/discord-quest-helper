@@ -19,7 +19,7 @@ watch(() => props.suspended, suspended => {
       </PopoverTrigger>
       <PopoverPortal>
         <!-- The default shift-before-flip order only lifts the panel enough to clear the bottom edge. -->
-        <PopoverContent side="right" align="start" :side-offset="16" :collision-padding="{ top: 44, right: 12, bottom: 12, left: 12 }" :aria-label="label" class="ui-popover rail-utility-panel" @open-auto-focus="emit('open-auto-focus', $event)">
+        <PopoverContent side="right" align="start" :side-offset="16" :collision-padding="{ top: 44, right: 12, bottom: 12, left: 12 }" :aria-label="label" class="ui-popover rail-utility-panel rail-sidebar-popover" @open-auto-focus="emit('open-auto-focus', $event)">
           <slot />
         </PopoverContent>
       </PopoverPortal>

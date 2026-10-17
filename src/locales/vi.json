@@ -540,7 +540,7 @@
   "game_idle": {
     "nav": "Treo trò chơi",
     "navigation_locked": "Chế độ treo đang chạy. Hãy dừng trước khi rời trang này.",
-    "eyebrow": "Tiến độ huy hiệu",
+    "eyebrow": "Treo trò chơi",
     "title": "Luân phiên trò chơi liên tục",
     "description": "Tự động chuyển giữa các trò chơi Discord nhận diện được với thời gian chơi cố định và khoảng nghỉ tùy chọn.",
     "play_minutes": "Phút chơi",

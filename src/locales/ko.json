@@ -540,7 +540,7 @@
   "game_idle": {
     "nav": "게임 방치",
     "navigation_locked": "게임 유휴 모드가 실행 중입니다. 이 페이지를 떠나기 전에 중지하세요.",
-    "eyebrow": "배지 진행",
+    "eyebrow": "게임 방치",
     "title": "게임을 계속 순환하세요",
     "description": "Discord에서 감지 가능한 게임을 고정 실행 시간과 선택적 휴식 시간으로 자동 순환합니다.",
     "play_minutes": "실행 시간(분)",

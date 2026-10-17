@@ -19,7 +19,7 @@ watch(() => props.suspended, suspended => {
         <TooltipTrigger as-child><slot name="trigger" /></TooltipTrigger>
       </DropdownMenuTrigger>
       <!-- Keep shift before flip so rail menus move up only by their bottom overflow. -->
-      <DropdownMenuContent :side="side" :align="side === 'right' ? 'start' : 'end'" :side-offset="side === 'right' ? 16 : 8" :collision-padding="{ top: 44, right: 12, bottom: 12, left: 12 }" :class="contentClass">
+      <DropdownMenuContent :side="side" :align="side === 'right' ? 'start' : 'end'" :side-offset="side === 'right' ? 16 : 8" :collision-padding="{ top: 44, right: 12, bottom: 12, left: 12 }" :class="[contentClass, side === 'right' && 'rail-sidebar-popover']">
         <slot />
       </DropdownMenuContent>
       <TooltipPortal>

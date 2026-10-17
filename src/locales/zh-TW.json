@@ -540,7 +540,7 @@
   "game_idle": {
     "nav": "遊戲掛機",
     "navigation_locked": "掛機進行中，請先停止再離開此頁面。",
-    "eyebrow": "Badge 掛機",
+    "eyebrow": "遊戲掛機",
     "title": "讓遊戲持續輪換",
     "description": "從 Discord 可偵測的遊戲與 App 中自動輪換，並為每款遊戲使用固定模擬時長及可選休息時間。",
     "play_minutes": "模擬分鐘",

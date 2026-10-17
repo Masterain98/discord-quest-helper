@@ -540,7 +540,7 @@
   "game_idle": {
     "nav": "Jogo em espera",
     "navigation_locked": "O modo inativo está ativo. Pare-o antes de sair desta página.",
-    "eyebrow": "Progresso de emblemas",
+    "eyebrow": "Jogo em espera",
     "title": "Mantenha os jogos em rotação",
     "description": "Alterne automaticamente entre jogos detetáveis pelo Discord com tempo fixo e descanso opcional.",
     "play_minutes": "Minutos de jogo",

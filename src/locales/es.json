@@ -540,7 +540,7 @@
   "game_idle": {
     "nav": "Juego automático",
     "navigation_locked": "La simulación en segundo plano está activa. Detenla antes de salir de esta página.",
-    "eyebrow": "Progreso de insignias",
+    "eyebrow": "Juego automático",
     "title": "Mantén los juegos en rotación",
     "description": "Alterna automáticamente entre juegos detectables por Discord con un tiempo fijo y descansos opcionales.",
     "play_minutes": "Minutos de juego",

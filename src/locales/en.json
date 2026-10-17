@@ -542,7 +542,7 @@
   "game_idle": {
     "nav": "Game idle",
     "navigation_locked": "Game idle is running. Stop it before leaving this page.",
-    "eyebrow": "Badge runner",
+    "eyebrow": "Game idle",
     "title": "Keep games moving",
     "description": "Cycle through Discord-detectable games automatically, with a fixed play window and optional rest between games.",
     "play_minutes": "Play minutes",

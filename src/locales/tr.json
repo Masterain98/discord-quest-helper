@@ -540,7 +540,7 @@
   "game_idle": {
     "nav": "Oyun bekletme",
     "navigation_locked": "Boşta modu çalışıyor. Bu sayfadan ayrılmadan önce durdurun.",
-    "eyebrow": "Rozet ilerlemesi",
+    "eyebrow": "Oyun bekletme",
     "title": "Oyunları sırayla çalıştır",
     "description": "Discord tarafından algılanan oyunları sabit oyun süresi ve isteğe bağlı molayla otomatik değiştir.",
     "play_minutes": "Oyun dakikası",

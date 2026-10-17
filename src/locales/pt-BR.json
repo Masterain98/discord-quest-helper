@@ -540,7 +540,7 @@
   "game_idle": {
     "nav": "Jogo em espera",
     "navigation_locked": "O modo ocioso está ativo. Pare-o antes de sair desta página.",
-    "eyebrow": "Progresso de badges",
+    "eyebrow": "Jogo em espera",
     "title": "Mantenha os jogos alternando",
     "description": "Alterne automaticamente entre jogos detectáveis pelo Discord com tempo fixo e descanso opcional.",
     "play_minutes": "Minutos jogando",

@@ -540,7 +540,7 @@
   "game_idle": {
     "nav": "Game idle",
     "navigation_locked": "Mode idle sedang berjalan. Hentikan sebelum meninggalkan halaman ini.",
-    "eyebrow": "Pengejar badge",
+    "eyebrow": "Game idle",
     "title": "Putar game terus-menerus",
     "description": "Gilir game yang terdeteksi Discord secara otomatis dengan durasi tetap dan jeda opsional.",
     "play_minutes": "Menit bermain",
