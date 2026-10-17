@@ -19,10 +19,33 @@ pub enum GameIdleMode {
     Cdp,
 }
 
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum GameIdleSelectionMode {
+    #[default]
+    Random,
+    Manual,
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum GameIdleCandidateType {
+    #[default]
+    All,
+    Game,
+    App,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GameIdleConfig {
     pub mode: GameIdleMode,
+    #[serde(default)]
+    pub selection_mode: GameIdleSelectionMode,
+    #[serde(default)]
+    pub candidate_type: GameIdleCandidateType,
+    #[serde(default)]
+    pub selected_app_ids: Vec<String>,
     pub play_minutes: u32,
     pub rest_minutes: u32,
     pub cdp_port: u16,
@@ -74,6 +97,9 @@ pub enum GameIdlePhase {
 pub struct GameIdleStatus {
     pub session_id: String,
     pub mode: GameIdleMode,
+    pub selection_mode: GameIdleSelectionMode,
+    pub candidate_type: GameIdleCandidateType,
+    pub selected_app_ids: Vec<String>,
     pub phase: GameIdlePhase,
     pub play_minutes: u32,
     pub rest_minutes: u32,
@@ -84,6 +110,32 @@ pub struct GameIdleStatus {
     pub phase_ends_at: Option<i64>,
     pub accumulated_played_seconds: u64,
     pub warning: Option<String>,
+}
+
+impl GameIdleStatus {
+    fn starting(config: &GameIdleConfig, candidates: &[GameIdleItem]) -> Self {
+        Self {
+            session_id: uuid::Uuid::new_v4().to_string(),
+            mode: config.mode,
+            selection_mode: config.selection_mode,
+            candidate_type: config.candidate_type,
+            selected_app_ids: if config.selection_mode == GameIdleSelectionMode::Manual {
+                candidates.iter().map(|item| item.id.clone()).collect()
+            } else {
+                Vec::new()
+            },
+            phase: GameIdlePhase::Starting,
+            play_minutes: config.play_minutes,
+            rest_minutes: config.rest_minutes,
+            current: None,
+            recent: Vec::new(),
+            upcoming: Vec::new(),
+            phase_started_at: now_millis(),
+            phase_ends_at: None,
+            accumulated_played_seconds: 0,
+            warning: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -111,6 +163,7 @@ struct IdleShared {
     status: GameIdleStatus,
     all: Vec<GameIdleItem>,
     bag: Vec<GameIdleItem>,
+    next_manual_index: usize,
     removed_this_cycle: HashSet<String>,
     upcoming: VecDeque<GameIdleItem>,
     recent: VecDeque<GameIdleItem>,
@@ -136,6 +189,18 @@ impl IdleShared {
 
     fn fill_upcoming(&mut self) {
         if self.all.is_empty() {
+            self.refresh_status_lists();
+            return;
+        }
+        if self.status.selection_mode == GameIdleSelectionMode::Manual {
+            // Small playlists may show the same application in a later lap.
+            // Occurrence identities distinguish those entries from the active one.
+            while self.upcoming.len() < UPCOMING_LENGTH.min(self.all.len()) {
+                let mut item = self.all[self.next_manual_index].clone();
+                self.next_manual_index = (self.next_manual_index + 1) % self.all.len();
+                item.occurrence_id = uuid::Uuid::new_v4().to_string();
+                self.upcoming.push_back(item);
+            }
             self.refresh_status_lists();
             return;
         }
@@ -182,6 +247,12 @@ impl IdleShared {
             return false;
         };
         self.upcoming.remove(position);
+        if self.status.selection_mode == GameIdleSelectionMode::Manual {
+            // Skip only this occurrence. Defer filling until the next handoff,
+            // so removing from a tiny playlist does not visibly bounce it back.
+            self.refresh_status_lists();
+            return true;
+        }
         self.removed_this_cycle.insert(app_id.to_string());
         self.fill_upcoming();
         // A tiny pool may need to cross into a new shuffle cycle immediately,
@@ -229,7 +300,7 @@ impl GameIdleManager {
             return Err("Game idle mode is already running".to_string());
         }
 
-        let candidates = eligible_games(config.mode, games);
+        let candidates = configured_candidates(&config, games)?;
         if candidates.is_empty() {
             return Err(match config.mode {
                 GameIdleMode::Process => {
@@ -240,32 +311,20 @@ impl GameIdleManager {
             });
         }
 
-        let session_id = uuid::Uuid::new_v4().to_string();
-        let now = now_millis();
-        let status = GameIdleStatus {
-            session_id,
-            mode: config.mode,
-            phase: GameIdlePhase::Starting,
-            play_minutes: config.play_minutes,
-            rest_minutes: config.rest_minutes,
-            current: None,
-            recent: Vec::new(),
-            upcoming: Vec::new(),
-            phase_started_at: now,
-            phase_ends_at: None,
-            accumulated_played_seconds: 0,
-            warning: None,
-        };
+        let status = GameIdleStatus::starting(&config, &candidates);
         let mut shared_value = IdleShared {
             status,
             all: candidates,
             bag: Vec::new(),
+            next_manual_index: 0,
             removed_this_cycle: HashSet::new(),
             upcoming: VecDeque::new(),
             recent: VecDeque::new(),
             running: None,
         };
-        shared_value.refill_bag();
+        if config.selection_mode == GameIdleSelectionMode::Random {
+            shared_value.refill_bag();
+        }
         shared_value.fill_upcoming();
         // Pick and expose the first queue entry before the worker begins its
         // native launch. The UI can render the complete queue immediately,
@@ -721,16 +780,43 @@ async fn stop_simulation(
     }
 }
 
+fn configured_candidates(
+    config: &GameIdleConfig,
+    games: Vec<DetectableGame>,
+) -> Result<Vec<GameIdleItem>, String> {
+    if config.selection_mode == GameIdleSelectionMode::Random {
+        let filtered = games
+            .into_iter()
+            .filter(|game| match config.candidate_type {
+                GameIdleCandidateType::All => true,
+                GameIdleCandidateType::Game => game.type_name.as_deref() == Some("Game"),
+                GameIdleCandidateType::App => game.type_name.as_deref() == Some("App"),
+            })
+            .collect();
+        return Ok(eligible_games(config.mode, filtered));
+    }
+    if config.selected_app_ids.is_empty() {
+        return Err("Select at least one game or application for the idle playlist".into());
+    }
+    let available = eligible_games(config.mode, games);
+    let mut seen = HashSet::new();
+    config.selected_app_ids.iter().filter(|id| seen.insert((*id).clone())).map(|id| {
+        available.iter().find(|game| &game.id == id).cloned().ok_or_else(|| {
+            format!("Playlist application {id} is missing or incompatible with the selected simulation mode")
+        })
+    }).collect()
+}
+
 fn eligible_games(mode: GameIdleMode, games: Vec<DetectableGame>) -> Vec<GameIdleItem> {
     let mut seen = HashSet::new();
     games
         .into_iter()
         .filter_map(|game| {
-            if !seen.insert(game.id.clone()) {
-                return None;
-            }
             let executable_name = select_executable(&game);
             if mode == GameIdleMode::Process && executable_name.is_none() {
+                return None;
+            }
+            if !seen.insert(game.id.clone()) {
                 return None;
             }
             Some(GameIdleItem {
@@ -798,10 +884,163 @@ mod tests {
         }
     }
 
+    fn config() -> GameIdleConfig {
+        serde_json::from_value(serde_json::json!({
+            "mode": "cdp", "playMinutes": 1, "restMinutes": 1,
+            "cdpPort": 9223, "simulationPath": "simulation"
+        }))
+        .unwrap()
+    }
+
+    fn manual_queue(count: usize) -> IdleShared {
+        IdleShared {
+            status: GameIdleStatus {
+                session_id: "manual".into(),
+                mode: GameIdleMode::Cdp,
+                selection_mode: GameIdleSelectionMode::Manual,
+                candidate_type: GameIdleCandidateType::All,
+                selected_app_ids: (0..count).map(|id| id.to_string()).collect(),
+                phase: GameIdlePhase::Starting,
+                play_minutes: 1,
+                rest_minutes: 1,
+                current: None,
+                recent: vec![],
+                upcoming: vec![],
+                phase_started_at: 0,
+                phase_ends_at: None,
+                accumulated_played_seconds: 0,
+                warning: None,
+            },
+            all: eligible_games(
+                GameIdleMode::Cdp,
+                (0..count)
+                    .map(|id| game(&id.to_string(), "win32"))
+                    .collect(),
+            ),
+            bag: vec![],
+            next_manual_index: 0,
+            removed_this_cycle: HashSet::new(),
+            upcoming: VecDeque::new(),
+            recent: VecDeque::new(),
+            running: None,
+        }
+    }
+
+    #[test]
+    fn old_config_defaults_to_random_all() {
+        let config = config();
+        assert_eq!(config.selection_mode, GameIdleSelectionMode::Random);
+        assert_eq!(config.candidate_type, GameIdleCandidateType::All);
+        assert!(config.selected_app_ids.is_empty());
+    }
+
+    #[test]
+    fn random_type_filter_runs_before_deduplication() {
+        let mut app = game("same", "win32");
+        app.type_name = Some("App".into());
+        let games = vec![game("same", "win32"), app, game("game", "win32")];
+        let mut config = config();
+        config.candidate_type = GameIdleCandidateType::App;
+        let apps = configured_candidates(&config, games.clone()).unwrap();
+        assert_eq!(apps.len(), 1);
+        assert_eq!(apps[0].type_name.as_deref(), Some("App"));
+        config.candidate_type = GameIdleCandidateType::Game;
+        assert_eq!(
+            configured_candidates(&config, games.clone()).unwrap().len(),
+            2
+        );
+        config.candidate_type = GameIdleCandidateType::All;
+        assert_eq!(configured_candidates(&config, games).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn manual_selection_preserves_order_and_ignores_random_type_filter() {
+        let mut config = config();
+        config.selection_mode = GameIdleSelectionMode::Manual;
+        config.candidate_type = GameIdleCandidateType::App;
+        config.selected_app_ids = vec!["b".into(), "a".into(), "b".into()];
+        let selected =
+            configured_candidates(&config, vec![game("a", "win32"), game("b", "win32")]).unwrap();
+        let status = GameIdleStatus::starting(&config, &selected);
+        assert_eq!(status.selected_app_ids, vec!["b", "a"]);
+        let serialized = serde_json::to_value(status).unwrap();
+        assert_eq!(serialized["selectedAppIds"], serde_json::json!(["b", "a"]));
+        assert_eq!(
+            selected
+                .iter()
+                .map(|item| item.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["b", "a"]
+        );
+    }
+
+    #[test]
+    fn manual_selection_rejects_empty_missing_and_incompatible_items() {
+        let mut config = config();
+        config.selection_mode = GameIdleSelectionMode::Manual;
+        assert!(configured_candidates(&config, vec![]).is_err());
+        config.selected_app_ids = vec!["missing".into()];
+        assert!(configured_candidates(&config, vec![game("a", "win32")]).is_err());
+        config.selected_app_ids = vec!["a".into()];
+        let mut without_exe = game("a", "win32");
+        without_exe.executables.clear();
+        assert_eq!(
+            configured_candidates(&config, vec![without_exe.clone()])
+                .unwrap()
+                .len(),
+            1
+        );
+        config.mode = GameIdleMode::Process;
+        assert!(configured_candidates(&config, vec![without_exe]).is_err());
+    }
+
+    #[test]
+    fn manual_queue_repeats_in_exact_order_for_small_and_large_lists() {
+        for count in [1, 2, 5, 8] {
+            let mut queue = manual_queue(count);
+            let mut occurrences = HashSet::new();
+            for index in 0..count * 4 {
+                queue.fill_upcoming();
+                assert_eq!(queue.upcoming.len(), count.min(UPCOMING_LENGTH));
+                let item = queue.upcoming.pop_front().unwrap();
+                assert_eq!(item.id, (index % count).to_string());
+                assert!(occurrences.insert(item.occurrence_id.clone()));
+                queue.status.current = Some(item.clone());
+                queue.recent.push_back(item);
+            }
+        }
+    }
+
+    #[test]
+    fn manual_skip_removes_one_occurrence_and_keeps_saved_list_and_later_laps() {
+        let mut queue = manual_queue(2);
+        queue.fill_upcoming();
+        let removed = queue.upcoming.front().unwrap().clone();
+        assert!(!queue.remove_upcoming_item(&removed.id, "stale"));
+        assert!(queue.remove_upcoming_item(&removed.id, &removed.occurrence_id));
+        assert_eq!(queue.upcoming.len(), 1);
+        queue.fill_upcoming();
+        assert_eq!(
+            queue
+                .upcoming
+                .iter()
+                .map(|item| item.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["1", "0"]
+        );
+        assert_ne!(queue.upcoming[1].occurrence_id, removed.occurrence_id);
+        assert_eq!(queue.all.len(), 2);
+        assert_eq!(queue.status.selected_app_ids, vec!["0", "1"]);
+        assert!(queue.removed_this_cycle.is_empty());
+    }
+
     #[test]
     fn duration_validation_rejects_zero_play_time() {
         let config = GameIdleConfig {
             mode: GameIdleMode::Cdp,
+            selection_mode: GameIdleSelectionMode::Random,
+            candidate_type: GameIdleCandidateType::All,
+            selected_app_ids: vec![],
             play_minutes: 0,
             rest_minutes: 0,
             cdp_port: 9223,
@@ -867,6 +1106,9 @@ mod tests {
             status: GameIdleStatus {
                 session_id: "session".into(),
                 mode: GameIdleMode::Process,
+                selection_mode: GameIdleSelectionMode::Random,
+                candidate_type: GameIdleCandidateType::All,
+                selected_app_ids: vec![],
                 phase: GameIdlePhase::Starting,
                 play_minutes: 1,
                 rest_minutes: 0,
@@ -880,6 +1122,7 @@ mod tests {
             },
             all,
             bag: vec![],
+            next_manual_index: 0,
             removed_this_cycle: HashSet::new(),
             upcoming: VecDeque::new(),
             recent: VecDeque::new(),
@@ -912,6 +1155,9 @@ mod tests {
             status: GameIdleStatus {
                 session_id: "session".into(),
                 mode: GameIdleMode::Process,
+                selection_mode: GameIdleSelectionMode::Random,
+                candidate_type: GameIdleCandidateType::All,
+                selected_app_ids: vec![],
                 phase: GameIdlePhase::Starting,
                 play_minutes: 1,
                 rest_minutes: 0,
@@ -925,6 +1171,7 @@ mod tests {
             },
             all,
             bag: vec![],
+            next_manual_index: 0,
             removed_this_cycle: HashSet::new(),
             upcoming: VecDeque::new(),
             recent: VecDeque::new(),
@@ -959,6 +1206,9 @@ mod tests {
             status: GameIdleStatus {
                 session_id: "session".into(),
                 mode: GameIdleMode::Process,
+                selection_mode: GameIdleSelectionMode::Random,
+                candidate_type: GameIdleCandidateType::All,
+                selected_app_ids: vec![],
                 phase: GameIdlePhase::Starting,
                 play_minutes: 1,
                 rest_minutes: 0,
@@ -972,6 +1222,7 @@ mod tests {
             },
             all,
             bag: vec![],
+            next_manual_index: 0,
             removed_this_cycle: HashSet::new(),
             upcoming: VecDeque::new(),
             recent: VecDeque::new(),
@@ -1003,6 +1254,9 @@ mod tests {
             status: GameIdleStatus {
                 session_id: "session".into(),
                 mode: GameIdleMode::Cdp,
+                selection_mode: GameIdleSelectionMode::Random,
+                candidate_type: GameIdleCandidateType::All,
+                selected_app_ids: vec![],
                 phase: GameIdlePhase::Starting,
                 play_minutes: 1,
                 rest_minutes: 0,
@@ -1016,6 +1270,7 @@ mod tests {
             },
             all: candidates,
             bag: vec![],
+            next_manual_index: 0,
             removed_this_cycle: HashSet::new(),
             upcoming: VecDeque::new(),
             recent: VecDeque::new(),
@@ -1050,6 +1305,9 @@ mod tests {
             status: GameIdleStatus {
                 session_id: "session".into(),
                 mode: GameIdleMode::Cdp,
+                selection_mode: GameIdleSelectionMode::Random,
+                candidate_type: GameIdleCandidateType::All,
+                selected_app_ids: vec![],
                 phase: GameIdlePhase::Starting,
                 play_minutes: 1,
                 rest_minutes: 0,
@@ -1064,6 +1322,7 @@ mod tests {
             all: candidates.clone(),
             // Force a mid-fill cycle boundary after one candidate.
             bag: vec![candidates[1].clone()],
+            next_manual_index: 0,
             removed_this_cycle: HashSet::new(),
             upcoming: VecDeque::new(),
             recent: VecDeque::new(),

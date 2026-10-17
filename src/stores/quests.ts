@@ -1606,31 +1606,31 @@ export const useQuestsStore = defineStore('quests', () => {
   // --- Detectable Games Caching ---
   const detectableGames = ref<DetectableGame[]>([])
   const fetchingGames = ref(false)
+  let detectableGamesInFlight: Promise<DetectableGame[]> | null = null
 
   async function getDetectableGames(force = false): Promise<DetectableGame[]> {
+    if (detectableGamesInFlight) return detectableGamesInFlight
     if (!force && detectableGames.value.length > 0) {
       console.log('Returning cached detectable games')
       return detectableGames.value
     }
 
-    if (fetchingGames.value) {
-      // If already fetching, wait for it (simple poll)
-      while (fetchingGames.value) {
-        await new Promise(r => setTimeout(r, 100))
-      }
-      return detectableGames.value
-    }
-
     fetchingGames.value = true
+    const request = fetchDetectableGames().then(games => {
+      detectableGames.value = games
+      return games
+    })
+    detectableGamesInFlight = request
     try {
       console.log('Fetching detectable games from API...')
-      detectableGames.value = await fetchDetectableGames()
+      await request
       console.log(`Fetched ${detectableGames.value.length} detectable games successfully.`)
       return detectableGames.value
     } catch (e) {
       console.error('Failed to fetch detectable games:', e)
       throw e
     } finally {
+      detectableGamesInFlight = null
       fetchingGames.value = false
     }
   }

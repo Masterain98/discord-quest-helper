@@ -405,10 +405,15 @@ export async function getManualCdpGameSimulation(): Promise<ManualCdpGameSimulat
 }
 
 export type GameIdleMode = 'process' | 'cdp'
+export type GameIdleSelectionMode = 'random' | 'manual'
+export type GameIdleCandidateType = 'all' | 'game' | 'app'
 export type GameIdlePhase = 'starting' | 'playing' | 'resting' | 'stopping' | 'error' | 'stopped'
 
 export interface GameIdleConfig {
   mode: GameIdleMode
+  selectionMode: GameIdleSelectionMode
+  candidateType: GameIdleCandidateType
+  selectedAppIds: string[]
   playMinutes: number
   restMinutes: number
   cdpPort: number
@@ -426,6 +431,9 @@ export interface GameIdleItem {
 export interface GameIdleStatus {
   sessionId: string
   mode: GameIdleMode
+  selectionMode: GameIdleSelectionMode
+  candidateType: GameIdleCandidateType
+  selectedAppIds: string[]
   phase: GameIdlePhase
   playMinutes: number
   restMinutes: number
