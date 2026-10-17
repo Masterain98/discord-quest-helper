@@ -91,7 +91,7 @@ async function copy(entry: ConsoleEntry) {
 </script>
 
 <template>
-<section class="flex min-w-0 flex-1 flex-col gap-4 pb-4">
+<section class="flex min-h-0 min-w-0 flex-1 flex-col gap-4 pb-4">
   <div class="flex flex-wrap items-center justify-between gap-3">
       <div>
         <h2 class="ui-page-heading flex items-center gap-2 text-2xl font-semibold"><Terminal class="h-5 w-5 text-primary" :stroke-width="1.7" />{{ t('nav.discord_console') }}</h2>
@@ -114,7 +114,7 @@ async function copy(entry: ConsoleEntry) {
       <Button class="mt-6 gap-2" @click="emit('enable')"><Power class="h-4 w-4" aria-hidden="true" />{{ t('discord_console.enable') }}</Button>
     </div>
 
-    <div v-else class="ui-panel overflow-hidden rounded-2xl border bg-card">
+    <div v-else class="ui-panel flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border bg-card">
       <div class="flex flex-wrap items-center gap-2 border-b p-3">
         <Input v-model="store.search" class="h-9 min-w-40 flex-1" :placeholder="t('discord_console.search')" :aria-label="t('discord_console.search')" />
         <DropdownMenu>
@@ -141,7 +141,7 @@ async function copy(entry: ConsoleEntry) {
         {{ t('discord_console.paused_notice', { count: store.pendingCount }) }}
       </p>
 
-      <div ref="output" class="h-[clamp(16rem,43vh,34rem)] overflow-auto font-mono text-sm" role="region" :aria-label="t('discord_console.output')" tabindex="0" @scroll="trackScroll">
+      <div ref="output" class="min-h-0 min-w-0 flex-1 overflow-auto font-mono text-sm" role="region" :aria-label="t('discord_console.output')" tabindex="0" @scroll="trackScroll">
         <p v-if="!store.visibleEntries.length" class="p-6 text-center font-sans text-muted-foreground">{{ t(store.entries.length ? 'discord_console.no_matches' : 'discord_console.empty') }}</p>
         <div v-for="entry in renderedEntries" :key="entry.id" class="group flex items-start gap-2 border-b border-border/40 px-3 py-2"
           :class="entry.level === 'error' ? 'bg-destructive/5 text-destructive' : entry.level === 'warn' ? 'bg-amber-500/5 text-amber-700 dark:text-amber-400' : ''">
