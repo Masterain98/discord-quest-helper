@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import GameSelector from '@/components/GameSelector.vue'
 import GameIdlePanel from '@/components/GameIdlePanel.vue'
+import AnimatedSegmentedControl from '@/components/AnimatedSegmentedControl.vue'
 import type { DetectableGame, ManualCdpGameSimulation } from '@/api/tauri'
 import {
   createSimulatedGame,
@@ -455,14 +456,16 @@ async function handleStopGame() {
 </script>
 
 <template>
-  <div class="game-simulator-view fade-in" :class="{ 'is-manual-simulator': mode !== 'idle', 'space-y-6': mode === 'idle', 'is-idle-immersive': mode === 'idle' && (idleStore.isActive || idleStore.loading) }">
+  <div class="game-simulator-view fade-in" :class="{ 'is-manual-simulator': mode !== 'idle', 'is-idle-simulator': mode === 'idle', 'is-idle-immersive': mode === 'idle' && (idleStore.isActive || idleStore.loading) }">
     <div v-if="!(mode === 'idle' && (idleStore.isActive || idleStore.loading))" class="flex shrink-0 justify-between items-center flex-wrap gap-3">
       <h2 class="ui-page-heading text-2xl font-semibold">{{ t('game_sim.title') }}</h2>
       <!-- Mode toggle -->
-      <div class="ui-tab-tray flex max-w-full flex-wrap gap-1">
+      <AnimatedSegmentedControl :value="mode" class="ui-tab-tray flex max-w-full flex-wrap gap-1" :aria-label="t('game_sim.title')">
         <Button
           size="sm"
-          :variant="mode === 'select' ? 'default' : 'ghost'"
+          variant="ghost"
+          data-segment="select"
+          :aria-pressed="mode === 'select'"
           class="gap-1.5 h-7 px-3 text-xs"
           :disabled="hasActiveSimulation || simulatorBusy"
           @click="switchMode('select')"
@@ -472,7 +475,9 @@ async function handleStopGame() {
         </Button>
         <Button
           size="sm"
-          :variant="mode === 'custom' ? 'default' : 'ghost'"
+          variant="ghost"
+          data-segment="custom"
+          :aria-pressed="mode === 'custom'"
           class="gap-1.5 h-7 px-3 text-xs"
           :disabled="hasActiveSimulation || simulatorBusy"
           @click="switchMode('custom')"
@@ -482,7 +487,9 @@ async function handleStopGame() {
         </Button>
         <Button
           size="sm"
-          :variant="mode === 'idle' ? 'default' : 'ghost'"
+          variant="ghost"
+          data-segment="idle"
+          :aria-pressed="mode === 'idle'"
           class="gap-1.5 h-7 px-3 text-xs"
           :disabled="(hasActiveSimulation && !idleStore.isActive) || simulatorBusy"
           @click="switchMode('idle')"
@@ -490,7 +497,7 @@ async function handleStopGame() {
           <RotateCcw class="w-3.5 h-3.5" />
           {{ t('game_idle.nav') }}
         </Button>
-      </div>
+      </AnimatedSegmentedControl>
     </div>
 
     <GameIdlePanel v-if="mode === 'idle'" />
@@ -731,6 +738,19 @@ async function handleStopGame() {
   min-height: 0;
   flex-direction: column;
   gap: 24px;
+}
+.is-idle-simulator {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 24px;
+}
+.is-idle-simulator > :deep(.idle-shell) {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
 }
 .game-simulator-panels {
   flex: 1;

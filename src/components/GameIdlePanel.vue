@@ -15,6 +15,7 @@ import {
   Trash2,
 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
+import AnimatedSegmentedControl from '@/components/AnimatedSegmentedControl.vue'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAuthStore } from '@/stores/auth'
@@ -239,11 +240,12 @@ onBeforeUnmount(() => {
         </div>
         <div class="space-y-1.5">
           <Label class="text-xs">{{ t('game_idle.simulation_mode') }}</Label>
-          <div class="flex h-10 rounded-md border bg-background p-1">
+          <AnimatedSegmentedControl :value="idle.mode" class="flex h-10 rounded-md border bg-background p-1" style="--segment-radius: 0.28rem" :aria-label="t('game_idle.simulation_mode')">
             <button
               type="button"
               class="idle-mode-button"
-              :class="idle.mode === 'process' && 'is-active'"
+              data-segment="process"
+              :aria-pressed="idle.mode === 'process'"
               :disabled="active"
               @click="idle.mode = 'process'"
             >
@@ -253,14 +255,15 @@ onBeforeUnmount(() => {
             <button
               type="button"
               class="idle-mode-button"
-              :class="idle.mode === 'cdp' && 'is-active'"
+              data-segment="cdp"
+              :aria-pressed="idle.mode === 'cdp'"
               :disabled="active || !quests.cdpAvailable"
               @click="idle.mode = 'cdp'"
             >
               <MonitorPlay class="h-3.5 w-3.5" />
               CDP
             </button>
-          </div>
+          </AnimatedSegmentedControl>
         </div>
         <Button
           v-if="!active"
@@ -490,7 +493,6 @@ onBeforeUnmount(() => {
 .idle-mode-button:hover:not(:disabled) { color: hsl(var(--foreground)); }
 .idle-mode-button:active:not(:disabled) { transform: translateY(1px); }
 .idle-mode-button:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
-.idle-mode-button.is-active { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); box-shadow: 0 5px 16px -10px hsl(var(--primary)); }
 .idle-mode-button:disabled { cursor: not-allowed; opacity: .5; }
 .idle-warning { border-left: 3px solid hsl(38 92% 55%); background: hsl(38 92% 55% / .09); padding: .75rem 1rem; color: hsl(var(--foreground)); font-size: .8rem; }
 
@@ -532,6 +534,7 @@ onBeforeUnmount(() => {
 .idle-metric strong { margin-top: .42rem; font-variant-numeric: tabular-nums; font-size: 1.32rem; letter-spacing: -.025em; }
 .idle-metric small { margin-top: .12rem; color: hsl(var(--muted-foreground)); font-size: .68rem; }
 .idle-empty { display: flex; min-height: 12rem; align-items: center; justify-content: center; gap: 1rem; border: 1px dashed hsl(var(--border)); border-radius: 1rem; background: hsl(var(--muted) / .18); }
+.idle-shell:not(.is-immersive) > .idle-empty { flex: 1; }
 .idle-empty-icon { display: grid; place-items: center; width: 3.4rem; height: 3.4rem; border-radius: 1rem; background: hsl(var(--primary) / .11); color: hsl(var(--primary)); }
 .idle-starting-surface { display: flex; min-height: 12rem; align-items: center; justify-content: center; gap: 1rem; border-radius: 1rem; background: hsl(var(--card) / .52); }
 .idle-starting-copy { min-width: 0; }
@@ -556,6 +559,10 @@ onBeforeUnmount(() => {
   .idle-immersive-footer { align-items: stretch; flex-direction: column; }
   .idle-stop-button { width: 100%; }
   .idle-starting-surface { align-items: stretch; flex-direction: column; padding: 2rem 1rem; }
+}
+
+@media (max-height: 680px) {
+  .idle-shell:not(.is-immersive) > .idle-empty { min-height: 6rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {
