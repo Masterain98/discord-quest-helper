@@ -146,7 +146,24 @@ const live = computed(() => {
         </template>
       </div>
     </div>
+    <div
+      v-if="compact"
+      :id="contentId"
+      class="quest-group-members quest-group-members--compact"
+      :inert="!expanded"
+      :aria-hidden="expanded ? undefined : 'true'"
+      :class="expanded && 'quest-group-members--compact-expanded'"
+    >
+      <div
+        v-for="quest in group.quests"
+        :key="quest.id"
+        class="quest-group-member"
+      >
+        <slot :quest="quest" />
+      </div>
+    </div>
     <TransitionGroup
+      v-else
       :id="contentId"
       name="quest-group-fan"
       tag="div"
@@ -155,8 +172,7 @@ const live = computed(() => {
       :aria-hidden="expanded ? undefined : 'true'"
       :class="{
         'quest-group-members--expanded': expanded,
-        'quest-group-members--collapsed': !expanded && !compact,
-        'quest-group-members--hidden': compact && !expanded,
+        'quest-group-members--collapsed': !expanded,
       }"
     >
       <div
@@ -179,16 +195,26 @@ const live = computed(() => {
   contain: layout;
 }
 
+.quest-group-members--compact {
+  max-height: 0;
+  overflow: hidden;
+  padding: 0 1rem;
+  opacity: 0;
+  transition: max-height 360ms cubic-bezier(0.22, 1, 0.36, 1), padding-top 360ms cubic-bezier(0.22, 1, 0.36, 1), opacity 180ms ease;
+}
+
+.quest-group-members--compact-expanded {
+  max-height: 1200px;
+  padding-top: 0.75rem;
+  opacity: 1;
+}
+
 .quest-group-members--collapsed {
   position: absolute;
   top: -36px;
   right: 0;
   left: 0;
   height: 36px;
-}
-
-.quest-group-members--hidden {
-  display: none;
 }
 
 .quest-group-member {
@@ -238,6 +264,7 @@ const live = computed(() => {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .quest-group-members--compact,
   .quest-group-members--collapsed .quest-group-member,
   .quest-group-fan-move {
     transition-duration: 1ms;
