@@ -1,103 +1,54 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { ChevronDown, LogOut } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
+import IconMenu from './IconMenu.vue'
 
+withDefaults(defineProps<{ compact?: boolean; suspended?: boolean }>(), { compact: false, suspended: false })
 const { t } = useI18n()
 const authStore = useAuthStore()
 const emit = defineEmits<{ logout: [] }>()
-
 const user = computed(() => authStore.user)
+const label = computed(() => t('sidebar.account_menu', { name: user.value?.global_name || user.value?.username }))
 const open = ref(false)
-const containerRef = ref<HTMLElement | null>(null)
-
-const avatarUrl = computed(() => {
-  if (!user.value?.avatar) return null
-  return `https://cdn.discordapp.com/avatars/${user.value.id}/${user.value.avatar}.png?size=128`
-})
-
-function handleClickOutside(e: MouseEvent) {
-  if (containerRef.value && !containerRef.value.contains(e.target as Node)) {
-    open.value = false
-  }
-}
-
-function handleLogout() {
-  open.value = false
-  emit('logout')
-}
-
-onMounted(() => document.addEventListener('mousedown', handleClickOutside))
-onUnmounted(() => document.removeEventListener('mousedown', handleClickOutside))
+const avatarUrl = computed(() => user.value?.avatar
+  ? `https://cdn.discordapp.com/avatars/${user.value.id}/${user.value.avatar}.png?size=128` : undefined)
+function handleLogout() { open.value = false; emit('logout') }
 </script>
 
 <template>
-  <div v-if="user" ref="containerRef" class="relative">
-    <!-- Trigger button — pure HTML, no Radix wrapper -->
-    <button
-      class="h-10 px-2 rounded-lg inline-flex items-center gap-2 hover:bg-muted/60 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      @click="open = !open"
-    >
-      <Avatar class="w-8 h-8 shrink-0">
-        <AvatarImage v-if="avatarUrl" :src="avatarUrl" :alt="user.username" />
-        <AvatarFallback>{{ user.username[0].toUpperCase() }}</AvatarFallback>
-      </Avatar>
-
-      <span class="hidden md:inline-flex flex-col items-start min-w-0 leading-tight">
-        <span class="text-sm font-medium max-w-[120px] truncate">
-          {{ user.global_name || user.username }}
-        </span>
-        <span class="text-xs text-muted-foreground max-w-[120px] truncate">
-          @{{ user.username }}
-        </span>
-      </span>
-
-      <ChevronDown
-        class="w-4 h-4 text-muted-foreground shrink-0 hidden md:block transition-transform"
-        :class="open && 'rotate-180'"
-      />
-    </button>
-
-    <!-- Dropdown content — positioned absolutely, no Radix portal -->
-    <Transition
-      enter-active-class="transition ease-out duration-150"
-      enter-from-class="opacity-0 -translate-y-1 scale-95"
-      enter-to-class="opacity-100 translate-y-0 scale-100"
-      leave-active-class="transition ease-in duration-100"
-      leave-from-class="opacity-100 translate-y-0 scale-100"
-      leave-to-class="opacity-0 -translate-y-1 scale-95"
-    >
-      <div
-        v-if="open"
-        class="absolute right-0 top-full mt-2 z-50 w-56 rounded-lg border bg-popover text-popover-foreground shadow-md overflow-hidden"
-      >
-        <!-- User info header -->
-        <div class="px-3 py-3">
-          <div class="flex items-center gap-3">
-            <Avatar class="w-10 h-10 shrink-0">
-              <AvatarImage v-if="avatarUrl" :src="avatarUrl" :alt="user.username" />
-              <AvatarFallback>{{ user.username[0].toUpperCase() }}</AvatarFallback>
-            </Avatar>
-            <div class="flex-1 min-w-0">
-              <p class="text-sm font-medium truncate">{{ user.global_name || user.username }}</p>
-              <p class="text-xs text-muted-foreground truncate">@{{ user.username }}</p>
-            </div>
-          </div>
-        </div>
-
-        <div class="h-px bg-border mx-2" />
-
-        <!-- Logout -->
-        <button
-          class="w-full px-3 py-2 text-left text-sm text-destructive hover:bg-destructive/10 transition-colors inline-flex items-center gap-2"
-          @click="handleLogout"
-        >
-          <LogOut class="w-4 h-4" />
-          {{ t('general.logout') }}
+  <IconMenu v-if="user" v-model:open="open" :label="label" :side="compact ? 'right' : 'bottom'" :suspended="suspended" content-class="w-56">
+    <template #trigger>
+        <button type="button" :aria-label="label" :class="compact ? 'app-rail-button' : 'inline-flex h-10 items-center gap-2 rounded-lg px-2 hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'">
+          <Avatar class="h-8 w-8 shrink-0">
+            <AvatarImage v-if="avatarUrl" :src="avatarUrl" :alt="user.username" />
+            <AvatarFallback>{{ user.username[0]?.toUpperCase() }}</AvatarFallback>
+          </Avatar>
+          <template v-if="!compact">
+            <span class="hidden min-w-0 flex-col items-start leading-tight md:inline-flex">
+              <span class="max-w-[120px] truncate text-sm font-medium">{{ user.global_name || user.username }}</span>
+              <span class="max-w-[120px] truncate text-xs text-muted-foreground">@{{ user.username }}</span>
+            </span>
+            <ChevronDown class="hidden h-4 w-4 text-muted-foreground md:block" :class="open && 'rotate-180'" />
+          </template>
         </button>
+    </template>
+      <div class="flex items-center gap-3 px-2 py-3">
+        <Avatar class="h-10 w-10 shrink-0">
+          <AvatarImage v-if="avatarUrl" :src="avatarUrl" :alt="user.username" />
+          <AvatarFallback>{{ user.username[0]?.toUpperCase() }}</AvatarFallback>
+        </Avatar>
+        <div class="min-w-0">
+          <p class="truncate text-sm font-medium">{{ user.global_name || user.username }}</p>
+          <p class="truncate text-xs text-muted-foreground">@{{ user.username }}</p>
+        </div>
       </div>
-    </Transition>
-  </div>
+      <div class="mx-2 mb-1 h-px bg-border" />
+      <DropdownMenuItem class="gap-2 text-destructive focus:bg-destructive/10 focus:text-destructive" @select="handleLogout">
+        <LogOut class="h-4 w-4" />{{ t('general.logout') }}
+      </DropdownMenuItem>
+  </IconMenu>
 </template>

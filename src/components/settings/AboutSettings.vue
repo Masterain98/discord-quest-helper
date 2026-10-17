@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { AlertTriangle, CheckCircle2, ExternalLink, Info, Link2, XCircle } from 'lucide-vue-next'
+import { AlertTriangle, CheckCircle2, ExternalLink, Heart, Info, Link2, XCircle } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { open } from '@tauri-apps/plugin-shell'
 import {
@@ -19,7 +19,7 @@ import { Label } from '@/components/ui/label'
 import { useVersionStore } from '@/stores/version'
 import SettingsSectionCard from './SettingsSectionCard.vue'
 import SettingsStatusPanel from './SettingsStatusPanel.vue'
-import SettingsSwitch from './SettingsSwitch.vue'
+import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { settingToneClass } from './settingTones'
 import { isDebugModeEnabled, persistDebugMode } from '@/utils/debugMode'
@@ -113,7 +113,7 @@ function removeBubble(id: number) {
 </script>
 
 <template>
-  <div class="grid gap-6 xl:grid-cols-2">
+  <div class="settings-about-grid">
     <AlertDialog :open="disableDialogOpen" @update:open="disableDialogOpen = $event">
       <AlertDialogContent class="max-w-[480px]">
         <AlertDialogHeader>
@@ -130,14 +130,15 @@ function removeBubble(id: number) {
     </AlertDialog>
 
     <SettingsSectionCard
-      :title="t('settings.about')"
+      :title="t('settings.nav_about')"
       :icon="Info"
       tone="primary"
       content-class="space-y-4 text-sm text-muted-foreground"
     >
         <div class="flex flex-wrap items-center gap-2">
-          <span
-            class="relative cursor-pointer select-none text-base font-semibold text-foreground transition-transform active:scale-95"
+          <button
+            type="button"
+            class="relative min-w-0 select-none rounded-md text-left text-base font-semibold text-foreground transition-transform active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             @click="handleVersionTapWithBubble"
             title="Version Info"
           >
@@ -151,7 +152,7 @@ function removeBubble(id: number) {
               :style="bubble.style"
               @animationend="removeBubble(bubble.id)"
             />
-          </span>
+          </button>
           <Badge v-if="versionStore.isPreRelease" variant="outline" :class="cn('gap-1', settingToneClass.warning.badge)">
             {{ t('settings.version_prerelease') }}
           </Badge>
@@ -176,7 +177,7 @@ function removeBubble(id: number) {
         <a
           href="#"
           @click.prevent="openExternal('https://github.com/Masterain98/discord-quest-helper')"
-          class="flex items-center justify-between rounded-lg border bg-muted/30 px-3 py-2 transition-colors hover:bg-muted/60"
+          class="ui-setting flex items-center justify-between rounded-xl border px-3 py-3 transition-colors hover:bg-muted/60"
         >
           <span class="flex min-w-0 items-center gap-2">
             <img src="/icons/github-mark.svg" alt="GitHub" class="h-5 w-5 shrink-0 dark:hidden" />
@@ -187,6 +188,15 @@ function removeBubble(id: number) {
         </a>
 
         <div class="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            :class="cn('gap-1.5', settingToneClass.violet.buttonSoft)"
+            @click="openExternal('https://github.com/sponsors/Masterain98')"
+          >
+            <Heart class="h-3.5 w-3.5 fill-current" aria-hidden="true" />
+            {{ t('settings.sponsor') }}
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -207,13 +217,14 @@ function removeBubble(id: number) {
           </Button>
         </div>
 
-        <div class="rounded-lg border px-4 py-3">
-          <div class="flex items-center justify-between gap-3">
+        <div class="ui-setting rounded-xl border px-4 py-4">
+          <div class="flex items-center justify-between gap-3" data-settings-search :data-search-label="t('settings.check_prerelease')" :data-search-description="t('settings.check_prerelease_desc')">
             <div class="space-y-0.5">
               <Label class="text-sm font-medium">{{ t('settings.check_prerelease') }}</Label>
               <p class="text-xs text-muted-foreground">{{ t('settings.check_prerelease_desc') }}</p>
             </div>
-            <SettingsSwitch
+            <Switch
+              :aria-label="t('settings.check_prerelease')"
               :model-value="versionStore.checkPreRelease"
               @update:model-value="versionStore.setCheckPreRelease"
             />
@@ -288,11 +299,26 @@ function removeBubble(id: number) {
         <div>
           <p class="mb-1 font-medium text-foreground">{{ t('settings.tech_stack') }}</p>
           <div class="flex flex-wrap gap-2">
-            <Badge variant="outline">Tauri</Badge>
-            <Badge variant="outline">Vue 3</Badge>
-            <Badge variant="outline">shadcn-vue</Badge>
-            <Badge variant="outline">TailwindCSS</Badge>
-            <Badge variant="outline">vue-i18n</Badge>
+            <Button as="a" href="https://v2.tauri.app/" variant="outline" size="sm" class="gap-1.5" @click.prevent="openExternal('https://v2.tauri.app/')">
+              <img src="/icons/tech/tauri.svg" alt="" class="h-4 w-4 object-contain" aria-hidden="true" />
+              Tauri
+            </Button>
+            <Button as="a" href="https://vuejs.org/" variant="outline" size="sm" class="gap-1.5" @click.prevent="openExternal('https://vuejs.org/')">
+              <img src="/icons/tech/vue.svg" alt="" class="h-4 w-4 object-contain" aria-hidden="true" />
+              Vue 3
+            </Button>
+            <Button as="a" href="https://www.shadcn-vue.com/" variant="outline" size="sm" class="gap-1.5" @click.prevent="openExternal('https://www.shadcn-vue.com/')">
+              <img src="/icons/tech/shadcn.svg" alt="" class="h-4 w-4 object-contain dark:invert" aria-hidden="true" />
+              shadcn-vue
+            </Button>
+            <Button as="a" href="https://tailwindcss.com/" variant="outline" size="sm" class="gap-1.5" @click.prevent="openExternal('https://tailwindcss.com/')">
+              <img src="/icons/tech/tailwindcss.svg" alt="" class="h-4 w-4 object-contain" aria-hidden="true" />
+              TailwindCSS
+            </Button>
+            <Button as="a" href="https://vue-i18n.intlify.dev/" variant="outline" size="sm" class="gap-1.5" @click.prevent="openExternal('https://vue-i18n.intlify.dev/')">
+              <img src="/icons/tech/vue-i18n.svg" alt="" class="h-4 w-4 object-contain" aria-hidden="true" />
+              vue-i18n
+            </Button>
           </div>
         </div>
     </SettingsSectionCard>

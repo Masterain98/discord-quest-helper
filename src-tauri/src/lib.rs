@@ -1716,6 +1716,24 @@ async fn get_virtual_currency_balance(
 }
 
 #[tauri::command]
+async fn get_virtual_currency_total_redeemed(
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let client = {
+        let guard = state.client.lock().unwrap();
+        guard
+            .as_ref()
+            .ok_or_else(|| "Not logged in".to_string())?
+            .clone()
+    };
+
+    client
+        .get_virtual_currency_total_redeemed()
+        .await
+        .map_err(|e| format!("Failed to get virtual currency total redeemed: {}", e))
+}
+
+#[tauri::command]
 async fn get_billing_subscriptions(
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
@@ -2253,6 +2271,7 @@ pub fn run() {
             fetch_detectable_games,
             accept_quest,
             get_virtual_currency_balance,
+            get_virtual_currency_total_redeemed,
             get_billing_subscriptions,
             get_program_rewards,
             get_quest_decision_debug,

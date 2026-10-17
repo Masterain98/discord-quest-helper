@@ -12,10 +12,17 @@ withDefaults(defineProps<{
 </script>
 
 <template>
-  <div :class="cn('flex items-start gap-2.5 rounded-lg border px-4 py-3 text-sm', settingToneClass[tone].panel)">
-    <component v-if="icon" :is="icon" class="mt-0.5 h-4 w-4 shrink-0" />
-    <div class="min-w-0 flex-1">
-      <slot />
+  <div :class="cn('settings-status-panel grid gap-x-2.5 gap-y-3 rounded-xl border px-4 py-3 text-sm leading-relaxed', $slots.actions && 'sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center', settingToneClass[tone].panel)">
+    <div class="flex min-w-0 items-start gap-2.5">
+      <span v-if="icon" class="settings-status-icon flex h-[1lh] shrink-0 items-center" aria-hidden="true">
+        <component :is="icon" class="h-4 w-4" />
+      </span>
+      <div class="settings-status-content min-w-0 flex-1">
+        <slot />
+      </div>
+    </div>
+    <div v-if="$slots.actions" :class="cn('justify-self-start sm:justify-self-end', icon && 'pl-[1.625rem] sm:pl-0')">
+      <slot name="actions" />
     </div>
   </div>
 </template>

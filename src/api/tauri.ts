@@ -233,8 +233,23 @@ export async function getQuestsFull(): Promise<CurrentUserQuestsResponse> {
 }
 
 export async function getVirtualCurrencyBalance(): Promise<number> {
-  const response = await invoke<{ balance?: number }>('get_virtual_currency_balance')
-  return response.balance ?? 0
+  const response = await invoke<unknown>('get_virtual_currency_balance')
+  return readVirtualCurrencyAmount(response, 'balance')
+}
+
+export async function getVirtualCurrencyTotalRedeemed(): Promise<number> {
+  const response = await invoke<unknown>('get_virtual_currency_total_redeemed')
+  return readVirtualCurrencyAmount(response, 'total_redeemed')
+}
+
+function readVirtualCurrencyAmount(response: unknown, field: 'balance' | 'total_redeemed'): number {
+  const amount = response && typeof response === 'object' && !Array.isArray(response)
+    ? (response as Record<string, unknown>)[field] : undefined
+  // An absent or malformed field must not look like a legitimate zero balance.
+  if (typeof amount !== 'number' || !Number.isSafeInteger(amount) || amount < 0) {
+    throw new Error(`Invalid virtual currency ${field} response`)
+  }
+  return amount
 }
 
 export async function getBillingSubscriptions(): Promise<BillingSubscription[]> {

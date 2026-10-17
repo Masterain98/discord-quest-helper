@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import GameSelector from '@/components/GameSelector.vue'
 import GameIdlePanel from '@/components/GameIdlePanel.vue'
+import AnimatedSegmentedControl from '@/components/AnimatedSegmentedControl.vue'
 import type { DetectableGame, ManualCdpGameSimulation } from '@/api/tauri'
 import {
   createSimulatedGame,
@@ -455,14 +456,16 @@ async function handleStopGame() {
 </script>
 
 <template>
-  <div class="game-simulator-view fade-in space-y-6" :class="mode === 'idle' && (idleStore.isActive || idleStore.loading) && 'is-idle-immersive'">
-    <div v-if="!(mode === 'idle' && (idleStore.isActive || idleStore.loading))" class="flex justify-between items-center flex-wrap gap-3">
-      <h2 class="text-2xl font-bold tracking-tight">{{ t('game_sim.title') }}</h2>
+  <div class="game-simulator-view fade-in" :class="{ 'is-manual-simulator': mode !== 'idle', 'is-idle-simulator': mode === 'idle', 'is-idle-immersive': mode === 'idle' && (idleStore.isActive || idleStore.loading) }">
+    <div v-if="!(mode === 'idle' && (idleStore.isActive || idleStore.loading))" class="flex shrink-0 justify-between items-center flex-wrap gap-3">
+      <h2 class="ui-page-heading text-2xl font-semibold">{{ t('game_sim.title') }}</h2>
       <!-- Mode toggle -->
-      <div class="flex rounded-lg border p-1 gap-1 bg-muted/50">
+      <AnimatedSegmentedControl :value="mode" class="ui-tab-tray flex max-w-full flex-wrap gap-1" :aria-label="t('game_sim.title')">
         <Button
           size="sm"
-          :variant="mode === 'select' ? 'default' : 'ghost'"
+          variant="ghost"
+          data-segment="select"
+          :aria-pressed="mode === 'select'"
           class="gap-1.5 h-7 px-3 text-xs"
           :disabled="hasActiveSimulation || simulatorBusy"
           @click="switchMode('select')"
@@ -472,7 +475,9 @@ async function handleStopGame() {
         </Button>
         <Button
           size="sm"
-          :variant="mode === 'custom' ? 'default' : 'ghost'"
+          variant="ghost"
+          data-segment="custom"
+          :aria-pressed="mode === 'custom'"
           class="gap-1.5 h-7 px-3 text-xs"
           :disabled="hasActiveSimulation || simulatorBusy"
           @click="switchMode('custom')"
@@ -482,7 +487,9 @@ async function handleStopGame() {
         </Button>
         <Button
           size="sm"
-          :variant="mode === 'idle' ? 'default' : 'ghost'"
+          variant="ghost"
+          data-segment="idle"
+          :aria-pressed="mode === 'idle'"
           class="gap-1.5 h-7 px-3 text-xs"
           :disabled="(hasActiveSimulation && !idleStore.isActive) || simulatorBusy"
           @click="switchMode('idle')"
@@ -490,21 +497,21 @@ async function handleStopGame() {
           <RotateCcw class="w-3.5 h-3.5" />
           {{ t('game_idle.nav') }}
         </Button>
-      </div>
+      </AnimatedSegmentedControl>
     </div>
 
     <GameIdlePanel v-if="mode === 'idle'" />
 
-    <div v-else class="grid grid-cols-1 gap-6" :class="mode === 'select' ? 'lg:grid-cols-2' : ''">
+    <div v-else class="game-simulator-panels grid grid-cols-1 gap-6" :class="mode === 'select' ? 'game-simulator-panels-select lg:grid-cols-2' : ''">
       <GameSelector v-if="mode === 'select'" :disabled="hasActiveSimulation || simulatorBusy" @select="selectGame" />
 
-      <Card>
-        <CardHeader>
+      <Card class="game-simulator-config flex min-h-0 flex-col">
+        <CardHeader class="shrink-0">
           <CardTitle>{{ t('game_sim.config_title') }}</CardTitle>
           <CardDescription>{{ mode === 'custom' ? t('game_sim.custom_config_desc') : t('game_sim.config_desc') }}</CardDescription>
         </CardHeader>
 
-        <CardContent>
+        <CardContent class="min-h-0 flex-1 overflow-y-auto">
           <div
             v-if="activeSimulationMode === 'cdp' && activeCdpSession"
             class="mb-6 p-3 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 rounded-md text-sm border border-emerald-500/20"
@@ -561,7 +568,7 @@ async function handleStopGame() {
                   <div ref="exeDropdownRef" class="relative">
                     <button
                       type="button"
-                      class="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                      class="ui-input flex h-10 w-full items-center justify-between rounded-[0.625rem] border border-input bg-background px-3 py-2 text-sm ring-offset-background transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                       @click="toggleExeDropdown"
                     >
                       <span :class="selectedExecutable ? 'text-foreground' : 'text-muted-foreground'">
@@ -580,7 +587,7 @@ async function handleStopGame() {
                     >
                       <div
                         v-if="exeDropdownOpen"
-                        class="absolute z-50 mt-1 w-full rounded-md border bg-popover text-popover-foreground shadow-md overflow-hidden"
+                        class="ui-popover absolute z-50 mt-1 w-full rounded-xl border bg-popover text-popover-foreground overflow-hidden"
                       >
                         <div class="max-h-48 overflow-y-auto p-1">
                           <button
@@ -624,18 +631,31 @@ async function handleStopGame() {
               <div v-if="success" class="p-3 bg-green-500/10 text-green-600 rounded-md text-sm">{{ success }}</div>
             </div>
           </template>
+
+          <div v-if="mode === 'custom' || selectedGame" class="game-simulator-create mt-3 flex justify-end">
+            <Button
+              @click="openCreateDialog"
+              variant="outline"
+              size="sm"
+              class="h-auto min-h-9 min-w-0 gap-2 whitespace-normal border-primary/30 bg-primary/5 text-primary hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
+              :disabled="!effectiveExecutable || hasActiveSimulation || simulatorBusy"
+            >
+              <Hammer class="h-4 w-4 shrink-0" />
+              {{ t('game_sim.create_game') }}
+            </Button>
+          </div>
         </CardContent>
 
-        <CardFooter v-if="canProceed" class="flex flex-col gap-2">
-          <div class="grid grid-cols-2 gap-2 w-full">
+        <CardFooter v-if="canProceed" class="flex shrink-0 flex-col gap-2">
+          <div class="game-simulator-actions grid w-full gap-2" :class="mode === 'select' && !hasActiveSimulation ? 'grid-cols-2' : 'grid-cols-1'">
             <Button
               v-if="!hasActiveSimulation"
               @click="handleRunGame"
-              class="w-full bg-green-600 hover:bg-green-700 text-white"
+              class="h-auto min-h-10 min-w-0 w-full whitespace-normal bg-green-600 hover:bg-green-700 text-white"
               :disabled="!effectiveExecutable || simulatorBusy || !!store.activeQuestId"
             >
-              <Play v-if="!running" class="w-4 h-4 mr-2" />
-              <Loader2 v-else class="w-4 h-4 mr-2 animate-spin" />
+              <Play v-if="!running" class="w-4 h-4 mr-2 shrink-0" />
+              <Loader2 v-else class="w-4 h-4 mr-2 shrink-0 animate-spin" />
               {{ running ? t('game_sim.starting') : t('game_sim.run_game') }}
             </Button>
 
@@ -643,13 +663,13 @@ async function handleStopGame() {
               v-if="mode === 'select' && !hasActiveSimulation"
               @click="handleRunCdpGame"
               variant="outline"
-              class="w-full border-emerald-500/50 text-emerald-700 hover:bg-emerald-500/10 dark:text-emerald-300"
+              class="h-auto min-h-10 min-w-0 w-full whitespace-normal border-emerald-500/50 text-emerald-700 hover:bg-emerald-500/10 dark:text-emerald-300"
               :disabled="!selectedGame || !store.cdpAvailable || simulatorBusy || !!store.activeQuestId"
               :title="store.cdpAvailable ? t('game_sim.cdp_button_hint') : t('game_sim.cdp_unavailable')"
             >
-              <MonitorPlay v-if="store.cdpAvailable && !cdpStarting" class="w-4 h-4 mr-2" />
-              <WifiOff v-else-if="!store.cdpAvailable && !cdpStarting" class="w-4 h-4 mr-2" />
-              <Loader2 v-else class="w-4 h-4 mr-2 animate-spin" />
+              <MonitorPlay v-if="store.cdpAvailable && !cdpStarting" class="w-4 h-4 mr-2 shrink-0" />
+              <WifiOff v-else-if="!store.cdpAvailable && !cdpStarting" class="w-4 h-4 mr-2 shrink-0" />
+              <Loader2 v-else class="w-4 h-4 mr-2 shrink-0 animate-spin" />
               {{ cdpStarting ? t('game_sim.cdp_starting') : t('game_sim.run_cdp_game') }}
             </Button>
 
@@ -665,15 +685,6 @@ async function handleStopGame() {
               {{ stopping ? t('game_sim.stopping') : t('game_sim.stop_game') }}
             </Button>
 
-            <Button
-              @click="openCreateDialog"
-              variant="outline"
-              class="w-full"
-              :disabled="!effectiveExecutable || hasActiveSimulation || simulatorBusy"
-            >
-              <Hammer class="w-4 h-4 mr-2" />
-              {{ t('game_sim.create_game') }}
-            </Button>
           </div>
         </CardFooter>
       </Card>
@@ -721,6 +732,38 @@ async function handleStopGame() {
 </template>
 
 <style scoped>
+.is-manual-simulator {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 24px;
+}
+.is-idle-simulator {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 24px;
+}
+.is-idle-simulator > :deep(.idle-shell) {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+.game-simulator-panels {
+  flex: 1;
+  min-height: 20rem;
+  grid-auto-rows: minmax(0, 1fr);
+}
+.game-simulator-panels-select { min-height: calc(40rem + 24px); }
+@media (min-width: 1024px) {
+  .game-simulator-panels,
+  .game-simulator-panels-select {
+    min-height: 16rem;
+  }
+}
 .is-idle-immersive {
   min-height: 100%;
   width: 100%;

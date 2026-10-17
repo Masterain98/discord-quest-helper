@@ -1,0 +1,33 @@
+<script setup lang="ts">
+import { PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger, TooltipContent, TooltipPortal, TooltipRoot, TooltipTrigger } from 'radix-vue'
+import { ref, watch } from 'vue'
+
+const props = defineProps<{ label: string; suspended?: boolean }>()
+const emit = defineEmits<{ 'open-auto-focus': [event: Event] }>()
+const open = defineModel<boolean>('open', { default: false })
+const tooltipOpen = ref(false)
+watch(() => props.suspended, suspended => {
+  if (suspended) { open.value = false; tooltipOpen.value = false }
+})
+</script>
+
+<template>
+  <TooltipRoot :disabled="suspended" :open="!suspended && tooltipOpen" @update:open="tooltipOpen = !suspended && $event">
+    <PopoverRoot v-model:open="open">
+      <PopoverTrigger as-child>
+        <TooltipTrigger as-child><slot name="trigger" /></TooltipTrigger>
+      </PopoverTrigger>
+      <PopoverPortal>
+        <!-- The default shift-before-flip order only lifts the panel enough to clear the bottom edge. -->
+        <PopoverContent side="right" align="start" :side-offset="16" :collision-padding="{ top: 44, right: 12, bottom: 12, left: 12 }" :aria-label="label" class="ui-popover rail-utility-panel rail-sidebar-popover" @open-auto-focus="emit('open-auto-focus', $event)">
+          <slot />
+        </PopoverContent>
+      </PopoverPortal>
+      <TooltipPortal>
+        <TooltipContent side="right" :side-offset="10" :collision-padding="{ top: 44, right: 12, bottom: 12, left: 12 }" class="ui-popover z-[80] max-w-64 rounded-lg border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md">
+          {{ label }}
+        </TooltipContent>
+      </TooltipPortal>
+    </PopoverRoot>
+  </TooltipRoot>
+</template>

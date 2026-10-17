@@ -8,6 +8,7 @@ import { Activity, Cloud, Gamepad2, MonitorPlay, Smartphone, Trophy } from 'luci
 
 const props = defineProps<{
   quest: Quest
+  hideTargets?: boolean
 }>()
 
 const { t } = useI18n()
@@ -32,7 +33,7 @@ const tasks = computed(() => getQuestTasks(props.quest))
       <Gamepad2 v-else-if="task.type.includes('PLAY')" class="h-3 w-3" />
       <Activity v-else class="h-3 w-3" />
       <span>{{ task.type === 'PLAY_ACTIVITY' ? t('filter.activity_cloud_game') : task.label }}</span>
-      <span v-if="task.targetText" class="opacity-70">{{ task.targetText }}</span>
+      <span v-if="!hideTargets && task.targetText" class="opacity-70">{{ task.targetText }}</span>
     </Badge>
   </div>
 </template>

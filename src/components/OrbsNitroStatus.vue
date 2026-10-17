@@ -1,128 +1,113 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { usePreferredReducedMotion } from '@vueuse/core'
 import { useAuthStore } from '@/stores/auth'
 import { useQuestsStore } from '@/stores/quests'
 import { useI18n } from 'vue-i18n'
-import { Button } from '@/components/ui/button'
-import { RotateCw } from 'lucide-vue-next'
-import { cn } from '@/lib/utils'
+import { AlertCircle, Clock3, RotateCw, Trophy } from 'lucide-vue-next'
+import RailPopover from './RailPopover.vue'
 
 const { t, locale } = useI18n()
+defineProps<{ suspended?: boolean }>()
 const authStore = useAuthStore()
 const questsStore = useQuestsStore()
-
+const open = ref(false)
 const showOrbs = computed(() => questsStore.showOrbsBalance)
 const showNitro = computed(() => authStore.nitroStatus !== null)
-const refreshIconSpinning = ref(false)
-const stopRefreshIconAfterRotation = ref(false)
-
-watch(
-  () => questsStore.orbsBalanceLoading,
-  (loading) => {
-    if (loading) {
-      refreshIconSpinning.value = true
-      stopRefreshIconAfterRotation.value = false
-      return
-    }
-
-    if (refreshIconSpinning.value) {
-      stopRefreshIconAfterRotation.value = true
-    }
-  },
-  { immediate: true }
-)
-
-function handleRefreshIconIteration() {
-  if (stopRefreshIconAfterRotation.value && !questsStore.orbsBalanceLoading) {
-    refreshIconSpinning.value = false
-    stopRefreshIconAfterRotation.value = false
-  }
-}
-
-// Build the countdown label from the structured claim value, switching the
-// i18n key based on the chosen unit and locale-aware plural category.
+watch(() => showOrbs.value || showNitro.value, visible => { if (!visible) open.value = false })
+const balance = computed(() => questsStore.orbsBalance == null ? '—' : questsStore.orbsBalance.toLocaleString(locale.value))
+const totalRedeemed = computed(() => questsStore.orbsTotalRedeemed == null ? '—' : questsStore.orbsTotalRedeemed.toLocaleString(locale.value))
+const compactBalance = computed(() => questsStore.orbsBalance == null ? '—' : new Intl.NumberFormat(locale.value, { notation: 'compact', maximumFractionDigits: 1 }).format(questsStore.orbsBalance))
+const label = computed(() => {
+  if (!showOrbs.value) return t('sidebar.nitro_status', { plan: authStore.nitroStatus?.label ?? t('user.nitro') })
+  if (questsStore.orbsBalanceLoading) return `${t('home.current_orbs')}: ${t('general.loading')}`
+  if (questsStore.orbsBalanceError || questsStore.orbsBalance == null) return t('sidebar.orbs_unavailable')
+  return `${t('home.current_orbs')}: ${balance.value}`
+})
 const claimText = computed(() => {
   const claim = authStore.nextOrbsClaim
-  if (!claim) return ''
+  return claim ? t(`home.nitro_next_orbs_${claim.unit}`, { [claim.unit]: claim.value }, claim.value) : ''
+})
+const refreshing = computed(() => questsStore.orbsSummaryLoading || authStore.programRewardLoading)
+const reducedMotion = usePreferredReducedMotion()
+const refreshSpinning = ref(false)
+// Keep the animation alive after the request settles. Its iteration event
+// stops it at a complete turn, where the static icon has the same orientation.
+watch([refreshing, open, reducedMotion], ([loading, visible, motion]) => {
+  if (!visible || motion === 'reduce') refreshSpinning.value = false
+  else if (loading) refreshSpinning.value = true
+}, { flush: 'sync' })
 
-  return t(
-    `home.nitro_next_orbs_${claim.unit}`,
-    { [claim.unit]: claim.value },
-    claim.value
-  )
+function finishRefreshTurn(event: AnimationEvent) {
+  if (event.animationName === 'orbs-refresh-turn' && !refreshing.value) {
+    refreshSpinning.value = false
+  }
+}
+const countdownText = computed(() => {
+  if (authStore.programRewardLoading && !claimText.value) return t('general.loading')
+  if (authStore.programRewardError) return t('home.orbs_airdrop_unavailable')
+  return claimText.value || t('home.orbs_no_airdrop')
 })
 
-const compactClaimText = computed(() => {
-  const claim = authStore.nextOrbsClaim
-  if (!claim) return ''
+// The account summary belongs to the persistent shell, so starting on Settings
+// or switching pages does not depend on Home mounting or repeat cached requests.
+watch(() => authStore.user?.id, id => {
+  if (!id) return
+  void questsStore.fetchOrbsSummary().catch(() => undefined)
+  void authStore.fetchNitroProgramReward().catch(() => undefined)
+}, { immediate: true })
 
-  const unit = {
-    days: 'day',
-    hours: 'hour',
-    minutes: 'minute',
-  }[claim.unit] as Intl.RelativeTimeFormatUnit
-
-  return new Intl.RelativeTimeFormat(locale.value, {
-    numeric: 'always',
-    style: 'narrow',
-  }).format(claim.value, unit)
-})
+async function refreshSummary() {
+  if (!authStore.user || refreshing.value || refreshSpinning.value) return
+  await Promise.allSettled([
+    ...(showOrbs.value ? [questsStore.fetchOrbsSummary(true)] : []),
+    ...(showNitro.value ? [authStore.fetchNitroProgramReward(true)] : []),
+  ])
+}
 </script>
 
 <template>
-  <div
-    v-if="showOrbs || showNitro"
-    class="orbs-nitro-status inline-flex min-h-[4.5rem] w-fit max-w-full items-center gap-3 rounded-full border border-violet-500/20 bg-violet-500/10 px-4 py-2.5 text-violet-700 transition-colors hover:bg-violet-500/[0.13] dark:text-violet-300"
-  >
-    <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-background/65 shadow-sm">
-      <img
-        :src="showOrbs ? '/icons/orbs.png' : '/icons/nitro.svg'"
-        alt=""
-        class="h-5 w-5 object-contain"
-        aria-hidden="true"
-      />
-    </span>
-
-    <div class="min-w-0">
-      <div v-if="showOrbs" class="flex items-center gap-1.5">
-        <span class="sr-only">{{ t('home.current_orbs') }}:</span>
-        <span class="whitespace-nowrap text-xl font-semibold leading-none tabular-nums" aria-live="polite">
-          {{ questsStore.orbsBalance == null ? '—' : questsStore.orbsBalance.toLocaleString() }}
-        </span>
-        <Button
-          variant="ghost"
-          size="icon"
-          class="h-7 w-7 shrink-0 rounded-full hover:bg-background/70"
-          @click="questsStore.fetchOrbsBalance(true)"
-          :disabled="questsStore.orbsBalanceLoading || !authStore.user"
-          :aria-label="t('general.refresh')"
-        >
-          <RotateCw
-            :class="cn('h-3.5 w-3.5', refreshIconSpinning && 'animate-spin')"
-            @animationiteration="handleRefreshIconIteration"
-          />
-        </Button>
-      </div>
-
-      <div
-        v-if="showNitro"
-        :class="['mt-1 flex min-w-0 items-center gap-1 text-[10px] leading-tight', !showOrbs && 'mt-0']"
-        :title="claimText || t('home.nitro_next_orbs_title')"
-      >
-        <img
-          v-if="showOrbs"
-          src="/icons/nitro.svg"
-          alt=""
-          class="h-3 w-3 shrink-0 object-contain"
-          aria-hidden="true"
-        />
-        <span :class="['shrink-0 font-semibold', authStore.nitroStatus?.class]">
-          {{ authStore.nitroStatus?.label }}
-        </span>
-        <span v-if="compactClaimText" class="whitespace-nowrap text-muted-foreground">
-          · {{ compactClaimText }}
-        </span>
-      </div>
+  <RailPopover v-if="showOrbs || showNitro" v-model:open="open" :suspended="suspended" :label="label">
+    <template #trigger>
+      <button type="button" :aria-label="label" :class="['app-rail-button rail-tool-button rail-orbs-trigger', open && 'rail-tool-button-open']">
+        <img :src="showOrbs ? '/icons/orbs.png' : '/icons/nitro.svg'" alt="" class="h-4 w-4 object-contain" aria-hidden="true" />
+        <span class="rail-tool-caption tabular-nums" aria-hidden="true">{{ showOrbs ? (questsStore.orbsBalanceLoading && questsStore.orbsBalance == null ? '…' : compactBalance) : authStore.nitroStatus?.label }}</span>
+      </button>
+    </template>
+    <div class="rail-panel-heading">
+      <span class="rail-panel-glyph"><img :src="showOrbs ? '/icons/orbs.png' : '/icons/nitro.svg'" alt="" class="h-5 w-5 object-contain" /></span>
+      <h3 class="min-w-0 flex-1 text-sm font-semibold">{{ showOrbs ? t('home.orbs_title') : authStore.nitroStatus?.label }}</h3>
+      <button type="button" class="rail-panel-action orbs-refresh" :aria-label="t('general.refresh')" :title="t('general.refresh')" :disabled="refreshing || refreshSpinning || !authStore.user" @click="refreshSummary">
+        <RotateCw class="h-4 w-4" :class="refreshSpinning && 'orbs-refreshing'" :stroke-width="1.7" aria-hidden="true" @animationiteration="finishRefreshTurn" />
+      </button>
     </div>
-  </div>
+    <dl v-if="showOrbs" class="orbs-overview ui-recess">
+      <div class="orbs-balance" :aria-busy="questsStore.orbsBalanceLoading">
+        <dt class="orbs-metric-label">{{ t('home.current_orbs') }}</dt>
+        <dd class="orbs-balance-value" aria-live="polite">
+          <span v-if="questsStore.orbsBalanceLoading && questsStore.orbsBalance == null" class="orbs-skeleton orbs-balance-skeleton"><span class="sr-only">{{ t('general.loading') }}</span></span>
+          <template v-else>{{ balance }}</template>
+        </dd>
+        <dd v-if="questsStore.orbsBalanceError" class="orbs-metric-error" role="alert"><AlertCircle aria-hidden="true" />{{ t('sidebar.orbs_unavailable') }}</dd>
+      </div>
+      <div class="orbs-redeemed" :aria-busy="questsStore.orbsTotalRedeemedLoading">
+        <dt class="orbs-redeemed-label"><Trophy class="orbs-redeemed-icon" :stroke-width="1.7" aria-hidden="true" /><span>{{ t('home.orbs_total_redeemed') }}</span></dt>
+        <dd class="orbs-redeemed-value" aria-live="polite">
+          <span v-if="questsStore.orbsTotalRedeemedLoading && questsStore.orbsTotalRedeemed == null" class="orbs-skeleton orbs-redeemed-skeleton"><span class="sr-only">{{ t('general.loading') }}</span></span>
+          <template v-else>{{ totalRedeemed }}</template>
+        </dd>
+        <dd v-if="questsStore.orbsTotalRedeemedError" class="orbs-metric-error" role="alert"><AlertCircle aria-hidden="true" />{{ t('home.orbs_redeemed_unavailable') }}</dd>
+      </div>
+    </dl>
+    <section v-if="showNitro" class="orbs-nitro" :aria-label="authStore.nitroStatus?.label">
+      <div class="orbs-nitro-heading">
+        <span class="orbs-nitro-glyph ui-icon-tile"><img src="/icons/nitro.svg" alt="" class="h-4 w-4 object-contain" /></span>
+        <span class="text-xs font-semibold">{{ authStore.nitroStatus?.label }}</span>
+      </div>
+      <p class="orbs-countdown" :class="authStore.programRewardError && 'orbs-countdown-error'" :role="authStore.programRewardError ? 'alert' : 'status'">
+        <Clock3 class="h-3.5 w-3.5 shrink-0" :stroke-width="1.7" aria-hidden="true" />
+        <span>{{ countdownText }}</span>
+      </p>
+    </section>
+  </RailPopover>
 </template>

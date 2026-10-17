@@ -1003,7 +1003,7 @@ dependencies = [
 
 [[package]]
 name = "discord-quest-helper"
-version = "0.10.9"
+version = "0.11.0"
 dependencies = [
  "aes",
  "aes-gcm",

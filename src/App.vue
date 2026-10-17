@@ -19,23 +19,27 @@ import { checkCdpStatus } from '@/api/tauri'
 import { createDiscordConsoleLifecycle } from '@/composables/discordConsoleLifecycle'
 import { consoleFallbackTab, consoleTabEnabled } from '@/utils/discordConsole'
 import { useI18n } from 'vue-i18n'
-import { ArrowUpCircle, ExternalLink, Moon, Sun, Languages } from 'lucide-vue-next'
+import { ArrowUpCircle, ExternalLink, Languages, LogIn, Moon, PanelLeftClose, PanelLeftOpen, Sun, X, Check } from 'lucide-vue-next'
+import { DialogContent, DialogOverlay, DialogPortal, DialogRoot, DialogTitle, TooltipProvider, DropdownMenuRadioGroup, DropdownMenuRadioItem } from 'radix-vue'
 import { open } from '@tauri-apps/plugin-shell'
 import AccountMenu from './components/AccountMenu.vue'
 import AppNavigation, { type AppTab } from './components/AppNavigation.vue'
+import AppRailSequence from './components/AppRailSequence.vue'
 import QuestModeIndicator from './components/QuestModeIndicator.vue'
+import OrbsNitroStatus from './components/OrbsNitroStatus.vue'
+import QuestProgress from './components/QuestProgress.vue'
+import QuestStopDialog from './components/QuestStopDialog.vue'
 import Toaster from './components/Toaster.vue'
 import DiscordCdpExitDialog from './components/DiscordCdpExitDialog.vue'
 import LoginPanel from './components/auth/LoginPanel.vue'
-import { persistSettingsSection } from '@/composables/useSettingsNavigation'
+import { useSettingsNavigation, type SettingsSection } from '@/composables/useSettingsNavigation'
+import { useSettingsSidebar } from '@/composables/useSettingsSidebar'
+import SettingsNav from './components/settings/SettingsNav.vue'
+import type { SettingsSearchResult } from '@/composables/useSettingsSearch'
+import IconTooltip from './components/IconTooltip.vue'
+import IconMenu from './components/IconMenu.vue'
 import { supportedLocales } from '@/locales/meta'
 import { isDebugModeEnabled } from '@/utils/debugMode'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 
 const { t, locale } = useI18n()
 const currentTab = ref<AppTab>('home')
@@ -45,7 +49,9 @@ const questsStore = useQuestsStore()
 const globalQuestsStore = useGlobalQuestsStore()
 const discordConsole = useDiscordConsoleStore()
 const toastStore = useToastStore()
-const consoleEnabled = computed(() => consoleTabEnabled(questsStore.gameQuestMode, questsStore.cdpAvailable))
+const consoleFeatureEnabled = ref(localStorage.getItem('questHelper_discordConsoleEnabled') === 'true')
+const consoleAvailable = computed(() => consoleTabEnabled(questsStore.gameQuestMode, questsStore.cdpAvailable))
+const consoleEnabled = computed(() => consoleAvailable.value && consoleFeatureEnabled.value)
 const consoleLifecycle = createDiscordConsoleLifecycle({
   snapshot: () => ({ mode: questsStore.gameQuestMode, port: questsStore.cdpPort, account: authStore.user?.id ?? null }),
   check: checkCdpStatus,
@@ -62,11 +68,11 @@ watch(() => [questsStore.gameQuestMode, questsStore.cdpPort, authStore.user?.id 
     await consoleLifecycle.refresh()
   }, { immediate: true, flush: 'sync' })
 watch(() => discordConsole.session, (current, previous) => {
-  if (!current && previous && questsStore.gameQuestMode === 'cdp') questsStore.cdpAvailable = false
+  if (!current && previous && consoleFeatureEnabled.value && questsStore.gameQuestMode === 'cdp') questsStore.cdpAvailable = false
 })
-watch(consoleEnabled, enabled => {
-  if (!enabled && currentTab.value === 'console') {
-    currentTab.value = consoleFallbackTab(currentTab.value, enabled)
+watch(consoleAvailable, available => {
+  if (!available && currentTab.value === 'console') {
+    currentTab.value = consoleFallbackTab(currentTab.value, available)
     toastStore.warning({ title: t('nav.discord_console'), description: t('discord_console.unavailable') })
   }
 }, { flush: 'sync' })
@@ -75,12 +81,43 @@ watch(() => authStore.user?.id ?? null, id => {
   if (id) void questsStore.fetchQuests(true)
 }, { immediate: true, flush: 'sync' })
 const gameIdleStore = useGameIdleStore()
-const authTransitioning = ref(false)
 const immersiveGameIdle = computed(() => currentTab.value === 'game' && (gameIdleStore.isActive || gameIdleStore.loading))
-const showStandardShell = computed(() => (Boolean(authStore.user) || currentTab.value !== 'home') && !immersiveGameIdle.value)
+const { selectedSection, setSection, navigationRequest, navigationTarget } = useSettingsNavigation()
+const settingsQuery = ref('')
+const settingsResults = ref<SettingsSearchResult[]>([])
+const { wide, expanded, drawerOpen, toggle: toggleSettingsSidebar } = useSettingsSidebar()
+const sidebarToggle = ref<HTMLButtonElement | null>(null)
+const sidebarVisible = computed(() => currentTab.value === 'settings' && (wide.value ? expanded.value : drawerOpen.value))
+const pageTitle = computed(() => {
+  const labels = { home: 'nav.home', global: 'nav.global_quests', game: 'nav.game_simulator', console: 'nav.discord_console', settings: 'nav.settings', debug: 'nav.debug' }
+  return currentTab.value === 'home' && !authStore.user ? t('auth.login') : t(labels[currentTab.value])
+})
+const sidebarToggleLabel = computed(() => t(sidebarVisible.value ? 'settings.navigation_collapse' : 'settings.navigation_expand'))
+
+function selectSettingsSection(section: SettingsSection) {
+  setSection(section)
+  drawerOpen.value = false
+}
+
+function selectSettingsResult(result: SettingsSearchResult) {
+  setSection(result.section, result.id)
+  drawerOpen.value = false
+}
+
+function restoreSidebarFocus(event: Event) {
+  event.preventDefault()
+  void nextTick(() => {
+    const target = sidebarToggle.value ?? document.querySelector<HTMLButtonElement>('.app-rail-button[aria-current="page"]')
+    target?.focus({ preventScroll: true })
+  })
+}
+
+watch([wide, currentTab, immersiveGameIdle], () => { drawerOpen.value = false })
 
 // Theme Logic
 const isDark = ref(true) // Default to dark
+const themeLabel = computed(() => t(isDark.value ? 'sidebar.switch_to_light' : 'sidebar.switch_to_dark'))
+const languageLabel = computed(() => t('sidebar.change_language', { language: supportedLocales.find(item => item.code === locale.value)?.label ?? locale.value }))
 
 // Debug mode state
 const debugModeEnabled = ref(false)
@@ -190,10 +227,16 @@ onUnmounted(() => {
 
 function handleAppNavigate(e: Event) {
   const tab = (e as CustomEvent<string>).detail
-  if (tab === 'console' && consoleEnabled.value) currentTab.value = tab
-  if (tab === 'home' || tab === 'global' || tab === 'game' || tab === 'settings' || tab === 'debug') {
+  if (tab === 'console' && consoleAvailable.value) currentTab.value = tab
+  if (tab === 'home' || tab === 'global' || tab === 'game' || tab === 'settings' || (tab === 'debug' && debugModeEnabled.value)) {
     currentTab.value = tab
   }
+}
+
+function setConsoleFeatureEnabled(enabled: boolean) {
+  consoleFeatureEnabled.value = enabled
+  try { localStorage.setItem('questHelper_discordConsoleEnabled', String(enabled)) } catch { /* Keep the in-memory preference. */ }
+  if (!enabled) void consoleLifecycle.invalidate(true)
 }
 
 function handleDebugDisabled() {
@@ -209,11 +252,6 @@ async function openUpdatePage() {
   }
 }
 
-function openSettingsSection(section: 'discord_integration' | 'quest_behavior' | 'advanced' | 'account') {
-  persistSettingsSection(section)
-  currentTab.value = 'settings'
-}
-
 watch(
   () => Boolean(authStore.user),
   (authenticated, wasAuthenticated) => {
@@ -221,256 +259,171 @@ watch(
 
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     if (!document.startViewTransition || prefersReducedMotion) {
-      authTransitioning.value = false
       return
     }
 
-    authTransitioning.value = true
     const transition = document.startViewTransition(async () => {
       await nextTick()
     })
 
-    transition.finished.finally(() => {
-      authTransitioning.value = false
-    })
+    void transition.finished.catch(() => undefined)
   },
   { flush: 'sync' },
 )
 </script>
 
 <template>
-  <div class="h-screen bg-background text-foreground font-sans flex flex-col overflow-hidden">
-    <DiscordCdpExitDialog />
-    <TitleBar />
-    
-    <div class="flex-1 overflow-auto">
-      <div
-        :class="[
-          'container mx-auto flex min-h-full flex-col',
-          showStandardShell ? 'p-6' : immersiveGameIdle ? 'p-0' : 'px-4 py-3 sm:px-6',
-        ]"
-      >
-        <Transition name="shell-reveal" appear>
-          <header
-            v-if="showStandardShell && !authTransitioning"
-            class="app-navbar mb-8 p-3 select-none"
-          >
-            <div class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
-              <div class="app-brand-lockup flex min-w-0 items-center gap-3 px-1">
-                <img
-                  src="/icons/logo.png"
-                  :alt="t('general.title')"
-                  class="h-10 w-10 shrink-0"
-                />
-                <div class="min-w-0">
-                  <h1 class="whitespace-nowrap text-lg font-semibold tracking-tight text-foreground">
-                    {{ t('general.title') }}
-                  </h1>
-                  <p class="hidden max-w-[36rem] truncate text-xs text-muted-foreground sm:block">
-                    {{ t('general.subtitle') }}
-                  </p>
+  <TooltipProvider :delay-duration="200" :ignore-non-keyboard-focus="true">
+    <DialogRoot :open="!wide && drawerOpen && currentTab === 'settings' && !immersiveGameIdle" @update:open="drawerOpen = $event">
+      <div class="flex h-dvh flex-col overflow-hidden bg-background font-sans text-foreground">
+        <DiscordCdpExitDialog />
+        <TitleBar :brand-visible="!immersiveGameIdle" />
+        <div class="app-layout" :class="{ 'app-layout-immersive': immersiveGameIdle }">
+          <aside v-show="!immersiveGameIdle" class="app-icon-rail">
+            <AppNavigation :current="currentTab" :debug-enabled="debugModeEnabled" :console-enabled="consoleAvailable" :suspended="immersiveGameIdle" @navigate="currentTab = $event">
+              <AppRailSequence class="app-rail-tools" role="group" :aria-label="t('sidebar.utilities')">
+                <div v-if="authStore.user && (questsStore.activeQuestId || questsStore.questQueue.length || questsStore.error)" key="quest-progress" class="app-rail-sequence-item">
+                  <QuestProgress />
                 </div>
-              </div>
-
-              <div class="flex shrink-0 items-center justify-end gap-1">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  class="h-9 w-9"
-                  @click="toggleTheme"
-                  :title="t('header.toggle_theme')"
-                >
-                  <Moon v-if="isDark" class="h-4 w-4" />
-                  <Sun v-else class="h-4 w-4" />
-                </Button>
-
-                <DropdownMenu>
-                  <DropdownMenuTrigger as-child>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      class="h-9 w-9"
-                      :title="t('header.change_language')"
-                    >
-                      <Languages class="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" class="max-h-[70vh] overflow-y-auto">
-                    <DropdownMenuItem
-                      v-for="item in supportedLocales"
-                      :key="item.code"
-                      @click="setLanguage(item.code)"
-                    >
-                      {{ item.label }}
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-
-                <AccountMenu v-if="authStore.user" @logout="authStore.logout" />
-              </div>
-            </div>
-
-            <div class="mt-2 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-t border-border/55 pt-2">
-              <AppNavigation
-                :current="currentTab"
-                :debug-enabled="debugModeEnabled"
-                :console-enabled="consoleEnabled"
-                @navigate="currentTab = $event"
-              />
-
-              <QuestModeIndicator
-                v-if="authStore.user"
-                class="justify-self-end"
-                @open-settings="openSettingsSection('quest_behavior')"
-              />
-            </div>
-          </header>
-        </Transition>
-
-        <div
-          v-if="!immersiveGameIdle && versionStore.hasUpdate && versionStore.latestRelease"
-          role="status"
-          class="mb-6 p-4 bg-primary/10 border border-primary/30 rounded-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
-        >
-          <div class="flex items-center gap-3">
-            <div class="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
-              <ArrowUpCircle class="w-5 h-5 text-primary" />
-            </div>
-            <div>
-              <p class="font-semibold text-primary">{{ t('version.update_available') }}</p>
-              <p class="text-sm text-muted-foreground">
-                {{ t('version.update_desc', { version: versionStore.latestRelease.tag_name, current: versionStore.currentVersion }) }}
-              </p>
-            </div>
-          </div>
-          <Button @click="openUpdatePage" class="gap-2 shrink-0">
-            <ExternalLink class="w-4 h-4" />
-            {{ t('version.download') }}
-          </Button>
-        </div>
-
-        <main :class="['fade-in flex-1', !showStandardShell && 'flex min-h-0 w-full']">
-          <template v-if="currentTab === 'home'">
-            <Home v-if="authStore.user" :debug-mode-enabled="debugModeEnabled" />
-            <LoginPanel v-else>
-              <template #toolbar>
-                <div class="login-toolbar select-none">
-                  <div class="flex flex-wrap items-center justify-center gap-1">
-                    <AppNavigation
-                      :current="currentTab"
-                      :debug-enabled="debugModeEnabled"
-                      :console-enabled="consoleEnabled"
-                      @navigate="currentTab = $event"
-                    />
-
-                    <span class="mx-1 hidden h-5 w-px bg-border sm:block" aria-hidden="true" />
-
-                    <Button variant="ghost" size="icon" class="h-9 w-9" @click="toggleTheme" :title="t('header.toggle_theme')">
-                      <Moon v-if="isDark" class="h-4 w-4" />
-                      <Sun v-else class="h-4 w-4" />
-                    </Button>
-
-                    <DropdownMenu>
-                      <DropdownMenuTrigger as-child>
-                        <Button variant="ghost" size="icon" class="h-9 w-9" :title="t('header.change_language')">
-                          <Languages class="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="center" class="max-h-[70vh] overflow-y-auto">
-                        <DropdownMenuItem
-                          v-for="item in supportedLocales"
-                          :key="item.code"
-                          @click="setLanguage(item.code)"
-                        >
-                          {{ item.label }}
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                <AppRailSequence v-if="authStore.user" key="quest-tools" class="app-rail-tool-group">
+                  <div key="quest-mode" class="app-rail-sequence-item">
+                    <QuestModeIndicator :suspended="immersiveGameIdle" />
                   </div>
+                  <div v-if="authStore.nitroStatus !== null || questsStore.showOrbsBalance" key="orbs-status" class="app-rail-sequence-item">
+                    <OrbsNitroStatus :suspended="immersiveGameIdle" />
+                  </div>
+                </AppRailSequence>
+                <span v-if="authStore.user" key="utility-divider" class="app-rail-divider" aria-hidden="true" />
+                <div key="display-actions" class="app-rail-display-actions app-rail-sequence-item">
+                  <IconTooltip :label="themeLabel" :disabled="immersiveGameIdle">
+                    <button type="button" class="app-rail-button rail-tool-button" :aria-label="themeLabel" :aria-pressed="isDark" @click="toggleTheme">
+                      <AppRailSequence tag="span" class="rail-theme-icon-sequence">
+                        <Moon v-if="isDark" key="moon" class="h-4 w-4" aria-hidden="true" />
+                        <Sun v-else key="sun" class="h-4 w-4" aria-hidden="true" />
+                      </AppRailSequence>
+                    </button>
+                  </IconTooltip>
+                  <IconMenu :label="languageLabel" side="right" :suspended="immersiveGameIdle" content-class="rail-language-menu">
+                    <template #trigger>
+                      <button type="button" class="app-rail-button rail-tool-button rail-language-trigger" :aria-label="languageLabel">
+                        <Languages class="h-4 w-4" aria-hidden="true" />
+                      </button>
+                    </template>
+                    <div class="rail-language-heading">
+                      <span class="rail-panel-glyph"><Languages class="h-4 w-4" aria-hidden="true" /></span>
+                      <span class="min-w-0 text-sm font-semibold">{{ t('header.change_language') }}</span>
+                    </div>
+                    <DropdownMenuRadioGroup :model-value="locale" @update:model-value="setLanguage">
+                      <DropdownMenuRadioItem v-for="item in supportedLocales" :key="item.code" :value="item.code" :aria-label="item.label" class="rail-language-option">
+                        <span class="flex-1">{{ item.label }}</span>
+                        <Check v-if="locale === item.code" class="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+                      </DropdownMenuRadioItem>
+                    </DropdownMenuRadioGroup>
+                  </IconMenu>
                 </div>
-              </template>
-            </LoginPanel>
-          </template>
-        
-          <GlobalQuests v-else-if="currentTab === 'global'" />
+              </AppRailSequence>
+            </AppNavigation>
+            <AppRailSequence class="app-rail-account-control">
+              <div v-if="authStore.user" key="account" class="app-rail-sequence-item">
+                <AccountMenu compact :suspended="immersiveGameIdle" @logout="authStore.logout" />
+              </div>
+              <div v-else key="login" class="app-rail-sequence-item">
+                <IconTooltip :label="t('auth.login')" :disabled="immersiveGameIdle">
+                  <button type="button" class="app-rail-button" :aria-label="t('auth.login')" @click="currentTab = 'home'">
+                    <LogIn class="h-4 w-4" :stroke-width="1.7" aria-hidden="true" />
+                  </button>
+                </IconTooltip>
+              </div>
+            </AppRailSequence>
+          </aside>
 
-          <GameSimulator v-else-if="currentTab === 'game'" />
-          <DiscordConsole v-else-if="currentTab === 'console' && consoleEnabled" />
-        
-          <Settings
-            v-else-if="currentTab === 'settings'"
-            @navigate-to-home="currentTab = 'home'"
-            @debug-unlocked="debugModeEnabled = true; currentTab = 'debug'"
-            @debug-disabled="handleDebugDisabled"
-          />
-        
-          <Debug v-else-if="currentTab === 'debug'" />
-        </main>
+          <aside v-if="wide && expanded && currentTab === 'settings' && !immersiveGameIdle" id="settings-navigation-panel" class="app-settings-panel">
+            <div class="flex h-12 shrink-0 items-center border-b border-border/50 px-5 text-sm font-semibold">{{ t('settings.title') }}</div>
+            <div class="min-h-0 flex-1 overflow-y-auto py-2">
+              <SettingsNav v-model:query="settingsQuery" :results="settingsResults" :selected="selectedSection" @update:selected="selectSettingsSection" @select-result="selectSettingsResult" />
+            </div>
+          </aside>
+
+          <section class="app-workspace" :class="{ 'app-workspace-immersive': immersiveGameIdle }" :aria-label="pageTitle">
+            <header v-show="currentTab === 'settings' && !immersiveGameIdle" class="app-workspace-toolbar">
+              <div class="flex min-w-0 items-center gap-2">
+                <IconTooltip v-if="currentTab === 'settings'" :label="sidebarToggleLabel" side="bottom">
+                  <button ref="sidebarToggle" type="button" class="app-toolbar-button" :aria-label="sidebarToggleLabel" :aria-expanded="sidebarVisible" aria-controls="settings-navigation-panel" @click="toggleSettingsSidebar">
+                    <PanelLeftClose v-if="sidebarVisible" class="h-4 w-4" aria-hidden="true" />
+                    <PanelLeftOpen v-else class="h-4 w-4" aria-hidden="true" />
+                  </button>
+                </IconTooltip>
+              </div>
+            </header>
+
+            <main class="app-workspace-scroll" tabindex="-1">
+              <div class="app-content" :class="{ 'app-content-immersive': immersiveGameIdle, 'app-content-login': currentTab === 'home' && !authStore.user, 'app-content-game': currentTab === 'game', 'app-content-console': currentTab === 'console' }">
+                <div v-if="!immersiveGameIdle && versionStore.hasUpdate && versionStore.latestRelease" role="status" class="mb-6 flex shrink-0 flex-col items-start justify-between gap-3 rounded-xl border border-primary/30 bg-primary/10 p-4 sm:flex-row sm:items-center">
+                  <div class="flex items-center gap-3">
+                    <ArrowUpCircle class="h-5 w-5 shrink-0 text-primary" />
+                    <div>
+                      <p class="font-semibold text-primary">{{ t('version.update_available') }}</p>
+                      <p class="text-sm text-muted-foreground">{{ t('version.update_desc', { version: versionStore.latestRelease.tag_name, current: versionStore.currentVersion }) }}</p>
+                    </div>
+                  </div>
+                  <Button @click="openUpdatePage" class="shrink-0 gap-2"><ExternalLink class="h-4 w-4" />{{ t('version.download') }}</Button>
+                </div>
+                <template v-if="currentTab === 'home'">
+                  <Home v-if="authStore.user" :debug-mode-enabled="debugModeEnabled" />
+                  <LoginPanel v-else />
+                </template>
+                <GlobalQuests v-else-if="currentTab === 'global'" />
+                <GameSimulator v-else-if="currentTab === 'game'" />
+                <Settings v-else-if="currentTab === 'settings'" :selected-section="selectedSection" :navigation-request="navigationRequest" :navigation-target="navigationTarget" :search-query="settingsQuery" @search-results="settingsResults = $event" @update:selected-section="selectedSection = $event" @navigate-to-home="currentTab = 'home'" @debug-unlocked="debugModeEnabled = true; currentTab = 'debug'" @debug-disabled="handleDebugDisabled" />
+                <Debug v-else-if="currentTab === 'debug'" />
+                <DiscordConsole v-if="consoleAvailable" v-show="currentTab === 'console'" :active="currentTab === 'console'" :enabled="consoleEnabled" :port="questsStore.cdpPort" @enable="setConsoleFeatureEnabled(true)" @disable="setConsoleFeatureEnabled(false)" />
+              </div>
+            </main>
+          </section>
+        </div>
+        <Toaster />
+        <QuestStopDialog />
       </div>
-    </div>
-    <Toaster />
-  </div>
-</template>
 
+      <DialogPortal>
+        <DialogOverlay class="app-settings-overlay" @click="drawerOpen = false" />
+        <DialogContent id="settings-navigation-panel" class="ui-dialog app-settings-drawer" :aria-describedby="undefined" @pointer-down-outside.prevent @close-auto-focus="restoreSidebarFocus">
+          <div class="flex h-12 shrink-0 items-center justify-between border-b border-border/50 px-4">
+            <DialogTitle class="text-sm font-semibold">{{ t('settings.title') }}</DialogTitle>
+            <button type="button" class="app-toolbar-button" :aria-label="t('settings.navigation_close')" @click="drawerOpen = false"><X class="h-4 w-4" aria-hidden="true" /></button>
+          </div>
+          <div class="min-h-0 flex-1 overflow-y-auto py-2"><SettingsNav v-model:query="settingsQuery" :results="settingsResults" :selected="selectedSection" @update:selected="selectSettingsSection" @select-result="selectSettingsResult" /></div>
+        </DialogContent>
+      </DialogPortal>
+    </DialogRoot>
+  </TooltipProvider>
+</template>
 <style>
 /* Global transitions */
 .app-brand-lockup {
-  view-transition-name: app-brand;
+  view-transition-name: none;
 }
 
-html.account-view-transition .login-brand-stage {
-  view-transition-name: login-brand !important;
-}
-
-html.account-view-transition .login-toolbar {
-  view-transition-name: login-toolbar;
+html.account-view-transition .app-brand-lockup {
+  view-transition-name: app-rail-brand;
 }
 
 html.account-view-transition .login-card-shell {
   view-transition-name: login-card;
 }
 
-.login-toolbar,
-.app-navbar {
-  max-width: 100%;
-  border: 1px solid hsl(var(--border) / 0.58);
-  border-radius: 0.875rem;
-  background: hsl(var(--card) / 0.64);
-  box-shadow:
-    inset 0 1px 0 hsl(var(--background) / 0.5),
-    0 12px 28px -26px hsl(var(--foreground) / 0.38);
-  backdrop-filter: blur(14px);
+html.account-view-transition .app-workspace-toolbar {
+  view-transition-name: app-toolbar;
 }
 
-.login-toolbar {
-  padding: 0.375rem;
-}
-
-html.account-view-transition .app-navbar {
-  view-transition-name: login-toolbar;
-}
-
-.shell-reveal-enter-active,
-.shell-reveal-leave-active {
-  transition:
-    opacity 260ms ease,
-    transform 420ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.shell-reveal-enter-from,
-.shell-reveal-leave-to {
-  opacity: 0;
-  transform: translateY(-0.5rem);
-}
-
-::view-transition-group(app-brand) {
+::view-transition-group(app-rail-brand) {
   z-index: 20;
   animation-duration: 680ms;
   animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-::view-transition-old(app-brand),
-::view-transition-new(app-brand) {
+::view-transition-old(app-rail-brand),
+::view-transition-new(app-rail-brand) {
   height: 100%;
   mix-blend-mode: normal;
 }
@@ -489,7 +442,7 @@ html.account-view-transition::view-transition-new(root) {
 }
 
 ::view-transition-group(login-brand),
-::view-transition-group(login-toolbar) {
+::view-transition-group(app-toolbar) {
   animation-duration: 760ms;
   animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -502,8 +455,8 @@ html.account-view-transition::view-transition-new(root) {
 
 ::view-transition-old(login-brand),
 ::view-transition-new(login-brand),
-::view-transition-old(login-toolbar),
-::view-transition-new(login-toolbar) {
+::view-transition-old(app-toolbar),
+::view-transition-new(app-toolbar) {
   mix-blend-mode: normal;
 }
 
@@ -557,9 +510,7 @@ html.account-view-transition::view-transition-new(root) {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .fade-in,
-  .shell-reveal-enter-active,
-  .shell-reveal-leave-active {
+  .fade-in {
     animation-duration: 1ms;
     transition-duration: 1ms;
   }
