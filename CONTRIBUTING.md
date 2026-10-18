@@ -63,6 +63,8 @@ Output location: `target/release/bundle/`
 
 ## 🏗️ Project Structure
 
+For notification-channel contributions, see [Adding a notification channel](docs/notification-channels.md).
+
 ```
 discord-quest-helper/
 ├── src/                              # Vue.js frontend

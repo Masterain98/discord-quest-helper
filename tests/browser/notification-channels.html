@@ -1,0 +1,106 @@
+<!doctype html>
+<!-- Development-only harness: real Vue component, mocked Tauri bridge, no account deliveries. -->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Notification channel integration check</title>
+    <link rel="icon" href="data:," />
+  </head>
+  <body>
+    <div id="qa"></div>
+    <script type="module">
+      import { createApp, h, ref } from "vue";
+      import { createPinia } from "pinia";
+      import NotificationSettings from "/src/components/settings/NotificationSettings.vue";
+      import i18n from "/src/i18n.ts";
+      import "/src/style.css";
+      i18n.global.locale.value = "en";
+      const settings = await fetch(
+        "/tests/fixtures/notification-channels.json",
+      ).then((r) => r.json());
+      const clone = (value) => JSON.parse(JSON.stringify(value));
+      const debug = ref(true);
+      const qa = (window.__notificationQA = {
+        settings,
+        calls: [],
+        debug,
+        failSave: false,
+        testError: false,
+      });
+      window.__TAURI_INTERNALS__ = {
+        transformCallback: () => 1,
+        invoke: async (command, args = {}) => {
+          const channel = settings.channels.find((c) => c.id === args.channel);
+          if (command === "get_platform_capabilities")
+            return { os: "windows", defaultGameQuestMode: "simulate" };
+          if (command.startsWith("plugin:event|")) return 1;
+          qa.calls.push({ command, args: clone(args) });
+          if (command === "get_notification_settings") return clone(settings);
+          if (command === "save_notification_events") {
+            settings.events = clone(args.events);
+            return clone(settings);
+          }
+          if (command === "save_notification_channel") {
+            if (qa.failSave)
+              throw { code: "invalid_config", field: "endpoint" };
+            for (const field of channel.fields) {
+              const value = args.draft.fields[field.id] ?? "";
+              if (field.kind === "password") {
+                if (value && !channel.secret_fields_set.includes(field.id))
+                  channel.secret_fields_set.push(field.id);
+              } else channel.values[field.id] = value;
+            }
+            channel.configured = channel.fields
+              .filter((f) => f.required)
+              .every((f) =>
+                f.kind === "password"
+                  ? channel.secret_fields_set.includes(f.id)
+                  : channel.values[f.id],
+              );
+            return clone(settings);
+          }
+          if (command === "clear_notification_channel") {
+            channel.enabled = false;
+            channel.configured = false;
+            channel.secret_fields_set = [];
+            for (const field of channel.fields)
+              if (field.kind !== "password") channel.values[field.id] = "";
+            return clone(settings);
+          }
+          if (command === "set_notification_channel_enabled") {
+            channel.enabled = args.enabled;
+            return clone(settings);
+          }
+          if (command === "test_notification_channel") {
+            const result = {
+              channel: args.channel,
+              success: !qa.testError,
+              code: qa.testError
+                ? "invalid_config"
+                : args.channel === "system"
+                  ? "submitted"
+                  : "sent",
+              at: new Date().toISOString(),
+              ...(qa.testError ? { field: "endpoint" } : {}),
+            };
+            settings.results[args.channel] = result;
+            return clone(result);
+          }
+          return null;
+        },
+      };
+      window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener() {} };
+      createApp({
+        render: () =>
+          h(
+            "main",
+            { style: "max-width:960px;margin:24px auto;padding:16px" },
+            [h(NotificationSettings, { debugModeEnabled: debug.value })],
+          ),
+      })
+        .use(createPinia())
+        .use(i18n)
+        .mount("#qa");
+    </script>
+  </body>
+</html>

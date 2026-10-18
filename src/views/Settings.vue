@@ -7,6 +7,7 @@ import AboutSettings from '@/components/settings/AboutSettings.vue'
 import DiagnosticsSettings from '@/components/settings/DiagnosticsSettings.vue'
 import DiscordIntegrationSettings from '@/components/settings/DiscordIntegrationSettings.vue'
 import QuestBehaviorSettings from '@/components/settings/QuestBehaviorSettings.vue'
+import NotificationSettings from '@/components/settings/NotificationSettings.vue'
 import SettingsOverview from '@/components/settings/SettingsOverview.vue'
 import type { SettingsSection } from '@/composables/useSettingsNavigation'
 import { useSettingsScroll } from '@/composables/useSettingsScroll'
@@ -57,6 +58,9 @@ useSettingsSearch(page, () => props.searchQuery, results => emit('search-results
       </section>
       <section id="settings-section-quest_behavior" data-settings-section="quest_behavior" :aria-label="t('settings.nav_quest_behavior')">
         <QuestBehaviorSettings />
+      </section>
+      <section id="settings-section-notifications" data-settings-section="notifications" :aria-label="t('settings.nav_notifications')">
+        <NotificationSettings :debug-mode-enabled="developerModeEnabled" />
       </section>
       <section id="settings-section-discord_integration" data-settings-section="discord_integration" :aria-label="t('settings.nav_discord_integration')">
         <DiscordIntegrationSettings />
