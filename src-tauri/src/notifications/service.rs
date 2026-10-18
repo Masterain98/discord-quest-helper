@@ -5,7 +5,7 @@ use super::{
     error::{Code, Result},
     message::{self, Message},
     model::{Events, NotificationEvent},
-    secrets::Secrets,
+    secrets::{CredentialLease, LeasedSecrets, Secrets},
 };
 use futures_util::FutureExt;
 use serde::Serialize;
@@ -57,10 +57,17 @@ impl Runtime {
         Some(config.clone())
     }
 }
+// A lease defers credential retirement until this configuration has been resolved.
+// Release it after the vault read; settings edits and other deliveries never wait.
+struct DeliveryConfig {
+    saved: ChannelConfig,
+    draft: Draft,
+    lease: Option<Arc<CredentialLease>>,
+}
 type ResultSink = Arc<dyn Fn(&DeliveryResult) + Send + Sync>;
 pub struct NotificationService {
     registry: Arc<Registry>,
-    secrets: Arc<dyn Secrets>,
+    secrets: Arc<LeasedSecrets>,
     runtime: Mutex<Runtime>,
     sink: ResultSink,
 }
@@ -68,7 +75,7 @@ impl NotificationService {
     pub(super) fn new(registry: Registry, secrets: Arc<dyn Secrets>, sink: ResultSink) -> Self {
         Self {
             registry: Arc::new(registry),
-            secrets,
+            secrets: Arc::new(LeasedSecrets::new(secrets)),
             runtime: Mutex::default(),
             sink,
         }
@@ -132,12 +139,17 @@ impl NotificationService {
                 runtime.config = Some(config::load(&path, &service.registry)?);
             }
             let mut next = runtime.config.as_ref().ok_or(Code::Storage)?.clone();
-            operation(
+            if let Err(error) = operation(
                 &mut next,
                 &path,
                 &service.registry,
                 service.secrets.as_ref(),
-            )?;
+            ) {
+                if error.file_replaced {
+                    runtime.config = Some(next);
+                }
+                return Err(error);
+            }
             let settings = service.view(&next, &runtime.results);
             runtime.config = Some(next);
             Ok(settings)
@@ -177,23 +189,35 @@ impl NotificationService {
     ) -> Result<DeliveryResult> {
         self.registry.get(&id)?;
         self.settings(path).await?;
-        let saved = self
-            .runtime
-            .lock()
-            .map_err(|_| Code::Storage)?
-            .config
-            .as_ref()
-            .ok_or(Code::Storage)?
-            .channels
-            .get(&id)
-            .cloned()
-            .unwrap_or_default();
+        let (saved, lease) = {
+            let runtime = self.runtime.lock().map_err(|_| Code::Storage)?;
+            let saved = runtime
+                .config
+                .as_ref()
+                .ok_or(Code::Storage)?
+                .channels
+                .get(&id)
+                .cloned()
+                .unwrap_or_default();
+            let lease = Arc::new(self.secrets.lease(saved.secret_refs.values().cloned()));
+            (saved, lease)
+        };
         let generic_test = event.is_none();
         let mut event = event.unwrap_or_else(|| NotificationEvent::sample(locale.clone()));
         event.locale = locale;
         let mut message = message::render(&event, generic_test);
         message.is_test = true;
-        Ok(self.deliver(id, saved, draft, message).await)
+        Ok(self
+            .deliver(
+                id,
+                DeliveryConfig {
+                    saved,
+                    draft,
+                    lease: Some(lease),
+                },
+                message,
+            )
+            .await)
     }
     pub(super) async fn dispatch(
         self: &Arc<Self>,
@@ -204,14 +228,22 @@ impl NotificationService {
             return Err(Code::InvalidEvent.into());
         }
         self.settings(path).await?;
-        let config = match self
-            .runtime
-            .lock()
-            .map_err(|_| Code::Storage)?
-            .claim(&event)
-        {
-            Some(cfg) => cfg,
-            None => return Ok(vec![]),
+        let (config, lease) = {
+            let mut runtime = self.runtime.lock().map_err(|_| Code::Storage)?;
+            let config = match runtime.claim(&event) {
+                Some(cfg) => cfg,
+                None => return Ok(vec![]),
+            };
+            let lease = Arc::new(
+                self.secrets.lease(
+                    config
+                        .channels
+                        .values()
+                        .filter(|c| c.enabled)
+                        .flat_map(|c| c.secret_refs.values().cloned()),
+                ),
+            );
+            (config, lease)
         };
         let message = message::render(&event, false);
         let mut pending = Vec::new();
@@ -225,8 +257,13 @@ impl NotificationService {
                 continue;
             }
             let (service, id, message) = (self.clone(), d.id.to_string(), message.clone());
+            let config = DeliveryConfig {
+                saved,
+                draft: Draft::default(),
+                lease: Some(lease.clone()),
+            };
             pending.push(tokio::spawn(async move {
-                service.deliver(id, saved, Draft::default(), message).await
+                service.deliver(id, config, message).await
             }));
         }
         Ok(pending)
@@ -234,13 +271,13 @@ impl NotificationService {
     async fn deliver(
         self: &Arc<Self>,
         id: String,
-        saved: ChannelConfig,
-        draft: Draft,
+        config: DeliveryConfig,
         message: Message,
     ) -> DeliveryResult {
-        self.deliver_with_timeout(id, saved, draft, message, DELIVERY_TIMEOUT)
+        self.deliver_config_with_timeout(id, config, message, DELIVERY_TIMEOUT)
             .await
     }
+    #[cfg(test)]
     pub(super) async fn deliver_with_timeout(
         self: &Arc<Self>,
         id: String,
@@ -249,10 +286,34 @@ impl NotificationService {
         message: Message,
         deadline: Duration,
     ) -> DeliveryResult {
+        self.deliver_config_with_timeout(
+            id,
+            DeliveryConfig {
+                saved,
+                draft,
+                lease: None,
+            },
+            message,
+            deadline,
+        )
+        .await
+    }
+    async fn deliver_config_with_timeout(
+        self: &Arc<Self>,
+        id: String,
+        config: DeliveryConfig,
+        message: Message,
+        deadline: Duration,
+    ) -> DeliveryResult {
         let attempt = async {
             let channel = self.registry.get(&id)?;
             let (adapter, secrets) = (channel.clone(), self.secrets.clone());
             let resolved = tokio::task::spawn_blocking(move || {
+                let DeliveryConfig {
+                    saved,
+                    draft,
+                    lease: _lease,
+                } = config;
                 let resolved =
                     config::resolve(&adapter.descriptor(), &saved, &draft, secrets.as_ref())?;
                 adapter.validate(&resolved)?;

@@ -426,16 +426,11 @@ fn failed_file_or_second_credential_write_preserves_the_old_configuration() {
     assert_eq!(f.secrets.values.lock().unwrap().len(), 2);
 }
 #[test]
-fn clear_restores_credentials_after_partial_delete_or_file_failure_and_locked_vault_preserves_settings(
-) {
+fn clear_commits_before_cleanup_and_file_failure_preserves_credentials() {
     let f = Fixture::new();
     let mut cfg = f.cfg();
     f.update(&mut cfg, &valid()).unwrap();
     let before = std::fs::read(f.path()).unwrap();
-    f.secrets.fail_delete_at.store(2, Ordering::SeqCst);
-    assert!(config::clear(&mut cfg, &f.path(), "fixture", f.secrets.as_ref()).is_err());
-    assert_eq!(f.secrets.values.lock().unwrap().len(), 2);
-    assert_eq!(std::fs::read(f.path()).unwrap(), before);
     let blocker = f.root.join("blocker");
     std::fs::write(&blocker, "file").unwrap();
     assert!(config::clear(
@@ -446,6 +441,8 @@ fn clear_restores_credentials_after_partial_delete_or_file_failure_and_locked_va
     )
     .is_err());
     assert_eq!(f.secrets.values.lock().unwrap().len(), 2);
+    assert_eq!(f.secrets.deletes.load(Ordering::SeqCst), 0);
+    assert_eq!(std::fs::read(f.path()).unwrap(), before);
     f.secrets.locked.store(true, Ordering::SeqCst);
     assert!(f
         .update(
@@ -453,9 +450,295 @@ fn clear_restores_credentials_after_partial_delete_or_file_failure_and_locked_va
             &draft(&[("endpoint", "https://example.invalid/other")])
         )
         .is_err());
-    assert!(config::clear(&mut cfg, &f.path(), "fixture", f.secrets.as_ref()).is_err());
     assert_eq!(std::fs::read(f.path()).unwrap(), before);
+    config::clear(&mut cfg, &f.path(), "fixture", f.secrets.as_ref()).unwrap();
+    assert!(cfg.channels["fixture"].secret_refs.is_empty());
+    assert_eq!(f.secrets.values.lock().unwrap().len(), 2);
+    assert!(
+        config::load(&f.path(), &f.registry).unwrap().channels["fixture"]
+            .secret_refs
+            .is_empty()
+    );
 }
+
+#[test]
+fn clear_recovers_missing_credentials_and_tolerates_partial_cleanup_failure() {
+    for missing in [true, false] {
+        let f = Fixture::new();
+        let mut cfg = f.cfg();
+        f.update(&mut cfg, &valid()).unwrap();
+        if missing {
+            f.secrets
+                .delete(&cfg.channels["fixture"].secret_refs["api_key"])
+                .unwrap();
+        } else {
+            f.secrets.fail_delete_at.store(2, Ordering::SeqCst);
+        }
+        config::clear(&mut cfg, &f.path(), "fixture", f.secrets.as_ref()).unwrap();
+        assert!(cfg.channels["fixture"].secret_refs.is_empty());
+        assert!(cfg.channels["fixture"].values.is_empty());
+        assert!(!cfg.channels["fixture"].enabled);
+        assert_eq!(
+            f.secrets.values.lock().unwrap().len(),
+            usize::from(!missing)
+        );
+        assert!(
+            config::load(&f.path(), &f.registry).unwrap().channels["fixture"]
+                .secret_refs
+                .is_empty()
+        );
+    }
+}
+
+#[tokio::test]
+async fn directory_sync_failure_keeps_new_and_old_credentials_and_runtime_matches_disk() {
+    let f = Fixture::new();
+    let mut cfg = f.cfg();
+    f.update(&mut cfg, &valid()).unwrap();
+    let old_refs = cfg.channels["fixture"].secret_refs.clone();
+    let registry = channels::headless();
+    let mut adapters: Vec<_> = registry.iter().cloned().collect();
+    adapters.push(Arc::new(FakeChannel::fixture()));
+    let service = Arc::new(NotificationService::new(
+        Registry::new(adapters).unwrap(),
+        f.secrets.clone(),
+        Arc::new(|_| {}),
+    ));
+    let error = match service
+        .transaction(f.path(), |cfg, path, registry, secrets| {
+            config::update_with_save(
+                cfg,
+                path,
+                registry.get("fixture")?.as_ref(),
+                &draft(&[
+                    ("endpoint", "https://example.invalid/replaced"),
+                    ("api_key", "new-api-value"),
+                    ("signing_key", "new-signing-value"),
+                ]),
+                secrets,
+                |path, cfg| {
+                    atomic::save_with_sync(path, cfg, |_| {
+                        Err(std::io::Error::other("injected sync failure"))
+                    })
+                },
+            )
+        })
+        .await
+    {
+        Err(error) => error,
+        Ok(_) => panic!("expected storage failure"),
+    };
+    assert_eq!(error.code, Code::Storage);
+    assert!(error.file_replaced);
+    assert_eq!(
+        serde_json::to_value(&error).unwrap(),
+        serde_json::json!({"code":"storage"})
+    );
+    let disk = config::load(&f.path(), &f.registry).unwrap();
+    assert_ne!(disk.channels["fixture"].secret_refs, old_refs);
+    {
+        let vault = f.secrets.values.lock().unwrap();
+        assert_eq!(vault.len(), 4);
+        for reference in old_refs
+            .values()
+            .chain(disk.channels["fixture"].secret_refs.values())
+        {
+            assert!(vault.contains_key(reference));
+        }
+    }
+    let settings = service.settings(f.path()).await.unwrap();
+    let view = settings
+        .channels
+        .iter()
+        .find(|c| c.descriptor.id == "fixture")
+        .unwrap();
+    assert_eq!(view.values["endpoint"], "https://example.invalid/replaced");
+}
+
+struct PausedSecrets {
+    inner: Arc<MemorySecrets>,
+    started: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+    release: (Mutex<bool>, std::sync::Condvar),
+}
+impl Secrets for PausedSecrets {
+    fn get(&self, reference: &str) -> Result<String> {
+        let sender = self.started.lock().unwrap().take();
+        if let Some(sender) = sender {
+            let _ = sender.send(());
+            let (released, signal) = &self.release;
+            let (_guard, timeout) = signal
+                .wait_timeout_while(released.lock().unwrap(), Duration::from_secs(3), |ready| {
+                    !*ready
+                })
+                .unwrap();
+            if timeout.timed_out() {
+                return Err(Code::Timeout.into());
+            }
+        }
+        self.inner.get(reference)
+    }
+    fn set(&self, reference: &str, value: &str) -> Result<()> {
+        self.inner.set(reference, value)
+    }
+    fn delete(&self, reference: &str) -> Result<()> {
+        self.inner.delete(reference)
+    }
+}
+
+#[tokio::test]
+async fn accepted_dispatch_and_preview_keep_credentials_until_resolution_finishes() {
+    for preview in [false, true] {
+        let f = Fixture::new();
+        let mut cfg = f.cfg();
+        f.update(&mut cfg, &valid()).unwrap();
+        cfg.channels.get_mut("fixture").unwrap().enabled = true;
+        atomic::save(&f.path(), &cfg).unwrap();
+        let old = cfg.channels["fixture"].secret_refs.clone();
+        let (started, waiting) = tokio::sync::oneshot::channel();
+        let secrets = Arc::new(PausedSecrets {
+            inner: f.secrets.clone(),
+            started: Mutex::new(Some(started)),
+            release: (Mutex::new(false), std::sync::Condvar::new()),
+        });
+        let registry = channels::headless();
+        let mut adapters: Vec<_> = registry.iter().cloned().collect();
+        adapters.push(Arc::new(FakeChannel::fixture()));
+        let service = Arc::new(NotificationService::new(
+            Registry::new(adapters).unwrap(),
+            secrets.clone(),
+            Arc::new(|_| {}),
+        ));
+        let sending = service.clone();
+        let path = f.path();
+        let delivery = tokio::spawn(async move {
+            if preview {
+                vec![sending
+                    .test(path, "fixture".into(), Draft::default(), "en".into(), None)
+                    .await
+                    .unwrap()]
+            } else {
+                futures_util::future::join_all(
+                    sending
+                        .dispatch(path, event(EventKind::QuestCompleted))
+                        .await
+                        .unwrap(),
+                )
+                .await
+                .into_iter()
+                .map(|r| r.unwrap())
+                .collect()
+            }
+        });
+        tokio::time::timeout(Duration::from_secs(2), waiting)
+            .await
+            .unwrap()
+            .unwrap();
+        let editing = service.clone();
+        let path = f.path();
+        let mut edit = tokio::spawn(async move {
+            editing
+                .transaction(path, move |cfg, path, registry, secrets| {
+                    if preview {
+                        config::clear(cfg, path, "fixture", secrets)
+                    } else {
+                        config::update(
+                            cfg,
+                            path,
+                            registry.get("fixture")?.as_ref(),
+                            &valid(),
+                            secrets,
+                        )
+                    }
+                })
+                .await
+        });
+        let outcome = tokio::time::timeout(Duration::from_secs(1), &mut edit).await;
+        let edited_without_waiting = outcome.is_ok();
+        let old_retained = old
+            .values()
+            .all(|r| f.secrets.values.lock().unwrap().contains_key(r));
+        *secrets.release.0.lock().unwrap() = true;
+        secrets.release.1.notify_all();
+        match outcome {
+            Ok(result) => {
+                result.unwrap().unwrap();
+            }
+            Err(_) => {
+                edit.await.unwrap().unwrap();
+            }
+        }
+        let results = delivery.await.unwrap();
+        assert!(
+            edited_without_waiting,
+            "settings edits must not wait for accepted reads"
+        );
+        assert!(
+            old_retained,
+            "accepted reads retain the old credential snapshot"
+        );
+        assert!(results.iter().all(|r| r.success));
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if old
+                    .values()
+                    .all(|r| !f.secrets.values.lock().unwrap().contains_key(r))
+                {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+    }
+}
+
+#[tokio::test]
+async fn settings_edits_do_not_wait_for_network_delivery() {
+    let f = Fixture::new();
+    let mut cfg = f.cfg();
+    f.update(&mut cfg, &valid()).unwrap();
+    cfg.channels.get_mut("fixture").unwrap().enabled = true;
+    atomic::save(&f.path(), &cfg).unwrap();
+    let mut channel = FakeChannel::fixture();
+    channel.behavior = Behavior::Pending;
+    let calls = channel.calls.clone();
+    let registry = Registry::new(vec![Arc::new(channel)]).unwrap();
+    let service = Arc::new(NotificationService::new(
+        registry,
+        f.secrets.clone(),
+        Arc::new(|_| {}),
+    ));
+    let handles = service
+        .dispatch(f.path(), event(EventKind::QuestCompleted))
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while calls.load(Ordering::SeqCst) == 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    let editing = tokio::time::timeout(
+        Duration::from_secs(1),
+        service.transaction(f.path(), |cfg, path, registry, secrets| {
+            config::update(
+                cfg,
+                path,
+                registry.get("fixture")?.as_ref(),
+                &valid(),
+                secrets,
+            )
+        }),
+    )
+    .await;
+    for handle in handles {
+        handle.abort();
+    }
+    assert!(editing.unwrap().is_ok());
+}
+
 #[test]
 fn required_fields_and_unknown_draft_keys_are_rejected_before_persistence() {
     let f = Fixture::new();

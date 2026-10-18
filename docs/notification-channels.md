@@ -141,7 +141,19 @@ are cleared after tests, successful saves and dialog disposal.
 Version 2 stores per-channel values and credential references. Version 1 is
 migrated atomically without rewriting credentials. Unknown channel entries are
 retained but never executed. Unsupported file versions fail without resetting
-settings. The service owns all persistence and vault transactions; adapters must
+settings. Updates stage credentials before replacing the file. Clearing commits
+empty settings before best-effort vault cleanup, so missing or locked credentials
+cannot prevent recovery; cleanup failures can leave unreferenced vault entries.
+POSIX writes sync the parent directory after replacement. If that final sync fails,
+the service reports a storage error, follows the replaced file in memory and keeps
+both credential generations, avoiding dangling references after a crash.
+Accepted deliveries lease their configuration until password resolution finishes;
+password replacement/clearing retires old references after these reads, without
+blocking settings edits or network delivery.
+System artwork uses a 128-file / 32 MiB / 30-day cache budget. Recently used files
+are protected for five minutes for native consumers, so bursts can temporarily
+exceed the budget; the next preparation evicts old files and abandoned temporaries.
+The service owns all persistence and vault transactions; adapters must
 not access those facilities or global task state.
 
 ## Tests and review

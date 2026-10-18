@@ -185,6 +185,17 @@ pub(super) fn update(
     draft: &Draft,
     secrets: &dyn Secrets,
 ) -> Result<()> {
+    update_with_save(cfg, path, channel, draft, secrets, save)
+}
+
+pub(super) fn update_with_save(
+    cfg: &mut Config,
+    path: &Path,
+    channel: &dyn NotificationChannel,
+    draft: &Draft,
+    secrets: &dyn Secrets,
+    persist: impl FnOnce(&Path, &Config) -> Result<()>,
+) -> Result<()> {
     let d = channel.descriptor();
     let old = cfg.channels.get(d.id).cloned().unwrap_or_default();
     let values = resolve(&d, &old, draft, secrets)?;
@@ -216,9 +227,15 @@ pub(super) fn update(
     }
     let mut candidate = cfg.clone();
     candidate.channels.insert(d.id.into(), next.clone());
-    if let Err(error) = save(path, &candidate) {
-        for r in staged {
-            let _ = secrets.delete(&r);
+    if let Err(error) = persist(path, &candidate) {
+        if error.file_replaced {
+            // Disk already references staged credentials. Preserve both generations
+            // because a crash could still restore the old directory entry.
+            *cfg = candidate;
+        } else {
+            for r in staged {
+                let _ = secrets.delete(&r);
+            }
         }
         return Err(error);
     }
@@ -233,31 +250,21 @@ pub(super) fn update(
 
 pub(super) fn clear(cfg: &mut Config, path: &Path, id: &str, secrets: &dyn Secrets) -> Result<()> {
     let old = cfg.channels.get(id).cloned().unwrap_or_default();
-    let credentials: Vec<_> = old
-        .secret_refs
-        .values()
-        .map(|r| Ok((r.clone(), Zeroizing::new(secrets.get(r)?))))
-        .collect::<Result<_>>()?;
-    let restore = || -> Result<()> {
-        for (r, value) in &credentials {
-            secrets.set(r, value)?;
-        }
-        Ok(())
-    };
-    for (r, _) in &credentials {
-        if let Err(error) = secrets.delete(r) {
-            restore()?;
-            return Err(error);
-        }
-    }
     let mut candidate = cfg.clone();
     candidate
         .channels
         .insert(id.into(), ChannelConfig::default());
     if let Err(error) = save(path, &candidate) {
-        restore()?;
+        if error.file_replaced {
+            *cfg = candidate;
+        }
         return Err(error);
     }
     *cfg = candidate;
+    // Remove references durably first. Missing/locked credentials must not trap
+    // users in a broken configuration; cleanup failure only leaves an orphan.
+    for reference in old.secret_refs.values() {
+        let _ = secrets.delete(reference);
+    }
     Ok(())
 }

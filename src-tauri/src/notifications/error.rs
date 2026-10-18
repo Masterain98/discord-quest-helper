@@ -31,10 +31,18 @@ pub struct Error {
     pub code: Code,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub field: Option<String>,
+    /// The file was replaced, but durability could not be confirmed.
+    /// Keep both generations of credentials and align runtime state with disk.
+    #[serde(skip)]
+    pub(super) file_replaced: bool,
 }
 impl Error {
     pub fn new(code: Code) -> Self {
-        Self { code, field: None }
+        Self {
+            code,
+            field: None,
+            file_replaced: false,
+        }
     }
     pub fn at(mut self, field: &str) -> Self {
         self.field = Some(field.into());
