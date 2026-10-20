@@ -618,7 +618,7 @@ impl DiscordApiClient {
                     "Network request failed for /users/@me",
                     Some(&e.to_string()),
                 );
-                anyhow::anyhow!("Request for current user info failed: {}", e)
+                anyhow::Error::from(e).context("Request for current user info failed")
             })?;
 
         let status = response.status();
