@@ -175,7 +175,7 @@ function removeBubble(id: number) {
         <p>{{ t('settings.about_desc') }}</p>
 
         <a
-          href="#"
+          href="https://github.com/Masterain98/discord-quest-helper"
           @click.prevent="openExternal('https://github.com/Masterain98/discord-quest-helper')"
           class="ui-setting flex items-center justify-between rounded-xl border px-3 py-3 transition-colors hover:bg-muted/60"
         >
@@ -189,19 +189,23 @@ function removeBubble(id: number) {
 
         <div class="flex flex-wrap gap-2">
           <Button
+            as="a"
+            href="https://github.com/sponsors/Masterain98"
             variant="outline"
             size="sm"
             :class="cn('gap-1.5', settingToneClass.violet.buttonSoft)"
-            @click="openExternal('https://github.com/sponsors/Masterain98')"
+            @click.prevent="openExternal('https://github.com/sponsors/Masterain98')"
           >
             <Heart class="h-3.5 w-3.5 fill-current" aria-hidden="true" />
             {{ t('settings.sponsor') }}
           </Button>
           <Button
+            as="a"
+            href="https://github.com/Masterain98/discord-quest-helper/issues/new/choose"
             variant="outline"
             size="sm"
             :class="settingToneClass.info.buttonSoft"
-            @click="openExternal('https://github.com/Masterain98/discord-quest-helper/issues/new/choose')"
+            @click.prevent="openExternal('https://github.com/Masterain98/discord-quest-helper/issues/new/choose')"
           >
             {{ t('settings.feedback') }}
           </Button>
@@ -246,7 +250,7 @@ function removeBubble(id: number) {
           <p class="mb-2 font-medium text-foreground">{{ t('settings.credits_desc') }}</p>
           <ul class="space-y-2">
             <li>
-              <a href="#" @click.prevent="openExternal('https://github.com/markterence/discord-quest-completer')" class="flex items-center justify-between rounded-lg border bg-card px-3 py-2 text-sm transition-colors hover:bg-muted/50">
+              <a href="https://github.com/markterence/discord-quest-completer" @click.prevent="openExternal('https://github.com/markterence/discord-quest-completer')" class="flex items-center justify-between rounded-lg border bg-card px-3 py-2 text-sm transition-colors hover:bg-muted/50">
                 <span class="flex min-w-0 items-center gap-2">
                   <img src="/icons/github-mark.svg" alt="GitHub" class="h-4 w-4 shrink-0 dark:hidden" />
                   <img src="/icons/github-mark-white.svg" alt="GitHub" class="hidden h-4 w-4 shrink-0 dark:block" />
@@ -256,7 +260,7 @@ function removeBubble(id: number) {
               </a>
             </li>
             <li>
-              <a href="#" @click.prevent="openExternal('https://github.com/power0matin/discord-quest-auto-completer')" class="flex items-center justify-between rounded-lg border bg-card px-3 py-2 text-sm transition-colors hover:bg-muted/50">
+              <a href="https://github.com/power0matin/discord-quest-auto-completer" @click.prevent="openExternal('https://github.com/power0matin/discord-quest-auto-completer')" class="flex items-center justify-between rounded-lg border bg-card px-3 py-2 text-sm transition-colors hover:bg-muted/50">
                 <span class="flex min-w-0 items-center gap-2">
                   <img src="/icons/github-mark.svg" alt="GitHub" class="h-4 w-4 shrink-0 dark:hidden" />
                   <img src="/icons/github-mark-white.svg" alt="GitHub" class="hidden h-4 w-4 shrink-0 dark:block" />
@@ -266,7 +270,7 @@ function removeBubble(id: number) {
               </a>
             </li>
             <li>
-              <a href="#" @click.prevent="openExternal('https://github.com/taisrisk/Discord-Quest-Helper')" class="flex items-center justify-between rounded-lg border bg-card px-3 py-2 text-sm transition-colors hover:bg-muted/50">
+              <a href="https://github.com/taisrisk/Discord-Quest-Helper" @click.prevent="openExternal('https://github.com/taisrisk/Discord-Quest-Helper')" class="flex items-center justify-between rounded-lg border bg-card px-3 py-2 text-sm transition-colors hover:bg-muted/50">
                 <span class="flex min-w-0 items-center gap-2">
                   <img src="/icons/github-mark.svg" alt="GitHub" class="h-4 w-4 shrink-0 dark:hidden" />
                   <img src="/icons/github-mark-white.svg" alt="GitHub" class="hidden h-4 w-4 shrink-0 dark:block" />
@@ -276,7 +280,7 @@ function removeBubble(id: number) {
               </a>
             </li>
             <li>
-              <a href="#" @click.prevent="openExternal('https://gist.github.com/aamiaa/204cd9d42013ded9faf646fae7f89fbb')" class="flex items-center justify-between rounded-lg border bg-card px-3 py-2 text-sm transition-colors hover:bg-muted/50">
+              <a href="https://gist.github.com/aamiaa/204cd9d42013ded9faf646fae7f89fbb" @click.prevent="openExternal('https://gist.github.com/aamiaa/204cd9d42013ded9faf646fae7f89fbb')" class="flex items-center justify-between rounded-lg border bg-card px-3 py-2 text-sm transition-colors hover:bg-muted/50">
                 <span class="flex min-w-0 items-center gap-2">
                   <img src="/icons/github-mark.svg" alt="GitHub" class="h-4 w-4 shrink-0 dark:hidden" />
                   <img src="/icons/github-mark-white.svg" alt="GitHub" class="hidden h-4 w-4 shrink-0 dark:block" />
@@ -286,7 +290,7 @@ function removeBubble(id: number) {
               </a>
             </li>
             <li>
-              <a href="#" @click.prevent="openExternal('https://docs.discord.food/')" class="flex items-center justify-between rounded-lg border bg-card px-3 py-2 text-sm transition-colors hover:bg-muted/50">
+              <a href="https://docs.discord.food/" @click.prevent="openExternal('https://docs.discord.food/')" class="flex items-center justify-between rounded-lg border bg-card px-3 py-2 text-sm transition-colors hover:bg-muted/50">
                 <span class="flex min-w-0 items-center gap-2">
                   <img src="/icons/discord-food-docs.png" alt="docs.discord.food" class="h-4 w-4 shrink-0 rounded-sm" />
                   <span class="truncate">docs.discord.food</span>

@@ -255,7 +255,7 @@ onUnmounted(() => { disposed = true; unlisten?.(); draft.value = { fields: {} };
             :disabled="dialogBusy" @input="input(field.id, $event)" />
         </div>
         <div class="flex flex-wrap gap-x-4 gap-y-2 text-xs">
-          <button v-for="link in configuredChannel.help_links" :key="link.url" type="button" class="text-primary underline underline-offset-4" @click="openExternal(link.url)">{{ t(link.label_key) }}</button>
+          <a v-for="link in configuredChannel.help_links" :key="link.url" :href="link.url" class="text-primary underline underline-offset-4" @click.prevent="openExternal(link.url)">{{ t(link.label_key) }}</a>
           <button v-if="hasSavedConfig" type="button" class="text-destructive underline underline-offset-4" :disabled="dialogBusy" @click="clearChannel">{{ t('notifications.clear_config') }}</button>
         </div>
         <p v-if="dialogError" id="notification-config-error" role="alert" class="text-sm text-destructive">{{ dialogError }}</p>

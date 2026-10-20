@@ -366,7 +366,7 @@ watch(
                       <p class="text-sm text-muted-foreground">{{ t('version.update_desc', { version: versionStore.latestRelease.tag_name, current: versionStore.currentVersion }) }}</p>
                     </div>
                   </div>
-                  <Button @click="openUpdatePage" class="shrink-0 gap-2"><ExternalLink class="h-4 w-4" />{{ t('version.download') }}</Button>
+                  <Button as="a" :href="versionStore.latestRelease.html_url" @click.prevent="openUpdatePage" class="shrink-0 gap-2"><ExternalLink class="h-4 w-4" />{{ t('version.download') }}</Button>
                 </div>
                 <template v-if="currentTab === 'home'">
                   <Home v-if="authStore.user" :debug-mode-enabled="debugModeEnabled" />
