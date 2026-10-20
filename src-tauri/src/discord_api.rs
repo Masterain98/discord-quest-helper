@@ -175,6 +175,52 @@ impl ProxyState {
     }
 }
 
+/// Whether a request failed before Discord answered, so its connection is suspect.
+fn is_connection_error(error: &reqwest::Error) -> bool {
+    error.is_connect() || error.is_timeout() || error.is_request()
+}
+
+/// Execute `request`; after a connection error, ask `reconnect` for a fresh
+/// client and retry GET requests once. Other methods are not retried, since
+/// Discord may already have processed them.
+async fn execute_reconnecting<F>(
+    client: reqwest::Client,
+    request: reqwest::Request,
+    reconnect: F,
+) -> reqwest::Result<reqwest::Response>
+where
+    F: FnOnce(&reqwest::Error) -> reqwest::Client,
+{
+    let retry = if request.method() == Method::GET {
+        request.try_clone()
+    } else {
+        None
+    };
+
+    match client.execute(request).await {
+        Err(error) if is_connection_error(&error) => {
+            let client = reconnect(&error);
+            match retry {
+                Some(request) => client.execute(request).await,
+                None => Err(error),
+            }
+        }
+        result => result,
+    }
+}
+
+trait SendReconnecting {
+    /// Send through the API client, reconnecting after a connection error.
+    async fn send_reconnecting(self, api: &DiscordApiClient) -> reqwest::Result<reqwest::Response>;
+}
+
+impl SendReconnecting for RequestBuilder {
+    async fn send_reconnecting(self, api: &DiscordApiClient) -> reqwest::Result<reqwest::Response> {
+        let (client, request) = self.build_split();
+        execute_reconnecting(client, request?, |error| api.reset_connections(error)).await
+    }
+}
+
 /// Discord API client
 #[derive(Clone)]
 pub struct DiscordApiClient {
@@ -216,10 +262,16 @@ impl DiscordApiClient {
     fn build_http_client(token: &str, proxy_state: &ProxyState) -> Result<reqwest::Client> {
         let headers = Self::build_default_headers(token)?;
 
+        // Keep-alive pings close connections whose network route disappeared,
+        // such as a VPN being switched, before a request waits on them.
         let builder = reqwest::Client::builder()
             .default_headers(headers)
             .connect_timeout(Duration::from_secs(8))
-            .timeout(Duration::from_secs(20));
+            .timeout(Duration::from_secs(20))
+            .pool_idle_timeout(Duration::from_secs(30))
+            .http2_keep_alive_interval(Duration::from_secs(10))
+            .http2_keep_alive_timeout(Duration::from_secs(5))
+            .http2_keep_alive_while_idle(true);
 
         let builder = Self::apply_desktop_proxy(builder, proxy_state)?;
 
@@ -493,6 +545,51 @@ impl DiscordApiClient {
         request
     }
 
+    /// Replace the HTTP client so no pooled connection from a previous network
+    /// route is reused, returning the client to use from now on.
+    fn reset_connections(&self, reason: &reqwest::Error) -> reqwest::Client {
+        use crate::logger::{log, LogCategory, LogLevel};
+
+        let proxy_state = ProxyState::current();
+        match Self::build_http_client(&self.token, &proxy_state) {
+            Ok(client) => {
+                self.client.store(Arc::new(client.clone()));
+                self.proxy_fingerprint
+                    .store(proxy_state.fingerprint, Ordering::Release);
+                self.proxy_has_proxy
+                    .store(proxy_state.has_proxy, Ordering::Release);
+                log(
+                    LogLevel::Warn,
+                    LogCategory::Api,
+                    "Connection error, reconnecting with a new HTTP client",
+                    Some(&Self::error_chain(reason)),
+                );
+                client
+            }
+            Err(err) => {
+                log(
+                    LogLevel::Warn,
+                    LogCategory::Api,
+                    "Failed to rebuild HTTP client after connection error",
+                    Some(&err.to_string()),
+                );
+                self.client.load_full().as_ref().clone()
+            }
+        }
+    }
+
+    /// Join an error with its sources, like anyhow's `{:#}`.
+    fn error_chain(error: &(dyn std::error::Error + 'static)) -> String {
+        let mut message = error.to_string();
+        let mut source = error.source();
+        while let Some(cause) = source {
+            message.push_str(": ");
+            message.push_str(&cause.to_string());
+            source = cause.source();
+        }
+        message
+    }
+
     #[allow(dead_code)]
     pub fn get_token(&self) -> &str {
         &self.token
@@ -510,15 +607,19 @@ impl DiscordApiClient {
             Some(&url),
         );
 
-        let response = self.request(Method::GET, &url).send().await.map_err(|e| {
-            log(
-                LogLevel::Error,
-                LogCategory::Api,
-                "Network request failed for /users/@me",
-                Some(&e.to_string()),
-            );
-            anyhow::anyhow!("Request for current user info failed: {}", e)
-        })?;
+        let response = self
+            .request(Method::GET, &url)
+            .send_reconnecting(self)
+            .await
+            .map_err(|e| {
+                log(
+                    LogLevel::Error,
+                    LogCategory::Api,
+                    "Network request failed for /users/@me",
+                    Some(&e.to_string()),
+                );
+                anyhow::anyhow!("Request for current user info failed: {}", e)
+            })?;
 
         let status = response.status();
         log(
@@ -604,7 +705,7 @@ impl DiscordApiClient {
 
         let response = self
             .request(Method::GET, &url)
-            .send()
+            .send_reconnecting(self)
             .await
             .context("Request for quest list failed")?;
 
@@ -651,7 +752,7 @@ impl DiscordApiClient {
 
         let response = self
             .request(Method::GET, url.as_str())
-            .send()
+            .send_reconnecting(self)
             .await
             .context("Request for quest placement decision failed")?;
 
@@ -692,7 +793,7 @@ impl DiscordApiClient {
 
         let response = self
             .request(Method::GET, url.as_str())
-            .send()
+            .send_reconnecting(self)
             .await
             .context("Request for quest placement decisions failed")?;
 
@@ -714,7 +815,7 @@ impl DiscordApiClient {
 
         let response = self
             .request(Method::GET, &url)
-            .send()
+            .send_reconnecting(self)
             .await
             .context("Request for virtual currency balance failed")?;
 
@@ -738,7 +839,7 @@ impl DiscordApiClient {
         );
         let response = self
             .request(Method::GET, &url)
-            .send()
+            .send_reconnecting(self)
             .await
             .context("Request for virtual currency total redeemed failed")?;
 
@@ -767,7 +868,7 @@ impl DiscordApiClient {
 
         let response = self
             .request(Method::GET, &url)
-            .send()
+            .send_reconnecting(self)
             .await
             .context("Request for billing subscriptions failed")?;
 
@@ -786,7 +887,7 @@ impl DiscordApiClient {
 
         let response = self
             .request(Method::GET, &url)
-            .send()
+            .send_reconnecting(self)
             .await
             .context("Request for program rewards failed")?;
 
@@ -815,7 +916,7 @@ impl DiscordApiClient {
         let response = self
             .request(Method::POST, &url)
             .json(&payload)
-            .send()
+            .send_reconnecting(self)
             .await
             .context("Request to claim quest reward failed")?;
 
@@ -844,7 +945,7 @@ impl DiscordApiClient {
         let response = self
             .request(Method::POST, &url)
             .json(&payload)
-            .send()
+            .send_reconnecting(self)
             .await
             .context("Failed to send video progress")?;
 
@@ -875,7 +976,7 @@ impl DiscordApiClient {
         let response = self
             .request(Method::POST, &url)
             .json(&payload)
-            .send()
+            .send_reconnecting(self)
             .await
             .context("Failed to send heartbeat")?;
 
@@ -910,7 +1011,7 @@ impl DiscordApiClient {
         let response = self
             .request(Method::POST, &url)
             .json(&payload)
-            .send()
+            .send_reconnecting(self)
             .await
             .context("Failed to send game heartbeat")?;
 
@@ -949,7 +1050,7 @@ impl DiscordApiClient {
         let response = self
             .request(Method::POST, &url)
             .json(&payload)
-            .send()
+            .send_reconnecting(self)
             .await
             .context("Failed to send PLAY_ACTIVITY heartbeat")?;
 
@@ -993,7 +1094,7 @@ impl DiscordApiClient {
         let response = self
             .request(Method::POST, &url)
             .json(&payload)
-            .send()
+            .send_reconnecting(self)
             .await
             .context("Failed to accept quest")?;
 
@@ -1010,7 +1111,7 @@ impl DiscordApiClient {
         let fallback_response = self
             .request(Method::POST, &url)
             .json(&minimal_payload)
-            .send()
+            .send_reconnecting(self)
             .await
             .context("Failed to accept quest with minimal payload")?;
 
@@ -1164,6 +1265,110 @@ fn convert_api_quest_to_quest(quest_json: &serde_json::Value) -> Option<Quest> {
 mod tests {
     use super::*;
     use std::sync::Mutex;
+
+    /// Accepts connections until aborted. The first `dropped` connections are
+    /// closed after their request is read; later ones receive `200 OK`.
+    fn spawn_flaky_server(
+        listener: tokio::net::TcpListener,
+        dropped: usize,
+    ) -> (
+        Arc<std::sync::atomic::AtomicUsize>,
+        tokio::task::JoinHandle<()>,
+    ) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let connections = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = connections.clone();
+        let server = tokio::spawn(async move {
+            loop {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let index = counter.fetch_add(1, Ordering::SeqCst);
+                let mut request = Vec::new();
+                while !request.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
+                    let mut buffer = [0; 4096];
+                    match stream.read(&mut buffer).await {
+                        Ok(0) | Err(_) => break,
+                        Ok(count) => request.extend_from_slice(&buffer[..count]),
+                    }
+                }
+                if index < dropped {
+                    continue;
+                }
+                let response = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+                stream.write_all(response.as_bytes()).await.unwrap();
+                // Keep the socket briefly so Windows does not reset the response.
+                tokio::time::sleep(Duration::from_millis(400)).await;
+            }
+        });
+        (connections, server)
+    }
+
+    fn proxyless_client() -> reqwest::Client {
+        reqwest::Client::builder().no_proxy().build().unwrap()
+    }
+
+    #[tokio::test]
+    async fn get_requests_retry_once_on_a_new_client_after_a_connection_error() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/quests/@me", listener.local_addr().unwrap());
+        let (connections, server) = spawn_flaky_server(listener, 1);
+        let client = proxyless_client();
+        let request = client.get(&url).build().unwrap();
+        let mut reconnects = 0;
+
+        let response = execute_reconnecting(client, request, |_| {
+            reconnects += 1;
+            proxyless_client()
+        })
+        .await;
+        server.abort();
+
+        assert_eq!(response.unwrap().status(), 200);
+        assert_eq!(reconnects, 1);
+        assert_eq!(connections.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn non_get_requests_reconnect_without_retrying() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/quests/1/enroll", listener.local_addr().unwrap());
+        let (connections, server) = spawn_flaky_server(listener, usize::MAX);
+        let client = proxyless_client();
+        let request = client.post(&url).body("{}").build().unwrap();
+        let mut reconnects = 0;
+
+        let error = execute_reconnecting(client, request, |_| {
+            reconnects += 1;
+            proxyless_client()
+        })
+        .await
+        .unwrap_err();
+        server.abort();
+
+        assert!(is_connection_error(&error));
+        assert_eq!(reconnects, 1);
+        assert_eq!(connections.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn http_error_statuses_do_not_reconnect() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/quests/@me", listener.local_addr().unwrap());
+        let (connections, server) = spawn_flaky_server(listener, 0);
+        let client = proxyless_client();
+        let request = client.get(&url).build().unwrap();
+        let mut reconnects = 0;
+
+        let response = execute_reconnecting(client, request, |_| {
+            reconnects += 1;
+            proxyless_client()
+        })
+        .await;
+        server.abort();
+
+        assert!(response.is_ok());
+        assert_eq!(reconnects, 0);
+        assert_eq!(connections.load(Ordering::SeqCst), 1);
+    }
 
     async fn detectable_catalog_response(
         games_status: u16,
