@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch, onUnmounted } from 'vue'
+import { useResizeObserver } from '@vueuse/core'
 import { useQuestsStore } from '@/stores/quests'
 import { useAuthStore } from '@/stores/auth'
 import { useGameIdleStore } from '@/stores/gameIdle'
@@ -22,6 +23,20 @@ const floatingPosition = ref<{ left: number, top: number } | null>(null)
 const initialPlacementPending = ref(false)
 const FLOATING_POSITION_KEY = 'questHelper_progressFloatingPosition'
 const EDGE_MARGIN = 12
+const floatingBounds = ref({ left: EDGE_MARGIN, top: EDGE_MARGIN })
+const viewportSize = ref({ width: window.innerWidth, height: window.innerHeight })
+const railRef = ref<HTMLElement | null>(null)
+const titlebarRef = ref<HTMLElement | null>(null)
+
+function updateFloatingBounds() {
+  const rail = railRef.value?.getBoundingClientRect()
+  const titlebar = titlebarRef.value?.getBoundingClientRect()
+  floatingBounds.value = {
+    left: Math.max(EDGE_MARGIN, (rail?.right ?? 0) + EDGE_MARGIN),
+    top: Math.max(EDGE_MARGIN, (titlebar?.bottom ?? 0) + EDGE_MARGIN),
+  }
+  viewportSize.value = { width: window.innerWidth, height: window.innerHeight }
+}
 
 let dragState: {
   pointerId: number
@@ -271,25 +286,26 @@ function handleRewardImageError() {
 }
 
 const floatingStyle = computed(() => {
-  if (!floatingPosition.value) return {}
   return {
-    left: `${floatingPosition.value.left}px`,
-    top: `${floatingPosition.value.top}px`,
+    '--quest-progress-max-width': `${Math.max(0, viewportSize.value.width - floatingBounds.value.left - EDGE_MARGIN)}px`,
+    '--quest-progress-max-height': `${Math.max(0, viewportSize.value.height - floatingBounds.value.top - EDGE_MARGIN)}px`,
+    left: `${floatingPosition.value?.left ?? floatingBounds.value.left}px`,
+    top: `${floatingPosition.value?.top ?? floatingBounds.value.top}px`,
     right: 'auto',
     bottom: 'auto',
   }
 })
 
 function clampPosition(left: number, top: number, measuredWidth?: number, measuredHeight?: number) {
-  const rect = floatingRef.value?.getBoundingClientRect()
-  const width = measuredWidth ?? rect?.width ?? 384
-  const height = measuredHeight ?? rect?.height ?? 80
-  const maxLeft = Math.max(EDGE_MARGIN, window.innerWidth - width - EDGE_MARGIN)
-  const maxTop = Math.max(EDGE_MARGIN, window.innerHeight - height - EDGE_MARGIN)
+  const width = measuredWidth ?? floatingRef.value?.offsetWidth ?? 384
+  const height = measuredHeight ?? floatingRef.value?.offsetHeight ?? 80
+  const { left: minLeft, top: minTop } = floatingBounds.value
+  const maxLeft = Math.max(minLeft, window.innerWidth - width - EDGE_MARGIN)
+  const maxTop = Math.max(minTop, window.innerHeight - height - EDGE_MARGIN)
 
   return {
-    left: Math.min(maxLeft, Math.max(EDGE_MARGIN, left)),
-    top: Math.min(maxTop, Math.max(EDGE_MARGIN, top)),
+    left: Math.min(maxLeft, Math.max(minLeft, left)),
+    top: Math.min(maxTop, Math.max(minTop, top)),
   }
 }
 
@@ -299,11 +315,15 @@ function saveFloatingPosition() {
 }
 
 async function reconcileFloatingPosition() {
+  updateFloatingBounds()
   await nextTick()
-  const rect = floatingRef.value?.getBoundingClientRect()
-  if (!rect) return
-  floatingPosition.value = clampPosition(rect.left, rect.top)
+  const position = floatingPosition.value
+  if (!floatingRef.value || !position) return
+  floatingPosition.value = clampPosition(position.left, position.top)
 }
+
+// Keep the panel inside the usable workspace when the shell, content or window changes.
+useResizeObserver([floatingRef, railRef, titlebarRef], () => { void reconcileFloatingPosition() })
 
 function startDrag(event: PointerEvent) {
   if (event.button !== 0) return
@@ -447,6 +467,10 @@ watch(() => questsStore.activeQuestProgress, (next) => {
 onUnmounted(() => { if (_raf !== null) cancelAnimationFrame(_raf) })
 
 onMounted(() => {
+  railRef.value = triggerRef.value?.closest<HTMLElement>('.app-icon-rail') ?? null
+  titlebarRef.value = document.querySelector<HTMLElement>('.app-titlebar')
+  updateFloatingBounds()
+  window.addEventListener('resize', reconcileFloatingPosition)
   try {
     const saved = localStorage.getItem(FLOATING_POSITION_KEY)
     if (!saved) return
@@ -473,6 +497,7 @@ watch(queuedBehindCount, () => {
 })
 
 onUnmounted(() => {
+  window.removeEventListener('resize', reconcileFloatingPosition)
   window.removeEventListener('pointermove', handleDragMove)
   window.removeEventListener('pointerup', stopDrag)
   window.removeEventListener('pointercancel', stopDrag)
@@ -548,11 +573,11 @@ const progressBarStyle = computed(() => {
         v-if="expanded && hasFloatingContent"
         id="quest-progress-floating-window"
         ref="floatingRef"
-        class="fixed bottom-5 right-5 z-40 w-[calc(100vw-2rem)] max-w-sm"
+        class="quest-progress-floating-window fixed z-40 w-96"
         :style="floatingStyle"
         @keydown.esc.stop.prevent="hideProgressWindow"
       >
-      <Card class="ui-floating-panel max-h-[calc(100dvh-2.5rem)] overflow-y-auto">
+      <Card class="quest-progress-floating-card ui-floating-panel overflow-y-auto">
       <CardHeader
         class="flex cursor-grab flex-row items-center justify-between space-y-0 pb-3 active:cursor-grabbing"
         @pointerdown="startDrag"
@@ -735,6 +760,14 @@ const progressBarStyle = computed(() => {
 </template>
 
 <style scoped>
+.quest-progress-floating-window {
+  max-width: var(--quest-progress-max-width);
+}
+
+.quest-progress-floating-card {
+  max-height: var(--quest-progress-max-height);
+}
+
 .quest-progress-panel-enter-active,
 .quest-progress-panel-leave-active {
   transform-origin: bottom right;
