@@ -12,6 +12,7 @@ mod game_idle;
 mod game_simulator;
 mod logger;
 mod models;
+mod notifications;
 mod platform_capabilities;
 mod quest_completer;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -2183,7 +2184,10 @@ fn create_main_window(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(not(target_os = "windows"))]
+    let builder = builder.plugin(tauri_plugin_notification::init());
+    builder
         .manage(std::sync::Arc::new(
             discord_console::ConsoleManager::default(),
         ))
@@ -2202,6 +2206,9 @@ pub fn run() {
             activity_gate: tokio::sync::Mutex::new(()),
         })
         .setup(|app| {
+            let notifications = notifications::initialize(app.handle().clone())
+                .map_err(|_| std::io::Error::other("Unable to initialize notification channels"))?;
+            app.manage(std::sync::Arc::new(notifications));
             // `pnpm tauri:dev` rebuilds the bundled launcher before Tauri
             // starts. If a Linux launcher entry was created previously,
             // refresh its binary, desktop entry, and icon on every dev start
@@ -2235,6 +2242,13 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            notifications::get_notification_settings,
+            notifications::save_notification_events,
+            notifications::set_notification_channel_enabled,
+            notifications::save_notification_channel,
+            notifications::clear_notification_channel,
+            notifications::test_notification_channel,
+            notifications::dispatch_notification,
             discord_console::open_discord_console,
             discord_console::evaluate_discord_console,
             discord_console::get_discord_console_properties,
