@@ -1142,23 +1142,31 @@ impl DiscordApiClient {
         fetch_detectable_catalog(
             self.request(Method::GET, &games_url),
             self.request(Method::GET, &apps_url),
+            |request| request.send_reconnecting(self),
         )
         .await
     }
 }
 
-async fn fetch_detectable_catalog(
+async fn fetch_detectable_catalog<F, Fut>(
     games_request: reqwest::RequestBuilder,
     apps_request: reqwest::RequestBuilder,
-) -> Result<Vec<DetectableGame>> {
-    let fetch_list = |request: reqwest::RequestBuilder| async move {
-        request
-            .send()
-            .await?
-            .error_for_status()?
-            .json::<Vec<DetectableGame>>()
-            .await
-            .context("Invalid detectable catalog response")
+    send: F,
+) -> Result<Vec<DetectableGame>>
+where
+    F: Fn(reqwest::RequestBuilder) -> Fut,
+    Fut: std::future::Future<Output = reqwest::Result<reqwest::Response>>,
+{
+    let fetch_list = |request: reqwest::RequestBuilder| {
+        let response = send(request);
+        async move {
+            response
+                .await?
+                .error_for_status()?
+                .json::<Vec<DetectableGame>>()
+                .await
+                .context("Invalid detectable catalog response")
+        }
     };
     let (games_result, apps_result) =
         tokio::join!(fetch_list(games_request), fetch_list(apps_request));
@@ -1266,22 +1274,20 @@ mod tests {
     use super::*;
     use std::sync::Mutex;
 
-    /// Accepts connections until aborted. The first `dropped` connections are
-    /// closed after their request is read; later ones receive `200 OK`.
+    /// Accepts connections until aborted and records each request head. The
+    /// first `dropped` connections are closed after their request is read;
+    /// later ones receive `status`.
     fn spawn_flaky_server(
         listener: tokio::net::TcpListener,
         dropped: usize,
-    ) -> (
-        Arc<std::sync::atomic::AtomicUsize>,
-        tokio::task::JoinHandle<()>,
-    ) {
+        status: u16,
+    ) -> (Arc<Mutex<Vec<String>>>, tokio::task::JoinHandle<()>) {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
-        let connections = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let counter = connections.clone();
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let recorded = requests.clone();
         let server = tokio::spawn(async move {
             loop {
                 let (mut stream, _) = listener.accept().await.unwrap();
-                let index = counter.fetch_add(1, Ordering::SeqCst);
                 let mut request = Vec::new();
                 while !request.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
                     let mut buffer = [0; 4096];
@@ -1290,55 +1296,76 @@ mod tests {
                         Ok(count) => request.extend_from_slice(&buffer[..count]),
                     }
                 }
+                let index = {
+                    let mut recorded = recorded.lock().unwrap();
+                    recorded.push(String::from_utf8_lossy(&request).to_ascii_lowercase());
+                    recorded.len() - 1
+                };
                 if index < dropped {
                     continue;
                 }
-                let response = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+                let response = format!(
+                    "HTTP/1.1 {status} Test\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                );
                 stream.write_all(response.as_bytes()).await.unwrap();
                 // Keep the socket briefly so Windows does not reset the response.
                 tokio::time::sleep(Duration::from_millis(400)).await;
             }
         });
-        (connections, server)
+        (requests, server)
     }
 
     fn proxyless_client() -> reqwest::Client {
         reqwest::Client::builder().no_proxy().build().unwrap()
     }
 
+    /// A client whose requests the test server can tell apart from the original's.
+    fn replacement_client() -> reqwest::Client {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-test-client", HeaderValue::from_static("replacement"));
+        reqwest::Client::builder()
+            .no_proxy()
+            .default_headers(headers)
+            .build()
+            .unwrap()
+    }
+
     #[tokio::test]
     async fn get_requests_retry_once_on_a_new_client_after_a_connection_error() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}/quests/@me", listener.local_addr().unwrap());
-        let (connections, server) = spawn_flaky_server(listener, 1);
+        let (requests, server) = spawn_flaky_server(listener, 1, 200);
         let client = proxyless_client();
         let request = client.get(&url).build().unwrap();
         let mut reconnects = 0;
 
         let response = execute_reconnecting(client, request, |_| {
             reconnects += 1;
-            proxyless_client()
+            replacement_client()
         })
         .await;
         server.abort();
 
         assert_eq!(response.unwrap().status(), 200);
         assert_eq!(reconnects, 1);
-        assert_eq!(connections.load(Ordering::SeqCst), 2);
+        let requests = requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert!(!requests[0].contains("x-test-client: replacement"));
+        assert!(requests[1].contains("x-test-client: replacement"));
     }
 
     #[tokio::test]
     async fn non_get_requests_reconnect_without_retrying() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}/quests/1/enroll", listener.local_addr().unwrap());
-        let (connections, server) = spawn_flaky_server(listener, usize::MAX);
+        let (requests, server) = spawn_flaky_server(listener, usize::MAX, 200);
         let client = proxyless_client();
         let request = client.post(&url).body("{}").build().unwrap();
         let mut reconnects = 0;
 
         let error = execute_reconnecting(client, request, |_| {
             reconnects += 1;
-            proxyless_client()
+            replacement_client()
         })
         .await
         .unwrap_err();
@@ -1346,28 +1373,28 @@ mod tests {
 
         assert!(is_connection_error(&error));
         assert_eq!(reconnects, 1);
-        assert_eq!(connections.load(Ordering::SeqCst), 1);
+        assert_eq!(requests.lock().unwrap().len(), 1);
     }
 
     #[tokio::test]
     async fn http_error_statuses_do_not_reconnect() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}/quests/@me", listener.local_addr().unwrap());
-        let (connections, server) = spawn_flaky_server(listener, 0);
+        let (requests, server) = spawn_flaky_server(listener, 0, 500);
         let client = proxyless_client();
         let request = client.get(&url).build().unwrap();
         let mut reconnects = 0;
 
         let response = execute_reconnecting(client, request, |_| {
             reconnects += 1;
-            proxyless_client()
+            replacement_client()
         })
         .await;
         server.abort();
 
-        assert!(response.is_ok());
+        assert_eq!(response.unwrap().status(), 500);
         assert_eq!(reconnects, 0);
-        assert_eq!(connections.load(Ordering::SeqCst), 1);
+        assert_eq!(requests.lock().unwrap().len(), 1);
     }
 
     async fn detectable_catalog_response(
@@ -1413,6 +1440,7 @@ mod tests {
             fetch_detectable_catalog(
                 client.get(format!("http://{address}/games")),
                 client.get(format!("http://{address}/apps")),
+                |request| request.send(),
             ),
         )
         .await

@@ -834,7 +834,7 @@ async fn start_video_quest(
         .await;
 
         if let Err(e) = result {
-            let _ = app_handle.emit("quest-error", format!("Video quest failed: {}", e));
+            let _ = app_handle.emit("quest-error", format!("Video quest failed: {:#}", e));
         }
     });
     store_running_quest(&state, quest_id_for_state, cancel_tx, join);
@@ -880,7 +880,7 @@ async fn start_stream_quest(
         .await;
 
         if let Err(e) = result {
-            let _ = app_handle.emit("quest-error", format!("Stream quest failed: {}", e));
+            let _ = app_handle.emit("quest-error", format!("Stream quest failed: {:#}", e));
         }
     });
     store_running_quest(&state, quest_id_for_state, cancel_tx, join);
@@ -926,7 +926,10 @@ async fn start_game_heartbeat_quest(
         .await;
 
         if let Err(e) = result {
-            let _ = app_handle.emit("quest-error", format!("Game heartbeat quest failed: {}", e));
+            let _ = app_handle.emit(
+                "quest-error",
+                format!("Game heartbeat quest failed: {:#}", e),
+            );
         }
     });
     store_running_quest(&state, quest_id_for_state, cancel_tx, join);
