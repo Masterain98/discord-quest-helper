@@ -153,6 +153,8 @@ blocking settings edits or network delivery.
 System artwork uses a 128-file / 32 MiB / 30-day cache budget. Recently used files
 are protected for five minutes for native consumers, so bursts can temporarily
 exceed the budget; the next preparation evicts old files and abandoned temporaries.
+Downloads and image decoding run outside the cache lock; only cache lookups,
+commits and maintenance are serialized.
 The service owns all persistence and vault transactions; adapters must
 not access those facilities or global task state.
 

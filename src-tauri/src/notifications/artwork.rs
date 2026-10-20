@@ -86,45 +86,63 @@ fn png(bytes: Vec<u8>) -> Option<Vec<u8>> {
     Some(output.into_inner())
 }
 
-async fn prepare_inner(directory: &Path, source: &str) -> Option<PathBuf> {
+async fn download(source: String) -> Option<Vec<u8>> {
+    let client = super::http::client().ok()?;
+    let mut response = client
+        .get(source)
+        .send()
+        .await
+        .ok()?
+        .error_for_status()
+        .ok()?;
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_BYTES as u64)
+    {
+        return None;
+    }
+    let mut data = Vec::new();
+    while let Some(chunk) = response.chunk().await.ok()? {
+        if data.len() + chunk.len() > MAX_BYTES {
+            return None;
+        }
+        data.extend_from_slice(&chunk);
+    }
+    Some(data)
+}
+
+async fn prepare_inner<F, Fut>(directory: &Path, source: &str, download: F) -> Option<PathBuf>
+where
+    F: FnOnce(String) -> Fut,
+    Fut: std::future::Future<Output = Option<Vec<u8>>>,
+{
     let source = super::message::reward_source(source)?;
-    let _access = CACHE_ACCESS.lock().await;
     let directory = directory.join("notification-artwork");
     tokio::fs::create_dir_all(&directory).await.ok()?;
     let path = directory.join(format!("{:x}.png", Sha256::digest(source.as_bytes())));
-    maintain(&directory, &path).await;
-    if path.is_file() {
-        return Some(path);
+    {
+        let _access = CACHE_ACCESS.lock().await;
+        maintain(&directory, &path).await;
+        if path.is_file() {
+            return Some(path);
+        }
     }
+    // Downloads and decoding are independent of cache maintenance, so a slow
+    // source cannot consume another notification's artwork deadline.
     let bytes = if source == "/icons/orbs.png" {
         include_bytes!("../../../public/icons/orbs.png").to_vec()
     } else {
-        let client = super::http::client().ok()?;
-        let mut response = client
-            .get(source)
-            .send()
-            .await
-            .ok()?
-            .error_for_status()
-            .ok()?;
-        if response
-            .content_length()
-            .is_some_and(|length| length > MAX_BYTES as u64)
-        {
-            return None;
-        }
-        let mut data = Vec::new();
-        while let Some(chunk) = response.chunk().await.ok()? {
-            if data.len() + chunk.len() > MAX_BYTES {
-                return None;
-            }
-            data.extend_from_slice(&chunk);
-        }
-        data
+        download(source).await?
     };
     let data = tauri::async_runtime::spawn_blocking(move || png(bytes))
         .await
         .ok()??;
+    let _access = CACHE_ACCESS.lock().await;
+    // Another download may have populated the same key while this one ran.
+    if path.is_file() {
+        maintain(&directory, &path).await;
+        return Some(path);
+    }
     let temporary = directory.join(format!("{}.tmp", uuid::Uuid::new_v4()));
     tokio::fs::write(&temporary, &data).await.ok()?;
     if tokio::fs::rename(&temporary, &path).await.is_err() {
@@ -137,10 +155,13 @@ async fn prepare_inner(directory: &Path, source: &str) -> Option<PathBuf> {
     Some(path)
 }
 pub(super) async fn prepare(directory: &Path, source: &str) -> Option<PathBuf> {
-    tokio::time::timeout(Duration::from_secs(3), prepare_inner(directory, source))
-        .await
-        .ok()
-        .flatten()
+    tokio::time::timeout(
+        Duration::from_secs(3),
+        prepare_inner(directory, source, download),
+    )
+    .await
+    .ok()
+    .flatten()
 }
 
 #[cfg(test)]
@@ -200,6 +221,85 @@ mod tests {
         assert!(recent.exists());
         std::fs::remove_dir_all(directory).unwrap();
     }
+    #[tokio::test]
+    async fn pending_download_does_not_delay_cached_or_other_artwork() {
+        let directory =
+            std::env::temp_dir().join(format!("dqh-art-parallel-{}", uuid::Uuid::new_v4()));
+        let cached = prepare(&directory, "/icons/orbs.png").await.unwrap();
+        let (started, waiting) = tokio::sync::oneshot::channel();
+        let (release, released) = tokio::sync::oneshot::channel();
+        let root = directory.clone();
+        let pending = tokio::spawn(async move {
+            prepare_inner(
+                &root,
+                "https://cdn.discordapp.com/slow.png",
+                |_| async move {
+                    let _ = started.send(());
+                    released.await.ok()?;
+                    Some(include_bytes!("../../../public/icons/orbs.png").to_vec())
+                },
+            )
+            .await
+        });
+        tokio::time::timeout(Duration::from_secs(2), waiting)
+            .await
+            .unwrap()
+            .unwrap();
+        let (cached_result, independent_result) = tokio::join!(
+            tokio::time::timeout(
+                Duration::from_secs(2),
+                prepare(&directory, "/icons/orbs.png")
+            ),
+            tokio::time::timeout(
+                Duration::from_secs(2),
+                prepare_inner(
+                    &directory,
+                    "https://cdn.discordapp.com/other.png",
+                    |_| async { Some(include_bytes!("../../../public/icons/orbs.png").to_vec()) }
+                )
+            ),
+        );
+        // Always release and join the paused task before asserting, including
+        // when the regression causes either unrelated request to time out.
+        let _ = release.send(());
+        let pending_result = pending.await.unwrap();
+        std::fs::remove_dir_all(directory).unwrap();
+        assert_eq!(cached_result.unwrap(), Some(cached));
+        assert!(independent_result.unwrap().is_some());
+        assert!(pending_result.is_some());
+    }
+
+    #[tokio::test]
+    async fn overlapping_downloads_of_same_artwork_commit_one_valid_cache_file() {
+        let directory = std::env::temp_dir().join(format!("dqh-art-same-{}", uuid::Uuid::new_v4()));
+        let barrier = std::sync::Arc::new(tokio::sync::Barrier::new(2));
+        let fetch = |_| {
+            let barrier = barrier.clone();
+            async move {
+                barrier.wait().await;
+                Some(include_bytes!("../../../public/icons/orbs.png").to_vec())
+            }
+        };
+        let results = tokio::time::timeout(Duration::from_secs(2), async {
+            tokio::join!(
+                prepare_inner(&directory, "https://cdn.discordapp.com/same.png", fetch),
+                prepare_inner(&directory, "https://cdn.discordapp.com/same.png", fetch),
+            )
+        })
+        .await
+        .unwrap();
+        let first = results.0.unwrap();
+        assert_eq!(results.1, Some(first.clone()));
+        assert!(image::load_from_memory(&std::fs::read(first).unwrap()).is_ok());
+        assert_eq!(
+            std::fs::read_dir(directory.join("notification-artwork"))
+                .unwrap()
+                .count(),
+            1
+        );
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
     #[tokio::test]
     async fn caches_local_art_and_rejects_unsupported_sources_without_fetching() {
         let directory = std::env::temp_dir().join(format!("dqh-art-{}", uuid::Uuid::new_v4()));
