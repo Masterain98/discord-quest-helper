@@ -487,14 +487,14 @@ async fn set_token(
     let _ = on_progress.send(AuthProgress::phase(AuthProgressPhase::ValidatingToken));
 
     // Create API client
-    let client =
-        DiscordApiClient::new(token).map_err(|e| format!("Failed to create API client: {}", e))?;
+    let client = DiscordApiClient::new(token)
+        .map_err(|e| format!("Failed to create API client: {:#}", e))?;
 
     // Validate token
     let user = client
         .get_current_user()
         .await
-        .map_err(|e| format!("Failed to validate token: {}", e))?;
+        .map_err(|e| format!("Failed to validate token: {:#}", e))?;
 
     let _ = on_progress.send(AuthProgress::phase(AuthProgressPhase::PreparingSession));
 
@@ -656,11 +656,11 @@ async fn auto_login_via_cdp(
     // 2. Build an API client from the captured token and validate it via
     //    /users/@me. An invalid capture is rejected here.
     let client = DiscordApiClient::new(session.authorization.to_string())
-        .map_err(|e| format!("Failed to create API client: {}", e))?;
+        .map_err(|e| format!("Failed to create API client: {:#}", e))?;
     let user = client
         .get_current_user()
         .await
-        .map_err(|e| format!("Captured Discord session is not valid: {}", e))?;
+        .map_err(|e| format!("Captured Discord session is not valid: {:#}", e))?;
 
     let _ = on_progress.send(AuthProgress::phase(AuthProgressPhase::PreparingSession));
 
@@ -770,7 +770,7 @@ async fn get_quests(state: State<'_, AppState>) -> Result<serde_json::Value, Str
     let quests = client
         .get_quests_raw()
         .await
-        .map_err(|e| format!("Failed to get quest list: {}", e))?;
+        .map_err(|e| format!("Failed to get quest list: {:#}", e))?;
 
     // Return the "quests" array directly
     Ok(quests
@@ -793,7 +793,7 @@ async fn get_quests_full(state: State<'_, AppState>) -> Result<serde_json::Value
     client
         .get_quests_raw()
         .await
-        .map_err(|e| format!("Failed to get quest list: {}", e))
+        .map_err(|e| format!("Failed to get quest list: {:#}", e))
 }
 
 /// Start video quest
@@ -834,7 +834,7 @@ async fn start_video_quest(
         .await;
 
         if let Err(e) = result {
-            let _ = app_handle.emit("quest-error", format!("Video quest failed: {}", e));
+            let _ = app_handle.emit("quest-error", format!("Video quest failed: {:#}", e));
         }
     });
     store_running_quest(&state, quest_id_for_state, cancel_tx, join);
@@ -880,7 +880,7 @@ async fn start_stream_quest(
         .await;
 
         if let Err(e) = result {
-            let _ = app_handle.emit("quest-error", format!("Stream quest failed: {}", e));
+            let _ = app_handle.emit("quest-error", format!("Stream quest failed: {:#}", e));
         }
     });
     store_running_quest(&state, quest_id_for_state, cancel_tx, join);
@@ -926,7 +926,10 @@ async fn start_game_heartbeat_quest(
         .await;
 
         if let Err(e) = result {
-            let _ = app_handle.emit("quest-error", format!("Game heartbeat quest failed: {}", e));
+            let _ = app_handle.emit(
+                "quest-error",
+                format!("Game heartbeat quest failed: {:#}", e),
+            );
         }
     });
     store_running_quest(&state, quest_id_for_state, cancel_tx, join);
@@ -1628,7 +1631,7 @@ async fn fetch_detectable_games(state: State<'_, AppState>) -> Result<Vec<Detect
         return client
             .fetch_detectable_games()
             .await
-            .map_err(|e| format!("Failed to get games list: {}", e));
+            .map_err(|e| format!("Failed to get games list: {:#}", e));
     }
 
     // ── Unauthenticated fallback ──────────────────────────────────────────
@@ -1692,7 +1695,7 @@ async fn accept_quest(
     let result = client
         .accept_quest(&quest_id)
         .await
-        .map_err(|e| format!("Failed to accept quest: {}", e))?;
+        .map_err(|e| format!("Failed to accept quest: {:#}", e))?;
 
     Ok(result)
 }
@@ -1712,7 +1715,7 @@ async fn get_virtual_currency_balance(
     client
         .get_virtual_currency_balance()
         .await
-        .map_err(|e| format!("Failed to get virtual currency balance: {}", e))
+        .map_err(|e| format!("Failed to get virtual currency balance: {:#}", e))
 }
 
 #[tauri::command]
@@ -1730,7 +1733,7 @@ async fn get_virtual_currency_total_redeemed(
     client
         .get_virtual_currency_total_redeemed()
         .await
-        .map_err(|e| format!("Failed to get virtual currency total redeemed: {}", e))
+        .map_err(|e| format!("Failed to get virtual currency total redeemed: {:#}", e))
 }
 
 #[tauri::command]
@@ -1748,7 +1751,7 @@ async fn get_billing_subscriptions(
     client
         .get_billing_subscriptions()
         .await
-        .map_err(|e| format!("Failed to get billing subscriptions: {}", e))
+        .map_err(|e| format!("Failed to get billing subscriptions: {:#}", e))
 }
 
 #[tauri::command]
@@ -1764,7 +1767,7 @@ async fn get_program_rewards(state: State<'_, AppState>) -> Result<serde_json::V
     client
         .get_program_rewards()
         .await
-        .map_err(|e| format!("Failed to get program rewards: {}", e))
+        .map_err(|e| format!("Failed to get program rewards: {:#}", e))
 }
 
 #[tauri::command]
@@ -1783,7 +1786,7 @@ async fn get_quest_decision_debug(
     client
         .get_quest_decision_debug(placement)
         .await
-        .map_err(|e| format!("Failed to get quest placement decision: {}", e))
+        .map_err(|e| format!("Failed to get quest placement decision: {:#}", e))
 }
 
 #[tauri::command]
@@ -1803,7 +1806,7 @@ async fn get_quest_decisions_debug(
     client
         .get_quest_decisions_debug(placement, num)
         .await
-        .map_err(|e| format!("Failed to get quest placement decisions: {}", e))
+        .map_err(|e| format!("Failed to get quest placement decisions: {:#}", e))
 }
 
 #[tauri::command]
@@ -1823,7 +1826,7 @@ async fn claim_quest_reward(
     client
         .claim_quest_reward(&quest_id, platform)
         .await
-        .map_err(|e| format!("Failed to claim quest reward: {}", e))
+        .map_err(|e| format!("Failed to claim quest reward: {:#}", e))
 }
 
 mod rpc;
@@ -2532,7 +2535,7 @@ async fn force_video_progress(
     client
         .update_video_progress(&quest_id, timestamp)
         .await
-        .map_err(|e| format!("Failed to force video progress: {}", e))?;
+        .map_err(|e| format!("Failed to force video progress: {:#}", e))?;
 
     Ok(())
 }

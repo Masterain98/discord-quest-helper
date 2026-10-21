@@ -145,7 +145,7 @@ pub async fn complete_video_quest(
             }
             Err(e) => {
                 println!("Video progress update failed: {}", e);
-                let _ = app_handle.emit("quest-error", e.to_string());
+                let _ = app_handle.emit("quest-error", format!("{:#}", e));
                 return Err(e);
             }
         }
@@ -266,7 +266,7 @@ pub async fn complete_game_quest_via_heartbeat(
             }
             Err(e) => {
                 println!("Game heartbeat failed: {}", e);
-                let _ = app_handle.emit("quest-error", e.to_string());
+                let _ = app_handle.emit("quest-error", format!("{:#}", e));
                 return Err(e);
             }
         }
