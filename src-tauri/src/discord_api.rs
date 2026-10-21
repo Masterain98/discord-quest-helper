@@ -571,7 +571,7 @@ impl DiscordApiClient {
                     LogLevel::Warn,
                     LogCategory::Api,
                     "Failed to rebuild HTTP client after connection error",
-                    Some(&err.to_string()),
+                    Some(&format!("{err:#}")),
                 );
                 self.client.load_full().as_ref().clone()
             }
@@ -616,7 +616,7 @@ impl DiscordApiClient {
                     LogLevel::Error,
                     LogCategory::Api,
                     "Network request failed for /users/@me",
-                    Some(&e.to_string()),
+                    Some(&Self::error_chain(&e)),
                 );
                 anyhow::Error::from(e).context("Request for current user info failed")
             })?;
