@@ -71,7 +71,10 @@ pub use vesktop::{
 
 #[cfg(target_os = "windows")]
 #[doc(hidden)]
-pub use platform::windows::discover_windows_installs_in;
+pub use platform::windows::{
+    discover_windows_installs_in, refresh_windows_official_installation,
+    windows_legacy_installation_id_matches, windows_official_installation_id,
+};
 
 #[cfg(target_os = "macos")]
 #[doc(hidden)]

@@ -205,8 +205,12 @@ pub fn refresh_installation_validation(mut install: ClientInstallation) -> Clien
 pub fn official_installation(install: DiscordInstall) -> ClientInstallation {
     let provider_id = ProviderId::official_discord();
     let variant_id = VariantId(install.channel.as_str().to_string());
+    let id = installation_id(&provider_id, &install.executable_path);
+    #[cfg(windows)]
+    let id = crate::windows_official_installation_id(&install.executable_path, install.channel)
+        .unwrap_or(id);
     ClientInstallation {
-        id: installation_id(&provider_id, &install.executable_path),
+        id,
         provider_id,
         variant_id: Some(variant_id),
         display_name: format!("Discord {}", install.channel.display_name()),
@@ -475,7 +479,7 @@ fn installation_id(provider_id: &ProviderId, path: &Path) -> InstallationId {
     installation_id_for_key(provider_id, &normalized_path_key(path))
 }
 
-fn installation_id_for_key(provider_id: &ProviderId, key: &str) -> InstallationId {
+pub(crate) fn installation_id_for_key(provider_id: &ProviderId, key: &str) -> InstallationId {
     let value = format!("{}\0{key}", provider_id.as_str());
     let mut hash = 0xcbf29ce484222325u64;
     for byte in value.as_bytes() {

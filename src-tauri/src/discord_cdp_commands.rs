@@ -1,13 +1,20 @@
 use discord_cdp_launch_core as cdp_launch;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::Manager;
 
+#[cfg(windows)]
+mod windows_inventory;
+
 const DESKTOP_CLIENTS_CONFIG_FILE: &str = "desktop-clients.v1.json";
 const DESKTOP_CLIENT_SESSIONS_FILE: &str = "desktop-client-sessions.v1.json";
 static STATE_REVISION: AtomicU64 = AtomicU64::new(1);
+// Reads may now migrate files. Serialize them with explicit writes so concurrent
+// inventory/session requests cannot overwrite or rename each other's temp files.
+static CONFIG_IO_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+static SESSION_IO_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[derive(Debug, Serialize)]
 pub(crate) struct RunningCdpSessionDto {
@@ -104,6 +111,24 @@ struct DesktopClientsConfig {
     installations: Vec<cdp_launch::ClientInstallation>,
     #[serde(default)]
     selection: cdp_launch::LaunchSelector,
+    #[serde(skip)]
+    discovery_issues: Vec<DiscoveryIssueDto>,
+    #[serde(skip)]
+    installation_aliases: HashMap<cdp_launch::InstallationId, cdp_launch::InstallationId>,
+}
+
+impl DesktopClientsConfig {
+    fn resolve_selection(
+        &self,
+        mut selection: cdp_launch::LaunchSelector,
+    ) -> cdp_launch::LaunchSelector {
+        if let cdp_launch::LaunchSelector::Installation { installation_id } = &mut selection {
+            if let Some(current) = self.installation_aliases.get(installation_id) {
+                *installation_id = current.clone();
+            }
+        }
+        selection
+    }
 }
 
 const fn config_version() -> u8 {
@@ -430,20 +455,22 @@ pub(crate) async fn restore_desktop_client_session(
 ) -> Result<(), DesktopClientCommandError> {
     let installation_id = cdp_launch::InstallationId(installation_id);
     let journal = load_session_journal(&app)?;
-    let managed_session = journal
+    #[cfg(windows)]
+    let installation_id = windows_inventory::resolve_session_id(&journal, installation_id);
+    let managed_sessions: Vec<_> = journal
         .iter()
-        .find(|session| {
+        .filter(|session| {
             session.installation_id.as_ref() == Some(&installation_id) && session.port == port
         })
-        .cloned();
-    if managed_session.is_none() && !confirm_external.unwrap_or(false) {
+        .collect();
+    if managed_sessions.is_empty() && !confirm_external.unwrap_or(false) {
         return Err(DesktopClientCommandError::new(
             "external_confirmation_required",
             serde_json::json!({ "installationId": installation_id, "port": port }),
             "This CDP session was started outside Helper and requires explicit confirmation.",
         ));
     }
-    let live_session = if let Some(managed_session) = &managed_session {
+    let live_session = if !managed_sessions.is_empty() {
         let sessions =
             tauri::async_runtime::spawn_blocking(cdp_launch::list_running_desktop_cdp_sessions)
                 .await
@@ -455,7 +482,14 @@ pub(crate) async fn restore_desktop_client_session(
                     )
                 })?
                 .map_err(DesktopClientCommandError::from)?;
-        let matches = find_live_sessions_for_managed(&sessions, managed_session);
+        let mut matches = Vec::new();
+        for managed in managed_sessions {
+            for session in find_live_sessions_for_managed(&sessions, managed) {
+                if !matches.contains(&session) {
+                    matches.push(session);
+                }
+            }
+        }
         match matches.as_slice() {
             [session] => Some(session.clone()),
             [] => {
@@ -698,6 +732,7 @@ pub(crate) async fn set_desktop_client_selection(
     port: Option<u16>,
 ) -> Result<DesktopClientStateDto, DesktopClientCommandError> {
     let mut config = load_config(&app)?;
+    let selection = config.resolve_selection(selection);
     if let cdp_launch::LaunchSelector::Installation { installation_id } = &selection {
         if !config
             .installations
@@ -744,7 +779,7 @@ pub(crate) async fn launch_desktop_client_cdp(
     restart_existing: Option<bool>,
 ) -> Result<DiscordCdpLaunchResultDto, DesktopClientCommandError> {
     let config = load_config(&app)?;
-    let selector = selection.unwrap_or_else(|| config.selection.clone());
+    let selector = config.resolve_selection(selection.unwrap_or_else(|| config.selection.clone()));
     let port = port.unwrap_or(cdp_launch::DEFAULT_CDP_PORT);
     let restart_existing = restart_existing.unwrap_or(false);
     if restart_existing {
@@ -938,7 +973,7 @@ fn build_desktop_client_state_with_probe(
     port: u16,
     detailed: &cdp_launch::DetailedCdpProbeResult,
 ) -> DesktopClientStateDto {
-    let mut issues = Vec::new();
+    let mut issues = config.discovery_issues.clone();
     let mut installations: Vec<_> = config
         .installations
         .iter()
@@ -1213,6 +1248,27 @@ fn config_path(app: &tauri::AppHandle) -> Result<PathBuf, DesktopClientCommandEr
 }
 
 fn load_config(app: &tauri::AppHandle) -> Result<DesktopClientsConfig, DesktopClientCommandError> {
+    let _guard = CONFIG_IO_LOCK
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    let config = read_config(app)?;
+    #[cfg(windows)]
+    {
+        let before = serde_json::to_value(&config).expect("config is serializable");
+        let config = windows_inventory::reconcile_config(
+            config,
+            cdp_launch::refresh_windows_official_installation,
+        );
+        if serde_json::to_value(&config).expect("config is serializable") != before {
+            write_config(app, &config)?;
+        }
+        Ok(config)
+    }
+    #[cfg(not(windows))]
+    Ok(config)
+}
+
+fn read_config(app: &tauri::AppHandle) -> Result<DesktopClientsConfig, DesktopClientCommandError> {
     let path = config_path(app)?;
     match std::fs::read(&path) {
         Ok(bytes) => serde_json::from_slice(&bytes).map_err(|error| {
@@ -1235,6 +1291,16 @@ fn load_config(app: &tauri::AppHandle) -> Result<DesktopClientsConfig, DesktopCl
 }
 
 fn save_config(
+    app: &tauri::AppHandle,
+    config: &DesktopClientsConfig,
+) -> Result<(), DesktopClientCommandError> {
+    let _guard = CONFIG_IO_LOCK
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    write_config(app, config)
+}
+
+fn write_config(
     app: &tauri::AppHandle,
     config: &DesktopClientsConfig,
 ) -> Result<(), DesktopClientCommandError> {
@@ -1288,15 +1354,32 @@ fn session_journal_path(app: &tauri::AppHandle) -> Result<PathBuf, DesktopClient
 fn load_session_journal(
     app: &tauri::AppHandle,
 ) -> Result<Vec<cdp_launch::DesktopCdpSession>, DesktopClientCommandError> {
+    let _guard = SESSION_IO_LOCK
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
     let path = session_journal_path(app)?;
     match std::fs::read(path) {
-        Ok(bytes) => serde_json::from_slice(&bytes).map_err(|error| {
-            DesktopClientCommandError::new(
-                "config_invalid",
-                serde_json::json!({}),
-                format!("Desktop client session journal is invalid: {error}"),
-            )
-        }),
+        Ok(bytes) => {
+            let sessions: Vec<cdp_launch::DesktopCdpSession> = serde_json::from_slice(&bytes)
+                .map_err(|error| {
+                    DesktopClientCommandError::new(
+                        "config_invalid",
+                        serde_json::json!({}),
+                        format!("Desktop client session journal is invalid: {error}"),
+                    )
+                })?;
+            #[cfg(windows)]
+            let sessions = {
+                let mut sessions = sessions;
+                let config = load_config(app)?;
+                let (discovered, _) = cdp_launch::discover_client_installations();
+                if windows_inventory::migrate_session_ids(&mut sessions, &config, &discovered) {
+                    write_session_journal(app, &sessions)?;
+                }
+                sessions
+            };
+            Ok(sessions)
+        }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
         Err(error) => Err(DesktopClientCommandError::new(
             "config_unavailable",
@@ -1307,6 +1390,16 @@ fn load_session_journal(
 }
 
 fn save_session_journal(
+    app: &tauri::AppHandle,
+    sessions: &[cdp_launch::DesktopCdpSession],
+) -> Result<(), DesktopClientCommandError> {
+    let _guard = SESSION_IO_LOCK
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    write_session_journal(app, sessions)
+}
+
+fn write_session_journal(
     app: &tauri::AppHandle,
     sessions: &[cdp_launch::DesktopCdpSession],
 ) -> Result<(), DesktopClientCommandError> {
@@ -1375,6 +1468,23 @@ fn session_key_matches(
         && left.port == right.port
 }
 
+fn managed_session_path_matches(
+    left: &cdp_launch::DesktopCdpSession,
+    right: &cdp_launch::DesktopCdpSession,
+) -> bool {
+    // Windows automatic IDs now survive app-version changes. The ID alone must
+    // not transfer ownership to a different executable that reuses the same port.
+    #[cfg(windows)]
+    if left.provider_id == cdp_launch::ProviderId::official_discord() {
+        return match (&left.executable_path, &right.executable_path) {
+            (Some(left), Some(right)) => windows_inventory::same_executable_path(left, right),
+            _ => false,
+        };
+    }
+    let _ = (left, right);
+    true
+}
+
 fn session_matches_selection(
     session: &cdp_launch::DesktopCdpSession,
     selected_provider: &cdp_launch::ProviderId,
@@ -1394,7 +1504,10 @@ fn find_managed_journal_session<'a>(
 ) -> Result<Option<&'a cdp_launch::DesktopCdpSession>, ()> {
     let exact: Vec<_> = journal
         .iter()
-        .filter(|managed| session_key_matches(managed, detected))
+        .filter(|managed| {
+            session_key_matches(managed, detected)
+                && managed_session_path_matches(managed, detected)
+        })
         .collect();
     if !exact.is_empty() {
         return (exact.len() == 1)
@@ -1407,7 +1520,9 @@ fn find_managed_journal_session<'a>(
     let fallback: Vec<_> = journal
         .iter()
         .filter(|managed| {
-            managed.provider_id == detected.provider_id && managed.port == detected.port
+            managed.provider_id == detected.provider_id
+                && managed.port == detected.port
+                && managed_session_path_matches(managed, detected)
         })
         .collect();
     match fallback.as_slice() {
@@ -1423,7 +1538,9 @@ fn find_live_sessions_for_managed(
 ) -> Vec<cdp_launch::DesktopCdpSession> {
     let exact: Vec<_> = detected
         .iter()
-        .filter(|session| session_key_matches(managed, session))
+        .filter(|session| {
+            session_key_matches(managed, session) && managed_session_path_matches(managed, session)
+        })
         .cloned()
         .collect();
     if !exact.is_empty() {
@@ -1435,6 +1552,7 @@ fn find_live_sessions_for_managed(
             session.provider_id == managed.provider_id
                 && session.port == managed.port
                 && session.installation_id.is_none()
+                && managed_session_path_matches(managed, session)
         })
         .cloned()
         .collect()
