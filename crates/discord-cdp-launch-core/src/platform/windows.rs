@@ -8,43 +8,47 @@ use std::process::{Command, Stdio};
 pub(crate) mod shutdown;
 
 pub(crate) fn find_installs() -> Result<Vec<DiscordInstall>, LaunchError> {
+    Ok(find_installs_with_issues().0)
+}
+
+pub(crate) fn find_installs_with_issues() -> (Vec<DiscordInstall>, Vec<String>) {
     let Some(local_appdata) = std::env::var_os("LOCALAPPDATA") else {
-        return Ok(Vec::new());
+        return (Vec::new(), Vec::new());
     };
-    try_discover_windows_installs_in(Path::new(&local_appdata)).map_err(|source| {
-        LaunchError::ProcessInspection {
-            operation: "Windows Discord installation discovery",
-            source,
-        }
-    })
+    discover_windows_installs_with_issues_in(Path::new(&local_appdata))
 }
 
 #[doc(hidden)]
 pub fn discover_windows_installs_in(base: &Path) -> Vec<DiscordInstall> {
-    try_discover_windows_installs_in(base).unwrap_or_default()
+    discover_windows_installs_with_issues_in(base).0
 }
 
-fn try_discover_windows_installs_in(base: &Path) -> std::io::Result<Vec<DiscordInstall>> {
-    channel_specs()
-        .into_iter()
-        .map(|(channel, folder, executable)| {
-            let channel_path = base.join(folder);
-            Ok(
-                find_channel_executable(&channel_path, executable)?.map(|executable_path| {
-                    let working_dir = executable_path
-                        .parent()
-                        .map(Path::to_path_buf)
-                        .unwrap_or_else(|| channel_path.clone());
-                    DiscordInstall {
-                        channel,
-                        executable_path,
-                        working_dir,
-                    }
-                }),
-            )
-        })
-        .collect::<std::io::Result<Vec<_>>>()
-        .map(|installs| installs.into_iter().flatten().collect())
+fn discover_windows_installs_with_issues_in(base: &Path) -> (Vec<DiscordInstall>, Vec<String>) {
+    let mut installs = Vec::new();
+    let mut issues = Vec::new();
+    for (channel, folder, executable) in channel_specs() {
+        let channel_path = base.join(folder);
+        match find_channel_executable(&channel_path, executable) {
+            Ok(Some(executable_path)) => {
+                let working_dir = executable_path
+                    .parent()
+                    .map(Path::to_path_buf)
+                    .unwrap_or_else(|| channel_path.clone());
+                installs.push(DiscordInstall {
+                    channel,
+                    executable_path,
+                    working_dir,
+                });
+            }
+            Ok(None) => {}
+            Err(error) => issues.push(format!(
+                "Discord {} discovery failed ({:?}).",
+                channel.display_name(),
+                error.kind()
+            )),
+        }
+    }
+    (installs, issues)
 }
 
 /// Identity for one Windows installation, independent of its Squirrel app version.
@@ -80,22 +84,31 @@ pub fn windows_official_installation_id(
 /// Old IDs hashed canonical paths, which on Windows include the extended-path
 /// prefix. Reconstruct both spellings even after an old version was removed.
 pub fn windows_legacy_installation_id_matches(path: &Path, id: &crate::InstallationId) -> bool {
-    let key = path
-        .to_string_lossy()
-        .replace('/', "\\")
-        .to_ascii_lowercase();
-    let plain = key
-        .strip_prefix(r"\\?\unc\")
-        .map(|suffix| format!(r"\\{suffix}"))
-        .unwrap_or_else(|| key.strip_prefix(r"\\?\").unwrap_or(&key).to_string());
-    let extended = if let Some(unc) = plain.strip_prefix(r"\\") {
-        format!(r"\\?\unc\{unc}")
-    } else {
-        format!(r"\\?\{plain}")
-    };
-    [plain, extended].iter().any(|key| {
+    legacy_path_spellings(path).iter().any(|key| {
         crate::provider::installation_id_for_key(&crate::ProviderId::official_discord(), key) == *id
     })
+}
+
+fn legacy_path_spellings(path: &Path) -> Vec<String> {
+    let resolved = crate::provider::canonicalize_existing_ancestor(path);
+    let mut spellings = Vec::new();
+    for path in [path, resolved.as_path()] {
+        let key = path
+            .to_string_lossy()
+            .replace('/', "\\")
+            .to_ascii_lowercase();
+        let plain = key
+            .strip_prefix(r"\\?\unc\")
+            .map(|suffix| format!(r"\\{suffix}"))
+            .unwrap_or_else(|| key.strip_prefix(r"\\?\").unwrap_or(&key).to_string());
+        let extended = if let Some(unc) = plain.strip_prefix(r"\\") {
+            format!(r"\\?\unc\{unc}")
+        } else {
+            format!(r"\\?\{plain}")
+        };
+        spellings.extend([plain, extended]);
+    }
+    spellings
 }
 
 fn official_installation_root(path: &Path, channel: DiscordChannel) -> Option<PathBuf> {
@@ -392,6 +405,12 @@ mod tests {
         let new = root.join("app-1.0.10000/Discord.exe");
         std::fs::create_dir_all(new.parent().unwrap()).unwrap();
         std::fs::write(&new, []).unwrap();
+        let legacy_id = crate::custom_executable_installation(
+            &crate::ProviderId::official_discord(),
+            new.clone(),
+        )
+        .unwrap()
+        .id;
         let mut install = crate::provider::official_installation(DiscordInstall {
             channel: DiscordChannel::Stable,
             working_dir: old.parent().unwrap().into(),
@@ -411,6 +430,7 @@ mod tests {
         assert_eq!(manual.launch_target, install.launch_target);
         assert_eq!(manual.validation, crate::ValidationState::Missing);
         std::fs::remove_file(&new).unwrap();
+        assert!(windows_legacy_installation_id_matches(&new, &legacy_id));
         install.source = crate::DiscoverySource::StandardPath;
         assert!(refresh_windows_official_installation(&install)
             .unwrap()
@@ -442,5 +462,24 @@ mod tests {
     #[test]
     fn parses_case_insensitive_app_directory_prefix() {
         assert_eq!(parse_app_version(OsStr::new("App-1.2.3")), vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn discovery_keeps_readable_channels_when_another_channel_fails() {
+        let root = std::env::temp_dir().join(format!(
+            "dqh-partial-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(root.join("Discord")).unwrap();
+        std::fs::write(root.join("Discord/Discord.exe"), []).unwrap();
+        std::fs::write(root.join("DiscordPTB"), []).unwrap();
+        let (installs, issues) = discover_windows_installs_with_issues_in(&root);
+        assert_eq!(installs.len(), 1);
+        assert_eq!(installs[0].channel, DiscordChannel::Stable);
+        assert_eq!(issues.len(), 1);
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

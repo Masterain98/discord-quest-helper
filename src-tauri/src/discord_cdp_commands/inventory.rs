@@ -1,37 +1,54 @@
-//! Reconcile versioned Windows launch paths before snapshots and launch commands
+//! Reconcile automatic installations on every platform before snapshots and launch commands
 //! consume the saved configuration. User-supplied paths remain exact targets.
 use super::*;
 use cdp_launch::{ClientInstallation, DiscoverySource, LaunchSelector};
 
-pub(super) fn same_executable_path(left: &Path, right: &Path) -> bool {
-    fn key(path: &Path) -> String {
-        let key = path
-            .to_string_lossy()
-            .replace('/', "\\")
-            .to_ascii_lowercase();
-        key.strip_prefix(r"\\?\unc\")
-            .map(|suffix| format!(r"\\{suffix}"))
-            .unwrap_or_else(|| key.strip_prefix(r"\\?\").unwrap_or(&key).to_string())
-    }
-    key(left) == key(right)
+pub(super) fn refresh_config(config: DesktopClientsConfig) -> DesktopClientsConfig {
+    let (discovered, _) = cdp_launch::discover_client_installations();
+    reconcile_config(config, |saved| {
+        let refreshed = cdp_launch::refresh_automatic_installation(saved)?;
+        if saved.source == DiscoverySource::User {
+            return Ok(refreshed);
+        }
+        // Bind a legacy canonical target to a stable launcher only with exact
+        // evidence. Never substitute a different installation of the same channel.
+        if let Some(current) = &refreshed {
+            let mut matches = discovered.iter().filter(|candidate| {
+                candidate.provider_id == current.provider_id && candidate.variant_id == current.variant_id
+                    && matches!((installation_executable_path(candidate), installation_executable_path(current)), (Some(left), Some(right)) if cdp_launch::same_executable_path(left, right))
+            });
+            if let Some(candidate) = matches.next() {
+                if matches.next().is_none() {
+                    return Ok(Some(candidate.clone()));
+                }
+            }
+        }
+        Ok(refreshed)
+    })
 }
 
+#[cfg(windows)]
 pub(super) fn resolve_session_id(
     sessions: &[cdp_launch::DesktopCdpSession],
     requested: cdp_launch::InstallationId,
 ) -> cdp_launch::InstallationId {
-    let mut matches = sessions.iter().filter(|session| {
-        session.provider_id == cdp_launch::ProviderId::official_discord()
-            && session.executable_path.as_ref().is_some_and(|path| {
-                cdp_launch::windows_legacy_installation_id_matches(path, &requested)
-            })
-    });
-    if let Some(session) = matches.next() {
-        if matches.next().is_none() {
-            return session.installation_id.clone().unwrap_or(requested);
-        }
+    let mut targets = sessions
+        .iter()
+        .filter(|session| {
+            session.provider_id == cdp_launch::ProviderId::official_discord()
+                && session.executable_path.as_ref().is_some_and(|path| {
+                    cdp_launch::windows_legacy_installation_id_matches(path, &requested)
+                })
+        })
+        .filter_map(|session| session.installation_id.as_ref());
+    let Some(first) = targets.next() else {
+        return requested;
+    };
+    if targets.all(|target| target == first) {
+        first.clone()
+    } else {
+        requested
     }
-    requested
 }
 
 pub(super) fn reconcile_config(
@@ -39,16 +56,17 @@ pub(super) fn reconcile_config(
     refresh: impl Fn(&ClientInstallation) -> std::io::Result<Option<ClientInstallation>>,
 ) -> DesktopClientsConfig {
     let mut refreshed = Vec::new();
-    let mut aliases = HashMap::new();
-    let mut missing = HashSet::new();
+    let mut aliases = config.installation_aliases.clone();
     for install in &config.installations {
         match refresh(install) {
             Ok(Some(current)) => {
-                aliases.insert(install.id.clone(), current.id.clone());
+                if install.id != current.id {
+                    aliases.insert(install.id.clone(), current.id.clone());
+                }
                 refreshed.push(current);
             }
             Ok(None) => {
-                missing.insert(install.id.clone());
+                refreshed.push(cdp_launch::refresh_installation_validation(install.clone()));
             }
             Err(error) => {
                 // A failed scan cannot establish which saved installations are gone.
@@ -58,28 +76,31 @@ pub(super) fn reconcile_config(
                     code: "scan_failed",
                     message: format!("Could not refresh a saved Discord installation ({:?}); its configuration has been preserved.", error.kind()),
                 });
-                return config;
+                refreshed.push(install.clone());
             }
         }
     }
-    if let LaunchSelector::Installation { installation_id } = &mut config.selection {
-        if missing.contains(installation_id) {
+    config.installation_aliases = aliases;
+    config.selection = config.resolve_selection(config.selection.clone());
+    if let LaunchSelector::Installation { installation_id } = &config.selection {
+        if refreshed.iter().any(|install| {
+            &install.id == installation_id
+                && install.validation != cdp_launch::ValidationState::Valid
+                && install.source != DiscoverySource::User
+        }) {
             config.discovery_issues.push(DiscoveryIssueDto {
-                provider_id: Some(cdp_launch::ProviderId::official_discord()),
+                provider_id: None,
                 code: "installation_missing",
-                message: "The previously selected Discord installation is no longer available. Choose a desktop client again.".into(),
+                message: "The selected desktop client is temporarily unavailable. Its selection has been preserved.".into(),
             });
-            config.selection = LaunchSelector::Auto;
-        } else if let Some(current) = aliases.get(installation_id) {
-            *installation_id = current.clone();
         }
     }
+
     let mut seen = HashSet::new();
     config.installations = refreshed.into_iter().filter(|install| {
         let selected = matches!(&config.selection, LaunchSelector::Installation { installation_id } if installation_id == &install.id);
         (install.source == DiscoverySource::User || selected) && seen.insert(install.id.clone())
     }).collect();
-    config.installation_aliases = aliases;
     config
 }
 
@@ -88,6 +109,7 @@ pub(super) fn migrate_session_ids(
     config: &DesktopClientsConfig,
     discovered: &[ClientInstallation],
 ) -> bool {
+    #[cfg(windows)]
     let automatic_ids: HashSet<_> = config
         .installations
         .iter()
@@ -115,22 +137,30 @@ pub(super) fn migrate_session_ids(
         let Some(path) = &session.executable_path else {
             continue;
         };
-        let Some(channel) = session.variant_id.as_ref().and_then(|variant| {
-            cdp_launch::parse_discord_channel(Some(&variant.0))
-                .ok()
-                .flatten()
-        }) else {
-            continue;
+        let resolved = config.resolve_selection(LaunchSelector::Installation {
+            installation_id: old_id.clone(),
+        });
+        let alias = match resolved {
+            LaunchSelector::Installation { installation_id } if installation_id != *old_id => {
+                Some(installation_id)
+            }
+            _ => None,
         };
-        let Some(current_id) = cdp_launch::windows_official_installation_id(path, channel) else {
-            continue;
-        };
-        let known_alias = config.installation_aliases.get(old_id) == Some(&current_id);
-        // A journal has no discovery source. Infer an old automatic ID only when
-        // both its old path hash and a currently known automatic installation agree.
-        let known_legacy = automatic_ids.contains(&current_id)
-            && cdp_launch::windows_legacy_installation_id_matches(path, old_id);
-        if current_id != *old_id && (known_alias || known_legacy) {
+        #[cfg(windows)]
+        let alias = alias.or_else(|| {
+            let channel = session.variant_id.as_ref().and_then(|variant| {
+                cdp_launch::parse_discord_channel(Some(&variant.0))
+                    .ok()
+                    .flatten()
+            })?;
+            let current_id = cdp_launch::windows_official_installation_id(path, channel)?;
+            (automatic_ids.contains(&current_id)
+                && cdp_launch::windows_legacy_installation_id_matches(path, old_id))
+            .then_some(current_id)
+        });
+        #[cfg(not(windows))]
+        let _ = (path, discovered);
+        if let Some(current_id) = alias.filter(|id| id != old_id) {
             session.installation_id = Some(current_id);
             changed = true;
         }
@@ -138,7 +168,7 @@ pub(super) fn migrate_session_ids(
     changed
 }
 
-#[cfg(test)]
+#[cfg(all(test, windows))]
 mod tests {
     use super::*;
     use cdp_launch::{DiscordChannel, LaunchTarget, ProviderId, SessionOwnership};
@@ -230,7 +260,7 @@ mod tests {
         );
         assert_eq!(config.installation_aliases.get(&old_selected), Some(&id));
         let next = fixture.current("DiscordCanary", "1.0.1260", "DiscordCanary.exe");
-        // Simulate restart: transient aliases and issues do not enter the wire format.
+        // A restart must retain the alias for requests from an older inventory.
         let saved = serde_json::to_vec(&config).unwrap();
         let config = reconcile_config(
             serde_json::from_slice(&saved).unwrap(),
@@ -243,13 +273,19 @@ mod tests {
             .unwrap();
         assert_eq!(installation_executable_path(selected), Some(next.as_path()));
         assert_eq!(config.installations.len(), 2);
+        assert_eq!(
+            config.resolve_selection(LaunchSelector::Installation {
+                installation_id: old_selected
+            }),
+            config.selection
+        );
         let saved = serde_json::to_vec(&config).unwrap();
         let again = reconcile_config(config, cdp_launch::refresh_windows_official_installation);
         assert_eq!(saved, serde_json::to_vec(&again).unwrap());
     }
 
     #[test]
-    fn uninstall_resets_automatic_selection_but_io_failure_preserves_config() {
+    fn unavailable_selection_survives_missing_files_and_scan_errors() {
         let fixture = Fixture::new();
         let old = fixture.legacy("Discord", "1.0.1", "Discord.exe");
         let config = DesktopClientsConfig {
@@ -267,8 +303,11 @@ mod tests {
         assert_eq!(before, serde_json::to_vec(&failed).unwrap());
         assert_eq!(failed.discovery_issues[0].code, "scan_failed");
         let removed = reconcile_config(config, cdp_launch::refresh_windows_official_installation);
-        assert!(removed.installations.is_empty());
-        assert_eq!(removed.selection, LaunchSelector::Auto);
+        assert_eq!(removed.installations.len(), 1);
+        assert!(matches!(
+            removed.selection,
+            LaunchSelector::Installation { .. }
+        ));
         assert_eq!(removed.discovery_issues[0].code, "installation_missing");
     }
 
@@ -308,6 +347,13 @@ mod tests {
         );
         assert_eq!(
             resolve_session_id(&sessions, old.id.clone()),
+            current.installations[0].id
+        );
+        let mut second_port = sessions[0].clone();
+        second_port.port = 9555;
+        let multiple_ports = [sessions[0].clone(), second_port];
+        assert_eq!(
+            resolve_session_id(&multiple_ports, old.id.clone()),
             current.installations[0].id
         );
         let mut detected = sessions[0].clone();

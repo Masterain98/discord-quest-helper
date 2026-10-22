@@ -47,8 +47,8 @@ pub use processes::{
 pub use provider::parse_desktop_exec_arguments;
 pub use provider::{
     custom_executable_installation, discover_client_installations, installation_as_official,
-    installation_as_vesktop, provider_registry, refresh_installation_validation,
-    DesktopClientProvider,
+    installation_as_vesktop, provider_registry, refresh_automatic_installation,
+    refresh_installation_validation, same_executable_path, DesktopClientProvider,
 };
 pub use supervisor::ProcessSupervisor;
 /// Validate discovery-provided debugger URLs without DNS, proxies, or credentials.
