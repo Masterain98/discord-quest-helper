@@ -495,6 +495,12 @@
     "nitro_basic": "Nitro Basic"
   },
   "sidebar": {
+    "badges_farm": "掛機",
+    "badges": "徽章",
+    "badges_games": "{count} 款遊戲",
+    "badges_quests": "{count} 個任務",
+    "badges_hours": "{count} 小時遊戲",
+    "badges_unavailable": "暫時無法取得徽章資料",
     "current_task": "目前任務：{name}",
     "next_task": "下一個任務：{name}",
     "task_error": "任務執行發生錯誤，點擊查看詳情",

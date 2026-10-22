@@ -1755,6 +1755,23 @@ async fn get_billing_subscriptions(
 }
 
 #[tauri::command]
+async fn get_current_user_badges(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    // Clone the authenticated client before awaiting so this background request
+    // never holds the shared session mutex during network I/O.
+    let client = state
+        .client
+        .lock()
+        .unwrap()
+        .as_ref()
+        .ok_or_else(|| "Not logged in".to_string())?
+        .clone();
+    client
+        .get_current_user_badges()
+        .await
+        .map_err(|e| format!("Failed to get user badges: {:#}", e))
+}
+
+#[tauri::command]
 async fn get_program_rewards(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
     let client = {
         let guard = state.client.lock().unwrap();
@@ -2290,6 +2307,7 @@ pub fn run() {
             get_virtual_currency_total_redeemed,
             get_billing_subscriptions,
             get_program_rewards,
+            get_current_user_badges,
             get_quest_decision_debug,
             get_quest_decisions_debug,
             claim_quest_reward,

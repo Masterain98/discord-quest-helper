@@ -495,6 +495,12 @@
     "nitro_basic": "Nitro Basic"
   },
   "sidebar": {
+    "badges_farm": "AFK",
+    "badges": "Lencana",
+    "badges_games": "{count} game dimainkan",
+    "badges_quests": "{count} quest selesai",
+    "badges_hours": "{count} jam bermain",
+    "badges_unavailable": "Data lencana tidak tersedia",
     "current_task": "Tugas saat ini: {name}",
     "next_task": "Tugas berikutnya: {name}",
     "task_error": "Tugas bermasalah — klik untuk detail",

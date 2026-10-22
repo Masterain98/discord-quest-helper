@@ -495,6 +495,12 @@
     "nitro_basic": "Nitro Basic"
   },
   "sidebar": {
+    "badges_farm": "Farm yap",
+    "badges": "Rozetler",
+    "badges_games": "{count} oyun oynandı",
+    "badges_quests": "{count} görev tamamlandı",
+    "badges_hours": "{count} saat oynandı",
+    "badges_unavailable": "Rozet verileri kullanılamıyor",
     "current_task": "Geçerli görev: {name}",
     "next_task": "Sonraki görev: {name}",
     "task_error": "Görev hatası — ayrıntılar için tıklayın",

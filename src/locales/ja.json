@@ -495,6 +495,12 @@
     "nitro_basic": "Nitro Basic"
   },
   "sidebar": {
+    "badges_farm": "放置",
+    "badges": "バッジ",
+    "badges_games": "{count} 本のゲームをプレイ",
+    "badges_quests": "{count} 件のクエストを完了",
+    "badges_hours": "{count} 時間プレイ",
+    "badges_unavailable": "バッジ情報を取得できません",
     "current_task": "現在のタスク：{name}",
     "next_task": "次のタスク：{name}",
     "task_error": "タスクエラー — クリックして詳細を表示",

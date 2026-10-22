@@ -497,6 +497,12 @@
     "nitro_basic": "Nitro Basic"
   },
   "sidebar": {
+    "badges_farm": "挂机",
+    "badges": "徽章",
+    "badges_games": "{count} 款游戏",
+    "badges_quests": "{count} 个任务",
+    "badges_hours": "{count} 小时游戏",
+    "badges_unavailable": "暂时无法获取徽章数据",
     "current_task": "当前任务：{name}",
     "next_task": "下一个任务：{name}",
     "task_error": "任务执行出错，点击查看详情",

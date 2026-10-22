@@ -495,6 +495,12 @@
     "nitro_basic": "Nitro Basic"
   },
   "sidebar": {
+    "badges_farm": "ฟาร์ม",
+    "badges": "ตราสัญลักษณ์",
+    "badges_games": "เล่นแล้ว {count} เกม",
+    "badges_quests": "ทำภารกิจสำเร็จ {count} รายการ",
+    "badges_hours": "เล่นเกมแล้ว {count} ชั่วโมง",
+    "badges_unavailable": "ไม่สามารถโหลดข้อมูลตราสัญลักษณ์ได้",
     "current_task": "งานปัจจุบัน: {name}",
     "next_task": "งานถัดไป: {name}",
     "task_error": "งานเกิดข้อผิดพลาด — คลิกเพื่อดูรายละเอียด",

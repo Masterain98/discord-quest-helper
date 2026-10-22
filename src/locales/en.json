@@ -497,6 +497,12 @@
     "nitro_basic": "Nitro Basic"
   },
   "sidebar": {
+    "badges_farm": "Farm",
+    "badges": "Badges",
+    "badges_games": "{count} games played",
+    "badges_quests": "{count} quests completed",
+    "badges_hours": "{count} hours played",
+    "badges_unavailable": "Badge data unavailable",
     "current_task": "Current task: {name}",
     "next_task": "Next task: {name}",
     "task_error": "Task error — click for details",

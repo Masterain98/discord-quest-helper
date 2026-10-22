@@ -810,6 +810,20 @@ impl DiscordApiClient {
         serde_json::from_str(&body).context("Failed to parse quest placement decisions")
     }
 
+    pub async fn get_current_user_badges(&self) -> Result<serde_json::Value> {
+        let url = format!("{}/users/@me/badges", DISCORD_API_BASE);
+        let response = self
+            .request(Method::GET, &url)
+            .send_reconnecting(self)
+            .await
+            .context("Request for user badges failed")?;
+        let status = response.status();
+        if !status.is_success() {
+            anyhow::bail!("Failed to get user badges: {}", status);
+        }
+        response.json().await.context("Failed to parse user badges")
+    }
+
     pub async fn get_virtual_currency_balance(&self) -> Result<serde_json::Value> {
         let url = format!("{}/users/@me/virtual-currency/balance", DISCORD_API_BASE);
 

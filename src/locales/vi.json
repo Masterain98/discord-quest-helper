@@ -495,6 +495,12 @@
     "nitro_basic": "Nitro Basic"
   },
   "sidebar": {
+    "badges_farm": "Cày",
+    "badges": "Huy hiệu",
+    "badges_games": "Đã chơi {count} trò chơi",
+    "badges_quests": "Đã hoàn thành {count} nhiệm vụ",
+    "badges_hours": "Đã chơi {count} giờ",
+    "badges_unavailable": "Không tải được dữ liệu huy hiệu",
     "current_task": "Nhiệm vụ hiện tại: {name}",
     "next_task": "Nhiệm vụ tiếp theo: {name}",
     "task_error": "Lỗi nhiệm vụ — nhấp để xem chi tiết",

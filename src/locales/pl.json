@@ -495,6 +495,12 @@
     "nitro_basic": "Nitro Basic"
   },
   "sidebar": {
+    "badges_farm": "Farmienie",
+    "badges": "Odznaki",
+    "badges_games": "Rozegrane gry: {count}",
+    "badges_quests": "Ukończone zadania: {count}",
+    "badges_hours": "Godziny gry: {count}",
+    "badges_unavailable": "Dane odznak są niedostępne",
     "current_task": "Bieżące zadanie: {name}",
     "next_task": "Następne zadanie: {name}",
     "task_error": "Błąd zadania — kliknij, aby zobaczyć szczegóły",
