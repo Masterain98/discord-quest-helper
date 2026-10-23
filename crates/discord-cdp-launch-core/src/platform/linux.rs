@@ -137,8 +137,8 @@ pub fn discover_linux_installs_in(
     installs
 }
 
-/// Keep the launch path if `candidate` resolves to an executable
-/// regular file (following symlinks), otherwise `None`.
+/// Return an absolute launch path without resolving symlinks if `candidate`
+/// resolves to an executable regular file, otherwise `None`.
 fn resolve_executable(candidate: PathBuf) -> Option<PathBuf> {
     let metadata = std::fs::metadata(&candidate).ok()?; // follows symlinks
     if !metadata.is_file() {
@@ -147,7 +147,7 @@ fn resolve_executable(candidate: PathBuf) -> Option<PathBuf> {
     if metadata.permissions().mode() & 0o111 == 0 {
         return None;
     }
-    Some(candidate)
+    std::path::absolute(candidate).ok()
 }
 
 /// Snapshot of a `/proc/<pid>` entry used for Discord process matching.

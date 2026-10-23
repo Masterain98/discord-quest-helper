@@ -126,6 +126,25 @@ fn symlink_launcher_survives_target_updates_and_dedupes() {
 }
 
 #[test]
+fn relative_path_entry_keeps_an_absolute_symlink_launcher() {
+    let relative_root = PathBuf::from(unique_temp_root("dqh-linux-relative").file_name().unwrap());
+    let root = std::env::current_dir().unwrap().join(&relative_root);
+    let target = root.join("versions/current/Discord");
+    write_executable(&target);
+    let bin = root.join("bin");
+    fs::create_dir_all(&bin).unwrap();
+    std::os::unix::fs::symlink(&target, bin.join("discord")).unwrap();
+
+    let installs = discover_linux_installs_in(&[], &[], &[relative_root.join("bin")]);
+    assert_eq!(installs.len(), 1);
+    assert_eq!(installs[0].executable_path, bin.join("discord"));
+    assert!(installs[0].executable_path.is_absolute());
+    assert_eq!(installs[0].working_dir, target.parent().unwrap());
+
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn empty_when_nothing_present() {
     let root = unique_temp_root("dqh-linux-empty");
     fs::create_dir_all(&root).unwrap();
