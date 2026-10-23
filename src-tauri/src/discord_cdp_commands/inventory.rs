@@ -158,14 +158,153 @@ pub(super) fn migrate_session_ids(
                 && cdp_launch::windows_legacy_installation_id_matches(path, old_id))
             .then_some(current_id)
         });
-        #[cfg(not(windows))]
-        let _ = (path, discovered);
+        let alias = alias.or_else(|| {
+            // Auto/provider launches may never have saved an installation in
+            // config. Recover those IDs only from one exact discovered target.
+            let mut matches = discovered.iter().filter(|install| {
+                install.source == DiscoverySource::StandardPath
+                    && install.provider_id == session.provider_id
+                    && install.variant_id == session.variant_id
+                    && installation_executable_path(install)
+                        .is_some_and(|current| cdp_launch::same_executable_path(path, current))
+            });
+            let first = matches.next()?;
+            matches.next().is_none().then(|| first.id.clone())
+        });
         if let Some(current_id) = alias.filter(|id| id != old_id) {
             session.installation_id = Some(current_id);
             changed = true;
         }
     }
     changed
+}
+
+pub(super) fn remove_restored_sessions(
+    journal: &mut Vec<cdp_launch::DesktopCdpSession>,
+    restored: &[cdp_launch::DesktopCdpSession],
+    config: &DesktopClientsConfig,
+    discovered: &[ClientInstallation],
+) {
+    // The loaded snapshot may have been migrated only in memory. Compare in
+    // that same ID space inside the journal transaction, retaining new records.
+    migrate_session_ids(journal, config, discovered);
+    journal.retain(|session| !restored.contains(session));
+}
+
+#[cfg(test)]
+mod shared_tests {
+    use super::*;
+    use cdp_launch::{DesktopCdpSession, InstallationId, ProviderId, SessionOwnership};
+
+    fn automatic_installation() -> ClientInstallation {
+        let path = std::env::temp_dir()
+            .join("dqh-session-migration/Discord")
+            .join(if cfg!(windows) {
+                "Discord.exe"
+            } else {
+                "Discord"
+            });
+        let mut install =
+            cdp_launch::custom_executable_installation(&ProviderId::official_discord(), path)
+                .unwrap();
+        install.source = DiscoverySource::StandardPath;
+        install.id = InstallationId("current-automatic".into());
+        install
+    }
+
+    fn legacy_session(install: &ClientInstallation) -> DesktopCdpSession {
+        DesktopCdpSession {
+            provider_id: install.provider_id.clone(),
+            installation_id: Some(
+                cdp_launch::custom_executable_installation(
+                    &install.provider_id,
+                    installation_executable_path(install).unwrap().to_path_buf(),
+                )
+                .unwrap()
+                .id,
+            ),
+            variant_id: install.variant_id.clone(),
+            port: 9223,
+            ownership: SessionOwnership::Managed,
+            executable_path: installation_executable_path(install).map(Path::to_path_buf),
+        }
+    }
+
+    #[test]
+    fn unsaved_automatic_sessions_migrate_only_with_unique_exact_discovery() {
+        let install = automatic_installation();
+        let original = legacy_session(&install);
+        let mut sessions = vec![original.clone()];
+        let config = DesktopClientsConfig::default();
+        assert!(migrate_session_ids(
+            &mut sessions,
+            &config,
+            std::slice::from_ref(&install)
+        ));
+        let mut expected = original.clone();
+        expected.installation_id = Some(install.id.clone());
+        assert_eq!(sessions, vec![expected]);
+        assert!(!migrate_session_ids(
+            &mut sessions,
+            &config,
+            std::slice::from_ref(&install)
+        ));
+
+        let mut manual = install.clone();
+        manual.id = original.installation_id.clone().unwrap();
+        manual.source = DiscoverySource::User;
+        let manual_config = DesktopClientsConfig {
+            installations: vec![manual],
+            ..Default::default()
+        };
+        sessions[0] = original.clone();
+        assert!(!migrate_session_ids(
+            &mut sessions,
+            &manual_config,
+            std::slice::from_ref(&install)
+        ));
+        assert_eq!(sessions[0], original);
+
+        let mut other_root = install.clone();
+        other_root.id = InstallationId("other-root".into());
+        // Two launcher identities for one executable are ambiguous.
+        assert!(!migrate_session_ids(
+            &mut sessions,
+            &config,
+            &[install.clone(), other_root]
+        ));
+        sessions[0].executable_path = Some(PathBuf::from("another/Discord"));
+        assert!(!migrate_session_ids(&mut sessions, &config, &[install]));
+    }
+
+    #[test]
+    fn restore_cleanup_migrates_unsaved_ids_and_preserves_concurrent_records() {
+        let install = automatic_installation();
+        let original = legacy_session(&install);
+        let config = DesktopClientsConfig {
+            installation_aliases: HashMap::from([(
+                original.installation_id.clone().unwrap(),
+                install.id.clone(),
+            )]),
+            ..Default::default()
+        };
+        let mut restored = vec![original.clone()];
+        assert!(migrate_session_ids(&mut restored, &config, &[]));
+        let mut another_port = restored[0].clone();
+        another_port.port = 9444;
+        let mut another_path = restored[0].clone();
+        another_path.executable_path = Some(PathBuf::from("updated/Discord"));
+        let mut another_provider = restored[0].clone();
+        another_provider.provider_id = ProviderId::vesktop();
+        let concurrent = vec![another_port, another_path, another_provider];
+        let mut journal = vec![original];
+        journal.extend(concurrent.clone());
+
+        remove_restored_sessions(&mut journal, &restored, &config, &[]);
+        assert_eq!(journal, concurrent);
+        remove_restored_sessions(&mut journal, &restored, &config, &[]);
+        assert_eq!(journal, concurrent);
+    }
 }
 
 #[cfg(all(test, windows))]

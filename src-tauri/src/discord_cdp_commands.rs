@@ -521,6 +521,7 @@ pub(crate) async fn restore_desktop_client_session(
         None
     };
     let config = load_config_async(&app).await?;
+    let cleanup_config = config.clone();
     let state =
         tauri::async_runtime::spawn_blocking(move || build_desktop_client_state(config, port))
             .await
@@ -533,8 +534,9 @@ pub(crate) async fn restore_desktop_client_session(
             })?;
     let installation = state
         .installations
-        .into_iter()
+        .iter()
         .find(|install| install.id == installation_id)
+        .cloned()
         .ok_or_else(|| {
             DesktopClientCommandError::new(
                 "installation_missing",
@@ -572,7 +574,12 @@ pub(crate) async fn restore_desktop_client_session(
         })
         .collect();
     update_session_journal(&app, |journal| {
-        journal.retain(|session| !restored.contains(session))
+        inventory::remove_restored_sessions(
+            journal,
+            &restored,
+            &cleanup_config,
+            &state.installations,
+        )
     })
 }
 
