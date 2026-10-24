@@ -197,6 +197,8 @@ const JS_INIT_QUEST_MODULES: &str = r#"
 })()
 "#;
 
+/// Build the JavaScript payload that sends an activity quest heartbeat (`POST /quests/{id}/heartbeat`)
+/// via Discord's internal API client and parses `PLAY_ACTIVITY`, `ACHIEVEMENT_IN_ACTIVITY`, or `ACHIEVEMENT_IN_GAME` progress.
 fn js_play_activity_heartbeat(
     quest_id: &str,
     application_id: Option<&str>,
@@ -262,6 +264,8 @@ fn js_play_activity_heartbeat(
     )
 }
 
+/// Build the JavaScript payload that fetches `/quests/@me` via Discord's internal API client
+/// and extracts current `PLAY_ACTIVITY`, `ACHIEVEMENT_IN_ACTIVITY`, or `ACHIEVEMENT_IN_GAME` progress and completion status.
 fn js_play_activity_status(quest_id: &str) -> String {
     let quest_id_json = serde_json::to_string(quest_id).unwrap_or_else(|_| "\"\"".to_string());
     format!(
@@ -2458,6 +2462,7 @@ pub async fn complete_play_quest_via_cdp(
     }
 }
 
+/// Initialize CDP quest modules and start both stream metadata spoofing and companion running-game spoofing.
 async fn cdp_start_stream_spoof(port: u16, app_id: &str) -> Result<CdpJsonExecutionSummary> {
     let result = async {
         cdp_prepare_quest_modules(port, "stream quest").await?;

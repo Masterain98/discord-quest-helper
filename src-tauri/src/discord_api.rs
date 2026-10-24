@@ -155,6 +155,7 @@ impl ProxyState {
         }
     }
 
+    /// Return a human-readable description of the active system/environment proxy state.
     fn description(&self) -> &'static str {
         #[cfg(target_os = "linux")]
         {
@@ -336,6 +337,7 @@ impl DiscordApiClient {
         })
     }
 
+    /// Return the number of milliseconds elapsed since this client instance was created.
     fn elapsed_millis_since_creation(&self) -> u64 {
         let millis = self.created_at.elapsed().as_millis();
         if millis > u64::MAX as u128 {
@@ -1824,6 +1826,7 @@ mod tests {
         );
     }
 
+    /// Verify that `DiscordApiClient::request` injects a `User-Agent` matching `x-super-properties`.
     #[test]
     fn request_injects_user_agent_matching_x_super_properties() {
         use base64::Engine as _;
@@ -1855,6 +1858,7 @@ mod tests {
         assert!(headers.get("accept-language").is_some());
     }
 
+    /// Verify that `DiscordApiClient::extract_user_id_from_token` decodes the numeric snowflake prefix.
     #[test]
     fn extract_user_id_from_token_parses_snowflake_prefix() {
         use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
@@ -1870,6 +1874,7 @@ mod tests {
         );
     }
 
+    /// Manual integration smoke test for `DiscordApiClient::get_current_user`.
     #[tokio::test]
     #[ignore] // Requires valid token
     async fn test_get_current_user() {

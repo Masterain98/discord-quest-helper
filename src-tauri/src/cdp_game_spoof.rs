@@ -424,6 +424,7 @@ pub fn build_fake_game_paths(os: DetectableOs, app_name: &str, exe_name: &str) -
 }
 
 /// Select the highest-priority executable entry matching `priority`, falling back to the first entry.
+#[cfg(test)]
 pub fn select_executable<'a>(
     executables: &'a [ApplicationExecutable],
     priority: &[&str],
@@ -853,6 +854,7 @@ mod tests {
         assert!(cleanup_verify_from_json(&serde_json::json!({ "success": false })).is_none());
     }
 
+    /// Verify that `with_bridge` replaces the `__dqh_cdp` placeholder with the per-process bridge token.
     #[test]
     fn with_bridge_strips_stable_dqh_identifier() {
         let rewritten = with_bridge("window.__dqh_cdp = 1; delete window.__dqh_cdp;");
@@ -861,6 +863,7 @@ mod tests {
         assert!(cdp_bridge_name().starts_with("__n"));
     }
 
+    /// Verify that `format_quest_executable_path` matches Discord's `Module 973522` (`o.Ic`) 2-segment normalization.
     #[test]
     fn format_quest_executable_path_matches_module_973522() {
         assert_eq!(
@@ -873,6 +876,7 @@ mod tests {
         );
     }
 
+    /// Verify that `synthesize_signed_executable_fingerprint` and `decrypt_executable_fingerprint` round-trip all 146 bytes.
     #[test]
     fn synthesize_and_decrypt_executable_fingerprint_roundtrip() {
         let user_id = "257900031351193600";
@@ -911,6 +915,7 @@ mod tests {
         assert_eq!(plain_pe32[0x01], 0x01, "flags must set is_signed only");
     }
 
+    /// Verify that `synthesize_signed_executable_fingerprint` embeds a caller-provided `hw_sha256` block at `[0x32..0x52)`.
     #[test]
     fn synthesize_uses_harvested_hw_tail() {
         let hw = [0xABu8; 32];
@@ -919,6 +924,7 @@ mod tests {
         assert_eq!(&plain[0x32..0x52], &hw[..]);
     }
 
+    /// Verify that `decrypt_executable_fingerprint` rejects malformed or wrong-length Base64 strings.
     #[test]
     fn decrypt_rejects_malformed_input() {
         assert!(decrypt_executable_fingerprint("not base64!", "1").is_none());
@@ -927,6 +933,7 @@ mod tests {
         assert!(decrypt_executable_fingerprint(&bad_b64, "1").is_none());
     }
 
+    /// Verify that `resolve_application_exe_path` ignores foreign-OS executables and resolves matching host-OS entries.
     #[test]
     fn resolve_application_exe_path_rejects_foreign_platform_executables() {
         let foreign = [ApplicationExecutable {
