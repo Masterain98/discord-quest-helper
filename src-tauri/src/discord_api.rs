@@ -184,9 +184,41 @@ pub struct DiscordApiClient {
     created_at: Arc<Instant>,
     last_proxy_check_elapsed_ms: Arc<AtomicU64>,
     token: String,
+    cached_user_id: Arc<ArcSwap<Option<String>>>,
+    cached_app_exe_paths: Arc<std::sync::Mutex<std::collections::HashMap<String, String>>>,
 }
 
 impl DiscordApiClient {
+    pub(crate) fn extract_user_id_from_token(token: &str) -> Option<String> {
+        use base64::{
+            engine::general_purpose::{STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD},
+            Engine as _,
+        };
+
+        let raw = token
+            .trim()
+            .strip_prefix("Bot ")
+            .or_else(|| token.trim().strip_prefix("Bearer "))
+            .unwrap_or(token.trim());
+        let first_segment = raw.split('.').next()?.trim();
+        if first_segment.is_empty() {
+            return None;
+        }
+        let decoded = URL_SAFE_NO_PAD
+            .decode(first_segment)
+            .or_else(|_| STANDARD_NO_PAD.decode(first_segment))
+            .or_else(|_| URL_SAFE.decode(first_segment))
+            .or_else(|_| STANDARD.decode(first_segment))
+            .ok()?;
+        let user_id = String::from_utf8(decoded).ok()?;
+        let trimmed = user_id.trim();
+        if !trimmed.is_empty() && trimmed.chars().all(|c| c.is_ascii_digit()) {
+            Some(trimmed.to_string())
+        } else {
+            None
+        }
+    }
+
     fn normalize_video_timestamp(timestamp: f64) -> u64 {
         if !timestamp.is_finite() || timestamp <= 0.0 {
             return 0;
@@ -275,6 +307,7 @@ impl DiscordApiClient {
         );
 
         let created_at = Arc::new(Instant::now());
+        let initial_user_id = Self::extract_user_id_from_token(&token);
 
         Ok(Self {
             client: Arc::new(ArcSwap::from_pointee(client)),
@@ -283,6 +316,8 @@ impl DiscordApiClient {
             created_at,
             last_proxy_check_elapsed_ms: Arc::new(AtomicU64::new(0)),
             token,
+            cached_user_id: Arc::new(ArcSwap::from_pointee(initial_user_id)),
+            cached_app_exe_paths: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         })
     }
 
@@ -542,6 +577,10 @@ impl DiscordApiClient {
         }
 
         let user: DiscordUser = response.json().await.context("Failed to parse user info")?;
+        if !user.id.trim().is_empty() {
+            self.cached_user_id
+                .store(Arc::new(Some(user.id.trim().to_string())));
+        }
 
         log(
             LogLevel::Debug,
@@ -551,6 +590,69 @@ impl DiscordApiClient {
         );
 
         Ok(user)
+    }
+
+    async fn resolve_user_id(&self) -> Option<String> {
+        if let Some(existing) = self.cached_user_id.load().as_ref().clone() {
+            if !existing.is_empty() {
+                return Some(existing);
+            }
+        }
+        if let Ok(user) = self.get_current_user().await {
+            if !user.id.trim().is_empty() {
+                return Some(user.id);
+            }
+        }
+        None
+    }
+
+    async fn resolve_game_exe_path(&self, application_id: &str) -> Option<String> {
+        if let Ok(cache) = self.cached_app_exe_paths.lock() {
+            if let Some(cached) = cache.get(application_id) {
+                return Some(cached.clone());
+            }
+        }
+
+        let hints = crate::game_simulator::simulated_process_hints();
+        let url = format!(
+            "{}/applications/public?application_ids={}",
+            DISCORD_API_BASE, application_id
+        );
+        if let Ok(response) = self.request(Method::GET, &url).send().await {
+            if response.status().is_success() {
+                if let Ok(apps) = response.json::<Vec<serde_json::Value>>().await {
+                    if let Some(app) = apps.first() {
+                        let app_name = app
+                            .get("name")
+                            .and_then(|v| v.as_str())
+                            .filter(|s| !s.trim().is_empty());
+                        let executables: Vec<crate::cdp_game_spoof::ApplicationExecutable> = app
+                            .get("executables")
+                            .and_then(|v| serde_json::from_value(v.clone()).ok())
+                            .unwrap_or_default();
+                        if let Some(name) = app_name {
+                            let resolved = crate::cdp_game_spoof::resolve_application_exe_path(
+                                crate::cdp_game_spoof::DetectableOs::from_host(),
+                                name,
+                                &executables,
+                                &hints,
+                            );
+                            if !resolved.is_empty() {
+                                if let Ok(mut cache) = self.cached_app_exe_paths.lock() {
+                                    cache.insert(application_id.to_string(), resolved.clone());
+                                }
+                                return Some(resolved);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        hints
+            .first()
+            .map(|h| h.exe_path.clone())
+            .filter(|p| !p.trim().is_empty())
     }
 
     /// Get progress for a specific quest.
@@ -897,21 +999,35 @@ impl DiscordApiClient {
     ) -> Result<bool> {
         let url = format!("{}/quests/{}/heartbeat", DISCORD_API_BASE, quest_id);
 
-        let exe_path = format!("{application_id}/game.exe");
+        let resolved_user_id = self.resolve_user_id().await;
+        let resolved_exe_path = self.resolve_game_exe_path(application_id).await;
+        let has_gui_window = !crate::game_simulator::simulated_process_hints().is_empty()
+            || crate::game_simulator::has_running_simulated_games();
+
+        let (executable_path, executable_fingerprint) =
+            match (resolved_user_id.as_deref(), resolved_exe_path.as_deref()) {
+                (Some(user_id), Some(exe_path)) if !user_id.is_empty() && !exe_path.is_empty() => (
+                    Some(crate::cdp_game_spoof::format_quest_executable_path(
+                        exe_path,
+                    )),
+                    Some(
+                        crate::cdp_game_spoof::synthesize_signed_executable_fingerprint(
+                            user_id,
+                            application_id,
+                            exe_path,
+                            None,
+                            has_gui_window,
+                        ),
+                    ),
+                ),
+                _ => (None, None),
+            };
+
         let payload = GameHeartbeatPayload {
             application_id: application_id.to_string(),
             terminal,
-            executable_path: Some(crate::cdp_game_spoof::format_quest_executable_path(
-                &exe_path,
-            )),
-            executable_fingerprint: Some(
-                crate::cdp_game_spoof::synthesize_signed_executable_fingerprint(
-                    "",
-                    application_id,
-                    &exe_path,
-                    None,
-                ),
-            ),
+            executable_path,
+            executable_fingerprint,
         };
 
         println!(
@@ -1546,6 +1662,21 @@ mod tests {
         assert!(headers.get("x-discord-timezone").is_some());
         assert!(headers.get("x-discord-locale").is_some());
         assert!(headers.get("accept-language").is_some());
+    }
+
+    #[test]
+    fn extract_user_id_from_token_parses_snowflake_prefix() {
+        use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+        let encoded = URL_SAFE_NO_PAD.encode("257900031351193600");
+        let token = format!("{encoded}.X12345.fake_hmac_signature");
+        assert_eq!(
+            DiscordApiClient::extract_user_id_from_token(&token).as_deref(),
+            Some("257900031351193600")
+        );
+        assert_eq!(
+            DiscordApiClient::extract_user_id_from_token("test-token"),
+            None
+        );
     }
 
     #[tokio::test]

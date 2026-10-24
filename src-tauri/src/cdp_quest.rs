@@ -339,6 +339,9 @@ fn js_spoof_play_game_for(
     })
     .to_string();
     let hints_json = serde_json::to_string(&process_hints).unwrap_or_else(|_| "[]".to_string());
+    let host_hw_bytes_json =
+        serde_json::to_string(&crate::cdp_game_spoof::local_machine_hw_sha256())
+            .unwrap_or_else(|_| "[]".to_string());
     let unix_host = if host_os.is_unix() { "true" } else { "false" };
 
     format!(
@@ -352,6 +355,7 @@ fn js_spoof_play_game_for(
         const osPriority = {os_priority_json};
         const pathTemplates = {path_templates_json};
         const processHints = {hints_json};
+        const hostHwBytes = {host_hw_bytes_json};
         const unixHost = {unix_host};
 
         function sanitizeApp(name) {{
@@ -539,6 +543,8 @@ fn js_spoof_play_game_for(
 
         // Synthesize a valid 196-char Base64 executableFingerprint matching
         // discord_utils.node (sub_a3990 -> sub_a4120 -> sub_1350, 0x92 = 146 bytes)
+        let fingerprintError = null;
+        dqh._lastFingerprintError = null;
         try {{
             if (typeof crypto !== "undefined" && crypto.subtle && typeof crypto.subtle.digest === "function") {{
                 const enc = new TextEncoder();
@@ -551,45 +557,64 @@ fn js_spoof_play_game_for(
                         const exp = m?.exports;
                         const u = exp?.default?.getCurrentUser?.() || exp?.Ay?.getCurrentUser?.();
                         if (u && u.id) {{ currentUserId = String(u.id); break; }}
+                        const authId = exp?.default?.getId?.() || exp?.Ay?.getId?.();
+                        if (typeof authId === "string" && /^\d+$/.test(authId)) {{ currentUserId = authId; break; }}
                     }}
                 }} catch(_) {{}}
-                const xorKey = await sha256(currentUserId + "https://discord.com/careers");
-                let harvestedHwTail = null;
-                const fpSource = [...realGames, ...(seenMatch ? [seenMatch] : [])].find(
-                    g => g && typeof g.executableFingerprint === "string" && g.executableFingerprint.length === 196
-                );
-                if (fpSource) {{
-                    const raw = Uint8Array.from(atob(fpSource.executableFingerprint), c => c.charCodeAt(0));
-                    if (raw.length === 0x92) {{
-                        const plain = new Uint8Array(0x92);
-                        for (let i = 0; i < 0x92; i++) plain[i] = raw[i] ^ xorKey[i & 31];
-                        if (plain[0] === 0x01) harvestedHwTail = plain.slice(0x4A, 0x72);
+                if (!currentUserId) {{
+                    fingerprintError = "missing_current_user_id";
+                    dqh._lastFingerprintError = fingerprintError;
+                }} else {{
+                    const xorKey = await sha256(currentUserId + "https://discord.com/careers");
+                    let harvestedHwTail = null;
+                    for (const cand of [...realGames, ...(seenMatch ? [seenMatch] : [])]) {{
+                        if (!cand || typeof cand.executableFingerprint !== "string" || cand.executableFingerprint.length !== 196) continue;
+                        try {{
+                            const raw = Uint8Array.from(atob(cand.executableFingerprint), c => c.charCodeAt(0));
+                            if (raw.length === 0x92) {{
+                                const plain = new Uint8Array(0x92);
+                                for (let i = 0; i < 0x92; i++) plain[i] = raw[i] ^ xorKey[i & 31];
+                                if (plain[0] === 0x01) {{
+                                    harvestedHwTail = plain.slice(0x4A, 0x72);
+                                    break;
+                                }}
+                            }}
+                        }} catch(_) {{}}
                     }}
+                    const normPath = String(fakeGame.exePath || "").toLowerCase().replace(/\\/g, "/").split("/").filter(Boolean).slice(-2).join("/");
+                    const seed = applicationId + ":" + normPath;
+                    const h64k = await sha256("pe64k:" + seed);
+                    const hSpki = await sha256("spki:" + seed);
+                    const hCert = await sha256("cert:" + seed);
+                    const hHw = (Array.isArray(hostHwBytes) && hostHwBytes.length === 32)
+                        ? new Uint8Array(hostHwBytes)
+                        : await sha256("hw:" + hostOs + ":" + (navigator.hardwareConcurrency || 8));
+                    const hasGuiWindow = fakeGame.windowHandle != null && fakeGame.windowHandle !== "0" && fakeGame.windowHandle !== "";
+                    const buf = new Uint8Array(0x92);
+                    buf[0x00] = 0x01; // version = 1
+                    buf[0x01] = hasGuiWindow ? 0x09 : 0x01; // flags = is_signed (0x01) | optional is_gui_window (0x08)
+                    const sizeView = new DataView(buf.buffer);
+                    const fileSize = 67108864 + ((h64k[0] | (h64k[1] << 8) | (h64k[2] << 16)) % 73400320);
+                    sizeView.setBigUint64(0x02, BigInt(fileSize), true);
+                    buf.set(h64k, 0x0A);
+                    buf.set(hSpki, 0x2A);
+                    if (harvestedHwTail && harvestedHwTail.length === 40) buf.set(harvestedHwTail, 0x4A);
+                    else buf.set(hHw, 0x4A);
+                    buf.set(hCert, 0x72);
+                    const out = new Uint8Array(0x92);
+                    for (let i = 0; i < 0x92; i++) out[i] = buf[i] ^ xorKey[i & 31];
+                    let bin = "";
+                    for (let i = 0; i < out.length; i++) bin += String.fromCharCode(out[i]);
+                    fakeGame.executableFingerprint = btoa(bin);
                 }}
-                const normPath = String(fakeGame.exePath || "").toLowerCase().replace(/\\/g, "/").split("/").filter(Boolean).slice(-2).join("/");
-                const seed = applicationId + ":" + normPath;
-                const h64k = await sha256("pe64k:" + seed);
-                const hSpki = await sha256("spki:" + seed);
-                const hCert = await sha256("cert:" + seed);
-                const hHw = await sha256("hw:" + navigator.userAgent + ":" + (navigator.hardwareConcurrency || 8));
-                const buf = new Uint8Array(0x92);
-                buf[0x00] = 0x01; // version = 1
-                buf[0x01] = 0x09; // flags = is_signed (0x01) | is_gui_window (0x08)
-                const sizeView = new DataView(buf.buffer);
-                const fileSize = 67108864 + ((h64k[0] | (h64k[1] << 8) | (h64k[2] << 16)) % 73400320);
-                sizeView.setBigUint64(0x02, BigInt(fileSize), true);
-                buf.set(h64k, 0x0A);
-                buf.set(hSpki, 0x2A);
-                if (harvestedHwTail && harvestedHwTail.length === 40) buf.set(harvestedHwTail, 0x4A);
-                else buf.set(hHw, 0x4A);
-                buf.set(hCert, 0x72);
-                const out = new Uint8Array(0x92);
-                for (let i = 0; i < 0x92; i++) out[i] = buf[i] ^ xorKey[i & 31];
-                let bin = "";
-                for (let i = 0; i < out.length; i++) bin += String.fromCharCode(out[i]);
-                fakeGame.executableFingerprint = btoa(bin);
+            }} else {{
+                fingerprintError = "webcrypto_subtle_unavailable";
+                dqh._lastFingerprintError = fingerprintError;
             }}
-        }} catch(_) {{}}
+        }} catch(fpErr) {{
+            fingerprintError = String(fpErr);
+            dqh._lastFingerprintError = fingerprintError;
+        }}
 
         dqh._spoofActive = true;
         dqh._fakeGame = fakeGame;
@@ -760,7 +785,7 @@ fn js_spoof_play_game_for(
         subscribeHeartbeats();
         dqh.FluxDispatcher.dispatch({{ type: "RUNNING_GAMES_CHANGE", removed: [], added: [fakeGame], games: mergedGames }});
 
-        return JSON.stringify({{ success: true, wrappedObserver, pid: fakeGame.pid || null, patchCount: patchCount, exeName: exeName, allExeNames: allExeNames, appDataName: appDataDebug, realGamesCount: realGames.length, mergedCount: mergedGames.length, hostOs: hostOs, selectedOs: selectedOs, usedHint: !!hint }});
+        return JSON.stringify({{ success: true, wrappedObserver, pid: fakeGame.pid || null, patchCount: patchCount, exeName: exeName, allExeNames: allExeNames, appDataName: appDataDebug, realGamesCount: realGames.length, mergedCount: mergedGames.length, hostOs: hostOs, selectedOs: selectedOs, usedHint: !!hint, hasFingerprint: typeof fakeGame.executableFingerprint === "string", fingerprintError: fingerprintError }});
     }} catch (e) {{
         return JSON.stringify({{ success: false, error: String(e) }});
     }}

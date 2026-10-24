@@ -43,18 +43,33 @@ fn sha256_bytes(data: &[u8]) -> [u8; 32] {
     hasher.finalize().into()
 }
 
-fn local_machine_hw_sha256() -> [u8; 32] {
+pub fn local_machine_hw_sha256() -> [u8; 32] {
+    let cores = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(8);
     #[cfg(windows)]
     {
-        if let Ok(key) = windows_registry::LOCAL_MACHINE.open("SOFTWARE\\Microsoft\\Cryptography") {
-            if let Ok(guid) = key.get_string("MachineGuid") {
-                if !guid.trim().is_empty() {
-                    return sha256_bytes(format!("hw:{guid}").as_bytes());
-                }
-            }
+        let guid = windows_registry::LOCAL_MACHINE
+            .open("SOFTWARE\\Microsoft\\Cryptography")
+            .and_then(|key| key.get_string("MachineGuid"))
+            .unwrap_or_default();
+        let cpu = windows_registry::LOCAL_MACHINE
+            .open("HARDWARE\\Description\\System\\CentralProcessor\\0")
+            .and_then(|key| key.get_string("ProcessorNameString"))
+            .unwrap_or_default();
+        if !guid.trim().is_empty() || !cpu.trim().is_empty() {
+            return sha256_bytes(format!("{}:{}:{}", guid.trim(), cpu.trim(), cores).as_bytes());
         }
     }
-    sha256_bytes(format!("hw:{}:{}", std::env::consts::OS, std::env::consts::ARCH).as_bytes())
+    sha256_bytes(
+        format!(
+            "hw:{}:{}:{}",
+            std::env::consts::OS,
+            std::env::consts::ARCH,
+            cores
+        )
+        .as_bytes(),
+    )
 }
 
 /// Synthesize a valid 196-character Base64 `executableFingerprint` matching
@@ -62,7 +77,7 @@ fn local_machine_hw_sha256() -> [u8; 32] {
 ///
 /// Binary layout (`0x92` = 146 bytes before XOR):
 /// - `[0x00]`: `0x01` (struct version)
-/// - `[0x01]`: `0x09` (`is_signed (0x01) | is_gui_window (0x08)`)
+/// - `[0x01]`: `0x09` (`is_signed (0x01) | is_gui_window (0x08)`) or `0x01` (`is_signed` only)
 /// - `[0x02..0x09]`: `file_size` (`u64 LE`, realistic 64..140 MB signed game PE size)
 /// - `[0x0A..0x29]`: `first_64kb_sha256` (32 bytes)
 /// - `[0x2A..0x49]`: `spki_sha256` (32 bytes, ASN.1 DER SubjectPublicKeyInfo SHA-256)
@@ -75,6 +90,7 @@ pub fn synthesize_signed_executable_fingerprint(
     app_id: &str,
     exe_path: &str,
     harvested_hw_tail: Option<&[u8; 40]>,
+    has_gui_window: bool,
 ) -> String {
     let norm_path = format_quest_executable_path(exe_path);
     let seed = format!("{app_id}:{norm_path}");
@@ -85,7 +101,7 @@ pub fn synthesize_signed_executable_fingerprint(
 
     let mut plain = [0u8; EXECUTABLE_FINGERPRINT_BYTE_LEN];
     plain[0x00] = 0x01; // version = 1
-    plain[0x01] = 0x09; // flags = is_signed (0x01) | is_gui_window (0x08)
+    plain[0x01] = if has_gui_window { 0x09 } else { 0x01 };
 
     let offset_size =
         ((h64k[0] as u64) | ((h64k[1] as u64) << 8) | ((h64k[2] as u64) << 16)) % 73_400_320;
@@ -110,11 +126,16 @@ pub fn synthesize_signed_executable_fingerprint(
 }
 
 /// Decrypt a 196-character Base64 `executableFingerprint` back into its raw 146-byte (`0x92`) struct.
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn decrypt_executable_fingerprint(
     fingerprint_b64: &str,
     user_id: &str,
 ) -> Option<[u8; EXECUTABLE_FINGERPRINT_BYTE_LEN]> {
-    let raw = BASE64.decode(fingerprint_b64.trim()).ok()?;
+    let trimmed = fingerprint_b64.trim();
+    if trimmed.len() != EXECUTABLE_FINGERPRINT_BASE64_LEN {
+        return None;
+    }
+    let raw = BASE64.decode(trimmed).ok()?;
     if raw.len() != EXECUTABLE_FINGERPRINT_BYTE_LEN {
         return None;
     }
@@ -167,8 +188,7 @@ impl DetectableOs {
     }
 }
 
-#[cfg(test)]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
 pub struct ApplicationExecutable {
     pub os: String,
     pub name: String,
@@ -180,7 +200,6 @@ pub struct FakeGamePathTemplates {
     pub exe_path: &'static str,
 }
 
-#[cfg(test)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FakeGamePaths {
     pub cmd_line: String,
@@ -289,11 +308,10 @@ pub fn path_templates(os: DetectableOs) -> FakeGamePathTemplates {
     }
 }
 
-/// Test-only mirrors of the injected JavaScript helpers `sanitizeApp`,
+/// Mirrors of the injected JavaScript helpers `sanitizeApp`,
 /// `normalizeExe`, `appSlug`, and `render` in `cdp_quest.rs`. Keep both
 /// implementations in lockstep.
-#[cfg(test)]
-fn sanitize_app_name(app_name: &str) -> String {
+pub fn sanitize_app_name(app_name: &str) -> String {
     app_name
         .chars()
         .map(|ch| match ch {
@@ -306,8 +324,7 @@ fn sanitize_app_name(app_name: &str) -> String {
         .join(" ")
 }
 
-#[cfg(test)]
-fn normalize_exe_name(os: DetectableOs, raw: &str) -> String {
+pub fn normalize_exe_name(os: DetectableOs, raw: &str) -> String {
     let trimmed = raw.trim().trim_start_matches('>');
     let file = trimmed.rsplit(['/', '\\']).next().unwrap_or(trimmed).trim();
     if os.is_unix() {
@@ -325,16 +342,14 @@ fn normalize_exe_name(os: DetectableOs, raw: &str) -> String {
     }
 }
 
-#[cfg(test)]
-fn app_slug(app: &str) -> String {
+pub fn app_slug(app: &str) -> String {
     app.to_lowercase()
         .split_whitespace()
         .collect::<Vec<_>>()
         .join("-")
 }
 
-#[cfg(test)]
-fn render_template(template: &str, app: &str, exe: &str) -> String {
+pub fn render_template(template: &str, app: &str, exe: &str) -> String {
     template
         .replace("{app}", app)
         .replace("{app_lower}", &app.to_lowercase())
@@ -342,8 +357,7 @@ fn render_template(template: &str, app: &str, exe: &str) -> String {
         .replace("{exe}", exe)
 }
 
-#[cfg(test)]
-fn build_fake_game_paths(os: DetectableOs, app_name: &str, exe_name: &str) -> FakeGamePaths {
+pub fn build_fake_game_paths(os: DetectableOs, app_name: &str, exe_name: &str) -> FakeGamePaths {
     let app = sanitize_app_name(app_name);
     let exe = normalize_exe_name(os, exe_name);
     let templates = path_templates(os);
@@ -354,8 +368,7 @@ fn build_fake_game_paths(os: DetectableOs, app_name: &str, exe_name: &str) -> Fa
     }
 }
 
-#[cfg(test)]
-fn select_executable<'a>(
+pub fn select_executable<'a>(
     executables: &'a [ApplicationExecutable],
     priority: &[&str],
 ) -> Option<&'a ApplicationExecutable> {
@@ -383,8 +396,7 @@ fn merge_running_games<'a>(
     merged
 }
 
-#[cfg(test)]
-fn match_process_hint<'a>(
+pub fn match_process_hint<'a>(
     hints: &'a [SimulatedProcessHint],
     exe_name: &str,
 ) -> Option<&'a SimulatedProcessHint> {
@@ -396,6 +408,34 @@ fn match_process_hint<'a>(
                 .next()
                 .is_some_and(|file| file.eq_ignore_ascii_case(exe_name))
     })
+}
+
+/// Resolve the realistic host-OS executable path for an application from its
+/// `/applications/public` metadata (`name` + `executables`) and optional
+/// simulated process hints.
+pub fn resolve_application_exe_path(
+    host_os: DetectableOs,
+    app_name: &str,
+    executables: &[ApplicationExecutable],
+    hints: &[SimulatedProcessHint],
+) -> String {
+    let sanitized = sanitize_app_name(app_name);
+    let default_exe = if host_os.is_unix() {
+        sanitized
+    } else {
+        format!("{sanitized}.exe")
+    };
+    let selected_name = select_executable(executables, host_os.cdp_executable_os_priority())
+        .map(|exe| exe.name.as_str())
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or(&default_exe);
+    let paths = build_fake_game_paths(host_os, app_name, selected_name);
+    if let Some(hint) = match_process_hint(hints, &paths.exe_name) {
+        if !hint.exe_path.trim().is_empty() {
+            return hint.exe_path.clone();
+        }
+    }
+    paths.exe_path
 }
 
 pub fn cdp_video_timing() -> CdpVideoTiming {
@@ -765,12 +805,15 @@ mod tests {
         let user_id = "257900031351193600";
         let app_id = "1158877933042143272";
         let exe_path = r"C:\Program Files\Counter-Strike 2\win64\cs2.exe";
-        let fp = synthesize_signed_executable_fingerprint(user_id, app_id, exe_path, None);
+        let fp = synthesize_signed_executable_fingerprint(user_id, app_id, exe_path, None, true);
         assert_eq!(fp.len(), EXECUTABLE_FINGERPRINT_BASE64_LEN);
 
         let plain = decrypt_executable_fingerprint(&fp, user_id).expect("decrypt");
         assert_eq!(plain[0x00], 0x01, "version must be 1");
-        assert_eq!(plain[0x01], 0x09, "flags must set is_signed | is_gui_window");
+        assert_eq!(
+            plain[0x01], 0x09,
+            "flags must set is_signed | is_gui_window"
+        );
         let file_size = u64::from_le_bytes(plain[0x02..0x0A].try_into().unwrap());
         assert!(
             (67_108_864..=140_509_184).contains(&file_size),
@@ -781,5 +824,11 @@ mod tests {
         assert!(plain[0x4A..0x6A].iter().any(|&b| b != 0));
         assert_eq!(&plain[0x6A..0x72], &[0u8; 8]);
         assert!(plain[0x72..0x92].iter().any(|&b| b != 0));
+
+        let fp_headless =
+            synthesize_signed_executable_fingerprint(user_id, app_id, exe_path, None, false);
+        let plain_headless =
+            decrypt_executable_fingerprint(&fp_headless, user_id).expect("decrypt headless");
+        assert_eq!(plain_headless[0x01], 0x01, "flags must set is_signed only");
     }
 }
