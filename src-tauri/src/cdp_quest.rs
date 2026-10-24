@@ -234,7 +234,11 @@ fn js_play_activity_heartbeat(
             ))
         ]);
         const body = response?.body;
-        const progress = Number(body?.progress?.PLAY_ACTIVITY?.value);
+        const progress = Number(
+            body?.progress?.PLAY_ACTIVITY?.value
+                ?? body?.progress?.ACHIEVEMENT_IN_ACTIVITY?.value
+                ?? body?.progress?.ACHIEVEMENT_IN_GAME?.value
+        );
         if (!body || !Number.isFinite(progress)) {{
             return JSON.stringify({{
                 success: false,
@@ -247,6 +251,8 @@ fn js_play_activity_heartbeat(
             progress,
             completed: body.completed_at != null
                 || body?.progress?.PLAY_ACTIVITY?.completed_at != null
+                || body?.progress?.ACHIEVEMENT_IN_ACTIVITY?.completed_at != null
+                || body?.progress?.ACHIEVEMENT_IN_GAME?.completed_at != null
         }});
     }} catch (error) {{
         return JSON.stringify({{ success: false, error: String(error) }});
@@ -287,7 +293,10 @@ fn js_play_activity_status(quest_id: &str) -> String {
         }}
         const userStatus = quest.user_status ?? quest.userStatus;
         const progress = Number(
-            userStatus?.progress?.PLAY_ACTIVITY?.value ?? 0
+            userStatus?.progress?.PLAY_ACTIVITY?.value
+                ?? userStatus?.progress?.ACHIEVEMENT_IN_ACTIVITY?.value
+                ?? userStatus?.progress?.ACHIEVEMENT_IN_GAME?.value
+                ?? 0
         );
         const completedAt = userStatus?.completed_at ?? userStatus?.completedAt ?? null;
 
