@@ -341,8 +341,8 @@ fn js_spoof_play_game_for(
     })
     .to_string();
     let hints_json = serde_json::to_string(&process_hints).unwrap_or_else(|_| "[]".to_string());
-    let host_hw_prefix_json =
-        serde_json::to_string(crate::cdp_game_spoof::local_machine_hw_prefix())
+    let host_hw_token_json =
+        serde_json::to_string(crate::cdp_game_spoof::local_machine_renderer_hw_token())
             .unwrap_or_else(|_| "\"\"".to_string());
     let unix_host = if host_os.is_unix() { "true" } else { "false" };
 
@@ -357,7 +357,7 @@ fn js_spoof_play_game_for(
         const osPriority = {os_priority_json};
         const pathTemplates = {path_templates_json};
         const processHints = {hints_json};
-        const hostHwPrefix = {host_hw_prefix_json};
+        const hostHwToken = {host_hw_token_json};
         const unixHost = {unix_host};
 
         function sanitizeApp(name) {{
@@ -573,7 +573,7 @@ fn js_spoof_play_game_for(
                 }} else {{
                     const xorKey = await sha256(currentUserId + "https://discord.com/careers");
                     let harvestedHw = null;
-                    for (const cand of [...realGames, ...seenGames]) {{
+                    for (const cand of realGames) {{
                         if (!cand || typeof cand.executableFingerprint !== "string" || cand.executableFingerprint.length !== 196) continue;
                         try {{
                             const raw = Uint8Array.from(atob(cand.executableFingerprint), c => c.charCodeAt(0));
@@ -581,7 +581,16 @@ fn js_spoof_play_game_for(
                                 const plain = new Uint8Array(0x92);
                                 plain[0] = raw[0];
                                 for (let i = 1; i < 0x92; i++) plain[i] = raw[i] ^ xorKey[(i - 1) & 31];
-                                if ((plain[1] & 0x01) !== 0) {{
+                                const plainView = new DataView(plain.buffer);
+                                const flags = plain[1];
+                                const fileSizeLow = plainView.getUint32(0x02, true);
+                                const fileSizeHigh = plainView.getUint32(0x06, true);
+                                const tds = plainView.getUint32(0x0A, true);
+                                const imgSize = plainView.getUint32(0x0E, true);
+                                if ((flags & 0x01) !== 0 && (flags & 0xFC) === 0
+                                    && fileSizeHigh === 0 && fileSizeLow >= 4096
+                                    && tds >= 0x386D4380 && tds <= 0x7FFFFFFF
+                                    && imgSize >= 0x1000 && (imgSize & 0xFFF) === 0) {{
                                     harvestedHw = plain.slice(0x32, 0x52);
                                     break;
                                 }}
@@ -612,8 +621,8 @@ fn js_spoof_play_game_for(
                     if (harvestedHw && harvestedHw.length === 32) {{
                         buf.set(harvestedHw, 0x32);
                     }} else {{
-                        const hHw = (typeof hostHwPrefix === "string" && hostHwPrefix.length > 0)
-                            ? await sha256(hostHwPrefix + currentUserId)
+                        const hHw = (typeof hostHwToken === "string" && hostHwToken.length > 0)
+                            ? await sha256(hostHwToken + ":" + currentUserId)
                             : await sha256("hw:" + hostOs + ":" + (navigator.hardwareConcurrency || 8) + ":" + currentUserId);
                         buf.set(hHw, 0x32);
                     }}

@@ -61,9 +61,9 @@ pub fn local_machine_guid() -> Option<String> {
     None
 }
 
-/// Return the cached local machine hardware prefix used to derive `hw_sha256`
+/// Return the cached local machine hardware prefix used in trusted Rust code to derive `hw_sha256`
 /// (`MachineGuid` on Windows when available, or `"hw:{os_tag}:{arch}:{cores}:"` fallback).
-pub fn local_machine_hw_prefix() -> &'static str {
+fn local_machine_hw_prefix() -> &'static str {
     static LOCAL_MACHINE_HW_PREFIX: Lazy<String> = Lazy::new(|| {
         if let Some(guid) = local_machine_guid() {
             return guid;
@@ -79,6 +79,17 @@ pub fn local_machine_hw_prefix() -> &'static str {
         )
     });
     LOCAL_MACHINE_HW_PREFIX.as_str()
+}
+
+/// Return a one-way SHA-256 hex digest of the local machine hardware prefix for renderer scripts,
+/// ensuring the raw Windows `MachineGuid` is never exposed to the Discord renderer JS context.
+pub fn local_machine_renderer_hw_token() -> &'static str {
+    static RENDERER_HW_TOKEN: Lazy<String> = Lazy::new(|| {
+        let digest =
+            sha256_bytes(format!("dqh-renderer-hw-v1:{}", local_machine_hw_prefix()).as_bytes());
+        digest.iter().map(|b| format!("{b:02x}")).collect()
+    });
+    RENDERER_HW_TOKEN.as_str()
 }
 
 /// Derive the 32-byte hardware + user fingerprint (`sub_a3f60`:
@@ -471,10 +482,20 @@ pub fn resolve_application_exe_path(
     } else {
         format!("{sanitized}.exe")
     };
-    let selected_name = select_executable(executables, host_os.cdp_executable_os_priority())
-        .map(|exe| exe.name.as_str())
-        .filter(|name| !name.trim().is_empty())
-        .unwrap_or(&default_exe);
+    let priority = host_os.cdp_executable_os_priority();
+    let selected_name = if executables.is_empty() {
+        default_exe.as_str()
+    } else {
+        match priority
+            .iter()
+            .find_map(|os| executables.iter().find(|item| item.os == *os))
+            .map(|exe| exe.name.as_str())
+            .filter(|name| !name.trim().is_empty())
+        {
+            Some(name) => name,
+            None => return String::new(),
+        }
+    };
     let paths = build_fake_game_paths(host_os, app_name, selected_name);
     if let Some(hint) = match_process_hint(hints, &paths.exe_name) {
         if !hint.exe_path.trim().is_empty() {
@@ -903,5 +924,25 @@ mod tests {
         assert!(decrypt_executable_fingerprint("AAAA", "1").is_none());
         let bad_b64 = "!".repeat(EXECUTABLE_FINGERPRINT_BASE64_LEN);
         assert!(decrypt_executable_fingerprint(&bad_b64, "1").is_none());
+    }
+
+    #[test]
+    fn resolve_application_exe_path_rejects_foreign_platform_executables() {
+        let foreign = [ApplicationExecutable {
+            os: "darwin".into(),
+            name: "Game.app/Contents/MacOS/Game".into(),
+        }];
+        assert_eq!(
+            resolve_application_exe_path(DetectableOs::Win32, "Cool Game", &foreign, &[]),
+            ""
+        );
+        let matching = [ApplicationExecutable {
+            os: "win32".into(),
+            name: "win64/game.exe".into(),
+        }];
+        assert_eq!(
+            resolve_application_exe_path(DetectableOs::Win32, "Cool Game", &matching, &[]),
+            "c:/program files/cool game/game.exe"
+        );
     }
 }

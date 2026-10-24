@@ -176,8 +176,14 @@ impl ProxyState {
 }
 
 /// Discord API client
+const ENRICHMENT_POSITIVE_CACHE_TTL: Duration = Duration::from_secs(600);
 const ENRICHMENT_NEGATIVE_CACHE_TTL: Duration = Duration::from_secs(60);
 const ENRICHMENT_LOOKUP_TIMEOUT: Duration = Duration::from_secs(3);
+
+type CachedAppCatalogEntry = (
+    Option<(String, Vec<crate::cdp_game_spoof::ApplicationExecutable>)>,
+    Instant,
+);
 
 /// HTTP API client for Discord quest and user endpoints.
 #[derive(Clone)]
@@ -190,8 +196,8 @@ pub struct DiscordApiClient {
     token: String,
     cached_user_id: Arc<ArcSwap<Option<String>>>,
     last_user_id_lookup_failure_ms: Arc<AtomicU64>,
-    cached_app_exe_paths:
-        Arc<std::sync::Mutex<std::collections::HashMap<String, (Option<String>, Instant)>>>,
+    cached_app_catalog:
+        Arc<std::sync::Mutex<std::collections::HashMap<String, CachedAppCatalogEntry>>>,
 }
 
 impl DiscordApiClient {
@@ -326,7 +332,7 @@ impl DiscordApiClient {
             token,
             cached_user_id: Arc::new(ArcSwap::from_pointee(initial_user_id)),
             last_user_id_lookup_failure_ms: Arc::new(AtomicU64::new(0)),
-            cached_app_exe_paths: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            cached_app_catalog: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         })
     }
 
@@ -603,6 +609,8 @@ impl DiscordApiClient {
 
     /// Resolve the authenticated Discord account's user ID from the cached token prefix or `/users/@me`.
     async fn resolve_user_id(&self) -> Option<String> {
+        use crate::logger::{log, LogCategory, LogLevel};
+
         if let Some(existing) = self.cached_user_id.load().as_ref().clone() {
             if !existing.is_empty() {
                 return Some(existing);
@@ -617,97 +625,210 @@ impl DiscordApiClient {
             return None;
         }
         let url = format!("{}/users/@me", DISCORD_API_BASE);
-        if let Ok(Ok(response)) = tokio::time::timeout(
+        match tokio::time::timeout(
             ENRICHMENT_LOOKUP_TIMEOUT,
             self.request(Method::GET, &url).send(),
         )
         .await
         {
-            if response.status().is_success() {
-                if let Ok(Ok(user)) =
-                    tokio::time::timeout(ENRICHMENT_LOOKUP_TIMEOUT, response.json::<DiscordUser>())
-                        .await
+            Ok(Ok(response)) if response.status().is_success() => {
+                match tokio::time::timeout(
+                    ENRICHMENT_LOOKUP_TIMEOUT,
+                    response.json::<DiscordUser>(),
+                )
+                .await
                 {
-                    let trimmed = user.id.trim();
-                    if !trimmed.is_empty() {
-                        let resolved = trimmed.to_string();
-                        self.cached_user_id.store(Arc::new(Some(resolved.clone())));
+                    Ok(Ok(user)) => {
+                        let trimmed = user.id.trim();
+                        if !trimmed.is_empty() {
+                            let resolved = trimmed.to_string();
+                            self.cached_user_id.store(Arc::new(Some(resolved.clone())));
+                            self.last_user_id_lookup_failure_ms
+                                .store(0, Ordering::Release);
+                            return Some(resolved);
+                        }
                         self.last_user_id_lookup_failure_ms
-                            .store(0, Ordering::Release);
-                        return Some(resolved);
+                            .store(now_ms.max(1), Ordering::Release);
+                    }
+                    Ok(Err(err)) => {
+                        log(
+                            LogLevel::Warn,
+                            LogCategory::Api,
+                            "Failed to parse /users/@me response during heartbeat enrichment",
+                            Some(&err.to_string()),
+                        );
+                    }
+                    Err(_) => {
+                        log(
+                            LogLevel::Warn,
+                            LogCategory::Api,
+                            "Timed out reading /users/@me body during heartbeat enrichment",
+                            None,
+                        );
                     }
                 }
             }
+            Ok(Ok(response)) => {
+                let status = response.status();
+                log(
+                    LogLevel::Warn,
+                    LogCategory::Api,
+                    "Non-success status from /users/@me during heartbeat enrichment",
+                    Some(&status.to_string()),
+                );
+                if status.is_client_error() {
+                    self.last_user_id_lookup_failure_ms
+                        .store(now_ms.max(1), Ordering::Release);
+                }
+            }
+            Ok(Err(err)) => {
+                log(
+                    LogLevel::Warn,
+                    LogCategory::Api,
+                    "Network error querying /users/@me during heartbeat enrichment",
+                    Some(&err.to_string()),
+                );
+            }
+            Err(_) => {
+                log(
+                    LogLevel::Warn,
+                    LogCategory::Api,
+                    "Timed out querying /users/@me during heartbeat enrichment",
+                    None,
+                );
+            }
         }
-        self.last_user_id_lookup_failure_ms
-            .store(now_ms.max(1), Ordering::Release);
         None
     }
 
-    /// Resolve the host-OS executable path for `application_id` from `/applications/public` or running process hints.
+    /// Resolve the host-OS executable path for `application_id` from `/applications/public` and live process hints.
     async fn resolve_game_exe_path(&self, application_id: &str) -> Option<String> {
+        use crate::logger::{log, LogCategory, LogLevel};
+
+        let hints = crate::game_simulator::simulated_process_hints();
+        let host_os = crate::cdp_game_spoof::DetectableOs::from_host();
         let now = Instant::now();
-        if let Ok(cache) = self.cached_app_exe_paths.lock() {
+        if let Ok(cache) = self.cached_app_catalog.lock() {
             if let Some((cached, fetched_at)) = cache.get(application_id) {
-                if cached.is_some()
-                    || now.duration_since(*fetched_at) < ENRICHMENT_NEGATIVE_CACHE_TTL
-                {
-                    return cached.clone();
+                let ttl = if cached.is_some() {
+                    ENRICHMENT_POSITIVE_CACHE_TTL
+                } else {
+                    ENRICHMENT_NEGATIVE_CACHE_TTL
+                };
+                if now.duration_since(*fetched_at) < ttl {
+                    return cached.as_ref().and_then(|(name, executables)| {
+                        let resolved = crate::cdp_game_spoof::resolve_application_exe_path(
+                            host_os,
+                            name,
+                            executables,
+                            &hints,
+                        );
+                        (!resolved.is_empty()).then_some(resolved)
+                    });
                 }
             }
         }
 
-        let hints = crate::game_simulator::simulated_process_hints();
         let url = format!(
             "{}/applications/public?application_ids={}",
             DISCORD_API_BASE, application_id
         );
-        if let Ok(Ok(response)) = tokio::time::timeout(
+        match tokio::time::timeout(
             ENRICHMENT_LOOKUP_TIMEOUT,
             self.request(Method::GET, &url).send(),
         )
         .await
         {
-            if response.status().is_success() {
-                if let Ok(Ok(apps)) = tokio::time::timeout(
+            Ok(Ok(response)) if response.status().is_success() => {
+                match tokio::time::timeout(
                     ENRICHMENT_LOOKUP_TIMEOUT,
                     response.json::<Vec<serde_json::Value>>(),
                 )
                 .await
                 {
-                    if let Some(app) = apps.first() {
-                        let app_name = app
-                            .get("name")
-                            .and_then(|v| v.as_str())
-                            .filter(|s| !s.trim().is_empty());
-                        let executables: Vec<crate::cdp_game_spoof::ApplicationExecutable> = app
-                            .get("executables")
-                            .and_then(|v| serde_json::from_value(v.clone()).ok())
-                            .unwrap_or_default();
-                        if let Some(name) = app_name {
-                            let resolved = crate::cdp_game_spoof::resolve_application_exe_path(
-                                crate::cdp_game_spoof::DetectableOs::from_host(),
-                                name,
-                                &executables,
-                                &hints,
-                            );
-                            if !resolved.is_empty() {
-                                if let Ok(mut cache) = self.cached_app_exe_paths.lock() {
+                    Ok(Ok(apps)) => {
+                        if let Some(app) = apps.first() {
+                            let app_name = app
+                                .get("name")
+                                .and_then(|v| v.as_str())
+                                .map(str::trim)
+                                .filter(|s| !s.is_empty())
+                                .map(ToOwned::to_owned);
+                            let executables: Vec<crate::cdp_game_spoof::ApplicationExecutable> =
+                                app.get("executables")
+                                    .and_then(|v| serde_json::from_value(v.clone()).ok())
+                                    .unwrap_or_default();
+                            if let Some(name) = app_name {
+                                let resolved = crate::cdp_game_spoof::resolve_application_exe_path(
+                                    host_os,
+                                    &name,
+                                    &executables,
+                                    &hints,
+                                );
+                                if let Ok(mut cache) = self.cached_app_catalog.lock() {
                                     cache.insert(
                                         application_id.to_string(),
-                                        (Some(resolved.clone()), Instant::now()),
+                                        (Some((name, executables)), Instant::now()),
                                     );
                                 }
-                                return Some(resolved);
+                                if !resolved.is_empty() {
+                                    return Some(resolved);
+                                }
+                                return None;
                             }
                         }
+                        if let Ok(mut cache) = self.cached_app_catalog.lock() {
+                            cache.insert(application_id.to_string(), (None, Instant::now()));
+                        }
+                    }
+                    Ok(Err(err)) => {
+                        log(
+                            LogLevel::Warn,
+                            LogCategory::Api,
+                            "Failed to parse /applications/public response during heartbeat enrichment",
+                            Some(&format!("app_id={application_id}: {err}")),
+                        );
+                    }
+                    Err(_) => {
+                        log(
+                            LogLevel::Warn,
+                            LogCategory::Api,
+                            "Timed out reading /applications/public body during heartbeat enrichment",
+                            Some(&format!("app_id={application_id}")),
+                        );
                     }
                 }
             }
-        }
-
-        if let Ok(mut cache) = self.cached_app_exe_paths.lock() {
-            cache.insert(application_id.to_string(), (None, Instant::now()));
+            Ok(Ok(response)) => {
+                let status = response.status();
+                log(
+                    LogLevel::Warn,
+                    LogCategory::Api,
+                    "Non-success status from /applications/public during heartbeat enrichment",
+                    Some(&format!("app_id={application_id}, status={status}")),
+                );
+                if status.is_client_error() {
+                    if let Ok(mut cache) = self.cached_app_catalog.lock() {
+                        cache.insert(application_id.to_string(), (None, Instant::now()));
+                    }
+                }
+            }
+            Ok(Err(err)) => {
+                log(
+                    LogLevel::Warn,
+                    LogCategory::Api,
+                    "Network error querying /applications/public during heartbeat enrichment",
+                    Some(&format!("app_id={application_id}: {err}")),
+                );
+            }
+            Err(_) => {
+                log(
+                    LogLevel::Warn,
+                    LogCategory::Api,
+                    "Timed out querying /applications/public during heartbeat enrichment",
+                    Some(&format!("app_id={application_id}")),
+                );
+            }
         }
         None
     }
