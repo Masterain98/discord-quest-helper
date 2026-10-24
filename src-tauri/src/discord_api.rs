@@ -707,8 +707,8 @@ impl DiscordApiClient {
         None
     }
 
-    /// Resolve the host-OS executable path for `application_id` from `/applications/public` and live process hints.
-    async fn resolve_game_exe_path(&self, application_id: &str) -> Option<String> {
+    /// Resolve the host-OS executable path and PE64 bitness for `application_id` from `/applications/public` and live process hints.
+    async fn resolve_game_exe_path(&self, application_id: &str) -> Option<(String, bool)> {
         use crate::logger::{log, LogCategory, LogLevel};
 
         let hints = crate::game_simulator::simulated_process_hints();
@@ -723,13 +723,12 @@ impl DiscordApiClient {
                 };
                 if now.duration_since(*fetched_at) < ttl {
                     return cached.as_ref().and_then(|(name, executables)| {
-                        let resolved = crate::cdp_game_spoof::resolve_application_exe_path(
+                        crate::cdp_game_spoof::resolve_application_exe_metadata(
                             host_os,
                             name,
                             executables,
                             &hints,
-                        );
-                        (!resolved.is_empty()).then_some(resolved)
+                        )
                     });
                 }
             }
@@ -765,22 +764,20 @@ impl DiscordApiClient {
                                     .and_then(|v| serde_json::from_value(v.clone()).ok())
                                     .unwrap_or_default();
                             if let Some(name) = app_name {
-                                let resolved = crate::cdp_game_spoof::resolve_application_exe_path(
-                                    host_os,
-                                    &name,
-                                    &executables,
-                                    &hints,
-                                );
+                                let resolved =
+                                    crate::cdp_game_spoof::resolve_application_exe_metadata(
+                                        host_os,
+                                        &name,
+                                        &executables,
+                                        &hints,
+                                    );
                                 if let Ok(mut cache) = self.cached_app_catalog.lock() {
                                     cache.insert(
                                         application_id.to_string(),
                                         (Some((name, executables)), Instant::now()),
                                     );
                                 }
-                                if !resolved.is_empty() {
-                                    return Some(resolved);
-                                }
-                                return None;
+                                return resolved;
                             }
                         }
                         if let Ok(mut cache) = self.cached_app_catalog.lock() {
@@ -1189,15 +1186,16 @@ impl DiscordApiClient {
     ) -> Result<bool> {
         let url = format!("{}/quests/{}/heartbeat", DISCORD_API_BASE, quest_id);
 
-        let (resolved_user_id, resolved_exe_path) = tokio::join!(
+        let (resolved_user_id, resolved_exe) = tokio::join!(
             self.resolve_user_id(),
             self.resolve_game_exe_path(application_id)
         );
 
         let (executable_path, executable_fingerprint) =
-            match (resolved_user_id.as_deref(), resolved_exe_path.as_deref()) {
-                (Some(user_id), Some(exe_path)) if !user_id.is_empty() && !exe_path.is_empty() => {
-                    let is_pe64 = exe_path.to_ascii_lowercase().ends_with(".exe");
+            match (resolved_user_id.as_deref(), resolved_exe.as_ref()) {
+                (Some(user_id), Some((exe_path, is_pe64)))
+                    if !user_id.is_empty() && !exe_path.is_empty() =>
+                {
                     (
                         Some(crate::cdp_game_spoof::format_quest_executable_path(
                             exe_path,
@@ -1208,7 +1206,7 @@ impl DiscordApiClient {
                                 application_id,
                                 exe_path,
                                 None,
-                                is_pe64,
+                                *is_pe64,
                             ),
                         ),
                     )

@@ -469,15 +469,15 @@ pub fn match_process_hint<'a>(
     })
 }
 
-/// Resolve the realistic host-OS executable path for an application from its
-/// `/applications/public` metadata (`name` + `executables`) and optional
+/// Resolve the realistic host-OS executable path and PE64 bitness (`(exe_path, is_pe64)`)
+/// for an application from its `/applications/public` metadata (`name` + `executables`) and optional
 /// simulated process hints.
-pub fn resolve_application_exe_path(
+pub fn resolve_application_exe_metadata(
     host_os: DetectableOs,
     app_name: &str,
     executables: &[ApplicationExecutable],
     hints: &[SimulatedProcessHint],
-) -> String {
+) -> Option<(String, bool)> {
     let sanitized = sanitize_app_name(app_name);
     let default_exe = if host_os.is_unix() {
         sanitized
@@ -485,26 +485,45 @@ pub fn resolve_application_exe_path(
         format!("{sanitized}.exe")
     };
     let priority = host_os.cdp_executable_os_priority();
-    let selected_name = if executables.is_empty() {
-        default_exe.as_str()
+    let (selected_name, is_pe64) = if executables.is_empty() {
+        (default_exe.as_str(), !host_os.is_unix())
     } else {
-        match priority
-            .iter()
-            .find_map(|os| executables.iter().find(|item| item.os == *os))
-            .map(|exe| exe.name.as_str())
-            .filter(|name| !name.trim().is_empty())
-        {
-            Some(name) => name,
-            None => return String::new(),
-        }
+        let selected = priority.iter().find_map(|os| {
+            executables
+                .iter()
+                .find(|item| item.os == *os && !item.name.trim().is_empty())
+        })?;
+        let is_pe =
+            selected.os == "win32" || selected.name.trim().to_ascii_lowercase().ends_with(".exe");
+        (selected.name.as_str(), is_pe)
     };
     let paths = build_fake_game_paths(host_os, app_name, selected_name);
     if let Some(hint) = match_process_hint(hints, &paths.exe_name) {
         if !hint.exe_path.trim().is_empty() {
-            return hint.exe_path.clone();
+            let hint_is_pe = is_pe64 || hint.exe_path.trim().to_ascii_lowercase().ends_with(".exe");
+            return Some((hint.exe_path.clone(), hint_is_pe));
         }
     }
-    paths.exe_path
+    if paths.exe_path.is_empty() {
+        None
+    } else {
+        Some((paths.exe_path, is_pe64))
+    }
+}
+
+/// Resolve the realistic host-OS executable path for an application from its
+/// `/applications/public` metadata (`name` + `executables`) and optional
+/// simulated process hints.
+#[cfg(test)]
+pub fn resolve_application_exe_path(
+    host_os: DetectableOs,
+    app_name: &str,
+    executables: &[ApplicationExecutable],
+    hints: &[SimulatedProcessHint],
+) -> String {
+    resolve_application_exe_metadata(host_os, app_name, executables, hints)
+        .map(|(path, _)| path)
+        .unwrap_or_default()
 }
 
 /// Return the real-time 1x video quest progress timing parameters.
@@ -933,7 +952,7 @@ mod tests {
         assert!(decrypt_executable_fingerprint(&bad_b64, "1").is_none());
     }
 
-    /// Verify that `resolve_application_exe_path` ignores foreign-OS executables and resolves matching host-OS entries.
+    /// Verify that `resolve_application_exe_path` ignores foreign-OS or blank entries and preserves PE bitness on Unix `win32` fallbacks.
     #[test]
     fn resolve_application_exe_path_rejects_foreign_platform_executables() {
         let foreign = [ApplicationExecutable {
@@ -951,6 +970,25 @@ mod tests {
         assert_eq!(
             resolve_application_exe_path(DetectableOs::Win32, "Cool Game", &matching, &[]),
             "c:/program files/cool game/game.exe"
+        );
+        let blank_linux_then_win32 = [
+            ApplicationExecutable {
+                os: "linux".into(),
+                name: "   ".into(),
+            },
+            ApplicationExecutable {
+                os: "win32".into(),
+                name: "win64/game.exe".into(),
+            },
+        ];
+        assert_eq!(
+            resolve_application_exe_metadata(
+                DetectableOs::Linux,
+                "Cool Game",
+                &blank_linux_then_win32,
+                &[],
+            ),
+            Some(("/opt/cool-game/game".to_string(), true))
         );
     }
 }

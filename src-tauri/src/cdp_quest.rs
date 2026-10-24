@@ -462,10 +462,10 @@ fn js_spoof_play_game_for(
                 allExeNames = allExes.map(x => x && x.name).filter(Boolean);
                 let selected = null;
                 for (const os of osPriority) {{
-                    selected = allExes.find(x => x && x.os === os && x.name);
+                    selected = allExes.find(x => x && x.os === os && typeof x.name === "string" && x.name.trim().length > 0);
                     if (selected) {{ selectedOs = os; break; }}
                 }}
-                if (!selected && allExes[0] && allExes[0].name) {{
+                if (!selected && allExes[0] && typeof allExes[0].name === "string" && allExes[0].name.trim().length > 0) {{
                     selected = allExes[0];
                     selectedOs = allExes[0].os || null;
                 }}
@@ -625,7 +625,7 @@ fn js_spoof_play_game_for(
                     const hCert = await sha256("AUTHENTICODE_CERT_V1:" + seed);
                     const buf = new Uint8Array(0x92);
                     const pktView = new DataView(buf.buffer);
-                    const isPe64 = normPath.endsWith(".exe");
+                    const isPe64 = selectedOs === "win32" || normPath.endsWith(".exe");
                     buf[0x00] = 0x01; // version = 1 (un-XORed in sub_1350)
                     buf[0x01] = isPe64 ? 0x03 : 0x01; // flags = is_signed (0x01) | is_pe64 (0x02 for Windows PE64)
                     pktView.setBigUint64(0x02, fileSize, true);
