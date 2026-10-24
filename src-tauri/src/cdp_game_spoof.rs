@@ -44,30 +44,35 @@ fn sha256_bytes(data: &[u8]) -> [u8; 32] {
     hasher.finalize().into()
 }
 
-/// Derive a deterministic 32-byte local hardware fingerprint approximation
-/// (`MachineGuid`, `ProcessorNameString`, and logical core count on Windows;
-/// `OS:ARCH:cores` on non-Windows).
-pub fn local_machine_hw_sha256() -> [u8; 32] {
-    let cores = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(8);
+/// Read the local Windows `MachineGuid` from `HKLM\SOFTWARE\Microsoft\Cryptography`
+/// (`sub_a3f60` at `0x1800a3f60` in `discord_utils.node`).
+pub fn local_machine_guid() -> Option<String> {
     #[cfg(windows)]
     {
         let guid = windows_registry::LOCAL_MACHINE
             .open("SOFTWARE\\Microsoft\\Cryptography")
             .and_then(|key| key.get_string("MachineGuid"))
             .unwrap_or_default();
-        let cpu = windows_registry::LOCAL_MACHINE
-            .open("HARDWARE\\Description\\System\\CentralProcessor\\0")
-            .and_then(|key| key.get_string("ProcessorNameString"))
-            .unwrap_or_default();
-        if !guid.trim().is_empty() || !cpu.trim().is_empty() {
-            return sha256_bytes(format!("{}:{}:{}", guid.trim(), cpu.trim(), cores).as_bytes());
+        let trimmed = guid.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
         }
     }
+    None
+}
+
+/// Derive the 32-byte hardware + user fingerprint (`sub_a3f60`:
+/// `SHA-256(MachineGuid || user_id)` on Windows; `SHA-256("hw:OS:ARCH:cores:user_id")` fallback).
+pub fn local_machine_hw_sha256(user_id: &str) -> [u8; 32] {
+    if let Some(guid) = local_machine_guid() {
+        return sha256_bytes(format!("{guid}{user_id}").as_bytes());
+    }
+    let cores = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(8);
     sha256_bytes(
         format!(
-            "hw:{}:{}:{}",
+            "hw:{}:{}:{}:{user_id}",
             std::env::consts::OS,
             std::env::consts::ARCH,
             cores
@@ -118,7 +123,7 @@ pub fn synthesize_signed_executable_fingerprint(
 
     let h_headers =
         sha256_bytes(format!("PE_HEADERS_V1:{seed}:{time_date_stamp}:{size_of_image}").as_bytes());
-    let h_hw = local_machine_hw_sha256();
+    let h_hw = local_machine_hw_sha256(user_id);
     let h_sections = sha256_bytes(format!("PE_SECTIONS_V1:{seed}:{size_of_image}").as_bytes());
     let h_cert = sha256_bytes(format!("AUTHENTICODE_CERT_V1:{seed}").as_bytes());
 

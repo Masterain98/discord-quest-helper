@@ -652,10 +652,7 @@ impl DiscordApiClient {
             }
         }
 
-        hints
-            .first()
-            .map(|h| h.exe_path.clone())
-            .filter(|p| !p.trim().is_empty())
+        None
     }
 
     /// Get progress for a specific quest.
@@ -1004,8 +1001,6 @@ impl DiscordApiClient {
 
         let resolved_user_id = self.resolve_user_id().await;
         let resolved_exe_path = self.resolve_game_exe_path(application_id).await;
-        let has_gui_window = !crate::game_simulator::simulated_process_hints().is_empty()
-            || crate::game_simulator::has_running_simulated_games();
 
         let (executable_path, executable_fingerprint) =
             match (resolved_user_id.as_deref(), resolved_exe_path.as_deref()) {
@@ -1019,7 +1014,7 @@ impl DiscordApiClient {
                             application_id,
                             exe_path,
                             None,
-                            has_gui_window,
+                            true,
                         ),
                     ),
                 ),

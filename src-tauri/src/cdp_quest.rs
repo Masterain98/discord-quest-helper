@@ -341,9 +341,9 @@ fn js_spoof_play_game_for(
     })
     .to_string();
     let hints_json = serde_json::to_string(&process_hints).unwrap_or_else(|_| "[]".to_string());
-    let host_hw_bytes_json =
-        serde_json::to_string(&crate::cdp_game_spoof::local_machine_hw_sha256())
-            .unwrap_or_else(|_| "[]".to_string());
+    let host_machine_guid_json =
+        serde_json::to_string(&crate::cdp_game_spoof::local_machine_guid().unwrap_or_default())
+            .unwrap_or_else(|_| "\"\"".to_string());
     let unix_host = if host_os.is_unix() { "true" } else { "false" };
 
     format!(
@@ -357,7 +357,7 @@ fn js_spoof_play_game_for(
         const osPriority = {os_priority_json};
         const pathTemplates = {path_templates_json};
         const processHints = {hints_json};
-        const hostHwBytes = {host_hw_bytes_json};
+        const hostMachineGuid = {host_machine_guid_json};
         const unixHost = {unix_host};
 
         function sanitizeApp(name) {{
@@ -472,11 +472,13 @@ fn js_spoof_play_game_for(
         const builtPath = render(pathTemplates.exePath, sanitizeApp(applicationName), exeName);
 
         let seenMatch = null;
+        let seenGames = [];
         try {{
             const seen = typeof dqh.RunningGameStore.getGamesSeen === "function"
                 ? dqh.RunningGameStore.getGamesSeen(false)
                 : [];
             if (Array.isArray(seen)) {{
+                seenGames = seen;
                 seenMatch = seen.find(g => g && String(g.id) === String(applicationId)) || null;
             }}
         }} catch(e) {{}}
@@ -571,7 +573,7 @@ fn js_spoof_play_game_for(
                 }} else {{
                     const xorKey = await sha256(currentUserId + "https://discord.com/careers");
                     let harvestedHw = null;
-                    for (const cand of [...realGames, ...(seenMatch ? [seenMatch] : [])]) {{
+                    for (const cand of [...realGames, ...seenGames]) {{
                         if (!cand || typeof cand.executableFingerprint !== "string" || cand.executableFingerprint.length !== 196) continue;
                         try {{
                             const raw = Uint8Array.from(atob(cand.executableFingerprint), c => c.charCodeAt(0));
@@ -599,8 +601,8 @@ fn js_spoof_play_game_for(
                     const hPeHeaders = await sha256("PE_HEADERS_V1:" + seed + ":" + timeDateStamp + ":" + sizeOfImage);
                     const hSections = await sha256("PE_SECTIONS_V1:" + seed + ":" + sizeOfImage);
                     const hCert = await sha256("AUTHENTICODE_CERT_V1:" + seed);
-                    const hHw = (Array.isArray(hostHwBytes) && hostHwBytes.length === 32)
-                        ? new Uint8Array(hostHwBytes)
+                    const hHw = (typeof hostMachineGuid === "string" && hostMachineGuid.length > 0)
+                        ? await sha256(hostMachineGuid + currentUserId)
                         : await sha256("hw:" + hostOs + ":" + (navigator.hardwareConcurrency || 8) + ":" + currentUserId);
                     const buf = new Uint8Array(0x92);
                     const pktView = new DataView(buf.buffer);
@@ -2058,6 +2060,24 @@ pub async fn start_manual_game_spoof(port: u16, app_id: &str, app_name: &str) ->
         }
     };
     log_partial_target_failures("manual game simulation", &summary.target_failures);
+    if let Some(first) = summary.successful_results.first() {
+        let has_fp = first
+            .get("hasFingerprint")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let fp_err = first.get("fingerprintError").and_then(|v| v.as_str());
+        if !has_fp || fp_err.is_some() {
+            log(
+                LogLevel::Warn,
+                LogCategory::TokenExtraction,
+                &format!(
+                    "CDP manual game simulation: executableFingerprint missing or errored (hasFingerprint={}, error={:?})",
+                    has_fp, fp_err
+                ),
+                None,
+            );
+        }
+    }
 
     log(
         LogLevel::Info,
@@ -2287,14 +2307,31 @@ pub async fn complete_play_quest_via_cdp(
                 .join(", ")
         })
         .unwrap_or_default();
+    let has_fingerprint = parsed
+        .get("hasFingerprint")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let fingerprint_error = parsed.get("fingerprintError").and_then(|v| v.as_str());
+    if !has_fingerprint || fingerprint_error.is_some() {
+        log(
+            LogLevel::Warn,
+            LogCategory::TokenExtraction,
+            &format!(
+                "CDP: Spoofed game missing executableFingerprint (hasFingerprint={}, fingerprintError={:?})",
+                has_fingerprint, fingerprint_error
+            ),
+            None,
+        );
+    }
     log(LogLevel::Info, LogCategory::TokenExtraction,
         &format!(
-            "CDP: Game spoofed successfully on {}/{} target(s) (max {} RunningGameStore patches, exe={}, allExes=[{}], dispatch interceptor active). Polling progress...",
+            "CDP: Game spoofed successfully on {}/{} target(s) (max {} RunningGameStore patches, exe={}, allExes=[{}], hasFingerprint={}, dispatch interceptor active). Polling progress...",
             spoof_summary.successful_results.len(),
             spoof_summary.total_targets,
             patch_count,
             exe_name,
-            all_exes
+            all_exes,
+            has_fingerprint
         ),
         None,
     );
@@ -2419,6 +2456,24 @@ async fn cdp_start_stream_spoof(port: u16, app_id: &str) -> Result<CdpJsonExecut
         )
         .await?;
         log_partial_target_failures("stream companion game spoof", &game.target_failures);
+        if let Some(first) = game.successful_results.first() {
+            let has_fp = first
+                .get("hasFingerprint")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let fp_err = first.get("fingerprintError").and_then(|v| v.as_str());
+            if !has_fp || fp_err.is_some() {
+                crate::logger::log(
+                    crate::logger::LogLevel::Warn,
+                    crate::logger::LogCategory::TokenExtraction,
+                    &format!(
+                        "CDP stream companion game spoof: executableFingerprint missing or errored (hasFingerprint={}, error={:?})",
+                        has_fp, fp_err
+                    ),
+                    None,
+                );
+            }
+        }
         Ok(stream)
     }
     .await;
