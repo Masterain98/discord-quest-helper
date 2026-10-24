@@ -92,10 +92,11 @@ pub fn local_machine_renderer_hw_token() -> &'static str {
     RENDERER_HW_TOKEN.as_str()
 }
 
-/// Derive the 32-byte hardware + user fingerprint (`sub_a3f60`:
-/// `SHA-256(MachineGuid || user_id)` on Windows; `SHA-256("hw:{os_tag}:{arch}:{cores}:{user_id}")` fallback).
+/// Derive the 32-byte hardware + user fingerprint (`SHA-256("{renderer_hw_token}:{user_id}")`),
+/// matching the CDP renderer script's no-harvest fallback so both direct HTTP heartbeats and
+/// CDP-injected game objects produce identical `hw_sha256` bytes without exposing `MachineGuid`.
 pub fn local_machine_hw_sha256(user_id: &str) -> [u8; 32] {
-    sha256_bytes(format!("{}{user_id}", local_machine_hw_prefix()).as_bytes())
+    sha256_bytes(format!("{}:{user_id}", local_machine_renderer_hw_token()).as_bytes())
 }
 
 /// Synthesize a valid 196-character Base64 `executableFingerprint` matching

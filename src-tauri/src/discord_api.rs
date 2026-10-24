@@ -665,6 +665,8 @@ impl DiscordApiClient {
                             "Timed out reading /users/@me body during heartbeat enrichment",
                             None,
                         );
+                        self.last_user_id_lookup_failure_ms
+                            .store(now_ms.max(1), Ordering::Release);
                     }
                 }
             }
@@ -696,6 +698,8 @@ impl DiscordApiClient {
                     "Timed out querying /users/@me during heartbeat enrichment",
                     None,
                 );
+                self.last_user_id_lookup_failure_ms
+                    .store(now_ms.max(1), Ordering::Release);
             }
         }
         None
@@ -796,6 +800,9 @@ impl DiscordApiClient {
                             "Timed out reading /applications/public body during heartbeat enrichment",
                             Some(&format!("app_id={application_id}")),
                         );
+                        if let Ok(mut cache) = self.cached_app_catalog.lock() {
+                            cache.insert(application_id.to_string(), (None, Instant::now()));
+                        }
                     }
                 }
             }
@@ -828,6 +835,9 @@ impl DiscordApiClient {
                     "Timed out querying /applications/public during heartbeat enrichment",
                     Some(&format!("app_id={application_id}")),
                 );
+                if let Ok(mut cache) = self.cached_app_catalog.lock() {
+                    cache.insert(application_id.to_string(), (None, Instant::now()));
+                }
             }
         }
         None
