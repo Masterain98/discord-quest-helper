@@ -897,9 +897,21 @@ impl DiscordApiClient {
     ) -> Result<bool> {
         let url = format!("{}/quests/{}/heartbeat", DISCORD_API_BASE, quest_id);
 
+        let exe_path = format!("{application_id}/game.exe");
         let payload = GameHeartbeatPayload {
             application_id: application_id.to_string(),
             terminal,
+            executable_path: Some(crate::cdp_game_spoof::format_quest_executable_path(
+                &exe_path,
+            )),
+            executable_fingerprint: Some(
+                crate::cdp_game_spoof::synthesize_signed_executable_fingerprint(
+                    "",
+                    application_id,
+                    &exe_path,
+                    None,
+                ),
+            ),
         };
 
         println!(

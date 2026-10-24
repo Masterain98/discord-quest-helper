@@ -519,10 +519,15 @@ fn js_spoof_play_game_for(
         }}
 
         let realGames = [];
-        try {{ realGames = dqh._origGetRunningGames.call(dqh.RunningGameStore); }} catch(e) {{
-            try {{ realGames = dqh._origGetRunningGames(); }} catch(e2) {{ realGames = []; }}
+        try {{
+            const rawReal = dqh._origGetRunningGames.call(dqh.RunningGameStore);
+            if (Array.isArray(rawReal)) realGames.push(...rawReal);
+        }} catch(e) {{
+            try {{
+                const rawReal = dqh._origGetRunningGames();
+                if (Array.isArray(rawReal)) realGames.push(...rawReal);
+            }} catch(e2) {{}}
         }}
-        if (!Array.isArray(realGames)) realGames = [];
         if (!(hint && hint.pid)) {{
             // Discord's native game/session subscribers call PID APIs before
             // QuestProgressManager. They accept a positive integer even when
@@ -531,6 +536,60 @@ fn js_spoof_play_game_for(
             // real process; avoid collisions with games already in the store.
             fakeGame.pid = allocateSyntheticPid(realGames);
         }}
+
+        // Synthesize a valid 196-char Base64 executableFingerprint matching
+        // discord_utils.node (sub_a3990 -> sub_a4120 -> sub_1350, 0x92 = 146 bytes)
+        try {{
+            if (typeof crypto !== "undefined" && crypto.subtle && typeof crypto.subtle.digest === "function") {{
+                const enc = new TextEncoder();
+                const sha256 = async (text) => new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(text)));
+                let currentUserId = "";
+                try {{
+                    const wpReq = webpackChunkdiscord_app.push([[Symbol()], {{}}, r => r]);
+                    webpackChunkdiscord_app.pop();
+                    for (const m of Object.values(wpReq.c)) {{
+                        const exp = m?.exports;
+                        const u = exp?.default?.getCurrentUser?.() || exp?.Ay?.getCurrentUser?.();
+                        if (u && u.id) {{ currentUserId = String(u.id); break; }}
+                    }}
+                }} catch(_) {{}}
+                const xorKey = await sha256(currentUserId + "https://discord.com/careers");
+                let harvestedHwTail = null;
+                const fpSource = [...realGames, ...(seenMatch ? [seenMatch] : [])].find(
+                    g => g && typeof g.executableFingerprint === "string" && g.executableFingerprint.length === 196
+                );
+                if (fpSource) {{
+                    const raw = Uint8Array.from(atob(fpSource.executableFingerprint), c => c.charCodeAt(0));
+                    if (raw.length === 0x92) {{
+                        const plain = new Uint8Array(0x92);
+                        for (let i = 0; i < 0x92; i++) plain[i] = raw[i] ^ xorKey[i & 31];
+                        if (plain[0] === 0x01) harvestedHwTail = plain.slice(0x4A, 0x72);
+                    }}
+                }}
+                const normPath = String(fakeGame.exePath || "").toLowerCase().replace(/\\/g, "/").split("/").filter(Boolean).slice(-2).join("/");
+                const seed = applicationId + ":" + normPath;
+                const h64k = await sha256("pe64k:" + seed);
+                const hSpki = await sha256("spki:" + seed);
+                const hCert = await sha256("cert:" + seed);
+                const hHw = await sha256("hw:" + navigator.userAgent + ":" + (navigator.hardwareConcurrency || 8));
+                const buf = new Uint8Array(0x92);
+                buf[0x00] = 0x01; // version = 1
+                buf[0x01] = 0x09; // flags = is_signed (0x01) | is_gui_window (0x08)
+                const sizeView = new DataView(buf.buffer);
+                const fileSize = 67108864 + ((h64k[0] | (h64k[1] << 8) | (h64k[2] << 16)) % 73400320);
+                sizeView.setBigUint64(0x02, BigInt(fileSize), true);
+                buf.set(h64k, 0x0A);
+                buf.set(hSpki, 0x2A);
+                if (harvestedHwTail && harvestedHwTail.length === 40) buf.set(harvestedHwTail, 0x4A);
+                else buf.set(hHw, 0x4A);
+                buf.set(hCert, 0x72);
+                const out = new Uint8Array(0x92);
+                for (let i = 0; i < 0x92; i++) out[i] = buf[i] ^ xorKey[i & 31];
+                let bin = "";
+                for (let i = 0; i < out.length; i++) bin += String.fromCharCode(out[i]);
+                fakeGame.executableFingerprint = btoa(bin);
+            }}
+        }} catch(_) {{}}
 
         dqh._spoofActive = true;
         dqh._fakeGame = fakeGame;

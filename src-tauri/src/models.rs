@@ -67,6 +67,10 @@ pub struct HeartbeatPayload {
 pub struct GameHeartbeatPayload {
     pub application_id: String,
     pub terminal: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub executable_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub executable_fingerprint: Option<String>,
 }
 
 #[derive(Debug, Serialize)]

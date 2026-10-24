@@ -13,9 +13,118 @@
 //! Simulation mode on macOS still uses win32 executable names; these helpers
 //! are for CDP store spoofing only.
 
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use once_cell::sync::Lazy;
 use rand::RngExt;
 use serde::Serialize;
+use sha2::{Digest, Sha256};
+
+/// Discord `discord_utils.node` (`sub_a3990` -> `sub_a4120` -> `sub_1350`)
+/// binary fingerprint size (146 bytes = `0x92`) and Base64 length (196 chars).
+pub const EXECUTABLE_FINGERPRINT_BYTE_LEN: usize = 0x92;
+pub const EXECUTABLE_FINGERPRINT_BASE64_LEN: usize = 196;
+pub const EXECUTABLE_FINGERPRINT_SALT: &str = "https://discord.com/careers";
+
+/// Format `exe_path` identically to Discord webpack `Module 973522` (`o.Ic`):
+/// lowercase, normalize `\` to `/`, strip empty segments, and join the last 2 segments.
+pub fn format_quest_executable_path(exe_path: &str) -> String {
+    let normalized = exe_path.trim().to_lowercase().replace('\\', "/");
+    let parts: Vec<&str> = normalized.split('/').filter(|s| !s.is_empty()).collect();
+    if parts.len() >= 2 {
+        format!("{}/{}", parts[parts.len() - 2], parts[parts.len() - 1])
+    } else {
+        parts.first().copied().unwrap_or_default().to_string()
+    }
+}
+
+fn sha256_bytes(data: &[u8]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(data);
+    hasher.finalize().into()
+}
+
+fn local_machine_hw_sha256() -> [u8; 32] {
+    #[cfg(windows)]
+    {
+        if let Ok(key) = windows_registry::LOCAL_MACHINE.open("SOFTWARE\\Microsoft\\Cryptography") {
+            if let Ok(guid) = key.get_string("MachineGuid") {
+                if !guid.trim().is_empty() {
+                    return sha256_bytes(format!("hw:{guid}").as_bytes());
+                }
+            }
+        }
+    }
+    sha256_bytes(format!("hw:{}:{}", std::env::consts::OS, std::env::consts::ARCH).as_bytes())
+}
+
+/// Synthesize a valid 196-character Base64 `executableFingerprint` matching
+/// `discord_utils.node` (`sub_a3990` -> `sub_a4120` -> `sub_1350`).
+///
+/// Binary layout (`0x92` = 146 bytes before XOR):
+/// - `[0x00]`: `0x01` (struct version)
+/// - `[0x01]`: `0x09` (`is_signed (0x01) | is_gui_window (0x08)`)
+/// - `[0x02..0x09]`: `file_size` (`u64 LE`, realistic 64..140 MB signed game PE size)
+/// - `[0x0A..0x29]`: `first_64kb_sha256` (32 bytes)
+/// - `[0x2A..0x49]`: `spki_sha256` (32 bytes, ASN.1 DER SubjectPublicKeyInfo SHA-256)
+/// - `[0x4A..0x71]`: `hw_sha256` (32 bytes) + 8-byte zero tail (`sub_116790`)
+/// - `[0x72..0x91]`: `cert_sha256` (32 bytes, leaf X.509 Authenticode cert SHA-256)
+///
+/// Stream cipher (`sub_1350`): XOR with repeating 32-byte `SHA256(user_id + "https://discord.com/careers")`.
+pub fn synthesize_signed_executable_fingerprint(
+    user_id: &str,
+    app_id: &str,
+    exe_path: &str,
+    harvested_hw_tail: Option<&[u8; 40]>,
+) -> String {
+    let norm_path = format_quest_executable_path(exe_path);
+    let seed = format!("{app_id}:{norm_path}");
+    let h64k = sha256_bytes(format!("pe64k:{seed}").as_bytes());
+    let h_spki = sha256_bytes(format!("spki:{seed}").as_bytes());
+    let h_cert = sha256_bytes(format!("cert:{seed}").as_bytes());
+    let h_hw = local_machine_hw_sha256();
+
+    let mut plain = [0u8; EXECUTABLE_FINGERPRINT_BYTE_LEN];
+    plain[0x00] = 0x01; // version = 1
+    plain[0x01] = 0x09; // flags = is_signed (0x01) | is_gui_window (0x08)
+
+    let offset_size =
+        ((h64k[0] as u64) | ((h64k[1] as u64) << 8) | ((h64k[2] as u64) << 16)) % 73_400_320;
+    let file_size: u64 = 67_108_864 + offset_size;
+    plain[0x02..0x0A].copy_from_slice(&file_size.to_le_bytes());
+
+    plain[0x0A..0x2A].copy_from_slice(&h64k);
+    plain[0x2A..0x4A].copy_from_slice(&h_spki);
+    if let Some(hw_tail) = harvested_hw_tail {
+        plain[0x4A..0x72].copy_from_slice(hw_tail);
+    } else {
+        plain[0x4A..0x6A].copy_from_slice(&h_hw);
+    }
+    plain[0x72..0x92].copy_from_slice(&h_cert);
+
+    let xor_key = sha256_bytes(format!("{user_id}{EXECUTABLE_FINGERPRINT_SALT}").as_bytes());
+    let mut cipher = [0u8; EXECUTABLE_FINGERPRINT_BYTE_LEN];
+    for i in 0..EXECUTABLE_FINGERPRINT_BYTE_LEN {
+        cipher[i] = plain[i] ^ xor_key[i & 31];
+    }
+    BASE64.encode(cipher)
+}
+
+/// Decrypt a 196-character Base64 `executableFingerprint` back into its raw 146-byte (`0x92`) struct.
+pub fn decrypt_executable_fingerprint(
+    fingerprint_b64: &str,
+    user_id: &str,
+) -> Option<[u8; EXECUTABLE_FINGERPRINT_BYTE_LEN]> {
+    let raw = BASE64.decode(fingerprint_b64.trim()).ok()?;
+    if raw.len() != EXECUTABLE_FINGERPRINT_BYTE_LEN {
+        return None;
+    }
+    let xor_key = sha256_bytes(format!("{user_id}{EXECUTABLE_FINGERPRINT_SALT}").as_bytes());
+    let mut plain = [0u8; EXECUTABLE_FINGERPRINT_BYTE_LEN];
+    for i in 0..EXECUTABLE_FINGERPRINT_BYTE_LEN {
+        plain[i] = raw[i] ^ xor_key[i & 31];
+    }
+    Some(plain)
+}
 
 /// Discord detectable-game OS tags used by `/applications/public`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -637,5 +746,40 @@ mod tests {
         assert!(!rewritten.contains("__dqh_cdp"));
         assert!(rewritten.contains(cdp_bridge_name()));
         assert!(cdp_bridge_name().starts_with("__n"));
+    }
+
+    #[test]
+    fn format_quest_executable_path_matches_module_973522() {
+        assert_eq!(
+            format_quest_executable_path(r"C:\Program Files\Cool Game\Win64\Game.exe"),
+            "win64/game.exe"
+        );
+        assert_eq!(
+            format_quest_executable_path("c:/program files/cool game/Game.exe"),
+            "cool game/game.exe"
+        );
+    }
+
+    #[test]
+    fn synthesize_and_decrypt_executable_fingerprint_roundtrip() {
+        let user_id = "257900031351193600";
+        let app_id = "1158877933042143272";
+        let exe_path = r"C:\Program Files\Counter-Strike 2\win64\cs2.exe";
+        let fp = synthesize_signed_executable_fingerprint(user_id, app_id, exe_path, None);
+        assert_eq!(fp.len(), EXECUTABLE_FINGERPRINT_BASE64_LEN);
+
+        let plain = decrypt_executable_fingerprint(&fp, user_id).expect("decrypt");
+        assert_eq!(plain[0x00], 0x01, "version must be 1");
+        assert_eq!(plain[0x01], 0x09, "flags must set is_signed | is_gui_window");
+        let file_size = u64::from_le_bytes(plain[0x02..0x0A].try_into().unwrap());
+        assert!(
+            (67_108_864..=140_509_184).contains(&file_size),
+            "unexpected file_size: {file_size}"
+        );
+        assert!(plain[0x0A..0x2A].iter().any(|&b| b != 0));
+        assert!(plain[0x2A..0x4A].iter().any(|&b| b != 0));
+        assert!(plain[0x4A..0x6A].iter().any(|&b| b != 0));
+        assert_eq!(&plain[0x6A..0x72], &[0u8; 8]);
+        assert!(plain[0x72..0x92].iter().any(|&b| b != 0));
     }
 }
