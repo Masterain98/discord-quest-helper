@@ -29,6 +29,8 @@
 
 > [!WARNING]
 > **This tool is for educational purposes only.** Using this tool may violate Discord's Terms of Service. The authors are not responsible for any consequences resulting from the use of this software. Use at your own risk.
+>
+> **🛡️ Security & Anti-Fraud Audit:** See [`SECURITY_AUDIT_AND_REVERSE_ANALYSIS.md`](./SECURITY_AUDIT_AND_REVERSE_ANALYSIS.md) for the full binary reverse-engineering analysis of `discord_utils.node` (`sub_a3990` -> `sub_a4120` -> `sub_1350`), why unpatched dummy PE binaries and `executableFingerprint: undefined` trigger `Quest Activity Notice`, and how this build synthesizes valid 196-character `executableFingerprint` payloads.
 
 ### Download & Run
 

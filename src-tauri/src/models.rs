@@ -63,10 +63,19 @@ pub struct HeartbeatPayload {
     pub stream_key: String,
 }
 
+/// Payload for `POST /quests/{id}/heartbeat` on `PLAY_ON_DESKTOP` quests.
 #[derive(Debug, Serialize)]
 pub struct GameHeartbeatPayload {
+    /// Target Discord application snowflake ID.
     pub application_id: String,
+    /// Whether this heartbeat terminates the play session.
     pub terminal: bool,
+    /// Normalized 2-segment lowercase executable path (`Module 973522` `o.Ic`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub executable_path: Option<String>,
+    /// 196-character Base64-encoded 146-byte (`0x92`) executable fingerprint (`sub_a3990`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub executable_fingerprint: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
