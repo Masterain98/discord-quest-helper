@@ -341,8 +341,8 @@ fn js_spoof_play_game_for(
     })
     .to_string();
     let hints_json = serde_json::to_string(&process_hints).unwrap_or_else(|_| "[]".to_string());
-    let host_machine_guid_json =
-        serde_json::to_string(&crate::cdp_game_spoof::local_machine_guid().unwrap_or_default())
+    let host_hw_prefix_json =
+        serde_json::to_string(crate::cdp_game_spoof::local_machine_hw_prefix())
             .unwrap_or_else(|_| "\"\"".to_string());
     let unix_host = if host_os.is_unix() { "true" } else { "false" };
 
@@ -357,7 +357,7 @@ fn js_spoof_play_game_for(
         const osPriority = {os_priority_json};
         const pathTemplates = {path_templates_json};
         const processHints = {hints_json};
-        const hostMachineGuid = {host_machine_guid_json};
+        const hostHwPrefix = {host_hw_prefix_json};
         const unixHost = {unix_host};
 
         function sanitizeApp(name) {{
@@ -601,9 +601,6 @@ fn js_spoof_play_game_for(
                     const hPeHeaders = await sha256("PE_HEADERS_V1:" + seed + ":" + timeDateStamp + ":" + sizeOfImage);
                     const hSections = await sha256("PE_SECTIONS_V1:" + seed + ":" + sizeOfImage);
                     const hCert = await sha256("AUTHENTICODE_CERT_V1:" + seed);
-                    const hHw = (typeof hostMachineGuid === "string" && hostMachineGuid.length > 0)
-                        ? await sha256(hostMachineGuid + currentUserId)
-                        : await sha256("hw:" + hostOs + ":" + (navigator.hardwareConcurrency || 8) + ":" + currentUserId);
                     const buf = new Uint8Array(0x92);
                     const pktView = new DataView(buf.buffer);
                     buf[0x00] = 0x01; // version = 1 (un-XORed in sub_1350)
@@ -612,7 +609,14 @@ fn js_spoof_play_game_for(
                     pktView.setUint32(0x0A, timeDateStamp, true);
                     pktView.setUint32(0x0E, sizeOfImage, true);
                     buf.set(hPeHeaders, 0x12);
-                    buf.set(harvestedHw && harvestedHw.length === 32 ? harvestedHw : hHw, 0x32);
+                    if (harvestedHw && harvestedHw.length === 32) {{
+                        buf.set(harvestedHw, 0x32);
+                    }} else {{
+                        const hHw = (typeof hostHwPrefix === "string" && hostHwPrefix.length > 0)
+                            ? await sha256(hostHwPrefix + currentUserId)
+                            : await sha256("hw:" + hostOs + ":" + (navigator.hardwareConcurrency || 8) + ":" + currentUserId);
+                        buf.set(hHw, 0x32);
+                    }}
                     buf.set(hSections, 0x52);
                     buf.set(hCert, 0x72);
                     const out = new Uint8Array(0x92);

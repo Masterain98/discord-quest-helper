@@ -176,6 +176,10 @@ impl ProxyState {
 }
 
 /// Discord API client
+const ENRICHMENT_NEGATIVE_CACHE_TTL: Duration = Duration::from_secs(60);
+const ENRICHMENT_LOOKUP_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// HTTP API client for Discord quest and user endpoints.
 #[derive(Clone)]
 pub struct DiscordApiClient {
     client: Arc<ArcSwap<reqwest::Client>>,
@@ -185,7 +189,9 @@ pub struct DiscordApiClient {
     last_proxy_check_elapsed_ms: Arc<AtomicU64>,
     token: String,
     cached_user_id: Arc<ArcSwap<Option<String>>>,
-    cached_app_exe_paths: Arc<std::sync::Mutex<std::collections::HashMap<String, String>>>,
+    last_user_id_lookup_failure_ms: Arc<AtomicU64>,
+    cached_app_exe_paths:
+        Arc<std::sync::Mutex<std::collections::HashMap<String, (Option<String>, Instant)>>>,
 }
 
 impl DiscordApiClient {
@@ -220,6 +226,7 @@ impl DiscordApiClient {
         }
     }
 
+    /// Normalize a floating-point video progress timestamp into a non-negative integer second count.
     fn normalize_video_timestamp(timestamp: f64) -> u64 {
         if !timestamp.is_finite() || timestamp <= 0.0 {
             return 0;
@@ -318,6 +325,7 @@ impl DiscordApiClient {
             last_proxy_check_elapsed_ms: Arc::new(AtomicU64::new(0)),
             token,
             cached_user_id: Arc::new(ArcSwap::from_pointee(initial_user_id)),
+            last_user_id_lookup_failure_ms: Arc::new(AtomicU64::new(0)),
             cached_app_exe_paths: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         })
     }
@@ -600,19 +608,52 @@ impl DiscordApiClient {
                 return Some(existing);
             }
         }
-        if let Ok(user) = self.get_current_user().await {
-            if !user.id.trim().is_empty() {
-                return Some(user.id);
+        let now_ms = self.elapsed_millis_since_creation();
+        let last_fail_ms = self.last_user_id_lookup_failure_ms.load(Ordering::Acquire);
+        if last_fail_ms > 0
+            && now_ms.saturating_sub(last_fail_ms)
+                < ENRICHMENT_NEGATIVE_CACHE_TTL.as_millis() as u64
+        {
+            return None;
+        }
+        let url = format!("{}/users/@me", DISCORD_API_BASE);
+        if let Ok(Ok(response)) = tokio::time::timeout(
+            ENRICHMENT_LOOKUP_TIMEOUT,
+            self.request(Method::GET, &url).send(),
+        )
+        .await
+        {
+            if response.status().is_success() {
+                if let Ok(Ok(user)) =
+                    tokio::time::timeout(ENRICHMENT_LOOKUP_TIMEOUT, response.json::<DiscordUser>())
+                        .await
+                {
+                    let trimmed = user.id.trim();
+                    if !trimmed.is_empty() {
+                        let resolved = trimmed.to_string();
+                        self.cached_user_id.store(Arc::new(Some(resolved.clone())));
+                        self.last_user_id_lookup_failure_ms
+                            .store(0, Ordering::Release);
+                        return Some(resolved);
+                    }
+                }
             }
         }
+        self.last_user_id_lookup_failure_ms
+            .store(now_ms.max(1), Ordering::Release);
         None
     }
 
     /// Resolve the host-OS executable path for `application_id` from `/applications/public` or running process hints.
     async fn resolve_game_exe_path(&self, application_id: &str) -> Option<String> {
+        let now = Instant::now();
         if let Ok(cache) = self.cached_app_exe_paths.lock() {
-            if let Some(cached) = cache.get(application_id) {
-                return Some(cached.clone());
+            if let Some((cached, fetched_at)) = cache.get(application_id) {
+                if cached.is_some()
+                    || now.duration_since(*fetched_at) < ENRICHMENT_NEGATIVE_CACHE_TTL
+                {
+                    return cached.clone();
+                }
             }
         }
 
@@ -621,9 +662,19 @@ impl DiscordApiClient {
             "{}/applications/public?application_ids={}",
             DISCORD_API_BASE, application_id
         );
-        if let Ok(response) = self.request(Method::GET, &url).send().await {
+        if let Ok(Ok(response)) = tokio::time::timeout(
+            ENRICHMENT_LOOKUP_TIMEOUT,
+            self.request(Method::GET, &url).send(),
+        )
+        .await
+        {
             if response.status().is_success() {
-                if let Ok(apps) = response.json::<Vec<serde_json::Value>>().await {
+                if let Ok(Ok(apps)) = tokio::time::timeout(
+                    ENRICHMENT_LOOKUP_TIMEOUT,
+                    response.json::<Vec<serde_json::Value>>(),
+                )
+                .await
+                {
                     if let Some(app) = apps.first() {
                         let app_name = app
                             .get("name")
@@ -642,7 +693,10 @@ impl DiscordApiClient {
                             );
                             if !resolved.is_empty() {
                                 if let Ok(mut cache) = self.cached_app_exe_paths.lock() {
-                                    cache.insert(application_id.to_string(), resolved.clone());
+                                    cache.insert(
+                                        application_id.to_string(),
+                                        (Some(resolved.clone()), Instant::now()),
+                                    );
                                 }
                                 return Some(resolved);
                             }
@@ -652,6 +706,9 @@ impl DiscordApiClient {
             }
         }
 
+        if let Ok(mut cache) = self.cached_app_exe_paths.lock() {
+            cache.insert(application_id.to_string(), (None, Instant::now()));
+        }
         None
     }
 

@@ -61,24 +61,30 @@ pub fn local_machine_guid() -> Option<String> {
     None
 }
 
-/// Derive the 32-byte hardware + user fingerprint (`sub_a3f60`:
-/// `SHA-256(MachineGuid || user_id)` on Windows; `SHA-256("hw:OS:ARCH:cores:user_id")` fallback).
-pub fn local_machine_hw_sha256(user_id: &str) -> [u8; 32] {
-    if let Some(guid) = local_machine_guid() {
-        return sha256_bytes(format!("{guid}{user_id}").as_bytes());
-    }
-    let cores = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(8);
-    sha256_bytes(
+/// Return the cached local machine hardware prefix used to derive `hw_sha256`
+/// (`MachineGuid` on Windows when available, or `"hw:{os_tag}:{arch}:{cores}:"` fallback).
+pub fn local_machine_hw_prefix() -> &'static str {
+    static LOCAL_MACHINE_HW_PREFIX: Lazy<String> = Lazy::new(|| {
+        if let Some(guid) = local_machine_guid() {
+            return guid;
+        }
+        let cores = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(8);
         format!(
-            "hw:{}:{}:{}:{user_id}",
-            std::env::consts::OS,
+            "hw:{}:{}:{}:",
+            DetectableOs::from_host().as_api_tag(),
             std::env::consts::ARCH,
             cores
         )
-        .as_bytes(),
-    )
+    });
+    LOCAL_MACHINE_HW_PREFIX.as_str()
+}
+
+/// Derive the 32-byte hardware + user fingerprint (`sub_a3f60`:
+/// `SHA-256(MachineGuid || user_id)` on Windows; `SHA-256("hw:{os_tag}:{arch}:{cores}:{user_id}")` fallback).
+pub fn local_machine_hw_sha256(user_id: &str) -> [u8; 32] {
+    sha256_bytes(format!("{}{user_id}", local_machine_hw_prefix()).as_bytes())
 }
 
 /// Synthesize a valid 196-character Base64 `executableFingerprint` matching
@@ -123,7 +129,6 @@ pub fn synthesize_signed_executable_fingerprint(
 
     let h_headers =
         sha256_bytes(format!("PE_HEADERS_V1:{seed}:{time_date_stamp}:{size_of_image}").as_bytes());
-    let h_hw = local_machine_hw_sha256(user_id);
     let h_sections = sha256_bytes(format!("PE_SECTIONS_V1:{seed}:{size_of_image}").as_bytes());
     let h_cert = sha256_bytes(format!("AUTHENTICODE_CERT_V1:{seed}").as_bytes());
 
@@ -137,6 +142,7 @@ pub fn synthesize_signed_executable_fingerprint(
     if let Some(hw) = harvested_hw {
         plain[0x32..0x52].copy_from_slice(hw);
     } else {
+        let h_hw = local_machine_hw_sha256(user_id);
         plain[0x32..0x52].copy_from_slice(&h_hw);
     }
     plain[0x52..0x72].copy_from_slice(&h_sections);
@@ -183,6 +189,7 @@ pub enum DetectableOs {
 }
 
 impl DetectableOs {
+    /// Detect the current host operating system tag for Discord detectable applications.
     pub fn from_host() -> Self {
         match std::env::consts::OS {
             "macos" => Self::Darwin,
@@ -191,6 +198,7 @@ impl DetectableOs {
         }
     }
 
+    /// Return the lowercase OS identifier used by Discord's `/applications/public` API.
     pub fn as_api_tag(self) -> &'static str {
         match self {
             Self::Win32 => "win32",
@@ -302,6 +310,7 @@ pub const RUNNING_GAME_SCHEMA_KEYS: &[&str] = &[
     "windowHandle",
 ];
 
+/// Generate and return a randomized process-scoped `window` bridge property name.
 pub fn cdp_bridge_name() -> &'static str {
     static NAME: Lazy<String> = Lazy::new(|| {
         let mut rng = rand::rng();
@@ -318,6 +327,7 @@ pub fn with_bridge(js: &str) -> String {
     js.replace("__dqh_cdp", cdp_bridge_name())
 }
 
+/// Return the OS-specific `cmd_line` and `exe_path` templates for `os`.
 pub fn path_templates(os: DetectableOs) -> FakeGamePathTemplates {
     match os {
         DetectableOs::Win32 => FakeGamePathTemplates {
@@ -414,6 +424,7 @@ pub fn select_executable<'a>(
     executables.first()
 }
 
+/// Merge a synthetic running game entry into `real` without duplicating `id` or `pid`.
 #[cfg(test)]
 fn merge_running_games<'a>(
     real: &[RunningGameIdentity<'a>],
@@ -473,6 +484,7 @@ pub fn resolve_application_exe_path(
     paths.exe_path
 }
 
+/// Return the real-time 1x video quest progress timing parameters.
 pub fn cdp_video_timing() -> CdpVideoTiming {
     CdpVideoTiming {
         speed: 10,
@@ -481,6 +493,7 @@ pub fn cdp_video_timing() -> CdpVideoTiming {
     }
 }
 
+/// Compute a generous upper-bound timeout in seconds for a CDP video quest run.
 pub fn cdp_video_timeout_secs(seconds_needed: u32, initial_progress: f64) -> u64 {
     let remaining = (seconds_needed as f64 - initial_progress).max(0.0);
     let timing = cdp_video_timing();
@@ -488,10 +501,12 @@ pub fn cdp_video_timeout_secs(seconds_needed: u32, initial_progress: f64) -> u64
     (wall * 2.0).ceil() as u64 + 300
 }
 
+/// Clamp the requested `PLAY_ACTIVITY` heartbeat interval to at least `OFFICIAL_GAME_HEARTBEAT_SECS`.
 pub fn align_play_activity_heartbeat_secs(requested: u64) -> u64 {
     requested.max(OFFICIAL_GAME_HEARTBEAT_SECS)
 }
 
+/// Verify that all CDP spoof state flags in `verify` are completely clean.
 pub fn cleanup_verify_is_clean(verify: &CleanupVerify) -> bool {
     !verify.dqh_present
         && !verify.spoof_active
@@ -503,6 +518,7 @@ pub fn cleanup_verify_is_clean(verify: &CleanupVerify) -> bool {
         && !verify.debug_game_present
 }
 
+/// Parse a `CleanupVerify` struct from the JSON returned by `JS_VERIFY_CLEANUP_STATE`.
 pub fn cleanup_verify_from_json(parsed: &serde_json::Value) -> Option<CleanupVerify> {
     if parsed.get("success") != Some(&serde_json::json!(true)) {
         return None;
