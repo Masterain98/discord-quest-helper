@@ -9,14 +9,14 @@ Through static and dynamic reverse engineering of the Windows Discord Desktop cl
 
 we identified the exact client-side and server-side detection vectors that cause Discord to flag Quest automation (`Quest Activity Notice`):
 
-1. **CDP Game Spoofing Explicitly Sets `executableFingerprint: undefined` (`src-tauri/src/cdp_quest.rs:497`):**
+1. **CDP Game Spoofing Explicitly Sets `executableFingerprint: undefined` (`js_spoof_play_game_for` in `src-tauri/src/cdp_quest.rs`):**
    - When `RunningGameStore.getRunningGames()` is spoofed in `js_spoof_play_game_for`, `fakeGame.executableFingerprint` was hardcoded to `undefined` and never populated.
    - Consequently, when `QuestProgressManager` (`Module 378187`) calls `sendHeartbeat` (`Module 396813` `ea(e)`), it sends `executable_fingerprint: undefined` on every `POST /quests/{id}/heartbeat`.
-2. **Unsigned Dummy PE Binary (`stagecraft.exe` / `stealth_pe.rs`) Fails `WinVerifyTrust` in `discord_utils.node` (`sub_a3990` -> `sub_a4120`):**
+2. **Unsigned Dummy PE Binary (`stagecraft.exe`) Fails `WinVerifyTrust` in `discord_utils.node` (`sub_a3990` -> `sub_a4120`):**
    - When the simulated dummy binary (`stagecraft.exe`) is scanned by `discord_utils.node`, `sub_a4120` (`0x1800a4120`) calls `WinVerifyTrust` (`0x1800a4224`) and `CryptQueryObject` (`0x1800a435d`).
    - Because `stagecraft.exe` has no valid Authenticode digital signature, `flags` bit 0 (`is_signed`) is `0`, `spki_sha256` (`[0x2A..0x49]`) and `cert_sha256` (`[0x72..0x91]`) are 32 zero bytes (`00..00`), and `file_size` (`[0x02..0x09]`) is only ~150 KB instead of a 60–140 MB Authenticode-signed game executable.
-3. **Direct API Game Heartbeat Omits `executable_path` & `executable_fingerprint` (`src-tauri/src/discord_api.rs:900` & `models.rs:67`):**
-   - `GameHeartbeatPayload` serialized only `{ application_id, terminal }`, completely omitting `executable_path` (formatted via `Module 973522` `o.Ic` as the last 2 lowercase `/` segments) and `executable_fingerprint` (196-character Base64).
+3. **Direct API Game Heartbeat Omits `executable_path` & `executable_fingerprint` (`DiscordApiClient::send_game_heartbeat` in `src-tauri/src/discord_api.rs` & `GameHeartbeatPayload` in `src-tauri/src/models.rs`):**
+   - `GameHeartbeatPayload` serialized only `{ application_id, terminal }`, omitting `executable_path` (formatted via `Module 973522` `o.Ic` as the last 2 lowercase `/` segments) and `executable_fingerprint` (196-character Base64).
 
 ---
 
@@ -51,8 +51,9 @@ Finally, the 146-byte buffer is Base64-encoded into a **196-character string** (
 
 1. **Rust Port of `sub_a3990` / `sub_a4120` / `sub_1350` (`src-tauri/src/cdp_game_spoof.rs`):**
    - Adds `format_quest_executable_path` (matching `Module 973522` `o.Ic` 2-segment path normalization).
-   - Adds `synthesize_signed_executable_fingerprint` and `decrypt_executable_fingerprint` (constructing the 146-byte `0x92` structure with `version = 0x01`, `flags = 0x09` `is_signed | is_gui_window`, realistic 64–140 MB `file_size`, `first_64kb_sha256`, `spki_sha256`, Windows `MachineGuid`-backed `hw_sha256`, and `cert_sha256`, XORed with `SHA256(userId + "https://discord.com/careers")` and Base64-encoded to 196 characters) with full unit test coverage.
-2. **CDP WebCrypto `executableFingerprint` Synthesis & Hardware Block Harvesting (`src-tauri/src/cdp_quest.rs`):**
-   - In `js_spoof_play_game_for`, harvests the local machine's 40-byte `hw_sha256` block (`[0x4A..0x71]`) from any genuinely signed process in `RunningGameStore` (decrypted with `SHA256(userId + "https://discord.com/careers")`), synthesizes a valid 196-character `executableFingerprint` via WebCrypto `crypto.subtle.digest("SHA-256", ...)`, and attaches it to `fakeGame.executableFingerprint`.
-3. **API `GameHeartbeatPayload` Enrichment (`src-tauri/src/models.rs` & `src-tauri/src/discord_api.rs`):**
-   - Populates `executable_path` and `executable_fingerprint` on `send_game_heartbeat` requests.
+   - Adds `synthesize_signed_executable_fingerprint` and `decrypt_executable_fingerprint` (constructing the 146-byte `0x92` structure with `version = 0x01`, `flags = 0x09` when a GUI window handle is present or `0x01` when headless, realistic 64–140 MB `file_size`, `first_64kb_sha256`, `spki_sha256`, `local_machine_hw_sha256` fallback approximation derived from Windows `MachineGuid`, registry `ProcessorNameString`, and logical core count, and `cert_sha256`, XORed with `SHA256(userId + "https://discord.com/careers")` and Base64-encoded to 196 characters).
+   - Unit tests in `cdp_game_spoof::tests` and `discord_api::tests` verify 2-segment path normalization (`format_quest_executable_path_matches_module_973522`), round-trip synthesis and decryption for both GUI and headless flags (`synthesize_and_decrypt_executable_fingerprint_roundtrip`), harvested 40-byte hardware block preservation (`synthesize_uses_harvested_hw_tail`), rejection of invalid Base64 or wrong-length records (`decrypt_rejects_malformed_input`), and user ID extraction from token prefixes (`extract_user_id_from_token_parses_snowflake_prefix`). Browser-side WebCrypto synthesis in `js_spoof_play_game_for` (`src-tauri/src/cdp_quest.rs`) is exercised during live CDP spoofing.
+2. **CDP WebCrypto `executableFingerprint` Synthesis & Hardware Block Harvesting (`js_spoof_play_game_for` in `src-tauri/src/cdp_quest.rs`):**
+   - Harvests the local machine's 40-byte `hw_sha256` block (`[0x4A..0x71]`) from any genuinely signed (`version == 1` and `(flags & 0x01) != 0`) process in `RunningGameStore` (decrypted with `SHA256(userId + "https://discord.com/careers")`), falls back to the host `local_machine_hw_sha256` bytes passed from Rust when no signed process is present, synthesizes a 196-character `executableFingerprint` via WebCrypto `crypto.subtle.digest("SHA-256", ...)`, and attaches it to `fakeGame.executableFingerprint` when `currentUserId` is resolved.
+3. **API `GameHeartbeatPayload` Enrichment (`GameHeartbeatPayload` in `src-tauri/src/models.rs` & `DiscordApiClient::send_game_heartbeat` in `src-tauri/src/discord_api.rs`):**
+   - Resolves the authenticated `user_id` and catalog/hint executable path (`resolve_user_id` and `resolve_game_exe_path`) and populates `executable_path` and `executable_fingerprint` on `DiscordApiClient::send_game_heartbeat` requests when both are available.

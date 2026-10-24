@@ -189,6 +189,7 @@ pub struct DiscordApiClient {
 }
 
 impl DiscordApiClient {
+    /// Extract the numeric Discord user snowflake encoded in the first segment of a user token.
     pub(crate) fn extract_user_id_from_token(token: &str) -> Option<String> {
         use base64::{
             engine::general_purpose::{STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD},
@@ -592,6 +593,7 @@ impl DiscordApiClient {
         Ok(user)
     }
 
+    /// Resolve the authenticated Discord account's user ID from the cached token prefix or `/users/@me`.
     async fn resolve_user_id(&self) -> Option<String> {
         if let Some(existing) = self.cached_user_id.load().as_ref().clone() {
             if !existing.is_empty() {
@@ -606,6 +608,7 @@ impl DiscordApiClient {
         None
     }
 
+    /// Resolve the host-OS executable path for `application_id` from `/applications/public` or running process hints.
     async fn resolve_game_exe_path(&self, application_id: &str) -> Option<String> {
         if let Ok(cache) = self.cached_app_exe_paths.lock() {
             if let Some(cached) = cache.get(application_id) {

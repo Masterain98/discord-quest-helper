@@ -37,12 +37,16 @@ pub fn format_quest_executable_path(exe_path: &str) -> String {
     }
 }
 
+/// Compute a 32-byte SHA-256 digest of `data`.
 fn sha256_bytes(data: &[u8]) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(data);
     hasher.finalize().into()
 }
 
+/// Derive a deterministic 32-byte local hardware fingerprint approximation
+/// (`MachineGuid`, `ProcessorNameString`, and logical core count on Windows;
+/// `OS:ARCH:cores` on non-Windows).
 pub fn local_machine_hw_sha256() -> [u8; 32] {
     let cores = std::thread::available_parallelism()
         .map(|n| n.get())
@@ -308,9 +312,8 @@ pub fn path_templates(os: DetectableOs) -> FakeGamePathTemplates {
     }
 }
 
-/// Mirrors of the injected JavaScript helpers `sanitizeApp`,
-/// `normalizeExe`, `appSlug`, and `render` in `cdp_quest.rs`. Keep both
-/// implementations in lockstep.
+/// Sanitize an application display name for filesystem path construction,
+/// mirroring `sanitizeApp` in `cdp_quest.rs`.
 pub fn sanitize_app_name(app_name: &str) -> String {
     app_name
         .chars()
@@ -324,6 +327,8 @@ pub fn sanitize_app_name(app_name: &str) -> String {
         .join(" ")
 }
 
+/// Normalize a raw executable name from Discord's detectable catalog for `os`,
+/// mirroring `normalizeExe` in `cdp_quest.rs`.
 pub fn normalize_exe_name(os: DetectableOs, raw: &str) -> String {
     let trimmed = raw.trim().trim_start_matches('>');
     let file = trimmed.rsplit(['/', '\\']).next().unwrap_or(trimmed).trim();
@@ -342,6 +347,8 @@ pub fn normalize_exe_name(os: DetectableOs, raw: &str) -> String {
     }
 }
 
+/// Convert a sanitized application name into a hyphenated lowercase slug,
+/// mirroring `appSlug` in `cdp_quest.rs`.
 pub fn app_slug(app: &str) -> String {
     app.to_lowercase()
         .split_whitespace()
@@ -349,6 +356,8 @@ pub fn app_slug(app: &str) -> String {
         .join("-")
 }
 
+/// Render a path/command template with `{app}`, `{app_lower}`, `{app_slug}`, and `{exe}`,
+/// mirroring `render` in `cdp_quest.rs`.
 pub fn render_template(template: &str, app: &str, exe: &str) -> String {
     template
         .replace("{app}", app)
@@ -357,6 +366,7 @@ pub fn render_template(template: &str, app: &str, exe: &str) -> String {
         .replace("{exe}", exe)
 }
 
+/// Build realistic OS-specific `cmd_line`, `exe_path`, and `exe_name` values for a spoofed game.
 pub fn build_fake_game_paths(os: DetectableOs, app_name: &str, exe_name: &str) -> FakeGamePaths {
     let app = sanitize_app_name(app_name);
     let exe = normalize_exe_name(os, exe_name);
@@ -368,6 +378,7 @@ pub fn build_fake_game_paths(os: DetectableOs, app_name: &str, exe_name: &str) -
     }
 }
 
+/// Select the highest-priority executable entry matching `priority`, falling back to the first entry.
 pub fn select_executable<'a>(
     executables: &'a [ApplicationExecutable],
     priority: &[&str],
@@ -396,6 +407,7 @@ fn merge_running_games<'a>(
     merged
 }
 
+/// Find a simulated process hint matching `exe_name` by name or path basename.
 pub fn match_process_hint<'a>(
     hints: &'a [SimulatedProcessHint],
     exe_name: &str,
@@ -830,5 +842,21 @@ mod tests {
         let plain_headless =
             decrypt_executable_fingerprint(&fp_headless, user_id).expect("decrypt headless");
         assert_eq!(plain_headless[0x01], 0x01, "flags must set is_signed only");
+    }
+
+    #[test]
+    fn synthesize_uses_harvested_hw_tail() {
+        let tail = [0xABu8; 40];
+        let fp = synthesize_signed_executable_fingerprint("1", "2", "a/b.exe", Some(&tail), true);
+        let plain = decrypt_executable_fingerprint(&fp, "1").expect("decrypt");
+        assert_eq!(&plain[0x4A..0x72], &tail[..]);
+    }
+
+    #[test]
+    fn decrypt_rejects_malformed_input() {
+        assert!(decrypt_executable_fingerprint("not base64!", "1").is_none());
+        assert!(decrypt_executable_fingerprint("AAAA", "1").is_none());
+        let bad_b64 = "!".repeat(EXECUTABLE_FINGERPRINT_BASE64_LEN);
+        assert!(decrypt_executable_fingerprint(&bad_b64, "1").is_none());
     }
 }

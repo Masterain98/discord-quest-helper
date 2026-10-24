@@ -320,6 +320,8 @@ fn js_spoof_play_game(app_id: &str, app_name: &str) -> String {
     )
 }
 
+/// Build the JavaScript payload that injects a spoofed running game entry for `host_os`
+/// and optional `process_hints` into `RunningGameStore`.
 fn js_spoof_play_game_for(
     app_id: &str,
     app_name: &str,
@@ -554,11 +556,13 @@ fn js_spoof_play_game_for(
                     const wpReq = webpackChunkdiscord_app.push([[Symbol()], {{}}, r => r]);
                     webpackChunkdiscord_app.pop();
                     for (const m of Object.values(wpReq.c)) {{
-                        const exp = m?.exports;
-                        const u = exp?.default?.getCurrentUser?.() || exp?.Ay?.getCurrentUser?.();
-                        if (u && u.id) {{ currentUserId = String(u.id); break; }}
-                        const authId = exp?.default?.getId?.() || exp?.Ay?.getId?.();
-                        if (typeof authId === "string" && /^\d+$/.test(authId)) {{ currentUserId = authId; break; }}
+                        try {{
+                            const exp = m?.exports;
+                            const u = exp?.default?.getCurrentUser?.() || exp?.Ay?.getCurrentUser?.();
+                            if (u && u.id) {{ currentUserId = String(u.id); break; }}
+                            const authId = exp?.default?.getId?.() || exp?.Ay?.getId?.();
+                            if (typeof authId === "string" && /^\d+$/.test(authId)) {{ currentUserId = authId; break; }}
+                        }} catch(_) {{}}
                     }}
                 }} catch(_) {{}}
                 if (!currentUserId) {{
@@ -574,7 +578,7 @@ fn js_spoof_play_game_for(
                             if (raw.length === 0x92) {{
                                 const plain = new Uint8Array(0x92);
                                 for (let i = 0; i < 0x92; i++) plain[i] = raw[i] ^ xorKey[i & 31];
-                                if (plain[0] === 0x01) {{
+                                if (plain[0] === 0x01 && (plain[1] & 0x01) !== 0) {{
                                     harvestedHwTail = plain.slice(0x4A, 0x72);
                                     break;
                                 }}
