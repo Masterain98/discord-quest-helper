@@ -612,8 +612,9 @@ fn js_spoof_play_game_for(
                     const hCert = await sha256("AUTHENTICODE_CERT_V1:" + seed);
                     const buf = new Uint8Array(0x92);
                     const pktView = new DataView(buf.buffer);
+                    const isPe64 = normPath.endsWith(".exe");
                     buf[0x00] = 0x01; // version = 1 (un-XORed in sub_1350)
-                    buf[0x01] = 0x03; // flags = is_signed (0x01) | is_pe64 (0x02)
+                    buf[0x01] = isPe64 ? 0x03 : 0x01; // flags = is_signed (0x01) | is_pe64 (0x02 for Windows PE64)
                     pktView.setBigUint64(0x02, fileSize, true);
                     pktView.setUint32(0x0A, timeDateStamp, true);
                     pktView.setUint32(0x0E, sizeOfImage, true);

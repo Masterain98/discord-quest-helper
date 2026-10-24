@@ -676,7 +676,7 @@ impl DiscordApiClient {
                     "Non-success status from /users/@me during heartbeat enrichment",
                     Some(&status.to_string()),
                 );
-                if status.is_client_error() {
+                if status.is_client_error() && status != reqwest::StatusCode::TOO_MANY_REQUESTS {
                     self.last_user_id_lookup_failure_ms
                         .store(now_ms.max(1), Ordering::Release);
                 }
@@ -807,7 +807,7 @@ impl DiscordApiClient {
                     "Non-success status from /applications/public during heartbeat enrichment",
                     Some(&format!("app_id={application_id}, status={status}")),
                 );
-                if status.is_client_error() {
+                if status.is_client_error() && status != reqwest::StatusCode::TOO_MANY_REQUESTS {
                     if let Ok(mut cache) = self.cached_app_catalog.lock() {
                         cache.insert(application_id.to_string(), (None, Instant::now()));
                     }
@@ -1177,25 +1177,30 @@ impl DiscordApiClient {
     ) -> Result<bool> {
         let url = format!("{}/quests/{}/heartbeat", DISCORD_API_BASE, quest_id);
 
-        let resolved_user_id = self.resolve_user_id().await;
-        let resolved_exe_path = self.resolve_game_exe_path(application_id).await;
+        let (resolved_user_id, resolved_exe_path) = tokio::join!(
+            self.resolve_user_id(),
+            self.resolve_game_exe_path(application_id)
+        );
 
         let (executable_path, executable_fingerprint) =
             match (resolved_user_id.as_deref(), resolved_exe_path.as_deref()) {
-                (Some(user_id), Some(exe_path)) if !user_id.is_empty() && !exe_path.is_empty() => (
-                    Some(crate::cdp_game_spoof::format_quest_executable_path(
-                        exe_path,
-                    )),
-                    Some(
-                        crate::cdp_game_spoof::synthesize_signed_executable_fingerprint(
-                            user_id,
-                            application_id,
+                (Some(user_id), Some(exe_path)) if !user_id.is_empty() && !exe_path.is_empty() => {
+                    let is_pe64 = exe_path.to_ascii_lowercase().ends_with(".exe");
+                    (
+                        Some(crate::cdp_game_spoof::format_quest_executable_path(
                             exe_path,
-                            None,
-                            true,
+                        )),
+                        Some(
+                            crate::cdp_game_spoof::synthesize_signed_executable_fingerprint(
+                                user_id,
+                                application_id,
+                                exe_path,
+                                None,
+                                is_pe64,
+                            ),
                         ),
-                    ),
-                ),
+                    )
+                }
                 _ => (None, None),
             };
 
