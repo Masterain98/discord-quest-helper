@@ -80,51 +80,68 @@ pub fn local_machine_hw_sha256() -> [u8; 32] {
 /// `discord_utils.node` (`sub_a3990` -> `sub_a4120` -> `sub_1350`).
 ///
 /// Binary layout (`0x92` = 146 bytes before XOR):
-/// - `[0x00]`: `0x01` (struct version)
-/// - `[0x01]`: `0x09` (`is_signed (0x01) | is_gui_window (0x08)`) or `0x01` (`is_signed` only)
-/// - `[0x02..0x09]`: `file_size` (`u64 LE`, realistic 64..140 MB signed game PE size)
-/// - `[0x0A..0x29]`: `first_64kb_sha256` (32 bytes)
-/// - `[0x2A..0x49]`: `spki_sha256` (32 bytes, ASN.1 DER SubjectPublicKeyInfo SHA-256)
-/// - `[0x4A..0x71]`: `hw_sha256` (32 bytes) + 8-byte zero tail (`sub_116790`)
-/// - `[0x72..0x91]`: `cert_sha256` (32 bytes, leaf X.509 Authenticode cert SHA-256)
+/// - `[0x00]`: `0x01` (struct version, un-XORed in `sub_1350`)
+/// - `[0x01]`: `0x03` (`is_signed (0x01) | is_pe64 (0x02)`) or `0x01` (`is_signed` only)
+/// - `[0x02..0x09]`: `file_size` (`u64 LE`, realistic 48..140 MB signed game PE size)
+/// - `[0x0A..0x0D]`: `time_date_stamp` (`u32 LE`, PE COFF compile timestamp)
+/// - `[0x0E..0x11]`: `size_of_image` (`u32 LE`, page-aligned PE `SizeOfImage`)
+/// - `[0x12..0x31]`: `pe_headers_sha256` (32 bytes)
+/// - `[0x32..0x51]`: `hw_sha256` (32 bytes, `SHA-256(MachineGuid || userId)`)
+/// - `[0x52..0x71]`: `sections_sha256` (32 bytes)
+/// - `[0x72..0x91]`: `cert_sha256` (32 bytes, `SHA-256(Publisher_CN || SPKI_SHA256)`)
 ///
-/// Stream cipher (`sub_1350`): XOR with repeating 32-byte `SHA256(user_id + "https://discord.com/careers")`.
+/// Stream cipher (`sub_1350`): byte `[0x00]` is kept plaintext (`0x01`), while bytes `[0x01..0x91]`
+/// are XORed with `xor_key[(i - 1) & 31]` where `xor_key = SHA256(user_id + "https://discord.com/careers")`.
 pub fn synthesize_signed_executable_fingerprint(
     user_id: &str,
     app_id: &str,
     exe_path: &str,
-    harvested_hw_tail: Option<&[u8; 40]>,
-    has_gui_window: bool,
+    harvested_hw: Option<&[u8; 32]>,
+    is_pe64: bool,
 ) -> String {
     let norm_path = format_quest_executable_path(exe_path);
     let seed = format!("{app_id}:{norm_path}");
-    let h64k = sha256_bytes(format!("pe64k:{seed}").as_bytes());
-    let h_spki = sha256_bytes(format!("spki:{seed}").as_bytes());
-    let h_cert = sha256_bytes(format!("cert:{seed}").as_bytes());
+    let seed_hash = sha256_bytes(format!("seed:{seed}").as_bytes());
+
+    let base_mb =
+        48u64 + (u32::from_le_bytes(seed_hash[0..4].try_into().unwrap_or([0; 4])) as u64 % 92);
+    let extra_bytes =
+        (u32::from_le_bytes(seed_hash[4..8].try_into().unwrap_or([0; 4])) as u64 % 1024) * 512;
+    let file_size: u64 = base_mb * 1024 * 1024 + extra_bytes;
+
+    let time_date_stamp: u32 = 1_704_067_200u32.wrapping_add(
+        u32::from_le_bytes(seed_hash[8..12].try_into().unwrap_or([0; 4])) % 55_000_000,
+    );
+    let pages: u32 = 0x3800u32
+        + (u16::from_le_bytes(seed_hash[12..14].try_into().unwrap_or([0; 2])) as u32 % 0x4000);
+    let size_of_image: u32 = pages.wrapping_mul(0x1000);
+
+    let h_headers =
+        sha256_bytes(format!("PE_HEADERS_V1:{seed}:{time_date_stamp}:{size_of_image}").as_bytes());
     let h_hw = local_machine_hw_sha256();
+    let h_sections = sha256_bytes(format!("PE_SECTIONS_V1:{seed}:{size_of_image}").as_bytes());
+    let h_cert = sha256_bytes(format!("AUTHENTICODE_CERT_V1:{seed}").as_bytes());
 
     let mut plain = [0u8; EXECUTABLE_FINGERPRINT_BYTE_LEN];
-    plain[0x00] = 0x01; // version = 1
-    plain[0x01] = if has_gui_window { 0x09 } else { 0x01 };
-
-    let offset_size =
-        ((h64k[0] as u64) | ((h64k[1] as u64) << 8) | ((h64k[2] as u64) << 16)) % 73_400_320;
-    let file_size: u64 = 67_108_864 + offset_size;
+    plain[0x00] = 0x01; // version = 1 (un-XORed in sub_1350)
+    plain[0x01] = if is_pe64 { 0x03 } else { 0x01 };
     plain[0x02..0x0A].copy_from_slice(&file_size.to_le_bytes());
-
-    plain[0x0A..0x2A].copy_from_slice(&h64k);
-    plain[0x2A..0x4A].copy_from_slice(&h_spki);
-    if let Some(hw_tail) = harvested_hw_tail {
-        plain[0x4A..0x72].copy_from_slice(hw_tail);
+    plain[0x0A..0x0E].copy_from_slice(&time_date_stamp.to_le_bytes());
+    plain[0x0E..0x12].copy_from_slice(&size_of_image.to_le_bytes());
+    plain[0x12..0x32].copy_from_slice(&h_headers);
+    if let Some(hw) = harvested_hw {
+        plain[0x32..0x52].copy_from_slice(hw);
     } else {
-        plain[0x4A..0x6A].copy_from_slice(&h_hw);
+        plain[0x32..0x52].copy_from_slice(&h_hw);
     }
+    plain[0x52..0x72].copy_from_slice(&h_sections);
     plain[0x72..0x92].copy_from_slice(&h_cert);
 
     let xor_key = sha256_bytes(format!("{user_id}{EXECUTABLE_FINGERPRINT_SALT}").as_bytes());
     let mut cipher = [0u8; EXECUTABLE_FINGERPRINT_BYTE_LEN];
-    for i in 0..EXECUTABLE_FINGERPRINT_BYTE_LEN {
-        cipher[i] = plain[i] ^ xor_key[i & 31];
+    cipher[0] = plain[0];
+    for i in 1..EXECUTABLE_FINGERPRINT_BYTE_LEN {
+        cipher[i] = plain[i] ^ xor_key[(i - 1) & 31];
     }
     BASE64.encode(cipher)
 }
@@ -140,13 +157,14 @@ pub fn decrypt_executable_fingerprint(
         return None;
     }
     let raw = BASE64.decode(trimmed).ok()?;
-    if raw.len() != EXECUTABLE_FINGERPRINT_BYTE_LEN {
+    if raw.len() != EXECUTABLE_FINGERPRINT_BYTE_LEN || raw[0] != 0x01 {
         return None;
     }
     let xor_key = sha256_bytes(format!("{user_id}{EXECUTABLE_FINGERPRINT_SALT}").as_bytes());
     let mut plain = [0u8; EXECUTABLE_FINGERPRINT_BYTE_LEN];
-    for i in 0..EXECUTABLE_FINGERPRINT_BYTE_LEN {
-        plain[i] = raw[i] ^ xor_key[i & 31];
+    plain[0] = raw[0];
+    for i in 1..EXECUTABLE_FINGERPRINT_BYTE_LEN {
+        plain[i] = raw[i] ^ xor_key[(i - 1) & 31];
     }
     Some(plain)
 }
@@ -820,36 +838,42 @@ mod tests {
         let fp = synthesize_signed_executable_fingerprint(user_id, app_id, exe_path, None, true);
         assert_eq!(fp.len(), EXECUTABLE_FINGERPRINT_BASE64_LEN);
 
+        let raw = BASE64.decode(&fp).expect("base64 decode");
+        assert_eq!(raw[0], 0x01, "byte 0 must remain plaintext version 0x01");
+
         let plain = decrypt_executable_fingerprint(&fp, user_id).expect("decrypt");
         assert_eq!(plain[0x00], 0x01, "version must be 1");
-        assert_eq!(
-            plain[0x01], 0x09,
-            "flags must set is_signed | is_gui_window"
-        );
+        assert_eq!(plain[0x01], 0x03, "flags must set is_signed | is_pe64");
         let file_size = u64::from_le_bytes(plain[0x02..0x0A].try_into().unwrap());
         assert!(
-            (67_108_864..=140_509_184).contains(&file_size),
+            (48 * 1024 * 1024..=141 * 1024 * 1024).contains(&file_size),
             "unexpected file_size: {file_size}"
         );
-        assert!(plain[0x0A..0x2A].iter().any(|&b| b != 0));
-        assert!(plain[0x2A..0x4A].iter().any(|&b| b != 0));
-        assert!(plain[0x4A..0x6A].iter().any(|&b| b != 0));
-        assert_eq!(&plain[0x6A..0x72], &[0u8; 8]);
+        let time_date_stamp = u32::from_le_bytes(plain[0x0A..0x0E].try_into().unwrap());
+        assert!(time_date_stamp >= 1_704_067_200);
+        let size_of_image = u32::from_le_bytes(plain[0x0E..0x12].try_into().unwrap());
+        assert_eq!(
+            size_of_image & 0xFFF,
+            0,
+            "size_of_image must be page-aligned"
+        );
+        assert!(plain[0x12..0x32].iter().any(|&b| b != 0));
+        assert!(plain[0x32..0x52].iter().any(|&b| b != 0));
+        assert!(plain[0x52..0x72].iter().any(|&b| b != 0));
         assert!(plain[0x72..0x92].iter().any(|&b| b != 0));
 
-        let fp_headless =
+        let fp_pe32 =
             synthesize_signed_executable_fingerprint(user_id, app_id, exe_path, None, false);
-        let plain_headless =
-            decrypt_executable_fingerprint(&fp_headless, user_id).expect("decrypt headless");
-        assert_eq!(plain_headless[0x01], 0x01, "flags must set is_signed only");
+        let plain_pe32 = decrypt_executable_fingerprint(&fp_pe32, user_id).expect("decrypt pe32");
+        assert_eq!(plain_pe32[0x01], 0x01, "flags must set is_signed only");
     }
 
     #[test]
     fn synthesize_uses_harvested_hw_tail() {
-        let tail = [0xABu8; 40];
-        let fp = synthesize_signed_executable_fingerprint("1", "2", "a/b.exe", Some(&tail), true);
+        let hw = [0xABu8; 32];
+        let fp = synthesize_signed_executable_fingerprint("1", "2", "a/b.exe", Some(&hw), true);
         let plain = decrypt_executable_fingerprint(&fp, "1").expect("decrypt");
-        assert_eq!(&plain[0x4A..0x72], &tail[..]);
+        assert_eq!(&plain[0x32..0x52], &hw[..]);
     }
 
     #[test]

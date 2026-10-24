@@ -570,16 +570,17 @@ fn js_spoof_play_game_for(
                     dqh._lastFingerprintError = fingerprintError;
                 }} else {{
                     const xorKey = await sha256(currentUserId + "https://discord.com/careers");
-                    let harvestedHwTail = null;
+                    let harvestedHw = null;
                     for (const cand of [...realGames, ...(seenMatch ? [seenMatch] : [])]) {{
                         if (!cand || typeof cand.executableFingerprint !== "string" || cand.executableFingerprint.length !== 196) continue;
                         try {{
                             const raw = Uint8Array.from(atob(cand.executableFingerprint), c => c.charCodeAt(0));
-                            if (raw.length === 0x92) {{
+                            if (raw.length === 0x92 && raw[0] === 0x01) {{
                                 const plain = new Uint8Array(0x92);
-                                for (let i = 0; i < 0x92; i++) plain[i] = raw[i] ^ xorKey[i & 31];
-                                if (plain[0] === 0x01 && (plain[1] & 0x01) !== 0) {{
-                                    harvestedHwTail = plain.slice(0x4A, 0x72);
+                                plain[0] = raw[0];
+                                for (let i = 1; i < 0x92; i++) plain[i] = raw[i] ^ xorKey[(i - 1) & 31];
+                                if ((plain[1] & 0x01) !== 0) {{
+                                    harvestedHw = plain.slice(0x32, 0x52);
                                     break;
                                 }}
                             }}
@@ -587,26 +588,34 @@ fn js_spoof_play_game_for(
                     }}
                     const normPath = String(fakeGame.exePath || "").toLowerCase().replace(/\\/g, "/").split("/").filter(Boolean).slice(-2).join("/");
                     const seed = applicationId + ":" + normPath;
-                    const h64k = await sha256("pe64k:" + seed);
-                    const hSpki = await sha256("spki:" + seed);
-                    const hCert = await sha256("cert:" + seed);
+                    const seedHash = await sha256("seed:" + seed);
+                    const seedView = new DataView(seedHash.buffer);
+                    const baseMb = 48 + (seedView.getUint32(0, true) % 92);
+                    const extraBytes = (seedView.getUint32(4, true) % 1024) * 512;
+                    const fileSize = BigInt(baseMb * 1024 * 1024 + extraBytes);
+                    const timeDateStamp = (1704067200 + (seedView.getUint32(8, true) % 55000000)) >>> 0;
+                    const pages = 0x3800 + (seedView.getUint16(12, true) % 0x4000);
+                    const sizeOfImage = (pages * 0x1000) >>> 0;
+                    const hPeHeaders = await sha256("PE_HEADERS_V1:" + seed + ":" + timeDateStamp + ":" + sizeOfImage);
+                    const hSections = await sha256("PE_SECTIONS_V1:" + seed + ":" + sizeOfImage);
+                    const hCert = await sha256("AUTHENTICODE_CERT_V1:" + seed);
                     const hHw = (Array.isArray(hostHwBytes) && hostHwBytes.length === 32)
                         ? new Uint8Array(hostHwBytes)
-                        : await sha256("hw:" + hostOs + ":" + (navigator.hardwareConcurrency || 8));
-                    const hasGuiWindow = fakeGame.windowHandle != null && fakeGame.windowHandle !== "0" && fakeGame.windowHandle !== "";
+                        : await sha256("hw:" + hostOs + ":" + (navigator.hardwareConcurrency || 8) + ":" + currentUserId);
                     const buf = new Uint8Array(0x92);
-                    buf[0x00] = 0x01; // version = 1
-                    buf[0x01] = hasGuiWindow ? 0x09 : 0x01; // flags = is_signed (0x01) | optional is_gui_window (0x08)
-                    const sizeView = new DataView(buf.buffer);
-                    const fileSize = 67108864 + ((h64k[0] | (h64k[1] << 8) | (h64k[2] << 16)) % 73400320);
-                    sizeView.setBigUint64(0x02, BigInt(fileSize), true);
-                    buf.set(h64k, 0x0A);
-                    buf.set(hSpki, 0x2A);
-                    if (harvestedHwTail && harvestedHwTail.length === 40) buf.set(harvestedHwTail, 0x4A);
-                    else buf.set(hHw, 0x4A);
+                    const pktView = new DataView(buf.buffer);
+                    buf[0x00] = 0x01; // version = 1 (un-XORed in sub_1350)
+                    buf[0x01] = 0x03; // flags = is_signed (0x01) | is_pe64 (0x02)
+                    pktView.setBigUint64(0x02, fileSize, true);
+                    pktView.setUint32(0x0A, timeDateStamp, true);
+                    pktView.setUint32(0x0E, sizeOfImage, true);
+                    buf.set(hPeHeaders, 0x12);
+                    buf.set(harvestedHw && harvestedHw.length === 32 ? harvestedHw : hHw, 0x32);
+                    buf.set(hSections, 0x52);
                     buf.set(hCert, 0x72);
                     const out = new Uint8Array(0x92);
-                    for (let i = 0; i < 0x92; i++) out[i] = buf[i] ^ xorKey[i & 31];
+                    out[0] = buf[0];
+                    for (let i = 1; i < 0x92; i++) out[i] = buf[i] ^ xorKey[(i - 1) & 31];
                     let bin = "";
                     for (let i = 0; i < out.length; i++) bin += String.fromCharCode(out[i]);
                     fakeGame.executableFingerprint = btoa(bin);
