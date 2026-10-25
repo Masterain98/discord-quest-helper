@@ -1099,7 +1099,7 @@ async fn fetch_build_number_from_scripts(
 #[derive(Debug, Clone)]
 pub struct DiscordClientInfo {
     pub host_version: [u32; 3], // e.g., [1, 0, 9219]
-    pub native_build_number: u64,
+    pub native_build_number: Option<u64>,
 }
 
 impl DiscordClientInfo {
@@ -1116,7 +1116,6 @@ impl DiscordClientInfo {
 ///
 /// API: https://updates.discord.com/distributions/app/manifests/latest
 ///
-/// Reference: https://docs.discord.food/topics/client-distribution
 pub async fn fetch_discord_client_info() -> Result<DiscordClientInfo> {
     use crate::logger::{log, LogCategory, LogLevel};
 
@@ -1135,10 +1134,18 @@ pub async fn fetch_discord_client_info() -> Result<DiscordClientInfo> {
         .context("Failed to create HTTP client")?;
 
     // Request Discord update manifest
-    let url = "https://updates.discord.com/distributions/app/manifests/latest?channel=stable&platform=win&arch=x64";
+    let platform = if cfg!(windows) {
+        "win"
+    } else if cfg!(target_os = "macos") {
+        "osx"
+    } else {
+        "linux"
+    };
+    let arch = crate::super_properties::host_architecture();
+    let url = format!("https://updates.discord.com/distributions/app/manifests/latest?channel=stable&platform={platform}&arch={arch}");
 
     let response = client
-        .get(url)
+        .get(&url)
         .send()
         .await
         .context("Failed to fetch Discord update manifest")?;
@@ -1152,44 +1159,28 @@ pub async fn fetch_discord_client_info() -> Result<DiscordClientInfo> {
         .await
         .context("Failed to parse update manifest JSON")?;
 
-    // Parse host_version array
-    let host_version = manifest["host_version"]
+    parse_discord_client_info(&manifest)
+}
+
+fn parse_discord_client_info(manifest: &serde_json::Value) -> Result<DiscordClientInfo> {
+    let components = manifest["host_version"]
         .as_array()
-        .context("Missing host_version in manifest")?;
-
-    if host_version.len() < 3 {
-        anyhow::bail!("Invalid host_version format");
+        .context("Missing host_version")?;
+    if components.len() != 3 {
+        anyhow::bail!("Invalid host_version length");
     }
-
-    let version: [u32; 3] = [
-        host_version[0].as_u64().unwrap_or(1) as u32,
-        host_version[1].as_u64().unwrap_or(0) as u32,
-        host_version[2].as_u64().unwrap_or_else(|| {
-            crate::super_properties::DEFAULT_CLIENT_VERSION
-                .rsplit('.')
-                .next()
-                .and_then(|patch| patch.parse::<u64>().ok())
-                .unwrap_or(0)
-        }) as u32,
-    ];
-
-    // native_build_number is usually the third number in host_version
-    // but may also be a separate field in the manifest
-    let native_build: u64 = manifest
-        .get("native_module_version")
-        .and_then(|v: &serde_json::Value| v.as_u64())
-        .unwrap_or(version[2] as u64);
-
-    log(
-        LogLevel::Info,
-        LogCategory::TokenExtraction,
-        &format!(
-            "Got Discord client info: version={}.{}.{}, native_build={}",
-            version[0], version[1], version[2], native_build
-        ),
-        None,
-    );
-
+    let mut version = [0; 3];
+    for (index, component) in components.iter().enumerate() {
+        version[index] = u32::try_from(
+            component
+                .as_u64()
+                .context("Invalid host_version component")?,
+        )?;
+    }
+    // native_module_version and a host-version suffix are not host build numbers.
+    let native_build = manifest
+        .get("native_build_number")
+        .and_then(|value| value.as_u64());
     Ok(DiscordClientInfo {
         host_version: version,
         native_build_number: native_build,
@@ -1199,6 +1190,33 @@ pub async fn fetch_discord_client_info() -> Result<DiscordClientInfo> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn manifest_does_not_guess_native_host_build_or_version_components() {
+        let info = parse_discord_client_info(
+            &serde_json::json!({"host_version":[1,2,3],"native_module_version":123}),
+        )
+        .unwrap();
+        assert_eq!(info.client_version(), "1.2.3");
+        assert_eq!(info.native_build_number, None);
+        assert_eq!(
+            parse_discord_client_info(
+                &serde_json::json!({"host_version":[1,2,3],"native_build_number":456})
+            )
+            .unwrap()
+            .native_build_number,
+            Some(456)
+        );
+        for version in [
+            serde_json::json!([1, 0]),
+            serde_json::json!([1, 2, "3"]),
+            serde_json::json!([1, 0, 4294967296u64]),
+        ] {
+            assert!(
+                parse_discord_client_info(&serde_json::json!({"host_version":version})).is_err()
+            );
+        }
+    }
 
     #[cfg(target_os = "linux")]
     #[test]

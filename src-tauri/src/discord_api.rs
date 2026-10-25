@@ -241,6 +241,9 @@ pub struct DiscordApiClient {
     created_at: Arc<Instant>,
     last_proxy_check_elapsed_ms: Arc<AtomicU64>,
     token: String,
+    identity: Arc<std::sync::Mutex<crate::super_properties::XSuperPropertiesManager>>,
+    identity_key: String,
+    identity_committed: Arc<AtomicBool>,
     cached_user_id: Arc<ArcSwap<Option<String>>>,
     last_user_id_lookup_failure_ms: Arc<AtomicU64>,
     cached_app_catalog:
@@ -376,7 +379,17 @@ impl DiscordApiClient {
         let created_at = Arc::new(Instant::now());
         let initial_user_id = Self::extract_user_id_from_token(&token);
 
+        use sha2::{Digest, Sha256};
+        let credential = format!("{:x}", Sha256::digest(token.as_bytes()));
+        let identity = crate::SUPER_PROPERTIES_MANAGER
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .candidate(credential);
+        let identity_key = identity.session_key.clone();
         Ok(Self {
+            identity: Arc::new(std::sync::Mutex::new(identity)),
+            identity_key,
+            identity_committed: Arc::new(AtomicBool::new(false)),
             client: Arc::new(ArcSwap::from_pointee(client)),
             proxy_fingerprint: Arc::new(AtomicU64::new(proxy_state.fingerprint)),
             proxy_has_proxy: Arc::new(AtomicBool::new(proxy_state.has_proxy)),
@@ -499,44 +512,41 @@ impl DiscordApiClient {
         }
     }
 
-    /// Get the current X-Super-Properties value (dynamically obtained to ensure latest data)
-    fn get_super_properties_header(&self) -> HeaderValue {
-        let super_props = {
-            let manager = crate::SUPER_PROPERTIES_MANAGER
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
-            manager.get_super_properties_base64()
-        };
+    pub fn candidate_identity(
+        &self,
+    ) -> Arc<std::sync::Mutex<crate::super_properties::XSuperPropertiesManager>> {
+        Arc::clone(&self.identity)
+    }
 
-        // Log the generated properties for audit purposes
-        #[cfg(debug_assertions)]
-        {
-            use crate::logger::{log, LogCategory, LogLevel};
-            use base64::Engine as _;
-            // Decode only to validate shape; avoid logging decoded payload contents
-            if base64::engine::general_purpose::STANDARD
-                .decode(&super_props)
-                .ok()
-                .and_then(|d| String::from_utf8(d).ok())
-                .is_some()
-            {
-                log(
-                    LogLevel::Debug,
-                    LogCategory::Api,
-                    &format!(
-                        "Injecting X-Super-Properties (base64_len={})",
-                        super_props.len()
-                    ),
-                    None,
-                );
-            }
+    fn identity_manager(
+        &self,
+    ) -> Arc<std::sync::Mutex<crate::super_properties::XSuperPropertiesManager>> {
+        if self.identity_committed.load(Ordering::Acquire) {
+            Arc::clone(&crate::SUPER_PROPERTIES_MANAGER)
+        } else {
+            Arc::clone(&self.identity)
         }
+    }
 
-        HeaderValue::from_str(&super_props).unwrap_or_else(|e| {
-            eprintln!("Failed to create X-Super-Properties header: {}", e);
-            // Fallback to minimal valid base64 JSON
-            HeaderValue::from_static("e30=") // base64("{}")
-        })
+    pub fn commit_identity(&self) {
+        let mut candidate = self
+            .identity
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        let mut current = crate::SUPER_PROPERTIES_MANAGER
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        candidate.commit(&current);
+        *current = candidate;
+        self.identity_committed.store(true, Ordering::Release);
+    }
+
+    async fn prepare_identity(&self) -> Result<crate::super_properties::RequestIdentity> {
+        let manager = self.identity_manager();
+        crate::super_properties::cdp::prepare_for(&manager, &self.identity_key)
+            .await
+            .context("Authenticated session changed while preparing request")
     }
 
     fn quest_referer_for_url(url: &str) -> Option<&'static str> {
@@ -555,24 +565,29 @@ impl DiscordApiClient {
         }
     }
 
-    /// Centralized request builder to enforce security headers
-    fn request(&self, method: Method, url: &str) -> RequestBuilder {
-        let (user_agent, header_profile) = {
-            let manager = crate::SUPER_PROPERTIES_MANAGER
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
-            (
-                manager.get_user_agent_string(),
-                manager.get_header_profile(),
-            )
-        };
+    /// Resolve dynamic state once, then use the same snapshot throughout a request.
+    async fn request(&self, method: Method, url: &str) -> Result<RequestBuilder> {
+        let identity = self.prepare_identity().await?;
+        Ok(self.request_with_identity(method, url, &identity))
+    }
 
+    fn request_with_identity(
+        &self,
+        method: Method,
+        url: &str,
+        identity: &crate::super_properties::RequestIdentity,
+    ) -> RequestBuilder {
+        debug_assert!(identity.properties["browser_user_agent"]
+            .as_str()
+            .is_none_or(|ua| ua == identity.user_agent));
+        let user_agent = &identity.user_agent;
+        let header_profile = &identity.header_profile;
         let mut request = self
             .current_client()
             .request(method, url)
-            .header("x-super-properties", self.get_super_properties_header());
+            .header("x-super-properties", &identity.base64);
 
-        if let Some(value) = Self::header_value(&user_agent, "User-Agent") {
+        if let Some(value) = Self::header_value(user_agent, "User-Agent") {
             request = request.header(USER_AGENT, value);
         }
         if let Some(value) = Self::header_value(&header_profile.timezone, "x-discord-timezone") {
@@ -661,6 +676,7 @@ impl DiscordApiClient {
 
         let response = self
             .request(Method::GET, &url)
+            .await?
             .send_reconnecting(self)
             .await
             .map_err(|e| {
@@ -728,10 +744,13 @@ impl DiscordApiClient {
             return None;
         }
         let url = format!("{}/users/@me", DISCORD_API_BASE);
-        match tokio::time::timeout(
-            ENRICHMENT_LOOKUP_TIMEOUT,
-            self.request(Method::GET, &url).send(),
-        )
+        match tokio::time::timeout(ENRICHMENT_LOOKUP_TIMEOUT, async {
+            self.request(Method::GET, &url)
+                .await?
+                .send()
+                .await
+                .map_err(anyhow::Error::from)
+        })
         .await
         {
             Ok(Ok(response)) if response.status().is_success() => {
@@ -839,10 +858,13 @@ impl DiscordApiClient {
             "{}/applications/public?application_ids={}",
             DISCORD_API_BASE, application_id
         );
-        match tokio::time::timeout(
-            ENRICHMENT_LOOKUP_TIMEOUT,
-            self.request(Method::GET, &url).send(),
-        )
+        match tokio::time::timeout(ENRICHMENT_LOOKUP_TIMEOUT, async {
+            self.request(Method::GET, &url)
+                .await?
+                .send()
+                .await
+                .map_err(anyhow::Error::from)
+        })
         .await
         {
             Ok(Ok(response)) if response.status().is_success() => {
@@ -994,6 +1016,7 @@ impl DiscordApiClient {
 
         let response = self
             .request(Method::GET, &url)
+            .await?
             .send_reconnecting(self)
             .await
             .context("Request for quest list failed")?;
@@ -1022,25 +1045,34 @@ impl DiscordApiClient {
         Ok(data)
     }
 
-    pub async fn get_quest_decision_debug(&self, placement: u64) -> Result<serde_json::Value> {
-        let (heartbeat_session_id, ad_session_id) = {
-            let manager = crate::SUPER_PROPERTIES_MANAGER
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
-            (
-                manager.client_heartbeat_session_id(),
-                manager.client_ad_session_id(),
-            )
-        };
-
-        let mut url = reqwest::Url::parse(&format!("{}/quests/decision", DISCORD_API_BASE))?;
+    fn decision_request(
+        &self,
+        endpoint: &str,
+        placement: u64,
+        num: Option<u64>,
+        identity: &crate::super_properties::RequestIdentity,
+    ) -> Result<RequestBuilder> {
+        let mut url = reqwest::Url::parse(&format!("{DISCORD_API_BASE}/quests/{endpoint}"))?;
         url.query_pairs_mut()
-            .append_pair("placement", &placement.to_string())
-            .append_pair("client_heartbeat_session_id", &heartbeat_session_id)
-            .append_pair("client_ad_session_id", &ad_session_id);
+            .append_pair("placement", &placement.to_string());
+        if let Some(num) = num {
+            url.query_pairs_mut()
+                .append_pair("num_decisions_requested", &num.to_string());
+        }
+        url.query_pairs_mut()
+            .append_pair("client_ad_session_id", &identity.ad_session_id);
+        if let Some(id) = &identity.heartbeat_session_id {
+            url.query_pairs_mut()
+                .append_pair("client_heartbeat_session_id", id);
+        }
+        Ok(self.request_with_identity(Method::GET, url.as_str(), identity))
+    }
+
+    pub async fn get_quest_decision_debug(&self, placement: u64) -> Result<serde_json::Value> {
+        let identity = self.prepare_identity().await?;
 
         let response = self
-            .request(Method::GET, url.as_str())
+            .decision_request("decision", placement, None, &identity)?
             .send_reconnecting(self)
             .await
             .context("Request for quest placement decision failed")?;
@@ -1063,25 +1095,10 @@ impl DiscordApiClient {
         placement: u64,
         num: u64,
     ) -> Result<serde_json::Value> {
-        let (heartbeat_session_id, ad_session_id) = {
-            let manager = crate::SUPER_PROPERTIES_MANAGER
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
-            (
-                manager.client_heartbeat_session_id(),
-                manager.client_ad_session_id(),
-            )
-        };
-
-        let mut url = reqwest::Url::parse(&format!("{}/quests/get-decisions", DISCORD_API_BASE))?;
-        url.query_pairs_mut()
-            .append_pair("placement", &placement.to_string())
-            .append_pair("num_decisions_requested", &num.to_string())
-            .append_pair("client_heartbeat_session_id", &heartbeat_session_id)
-            .append_pair("client_ad_session_id", &ad_session_id);
+        let identity = self.prepare_identity().await?;
 
         let response = self
-            .request(Method::GET, url.as_str())
+            .decision_request("get-decisions", placement, Some(num), &identity)?
             .send_reconnecting(self)
             .await
             .context("Request for quest placement decisions failed")?;
@@ -1103,6 +1120,7 @@ impl DiscordApiClient {
         let url = format!("{}/users/@me/badges", DISCORD_API_BASE);
         let response = self
             .request(Method::GET, &url)
+            .await?
             .send_reconnecting(self)
             .await
             .context("Request for user badges failed")?;
@@ -1118,6 +1136,7 @@ impl DiscordApiClient {
 
         let response = self
             .request(Method::GET, &url)
+            .await?
             .send_reconnecting(self)
             .await
             .context("Request for virtual currency balance failed")?;
@@ -1142,6 +1161,7 @@ impl DiscordApiClient {
         );
         let response = self
             .request(Method::GET, &url)
+            .await?
             .send_reconnecting(self)
             .await
             .context("Request for virtual currency total redeemed failed")?;
@@ -1171,6 +1191,7 @@ impl DiscordApiClient {
 
         let response = self
             .request(Method::GET, &url)
+            .await?
             .send_reconnecting(self)
             .await
             .context("Request for billing subscriptions failed")?;
@@ -1190,6 +1211,7 @@ impl DiscordApiClient {
 
         let response = self
             .request(Method::GET, &url)
+            .await?
             .send_reconnecting(self)
             .await
             .context("Request for program rewards failed")?;
@@ -1218,6 +1240,7 @@ impl DiscordApiClient {
 
         let response = self
             .request(Method::POST, &url)
+            .await?
             .json(&payload)
             .send_reconnecting(self)
             .await
@@ -1247,6 +1270,7 @@ impl DiscordApiClient {
 
         let response = self
             .request(Method::POST, &url)
+            .await?
             .json(&payload)
             .send_reconnecting(self)
             .await
@@ -1278,6 +1302,7 @@ impl DiscordApiClient {
 
         let response = self
             .request(Method::POST, &url)
+            .await?
             .json(&payload)
             .send_reconnecting(self)
             .await
@@ -1343,6 +1368,7 @@ impl DiscordApiClient {
 
         let response = self
             .request(Method::POST, &url)
+            .await?
             .json(&payload)
             .send_reconnecting(self)
             .await
@@ -1382,6 +1408,7 @@ impl DiscordApiClient {
 
         let response = self
             .request(Method::POST, &url)
+            .await?
             .json(&payload)
             .send_reconnecting(self)
             .await
@@ -1426,6 +1453,7 @@ impl DiscordApiClient {
 
         let response = self
             .request(Method::POST, &url)
+            .await?
             .json(&payload)
             .send_reconnecting(self)
             .await
@@ -1443,6 +1471,7 @@ impl DiscordApiClient {
         let minimal_payload = serde_json::json!({ "location": 11 });
         let fallback_response = self
             .request(Method::POST, &url)
+            .await?
             .json(&minimal_payload)
             .send_reconnecting(self)
             .await
@@ -1473,8 +1502,8 @@ impl DiscordApiClient {
         let games_url = format!("{}/applications/detectable", DISCORD_API_BASE);
         let apps_url = format!("{}/applications/non-games/detectable", DISCORD_API_BASE);
         fetch_detectable_catalog(
-            self.request(Method::GET, &games_url),
-            self.request(Method::GET, &apps_url),
+            self.request(Method::GET, &games_url).await?,
+            self.request(Method::GET, &apps_url).await?,
             |request| request.send_reconnecting(self),
         )
         .await
@@ -2072,13 +2101,15 @@ mod tests {
     }
 
     /// Verify that `DiscordApiClient::request` injects a `User-Agent` matching `x-super-properties`.
-    #[test]
-    fn request_injects_user_agent_matching_x_super_properties() {
+    #[tokio::test]
+    async fn request_injects_user_agent_matching_x_super_properties() {
         use base64::Engine as _;
 
         let client = DiscordApiClient::new("test-token".to_string()).unwrap();
         let request = client
             .request(Method::GET, "https://discord.com/api/v9/quests/@me")
+            .await
+            .unwrap()
             .build()
             .unwrap();
 
@@ -2101,6 +2132,130 @@ mod tests {
         assert!(headers.get("x-discord-timezone").is_some());
         assert!(headers.get("x-discord-locale").is_some());
         assert!(headers.get("accept-language").is_some());
+    }
+
+    #[tokio::test]
+    async fn decision_query_headers_and_user_agent_share_a_frozen_snapshot() {
+        use base64::Engine as _;
+        let client = DiscordApiClient::new("synthetic-token".into()).unwrap();
+        {
+            let identity = client.candidate_identity();
+            let mut manager = identity.lock().unwrap();
+            manager.set_focused(true);
+            manager.authenticate("synthetic-account".into());
+        }
+        let snapshot = client.prepare_identity().await.unwrap();
+        // A later logout/source change must not alter an already prepared request.
+        client
+            .candidate_identity()
+            .lock()
+            .unwrap()
+            .logout()
+            .unwrap();
+        for (endpoint, num) in [("decision", None), ("get-decisions", Some(2))] {
+            let request = client
+                .decision_request(endpoint, 1, num, &snapshot)
+                .unwrap()
+                .build()
+                .unwrap();
+            let properties: serde_json::Value = serde_json::from_slice(
+                &base64::engine::general_purpose::STANDARD
+                    .decode(request.headers()["x-super-properties"].to_str().unwrap())
+                    .unwrap(),
+            )
+            .unwrap();
+            let query: std::collections::HashMap<_, _> = request.url().query_pairs().collect();
+            assert_eq!(
+                query
+                    .get("client_heartbeat_session_id")
+                    .map(|id| id.as_ref()),
+                properties["client_heartbeat_session_id"].as_str()
+            );
+            assert_eq!(
+                request.headers()[USER_AGENT].to_str().unwrap(),
+                properties["browser_user_agent"].as_str().unwrap()
+            );
+        }
+        assert!(client.prepare_identity().await.is_err());
+        let anonymous = DiscordApiClient::new("anonymous-candidate".into())
+            .unwrap()
+            .prepare_identity()
+            .await
+            .unwrap();
+        let request = client
+            .decision_request("decision", 1, None, &anonymous)
+            .unwrap()
+            .build()
+            .unwrap();
+        assert!(!request
+            .url()
+            .query_pairs()
+            .any(|(key, _)| key == "client_heartbeat_session_id"));
+    }
+
+    #[tokio::test]
+    async fn candidate_validation_has_no_other_accounts_session() {
+        let first = DiscordApiClient::new("synthetic-first-token".into()).unwrap();
+        let second = DiscordApiClient::new("synthetic-second-token".into()).unwrap();
+        {
+            let identity = first.candidate_identity();
+            let mut manager = identity.lock().unwrap();
+            manager.set_focused(true);
+            manager.authenticate("first-account".into());
+        }
+        assert!(first
+            .prepare_identity()
+            .await
+            .unwrap()
+            .heartbeat_session_id
+            .is_some());
+        assert!(second
+            .prepare_identity()
+            .await
+            .unwrap()
+            .heartbeat_session_id
+            .is_none());
+    }
+
+    #[tokio::test]
+    async fn replaced_session_cannot_fall_back_to_the_committed_candidate() {
+        let client = DiscordApiClient::new("retired-token".into()).unwrap();
+        assert!(client.prepare_identity().await.is_ok());
+        // A committed client must use the live manager even after its key changes.
+        client.identity_committed.store(true, Ordering::Release);
+        assert!(client.prepare_identity().await.is_err());
+        assert!(client
+            .request(Method::GET, "http://127.0.0.1:1/")
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn explicit_null_user_agent_is_preserved_with_a_usable_http_fallback() {
+        use base64::{engine::general_purpose::STANDARD, Engine};
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/super-properties.json"))
+                .unwrap();
+        let mut properties = fixture["desktop"]["properties"].clone();
+        properties["browser_user_agent"] = serde_json::Value::Null;
+        let raw = STANDARD.encode(serde_json::to_vec(&properties).unwrap());
+        let client = DiscordApiClient::new("synthetic-token".into()).unwrap();
+        client
+            .candidate_identity()
+            .lock()
+            .unwrap()
+            .set_from_cdp(&raw, &properties);
+        let request = client
+            .request(Method::GET, "https://discord.com/api/v9/users/@me")
+            .await
+            .unwrap()
+            .build()
+            .unwrap();
+        assert_eq!(
+            request.headers()["x-super-properties"].to_str().unwrap(),
+            raw
+        );
+        assert!(!request.headers()[USER_AGENT].to_str().unwrap().is_empty());
     }
 
     /// Verify that `DiscordApiClient::extract_user_id_from_token` decodes the numeric snowflake prefix.
