@@ -36,8 +36,8 @@ use tauri::{Emitter, Listener, Manager, State, WebviewWindowBuilder};
 
 /// Global X-Super-Properties manager (session-level)
 /// Automatically generates key validation fields, fetches latest version info from Discord after login
-static SUPER_PROPERTIES_MANAGER: Lazy<Mutex<XSuperPropertiesManager>> =
-    Lazy::new(|| Mutex::new(XSuperPropertiesManager::new()));
+static SUPER_PROPERTIES_MANAGER: Lazy<std::sync::Arc<Mutex<XSuperPropertiesManager>>> =
+    Lazy::new(|| std::sync::Arc::new(Mutex::new(XSuperPropertiesManager::new())));
 
 const APP_EXIT_RPC_DISCONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 /// Bound for waiting on a cancelled quest task. CDP cancel cleanup uses one
@@ -475,139 +475,52 @@ mod auth_progress_tests {
     }
 }
 
-/// Login with provided token
+/// Resolve fallback metadata in a candidate, never the authenticated context.
+async fn initialize_candidate_metadata(client: &DiscordApiClient) {
+    let (build, info) = tokio::join!(
+        token_extractor::fetch_build_number_from_discord(),
+        token_extractor::fetch_discord_client_info(),
+    );
+    let identity = client.candidate_identity();
+    let mut manager = identity.lock().unwrap_or_else(|error| error.into_inner());
+    if let Ok(build) = build {
+        manager.set_from_remote_js(build);
+    }
+    if let Ok(info) = info {
+        manager.set_client_info(info.client_version(), info.native_build_number);
+    }
+}
+
+/// Login with provided token. Manual credentials are validated before CDP reuse.
 #[tauri::command]
 async fn set_token(
     token: String,
     state: State<'_, AppState>,
     on_progress: Channel<AuthProgress>,
 ) -> Result<DiscordUser, String> {
-    use crate::logger::{log, LogCategory, LogLevel};
-
+    let _ = on_progress.send(AuthProgress::phase(AuthProgressPhase::PreparingSession));
+    let client =
+        DiscordApiClient::new(token).map_err(|e| format!("Failed to create API client: {e:#}"))?;
+    initialize_candidate_metadata(&client).await;
     let _ = on_progress.send(AuthProgress::phase(AuthProgressPhase::ValidatingToken));
-
-    // Create API client
-    let client = DiscordApiClient::new(token)
-        .map_err(|e| format!("Failed to create API client: {:#}", e))?;
-
-    // Validate token
     let user = client
         .get_current_user()
         .await
-        .map_err(|e| format!("Failed to validate token: {:#}", e))?;
-
-    let _ = on_progress.send(AuthProgress::phase(AuthProgressPhase::PreparingSession));
-
-    // Fetch latest build_number and client info before returning (so frontend await can rely on completion)
-
-    // Priority 1: Try CDP
-    let mut cdp_success = false;
-    let cdp_port = cdp_client::DEFAULT_CDP_PORT;
-
-    log(
-        LogLevel::Info,
-        LogCategory::TokenExtraction,
-        &format!(
-            "Attempting to fetch SuperProperties via CDP on port {}",
-            cdp_port
-        ),
-        None,
-    );
-
-    if let Ok(cdp_result) = cdp_client::fetch_super_properties_via_cdp(cdp_port).await {
-        log(
-            LogLevel::Info,
-            LogCategory::TokenExtraction,
-            &format!(
-                "Successfully fetched SuperProperties via CDP. Build: {}",
-                cdp_result
-                    .decoded
-                    .get("client_build_number")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0)
-            ),
-            None,
-        );
-        if let Ok(mut manager) = SUPER_PROPERTIES_MANAGER.lock() {
-            manager.set_from_cdp(&cdp_result.base64, &cdp_result.decoded);
-        }
-        cdp_success = true;
-    } else {
-        log(
-            LogLevel::Debug,
-            LogCategory::TokenExtraction,
-            "CDP fetch failed, falling back to JS scraping",
-            None,
-        );
+        .map_err(|e| format!("Failed to validate token: {e:#}"))?;
+    let identity = client.candidate_identity();
+    {
+        let mut manager = identity.lock().unwrap_or_else(|error| error.into_inner());
+        manager.authenticate(user.id.clone());
+        manager.cdp_port = Some(cdp_client::DEFAULT_CDP_PORT);
     }
-
-    // Priority 2: Remote JS (Fallback)
-    if !cdp_success {
-        // Get build_number
-        match token_extractor::fetch_build_number_from_discord().await {
-            Ok(build_number) => {
-                log(
-                    LogLevel::Info,
-                    LogCategory::TokenExtraction,
-                    &format!(
-                        "Successfully fetched build number from JS: {}",
-                        build_number
-                    ),
-                    None,
-                );
-                if let Ok(mut manager) = SUPER_PROPERTIES_MANAGER.lock() {
-                    manager.set_from_remote_js(build_number);
-                }
-            }
-            Err(e) => {
-                log(
-                    LogLevel::Warn,
-                    LogCategory::TokenExtraction,
-                    &format!("Failed to fetch build number from JS: {}", e),
-                    None,
-                );
-            }
-        }
-    }
-
     let _ = on_progress.send(AuthProgress::phase(AuthProgressPhase::SyncingClientInfo));
-
-    // Get client info (native_build_number and version)
-    match token_extractor::fetch_discord_client_info().await {
-        Ok(info) => {
-            log(
-                LogLevel::Info,
-                LogCategory::TokenExtraction,
-                &format!(
-                    "Successfully fetched client info: version={}, native_build={}",
-                    info.client_version(),
-                    info.native_build_number
-                ),
-                None,
-            );
-            if let Ok(mut manager) = SUPER_PROPERTIES_MANAGER.lock() {
-                manager.set_client_info(info.client_version(), info.native_build_number);
-            }
-        }
-        Err(e) => {
-            log(
-                LogLevel::Warn,
-                LogCategory::TokenExtraction,
-                &format!("Failed to fetch client info: {}", e),
-                None,
-            );
-        }
-    }
-
-    // Save client AFTER initializing SuperProperties to avoid race conditions
-    // where other commands might use the client with stale properties
+    super_properties::cdp::prepare(&identity).await;
     let _gate = state.activity_gate.lock().await;
     state.game_idle.ensure_idle().await?;
+    client.commit_identity();
     *state.authenticated_user.lock().unwrap() = Some(user.clone());
     *state.client.lock().unwrap() = Some(client);
-
     let _ = on_progress.send(AuthProgress::phase(AuthProgressPhase::Complete));
-
     Ok(user)
 }
 
@@ -657,6 +570,17 @@ async fn auto_login_via_cdp(
     //    /users/@me. An invalid capture is rejected here.
     let client = DiscordApiClient::new(session.authorization.to_string())
         .map_err(|e| format!("Failed to create API client: {:#}", e))?;
+    if let Some(encoded) = &session.super_properties {
+        if let Ok(bytes) = BASE64.decode(encoded) {
+            if let Ok(properties) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+                client
+                    .candidate_identity()
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .set_from_cdp(encoded, &properties);
+            }
+        }
+    }
     let user = client
         .get_current_user()
         .await
@@ -664,32 +588,19 @@ async fn auto_login_via_cdp(
 
     let _ = on_progress.send(AuthProgress::phase(AuthProgressPhase::PreparingSession));
 
-    // 3. Bootstrap SuperProperties. Prefer the exact `x-super-properties` we
-    //    captured (the value the client actually sends); fall back to a fresh
-    //    CDP fetch. Either way the manager has built-in defaults on failure.
-    let mut super_properties_ready = false;
-    if let Some(base64) = session.super_properties.as_ref() {
-        if let Ok(decoded_bytes) = BASE64.decode(base64) {
-            if let Ok(decoded) = serde_json::from_slice::<serde_json::Value>(&decoded_bytes) {
-                if let Ok(mut manager) = SUPER_PROPERTIES_MANAGER.lock() {
-                    manager.set_from_cdp(base64, &decoded);
-                    super_properties_ready = true;
-                }
-            }
-        }
+    let identity = client.candidate_identity();
+    {
+        let mut manager = identity.lock().unwrap_or_else(|error| error.into_inner());
+        manager.authenticate(user.id.clone());
+        manager.cdp_port = Some(cdp_port);
     }
-    if !super_properties_ready {
-        if let Ok(cdp_result) = cdp_client::fetch_super_properties_via_cdp(cdp_port).await {
-            if let Ok(mut manager) = SUPER_PROPERTIES_MANAGER.lock() {
-                manager.set_from_cdp(&cdp_result.base64, &cdp_result.decoded);
-            }
-        }
-    }
+    super_properties::cdp::prepare(&identity).await;
 
     // 4. Save the client last (mirrors set_token) so no request runs with stale
     //    super properties.
     let _gate = state.activity_gate.lock().await;
     state.game_idle.ensure_idle().await?;
+    client.commit_identity();
     *state.authenticated_user.lock().unwrap() = Some(user.clone());
     *state.client.lock().unwrap() = Some(client);
 
@@ -703,6 +614,20 @@ async fn auto_login_via_cdp(
     let _ = on_progress.send(AuthProgress::phase(AuthProgressPhase::Complete));
 
     Ok(user)
+}
+
+#[tauri::command]
+async fn clear_authenticated_session(state: State<'_, AppState>) -> Result<(), String> {
+    let _gate = state.activity_gate.lock().await;
+    state.game_idle.ensure_idle().await?;
+    stop_active_work_internal(&state).await?;
+    *state.client.lock().unwrap() = None;
+    *state.authenticated_user.lock().unwrap() = None;
+    SUPER_PROPERTIES_MANAGER
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .logout();
+    Ok(())
 }
 
 /// Refuse CDP mutations when Helper's authenticated account differs from the
@@ -2198,7 +2123,11 @@ fn create_main_window(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>
         }
     }
 
-    builder.build()?;
+    let window = builder.build()?;
+    SUPER_PROPERTIES_MANAGER
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .set_focused(window.is_focused().unwrap_or(false));
     Ok(())
 }
 
@@ -2226,6 +2155,26 @@ pub fn run() {
             activity_gate: tokio::sync::Mutex::new(()),
         })
         .setup(|app| {
+            {
+                let mut identity = SUPER_PROPERTIES_MANAGER
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
+                identity.configure_storage(
+                    app.path()
+                        .app_local_data_dir()?
+                        .join("client-heartbeat-session.v1.json"),
+                );
+            }
+            tauri::async_runtime::spawn(async {
+                let mut timer = tokio::time::interval(std::time::Duration::from_secs(15 * 60));
+                loop {
+                    timer.tick().await;
+                    SUPER_PROPERTIES_MANAGER
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .activity_tick(super_properties::now_ms());
+                }
+            });
             let notifications = notifications::initialize(app.handle().clone())
                 .map_err(|_| std::io::Error::other("Unable to initialize notification channels"))?;
             app.manage(std::sync::Arc::new(notifications));
@@ -2277,6 +2226,7 @@ pub fn run() {
             auto_detect_token,
             set_token,
             auto_login_via_cdp,
+            clear_authenticated_session,
             get_quests,
             get_quests_full,
             start_video_quest,
@@ -2350,7 +2300,15 @@ pub fn run() {
             runtime_identity::get_runtime_identity_status,
             runtime_identity::get_runtime_identity_audit
         ])
-        .on_window_event(|_window, event| {
+        .on_window_event(|window, event| {
+            if window.label() == "main" {
+                if let tauri::WindowEvent::Focused(focused) = event {
+                    SUPER_PROPERTIES_MANAGER
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .set_focused(*focused);
+                }
+            }
             if let tauri::WindowEvent::Destroyed = event {
                 prepare_app_exit_fallback();
             }
@@ -2705,6 +2663,7 @@ async fn get_ip_info() -> Result<IpInfo, String> {
 /// Get debug info including X-Super-Properties
 #[tauri::command]
 async fn get_debug_info() -> Result<super_properties::DebugInfo, String> {
+    super_properties::cdp::prepare(&SUPER_PROPERTIES_MANAGER).await;
     let manager = SUPER_PROPERTIES_MANAGER.lock().map_err(|e| e.to_string())?;
     Ok(manager.get_debug_info())
 }
@@ -2728,16 +2687,20 @@ async fn fetch_super_properties_cdp(
     port: Option<u16>,
 ) -> Result<cdp_client::CdpSuperProperties, String> {
     let port = port.unwrap_or(cdp_client::DEFAULT_CDP_PORT);
-    let result = cdp_client::fetch_super_properties_via_cdp(port)
+    let snapshot = super_properties::cdp::refresh(port)
         .await
-        .map_err(|e| e.to_string())?;
-
-    // Update global SuperProperties Manager
-    if let Ok(mut manager) = SUPER_PROPERTIES_MANAGER.lock() {
-        manager.set_from_cdp(&result.base64, &result.decoded);
+        .map_err(|error| error.to_string())?;
+    {
+        let mut manager = SUPER_PROPERTIES_MANAGER
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        manager.accept_cdp(&snapshot).map_err(str::to_string)?;
+        manager.cdp_port = Some(port);
     }
-
-    Ok(result)
+    Ok(cdp_client::CdpSuperProperties {
+        base64: snapshot.base64,
+        decoded: snapshot.decoded,
+    })
 }
 
 /// Read Discord's currently loaded game detector state via CDP.
@@ -2789,85 +2752,35 @@ fn get_super_properties_mode() -> serde_json::Value {
 /// Auto-fetch SuperProperties with fallback: CDP -> Remote JS -> Default
 #[tauri::command]
 async fn auto_fetch_super_properties(cdp_port: Option<u16>) -> serde_json::Value {
-    use crate::logger::{log, LogCategory, LogLevel};
-
     let port = cdp_port.unwrap_or(cdp_client::DEFAULT_CDP_PORT);
-
-    // Priority 1: Try CDP
-    log(
-        LogLevel::Info,
-        LogCategory::TokenExtraction,
-        &format!("Auto-fetching SuperProperties, trying CDP on port {}", port),
-        None,
-    );
-
-    if let Ok(cdp_result) = cdp_client::fetch_super_properties_via_cdp(port).await {
-        if let Ok(mut manager) = SUPER_PROPERTIES_MANAGER.lock() {
-            manager.set_from_cdp(&cdp_result.base64, &cdp_result.decoded);
-            log(
-                LogLevel::Info,
-                LogCategory::TokenExtraction,
-                &format!(
-                    "SuperProperties obtained via CDP. Build: {:?}",
-                    manager.get_build_number()
-                ),
-                None,
-            );
-            return serde_json::json!({
-                "success": true,
-                "mode": "cdp",
-                "build_number": manager.get_build_number()
-            });
-        }
-    }
-
-    log(
-        LogLevel::Debug,
-        LogCategory::TokenExtraction,
-        "CDP failed, falling back to Remote JS",
-        None,
-    );
-
-    // Priority 2: Try Remote JS
-    if let Ok(build_number) = token_extractor::fetch_build_number_from_discord().await {
-        if let Ok(mut manager) = SUPER_PROPERTIES_MANAGER.lock() {
-            manager.set_from_remote_js(build_number);
-            log(
-                LogLevel::Info,
-                LogCategory::TokenExtraction,
-                &format!(
-                    "SuperProperties obtained via Remote JS. Build: {}",
-                    build_number
-                ),
-                None,
-            );
-            return serde_json::json!({
-                "success": true,
-                "mode": "remote_js",
-                "build_number": build_number
-            });
-        }
-    }
-
-    log(
-        LogLevel::Warn,
-        LogCategory::TokenExtraction,
-        "All fetch methods failed, using default values",
-        None,
-    );
-
-    // Priority 3: Use default values
-    let build_number = if let Ok(manager) = SUPER_PROPERTIES_MANAGER.lock() {
-        manager.get_build_number()
-    } else {
-        None
+    let key = {
+        let mut manager = SUPER_PROPERTIES_MANAGER
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        manager.cdp_port = Some(port);
+        manager.session_key.clone()
     };
-
-    serde_json::json!({
-        "success": false,
-        "mode": "default",
-        "build_number": build_number
-    })
+    super_properties::cdp::prepare(&SUPER_PROPERTIES_MANAGER).await;
+    let needs_remote = SUPER_PROPERTIES_MANAGER
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_mode()
+        != super_properties::SourceMode::Cdp;
+    if needs_remote {
+        if let Ok(build) = token_extractor::fetch_build_number_from_discord().await {
+            let mut manager = SUPER_PROPERTIES_MANAGER
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            if manager.session_key == key {
+                manager.set_from_remote_js(build);
+            }
+        }
+    }
+    let manager = SUPER_PROPERTIES_MANAGER
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    serde_json::json!({"success": manager.get_mode() != super_properties::SourceMode::Default,
+        "mode":manager.get_mode().as_str(),"build_number":manager.get_build_number()})
 }
 
 /// Retry fetching SuperProperties (resets and tries again)

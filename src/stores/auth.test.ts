@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   getProgramRewards: vi.fn(),
   getGameSimulationHistory: vi.fn(),
   stopAllGameSimulations: vi.fn(),
+  clearAuthenticatedSession: vi.fn(),
   questsStore: {
     cdpPort: 9223,
     cdpAvailable: false,
@@ -34,6 +35,7 @@ vi.mock('@/api/tauri', () => ({
   getProgramRewards: mocks.getProgramRewards,
   getGameSimulationHistory: mocks.getGameSimulationHistory,
   stopAllGameSimulations: mocks.stopAllGameSimulations,
+  clearAuthenticatedSession: mocks.clearAuthenticatedSession,
   getGameIdleStatus: vi.fn().mockResolvedValue(null),
   onGameIdleStatus: vi.fn(),
   onGameSimulationHistoryUpdated: vi.fn(),
@@ -85,6 +87,7 @@ describe('auth login quest mode selection', () => {
     mocks.getProgramRewards.mockResolvedValue([])
     mocks.getGameSimulationHistory.mockResolvedValue([])
     mocks.stopAllGameSimulations.mockResolvedValue(undefined)
+    mocks.clearAuthenticatedSession.mockResolvedValue(undefined)
     mocks.questsStore.initCdpMode.mockResolvedValue(undefined)
     mocks.questsStore.getDetectableGames.mockResolvedValue(undefined)
     mocks.questsStore.fetchOrbsSummary.mockResolvedValue(undefined)
@@ -108,6 +111,33 @@ describe('auth login quest mode selection', () => {
     await expect(authStore.loginWithToken('token-value')).resolves.toBe(true)
 
     expect(mocks.questsStore.gameQuestMode).toBe('simulate')
+  })
+
+  it('clears the backend identity after stopping work during logout', async () => {
+    const auth = useAuthStore()
+    await auth.loginWithToken('token-value')
+    await auth.logout()
+    expect(mocks.clearAuthenticatedSession).toHaveBeenCalledOnce()
+    expect(mocks.questsStore.stop.mock.invocationCallOrder[0]).toBeLessThan(mocks.clearAuthenticatedSession.mock.invocationCallOrder[0])
+    expect(auth.user).toBeNull()
+  })
+
+  it('preserves the authenticated identity when stopping work fails', async () => {
+    const auth = useAuthStore()
+    await auth.loginWithToken('token-value')
+    mocks.stopAllGameSimulations.mockRejectedValueOnce(new Error('cleanup failed'))
+    await auth.logout()
+    expect(mocks.clearAuthenticatedSession).not.toHaveBeenCalled()
+    expect(auth.user?.id).toBe(user.id)
+  })
+
+  it('keeps the frontend login if clearing the backend session fails', async () => {
+    const auth = useAuthStore()
+    await auth.loginWithToken('token-value')
+    mocks.clearAuthenticatedSession.mockRejectedValueOnce(new Error('backend cleanup failed'))
+    await auth.logout()
+    expect(auth.user?.id).toBe(user.id)
+    expect(mocks.questsStore.resetForLogout).not.toHaveBeenCalled()
   })
 
   it.each(['cdp', 'token', 'auto'] as const)(
