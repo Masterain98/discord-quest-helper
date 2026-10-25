@@ -22,6 +22,7 @@ pub use discord_cdp_launch_core::DEFAULT_CDP_PORT;
 pub struct CdpSuperProperties {
     pub base64: String,
     pub decoded: serde_json::Value,
+    pub debug_info: crate::super_properties::DebugInfo,
 }
 
 /// CDP status

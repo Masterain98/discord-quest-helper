@@ -7,11 +7,8 @@ import { Button } from '@/components/ui/button'
 import { useQuestsStore } from '@/stores/quests'
 import {
   createDiscordCdpLauncherShortcut,
-  fetchSuperPropertiesCdp,
-  getDebugInfo,
   listRunningDesktopCdpSessions,
   launchDesktopClientCdp,
-  type DebugInfo,
 } from '@/api/tauri'
 import { desktopClientArgForProvider, useDesktopClientState } from '@/composables/desktopClientState'
 import {
@@ -35,6 +32,7 @@ import {
   selectionForCurrentCdpOwner,
 } from '@/components/auth/loginFlow'
 import { commandErrorMessage } from '@/utils/commandError'
+import { useSuperPropertiesDiagnostics } from '@/composables/superPropertiesDiagnostics'
 import {
   clearCdpLaunchError,
   invalidCdpPortError,
@@ -69,7 +67,7 @@ const cdpDialogOpen = ref(false)
 const discordWasRunning = ref(false)
 const discordWasConnected = ref(false)
 const ownerConflict = ref(false)
-const debugInfo = ref<DebugInfo | null>(null)
+const { debugInfo, loadDebugInfo: readDebugInfo, fetchCdpPreview } = useSuperPropertiesDiagnostics()
 const debugInfoLoading = ref(false)
 
 const cdpSectionTone = computed<SettingsTone>(() => cdpStatus.value?.connected ? 'success' : 'warning')
@@ -101,7 +99,7 @@ async function checkCdp() {
 async function loadDebugInfo() {
   debugInfoLoading.value = true
   try {
-    debugInfo.value = await getDebugInfo()
+    await readDebugInfo()
   } catch (e) {
     console.error('Failed to load debug info:', e)
   } finally {
@@ -114,11 +112,10 @@ async function fetchCdpSuperProperties() {
   cdpFetchSuccess.value = false
   cdpFetchError.value = ''
   try {
-    await fetchSuperPropertiesCdp(questsStore.cdpPort)
+    await fetchCdpPreview(questsStore.cdpPort)
     cdpFetchSuccess.value = true
     setTimeout(() => { cdpFetchSuccess.value = false }, 5000)
     await checkCdp()
-    await loadDebugInfo()
   } catch (e) {
     cdpFetchError.value = commandErrorMessage(e)
     setTimeout(() => { cdpFetchError.value = '' }, 5000)

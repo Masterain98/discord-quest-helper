@@ -723,6 +723,7 @@ export interface CdpStatus {
 export interface CdpSuperProperties {
   base64: string
   decoded: SuperProperties
+  debug_info: DebugInfo
 }
 
 export async function checkCdpStatus(port?: number): Promise<CdpStatus> {
@@ -972,10 +973,8 @@ export interface SuperPropertiesModeInfo {
   build_number: number | null
 }
 
-export interface AutoFetchResult {
+export interface AutoFetchResult extends SuperPropertiesModeInfo {
   success: boolean
-  mode: SuperPropertiesMode
-  build_number: number | null
 }
 
 export async function getSuperPropertiesMode(): Promise<SuperPropertiesModeInfo> {

@@ -636,18 +636,15 @@ impl XSuperPropertiesManager {
     }
 
     /// Diagnostics can preview a renderer before login without binding it to requests.
-    pub fn refresh_cdp(
-        &mut self,
-        snapshot: &cdp::Snapshot,
-    ) -> Result<RequestIdentity, &'static str> {
+    pub fn refresh_cdp(&mut self, snapshot: &cdp::Snapshot) -> Result<DebugInfo, &'static str> {
         if self.account_id.is_none() {
             let mut preview = self.clone();
             preview.account_id = Some(snapshot.account_id.clone());
             preview.accept_cdp(snapshot)?;
-            return Ok(preview.request_identity());
+            return Ok(preview.get_debug_info());
         }
         self.accept_cdp(snapshot)?;
-        Ok(self.request_identity())
+        Ok(self.get_debug_info())
     }
 
     pub fn set_from_remote_js(&mut self, build_number: u64) {
@@ -1084,7 +1081,9 @@ mod tests {
         let original = manager.request_identity().base64;
         let captured = snapshot("account-a", "renderer-1");
         let preview = manager.refresh_cdp(&captured).unwrap();
-        assert_eq!(preview.base64, captured.base64);
+        assert_eq!(preview.x_super_properties_base64, captured.base64);
+        assert_eq!(preview.super_properties, captured.decoded);
+        assert_eq!(preview.source, SourceMode::Cdp.display_name());
         assert!(manager.account_id.is_none());
         assert_eq!(manager.request_identity().base64, original);
         let mut candidate = manager.candidate("credential".into());

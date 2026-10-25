@@ -2763,19 +2763,21 @@ async fn fetch_super_properties_cdp(
     let snapshot = super_properties::cdp::refresh(port)
         .await
         .map_err(|error| error.to_string())?;
-    {
+    let debug_info = {
         let mut manager = SUPER_PROPERTIES_MANAGER
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         if manager.session_key != key {
             return Err("Session changed while refreshing client properties".into());
         }
-        manager.refresh_cdp(&snapshot).map_err(str::to_string)?;
+        let debug_info = manager.refresh_cdp(&snapshot).map_err(str::to_string)?;
         manager.cdp_port = Some(port);
-    }
+        debug_info
+    };
     Ok(cdp_client::CdpSuperProperties {
         base64: snapshot.base64,
         decoded: snapshot.decoded,
+        debug_info,
     })
 }
 
@@ -2842,12 +2844,12 @@ async fn auto_fetch_super_properties(cdp_port: Option<u16>) -> serde_json::Value
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         if manager.session_key != key {
-            return serde_json::json!({"success":false,"mode":manager.get_mode().as_str(),"build_number":manager.get_build_number()});
+            return serde_json::json!({"success":false,"mode":manager.get_mode().as_str(),"mode_display":manager.get_mode().display_name(),"build_number":manager.get_build_number()});
         }
         match captured {
             Ok(snapshot) => {
-                if let Ok(identity) = manager.refresh_cdp(&snapshot) {
-                    return serde_json::json!({"success":true,"mode":"cdp","build_number":identity.properties["client_build_number"]});
+                if let Ok(debug_info) = manager.refresh_cdp(&snapshot) {
+                    return serde_json::json!({"success":true,"mode":"cdp","mode_display":debug_info.source,"build_number":debug_info.super_properties["client_build_number"]});
                 }
             }
             Err(_) => manager.use_local(Some("cdp_unavailable".into())),
@@ -2872,7 +2874,7 @@ async fn auto_fetch_super_properties(cdp_port: Option<u16>) -> serde_json::Value
         .lock()
         .unwrap_or_else(|error| error.into_inner());
     serde_json::json!({"success": manager.get_mode() != super_properties::SourceMode::Default,
-        "mode":manager.get_mode().as_str(),"build_number":manager.get_build_number()})
+        "mode":manager.get_mode().as_str(),"mode_display":manager.get_mode().display_name(),"build_number":manager.get_build_number()})
 }
 
 /// Retry fetching SuperProperties (resets and tries again)
