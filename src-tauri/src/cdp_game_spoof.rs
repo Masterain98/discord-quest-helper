@@ -105,7 +105,7 @@ pub fn local_machine_hw_sha256(user_id: &str) -> [u8; 32] {
 /// Binary layout (`0x92` = 146 bytes before XOR):
 /// - `[0x00]`: `0x01` (struct version, un-XORed in `sub_1350`)
 /// - `[0x01]`: `0x03` (`is_signed (0x01) | is_pe64 (0x02)`) or `0x01` (`is_signed` only)
-/// - `[0x02..0x09]`: `file_size` (`u64 LE`, realistic 48..140 MB signed game PE size)
+/// - `[0x02..0x09]`: `file_size` (`u64 LE`, simulated 20..140 MiB game PE size)
 /// - `[0x0A..0x0D]`: `time_date_stamp` (`u32 LE`, PE COFF compile timestamp)
 /// - `[0x0E..0x11]`: `size_of_image` (`u32 LE`, page-aligned PE `SizeOfImage`)
 /// - `[0x12..0x31]`: `pe_headers_sha256` (32 bytes)
@@ -127,7 +127,7 @@ pub fn synthesize_signed_executable_fingerprint(
     let seed_hash = sha256_bytes(format!("seed:{seed}").as_bytes());
 
     let base_mb =
-        48u64 + (u32::from_le_bytes(seed_hash[0..4].try_into().unwrap_or([0; 4])) as u64 % 92);
+        20u64 + (u32::from_le_bytes(seed_hash[0..4].try_into().unwrap_or([0; 4])) as u64 % 120);
     let extra_bytes =
         (u32::from_le_bytes(seed_hash[4..8].try_into().unwrap_or([0; 4])) as u64 % 1024) * 512;
     let file_size: u64 = base_mb * 1024 * 1024 + extra_bytes;
@@ -912,7 +912,7 @@ mod tests {
         assert_eq!(plain[0x01], 0x03, "flags must set is_signed | is_pe64");
         let file_size = u64::from_le_bytes(plain[0x02..0x0A].try_into().unwrap());
         assert!(
-            (48 * 1024 * 1024..=141 * 1024 * 1024).contains(&file_size),
+            (20 * 1024 * 1024..140 * 1024 * 1024).contains(&file_size),
             "unexpected file_size: {file_size}"
         );
         let time_date_stamp = u32::from_le_bytes(plain[0x0A..0x0E].try_into().unwrap());

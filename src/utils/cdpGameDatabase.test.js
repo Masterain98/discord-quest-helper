@@ -7,7 +7,7 @@ const startTemplate = source.match(/fn js_spoof_play_game_for[\s\S]*?r#"([\s\S]*
 const start = Object.entries({
   safe_app_id: '"123"', safe_app_name: '"Example"', host_os_json: '"win32"',
   os_priority_json: '["win32"]', path_templates_json: '{"cmdLine":"{exe}","exePath":"{exe}"}',
-  hints_json: '[]', unix_host: 'false',
+  hints_json: '[]', host_hw_token_json: '"test-hardware-token"', unix_host: 'false',
 }).reduce((js, [key, value]) => js.replaceAll(`{${key}}`, value), startTemplate)
   .replaceAll('{{', '{').replaceAll('}}', '}')
 const cleanup = source.match(/const JS_CLEANUP_SPOOF: &str = r#"([\s\S]*?)"#;/)[1]
@@ -56,7 +56,7 @@ describe('CDP game database persistence', () => {
     [game(), null],
   ])('never dispatches an invalid catalogue during Start or Stop: %s', async raw => {
     const { result, stopped, events, persisted } = await exercise(raw, ['en', { ast: [] }])
-    expect(result.success).toBe(true)
+    expect(result.success, result.error).toBe(true)
     expect(stopped.success).toBe(true)
     expect(events.filter(event => event.type === 'GAMES_DATABASE_UPDATE')).toEqual([])
     expect(persisted.size).toBe(0)
@@ -65,7 +65,7 @@ describe('CDP game database persistence', () => {
   it('preserves third-party identity across observer registration and cleanup', async () => {
     const row = game()
     const { result, stopped, events, persisted, context } = await exercise([row])
-    expect(result.success).toBe(true)
+    expect(result.success, result.error).toBe(true)
     expect(stopped.success).toBe(true)
     expect(events.filter(event => event.type === 'GAMES_DATABASE_UPDATE')).toHaveLength(2)
     expect(persisted.get('123').thirdPartySkus).toEqual(row.thirdPartySkus)

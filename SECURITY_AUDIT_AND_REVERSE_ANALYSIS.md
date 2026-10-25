@@ -122,7 +122,7 @@ Every API request includes `X-Super-Properties` (Base64 JSON). Inside `libdiscor
 
 ### 4.3 `Masterain98/discord-quest-helper`
 1. **Unsigned Dummy PE (`stagecraft.exe` / `stealth_pe.rs`) Fails `WinVerifyTrust`:**
-   - When `discord_utils.node` scans the dummy process, `WinVerifyTrust` (`0x1800a4224`) returns non-zero (`is_signed = 0`, so `flags` bit 0 is `0`), `cert_sha256` (`[0x72..0x91]`) is 32 zero bytes (`00..00`), and `file_size` is ~150 KB instead of a 48–140 MB Authenticode-signed game binary.
+   - When `discord_utils.node` scans the dummy process, `WinVerifyTrust` (`0x1800a4224`) returns non-zero (`is_signed = 0`, so `flags` bit 0 is `0`), `cert_sha256` (`[0x72..0x91]`) is 32 zero bytes (`00..00`), and `file_size` is ~150 KB. The synthetic fingerprint instead uses a selected 20–140 MiB range; this range is a simulation parameter, not a verified server requirement.
 2. **CDP Spoof Explicitly Sets `executableFingerprint: undefined` (`cdp_quest.rs:497`):**
    - In CDP mode (`js_spoof_play_game_for`), `fakeGame.executableFingerprint` is hardcoded to `undefined`!
 3. **Direct API Game Heartbeat Omits `executable_path` & `executable_fingerprint` (`discord_api.rs:900`):**
@@ -135,7 +135,7 @@ Every API request includes `X-Super-Properties` (Base64 JSON). Inside `libdiscor
 ## 5. Summary of Applied Stealth Fixes
 
 1. **`sub_a3990` / `sub_a4120` / `sub_a3f60` / `sub_1350` Signed `executableFingerprint` Synthesis:**
-   - Synthesizes a valid 146-byte (`0x92`) binary payload with un-XORed `version = 0x01`, `flags = 0x03` (`is_signed | is_pe64` for `.exe` binaries, or `0x01` `is_signed` for non-PE paths), realistic 48–140 MB `file_size`, valid PE `time_date_stamp` and page-aligned `size_of_image`, deterministic `pe_headers_sha256` (`[0x12..0x31]`), `hw_sha256` (`[0x32..0x51]`, harvested from existing signed native process entries when available or falling back to a synthetic hash derived from the renderer hardware token and `userId` rather than `MachineGuid` evidence), `sections_sha256` (`[0x52..0x71]`), and synthetic `cert_sha256` (`[0x72..0x91]`, derived from the `AUTHENTICODE_CERT_V1` seed rather than publisher-certificate evidence), XORed on bytes `1..145` with `SHA-256(userId + "https://discord.com/careers")` and Base64-encoded to 196 characters.
+   - Synthesizes a valid 146-byte (`0x92`) binary payload with un-XORed `version = 0x01`, `flags = 0x03` (`is_signed | is_pe64` for `.exe` binaries, or `0x01` `is_signed` for non-PE paths), simulated 20–140 MiB `file_size`, valid PE `time_date_stamp` and page-aligned `size_of_image`, deterministic `pe_headers_sha256` (`[0x12..0x31]`), `hw_sha256` (`[0x32..0x51]`, harvested from existing signed native process entries when available or falling back to a synthetic hash derived from the renderer hardware token and `userId` rather than `MachineGuid` evidence), `sections_sha256` (`[0x52..0x71]`), and synthetic `cert_sha256` (`[0x72..0x91]`, derived from the `AUTHENTICODE_CERT_V1` seed rather than publisher-certificate evidence), XORed on bytes `1..145` with `SHA-256(userId + "https://discord.com/careers")` and Base64-encoded to 196 characters.
 2. **`Module 973522` (`o.Ic`) 2-Segment `executable_path` Formatting:**
    - Ensures all `exePath` and `executable_path` values conform to Discord's 2-segment lowercase forward-slash format.
 3. **`launch_signature` 12-Bit Client-Mod Scrubber & `Error.prepareStackTrace` Sanitizer:**

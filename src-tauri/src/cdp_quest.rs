@@ -614,7 +614,7 @@ fn js_spoof_play_game_for(
                     const seed = applicationId + ":" + normPath;
                     const seedHash = await sha256("seed:" + seed);
                     const seedView = new DataView(seedHash.buffer);
-                    const baseMb = 48 + (seedView.getUint32(0, true) % 92);
+                    const baseMb = 20 + (seedView.getUint32(0, true) % 120);
                     const extraBytes = (seedView.getUint32(4, true) % 1024) * 512;
                     const fileSize = BigInt(baseMb * 1024 * 1024 + extraBytes);
                     const timeDateStamp = (1704067200 + (seedView.getUint32(8, true) % 55000000)) >>> 0;
