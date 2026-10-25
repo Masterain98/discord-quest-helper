@@ -600,7 +600,8 @@ fn js_spoof_play_game_for(
                                 const fileSizeHigh = plainView.getUint32(0x06, true);
                                 const tds = plainView.getUint32(0x0A, true);
                                 const imgSize = plainView.getUint32(0x0E, true);
-                                if ((flags & 0x01) !== 0 && (flags & 0xFC) === 0
+                                // File signing status does not determine the machine/user hash.
+                                if ((flags & 0xFC) === 0
                                     && fileSizeHigh === 0 && fileSizeLow >= 4096
                                     && tds >= 0x386D4380 && tds <= 0x7FFFFFFF
                                     && imgSize >= 0x1000 && (imgSize & 0xFFF) === 0) {{
