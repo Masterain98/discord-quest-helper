@@ -88,6 +88,128 @@ async fn refresh_reader(lock: &tokio::sync::Mutex<Reader>, port: u16) -> Result<
     }
 }
 
+impl Reader {
+    async fn read(&mut self) -> Result<Snapshot> {
+        if self.socket.is_none() {
+            let verified = crate::cdp_client::verify_primary_discord_target(self.port).await?;
+            let url = verified
+                .target
+                .web_socket_debugger_url
+                .context("missing_cdp_websocket")?;
+            self.target = verified.target.id;
+            self.generation = verified.generation;
+            self.socket = Some(connect_async(&url).await?.0);
+            self.module_ids = serde_json::json!({});
+        }
+        let script = include_str!("cdp_snapshot.js")
+            .replace("__GENERATION__", &serde_json::to_string(&self.generation)?)
+            .replace("__MODULE_IDS__", &self.module_ids.to_string());
+        self.next_id += 1;
+        let id = self.next_id;
+        let socket = self.socket.as_mut().unwrap();
+        socket
+            .send(Message::Text(
+                serde_json::json!({"id":id,"method":"Runtime.evaluate",
+            "params":{"expression":script,"returnByValue":true,"timeout":800}})
+                .to_string()
+                .into(),
+            ))
+            .await?;
+        while let Some(message) = socket.next().await {
+            match message? {
+                Message::Text(text) => {
+                    let value: Value = serde_json::from_str(&text)?;
+                    if value["id"].as_u64() != Some(id) {
+                        continue;
+                    }
+                    if value.get("error").is_some()
+                        || value["result"].get("exceptionDetails").is_some()
+                    {
+                        // Do not include renderer values or exception payloads in errors.
+                        anyhow::bail!("cdp_identity_read_failed");
+                    }
+                    let mut snapshot: Snapshot =
+                        serde_json::from_value(value["result"]["result"]["value"].clone())?;
+                    if !snapshot.native_desktop {
+                        anyhow::bail!("cdp_native_desktop_unavailable");
+                    }
+                    snapshot.renderer_key = format!("{}:{}", self.target, snapshot.renderer_key);
+                    snapshot.mod_bits = snapshot
+                        .mod_bit_indices
+                        .iter()
+                        .filter(|bit| **bit < 128)
+                        .fold(0u128, |mask, bit| mask | (1u128 << (127 - *bit)));
+                    self.module_ids = snapshot.module_ids.clone();
+                    return Ok(snapshot);
+                }
+                Message::Ping(data) => socket.send(Message::Pong(data)).await?,
+                Message::Close(_) => break,
+                _ => {}
+            }
+        }
+        anyhow::bail!("cdp_connection_closed")
+    }
+}
+
+/// Apply network results only if the identity context did not change while waiting.
+pub async fn prepare(
+    manager: &std::sync::Arc<std::sync::Mutex<super::XSuperPropertiesManager>>,
+) -> super::RequestIdentity {
+    let key = manager
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .session_key
+        .clone();
+    prepare_for(manager, &key).await.unwrap_or_else(|| {
+        manager
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .request_identity()
+    })
+}
+
+pub async fn prepare_for(
+    manager: &std::sync::Arc<std::sync::Mutex<super::XSuperPropertiesManager>>,
+    expected_key: &str,
+) -> Option<super::RequestIdentity> {
+    prepare_with(manager, expected_key, refresh).await
+}
+
+async fn prepare_with<F, Fut>(
+    manager: &std::sync::Arc<std::sync::Mutex<super::XSuperPropertiesManager>>,
+    expected_key: &str,
+    read: F,
+) -> Option<super::RequestIdentity>
+where
+    F: FnOnce(u16) -> Fut,
+    Fut: std::future::Future<Output = Result<Snapshot>>,
+{
+    let (port, session_key) = {
+        let guard = manager.lock().unwrap_or_else(|error| error.into_inner());
+        if guard.session_key != expected_key {
+            return None;
+        }
+        (
+            guard.cdp_port.filter(|_| guard.account_id.is_some()),
+            guard.session_key.clone(),
+        )
+    };
+    if let Some(port) = port {
+        let result = read(port).await;
+        let mut guard = manager.lock().unwrap_or_else(|error| error.into_inner());
+        if guard.session_key == session_key {
+            match result {
+                Ok(snapshot) => {
+                    let _ = guard.accept_cdp(&snapshot);
+                }
+                Err(_) => guard.use_local(Some("cdp_unavailable".into())),
+            }
+        }
+    }
+    let mut guard = manager.lock().unwrap_or_else(|error| error.into_inner());
+    (guard.session_key == expected_key).then(|| guard.request_identity())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -213,135 +335,27 @@ mod tests {
             .await
         });
         waiting.await.unwrap();
-        manager.lock().unwrap().logout();
-        assert!(send_result
-            .send(Err(anyhow::anyhow!("synthetic_disconnect")))
-            .is_ok());
+        let before = {
+            let mut current = manager.lock().unwrap();
+            current.logout().unwrap();
+            current.authenticate("synthetic-account".into());
+            current.request_identity().base64
+        };
+        let stale: Snapshot = serde_json::from_value(serde_json::json!({
+            "base64":"e30=","decoded":{"future_field":"stale-renderer"},"fallback":{},
+            "focused":true,"heartbeat_known":true,"heartbeat_session_id":"stale-session",
+            "account_id":"synthetic-account","renderer_key":"stale-renderer", "module_ids":{},
+            "native_desktop":true
+        }))
+        .unwrap();
+        assert!(send_result.send(Ok(stale)).is_ok());
         assert!(task.await.unwrap().is_none());
         let mut current = manager.lock().unwrap();
-        assert!(current.account_id.is_none());
-        assert!(current.request_identity().heartbeat_session_id.is_none());
-    }
-}
-
-impl Reader {
-    async fn read(&mut self) -> Result<Snapshot> {
-        if self.socket.is_none() {
-            let verified = crate::cdp_client::verify_primary_discord_target(self.port).await?;
-            let url = verified
-                .target
-                .web_socket_debugger_url
-                .context("missing_cdp_websocket")?;
-            self.target = verified.target.id;
-            self.generation = verified.generation;
-            self.socket = Some(connect_async(&url).await?.0);
-            self.module_ids = serde_json::json!({});
-        }
-        let script = include_str!("cdp_snapshot.js")
-            .replace("__GENERATION__", &serde_json::to_string(&self.generation)?)
-            .replace("__MODULE_IDS__", &self.module_ids.to_string());
-        self.next_id += 1;
-        let id = self.next_id;
-        let socket = self.socket.as_mut().unwrap();
-        socket
-            .send(Message::Text(
-                serde_json::json!({"id":id,"method":"Runtime.evaluate",
-            "params":{"expression":script,"returnByValue":true,"timeout":800}})
-                .to_string()
-                .into(),
-            ))
-            .await?;
-        while let Some(message) = socket.next().await {
-            match message? {
-                Message::Text(text) => {
-                    let value: Value = serde_json::from_str(&text)?;
-                    if value["id"].as_u64() != Some(id) {
-                        continue;
-                    }
-                    if value.get("error").is_some()
-                        || value["result"].get("exceptionDetails").is_some()
-                    {
-                        // Do not include renderer values or exception payloads in errors.
-                        anyhow::bail!("cdp_identity_read_failed");
-                    }
-                    let mut snapshot: Snapshot =
-                        serde_json::from_value(value["result"]["result"]["value"].clone())?;
-                    if !snapshot.native_desktop {
-                        anyhow::bail!("cdp_native_desktop_unavailable");
-                    }
-                    snapshot.renderer_key = format!("{}:{}", self.target, snapshot.renderer_key);
-                    snapshot.mod_bits = snapshot
-                        .mod_bit_indices
-                        .iter()
-                        .filter(|bit| **bit < 128)
-                        .fold(0u128, |mask, bit| mask | (1u128 << (127 - *bit)));
-                    self.module_ids = snapshot.module_ids.clone();
-                    return Ok(snapshot);
-                }
-                Message::Ping(data) => socket.send(Message::Pong(data)).await?,
-                Message::Close(_) => break,
-                _ => {}
-            }
-        }
-        anyhow::bail!("cdp_connection_closed")
-    }
-}
-
-/// Apply network results only if the identity context did not change while waiting.
-pub async fn prepare(
-    manager: &std::sync::Arc<std::sync::Mutex<super::XSuperPropertiesManager>>,
-) -> super::RequestIdentity {
-    let key = manager
-        .lock()
-        .unwrap_or_else(|error| error.into_inner())
-        .session_key
-        .clone();
-    prepare_for(manager, &key).await.unwrap_or_else(|| {
-        manager
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
+        assert_eq!(current.request_identity().base64, before);
+        assert!(current
             .request_identity()
-    })
-}
-
-pub async fn prepare_for(
-    manager: &std::sync::Arc<std::sync::Mutex<super::XSuperPropertiesManager>>,
-    expected_key: &str,
-) -> Option<super::RequestIdentity> {
-    prepare_with(manager, expected_key, refresh).await
-}
-
-async fn prepare_with<F, Fut>(
-    manager: &std::sync::Arc<std::sync::Mutex<super::XSuperPropertiesManager>>,
-    expected_key: &str,
-    read: F,
-) -> Option<super::RequestIdentity>
-where
-    F: FnOnce(u16) -> Fut,
-    Fut: std::future::Future<Output = Result<Snapshot>>,
-{
-    let (port, session_key) = {
-        let guard = manager.lock().unwrap_or_else(|error| error.into_inner());
-        if guard.session_key != expected_key {
-            return None;
-        }
-        (
-            guard.cdp_port.filter(|_| guard.account_id.is_some()),
-            guard.session_key.clone(),
-        )
-    };
-    if let Some(port) = port {
-        let result = read(port).await;
-        let mut guard = manager.lock().unwrap_or_else(|error| error.into_inner());
-        if guard.session_key == session_key {
-            match result {
-                Ok(snapshot) => {
-                    let _ = guard.accept_cdp(&snapshot);
-                }
-                Err(_) => guard.use_local(Some("cdp_unavailable".into())),
-            }
-        }
+            .properties
+            .get("future_field")
+            .is_none());
     }
-    let mut guard = manager.lock().unwrap_or_else(|error| error.into_inner());
-    (guard.session_key == expected_key).then(|| guard.request_identity())
 }

@@ -409,6 +409,9 @@ impl XSuperPropertiesManager {
     pub fn candidate(&self, credential: String) -> Self {
         let mut next = self.clone();
         next.session_key = Uuid::new_v4().to_string();
+        if self.credential.as_ref() != Some(&credential) {
+            next.client_ad_session_id = Uuid::new_v4().to_string();
+        }
         next.account_id = None;
         next.credential = Some(credential);
         next.local_session.session = None;
@@ -428,7 +431,7 @@ impl XSuperPropertiesManager {
 
     pub fn commit(&mut self, current: &Self) {
         self.focused = current.focused;
-        self.local_session.commit();
+        self.local_session.commit(now_ms());
         self.activity_tick(now_ms());
     }
 
@@ -440,8 +443,8 @@ impl XSuperPropertiesManager {
         self.activity_tick(now_ms());
     }
 
-    pub fn logout(&mut self) {
-        self.local_session.clear();
+    pub fn logout(&mut self) -> std::io::Result<()> {
+        self.local_session.clear()?;
         self.account_id = None;
         self.credential = None;
         self.session_key = Uuid::new_v4().to_string();
@@ -450,6 +453,7 @@ impl XSuperPropertiesManager {
         self.renderer_fallback = None;
         self.header_profile = HeaderProfile::new();
         self.use_local(None);
+        Ok(())
     }
 
     pub fn set_focused(&mut self, focused: bool) {
@@ -525,6 +529,13 @@ impl XSuperPropertiesManager {
                         continue;
                     }
                     if key == "os_sdk_version" && properties["os"] == "Linux" {
+                        continue;
+                    }
+                    if matches!(
+                        key.as_str(),
+                        "window_manager" | "display_server" | "distro" | "runtime_environment"
+                    ) && properties["os"] != "Linux"
+                    {
                         continue;
                     }
                     if !properties.as_object().unwrap().contains_key(key) {
@@ -622,6 +633,21 @@ impl XSuperPropertiesManager {
             self.degradation_reason = Some("cdp_session_getter_unavailable".into());
         }
         Ok(())
+    }
+
+    /// Diagnostics can preview a renderer before login without binding it to requests.
+    pub fn refresh_cdp(
+        &mut self,
+        snapshot: &cdp::Snapshot,
+    ) -> Result<RequestIdentity, &'static str> {
+        if self.account_id.is_none() {
+            let mut preview = self.clone();
+            preview.account_id = Some(snapshot.account_id.clone());
+            preview.accept_cdp(snapshot)?;
+            return Ok(preview.request_identity());
+        }
+        self.accept_cdp(snapshot)?;
+        Ok(self.request_identity())
     }
 
     pub fn set_from_remote_js(&mut self, build_number: u64) {
@@ -909,6 +935,17 @@ mod tests {
         serde_json::from_str(include_str!("../../tests/fixtures/super-properties.json")).unwrap()
     }
 
+    fn fixture_manager() -> XSuperPropertiesManager {
+        let mut manager = XSuperPropertiesManager::new();
+        let properties = fixture()["desktop"]["properties"].clone();
+        manager
+            .local_base
+            .as_object_mut()
+            .unwrap()
+            .retain(|key, _| properties.get(key).is_some());
+        manager
+    }
+
     fn snapshot(account: &str, renderer: &str) -> cdp::Snapshot {
         cdp::Snapshot {
             base64: fixture()["desktop"]["base64"].as_str().unwrap().into(),
@@ -952,7 +989,7 @@ mod tests {
             desktop["base64"].as_str().unwrap()
         );
         assert_eq!(desktop["properties"]["custom_text"], "中文测试");
-        let mut manager = XSuperPropertiesManager::new();
+        let mut manager = fixture_manager();
         manager.set_from_cdp(desktop["base64"].as_str().unwrap(), &desktop["properties"]);
         assert_eq!(manager.encoded, desktop["base64"].as_str().unwrap());
         assert_eq!(manager.properties["launch_signature"], Value::Null);
@@ -968,7 +1005,7 @@ mod tests {
         let mut properties = fixture()["desktop"]["properties"].clone();
         properties["future_field"] = serde_json::json!({"emoji":"🍃", "nested":null});
         let raw = BASE64.encode(serde_json::to_string_pretty(&properties).unwrap());
-        let mut manager = XSuperPropertiesManager::new();
+        let mut manager = fixture_manager();
         manager.set_from_cdp(&raw, &properties);
         assert_eq!(manager.encoded, raw);
         assert_eq!(manager.properties, properties);
@@ -982,7 +1019,7 @@ mod tests {
 
     #[test]
     fn cdp_account_renderer_failure_and_retry_boundaries() {
-        let mut manager = XSuperPropertiesManager::new().candidate("credential".into());
+        let mut manager = fixture_manager().candidate("credential".into());
         manager.authenticate("account-a".into());
         let local_launch = manager.local_base["client_launch_id"].clone();
         assert!(manager
@@ -1042,6 +1079,35 @@ mod tests {
     }
 
     #[test]
+    fn unauthenticated_cdp_refresh_is_a_read_only_preview() {
+        let mut manager = fixture_manager();
+        let original = manager.request_identity().base64;
+        let captured = snapshot("account-a", "renderer-1");
+        let preview = manager.refresh_cdp(&captured).unwrap();
+        assert_eq!(preview.base64, captured.base64);
+        assert!(manager.account_id.is_none());
+        assert_eq!(manager.request_identity().base64, original);
+        let mut candidate = manager.candidate("credential".into());
+        candidate.authenticate("account-b".into());
+        assert!(candidate.refresh_cdp(&captured).is_err());
+        assert_ne!(candidate.request_identity().base64, captured.base64);
+    }
+
+    #[test]
+    fn candidates_isolate_ad_sessions_across_credentials() {
+        let manager = fixture_manager();
+        let first = manager.candidate("credential-a".into());
+        let same = first.candidate("credential-a".into());
+        let second = first.candidate("credential-b".into());
+        assert_eq!(first.client_ad_session_id, same.client_ad_session_id);
+        assert_ne!(first.client_ad_session_id, second.client_ad_session_id);
+        assert_eq!(
+            first.local_base["client_launch_id"],
+            second.local_base["client_launch_id"]
+        );
+    }
+
+    #[test]
     fn linux_cdp_does_not_inherit_windows_sdk() {
         let mut manager = XSuperPropertiesManager::new();
         let mut properties = fixture()["desktop"]["properties"].clone();
@@ -1052,6 +1118,22 @@ mod tests {
             .shift_remove("os_sdk_version");
         manager.set_from_cdp(&encode(&properties), &properties);
         assert!(manager.properties.get("os_sdk_version").is_none());
+    }
+
+    #[test]
+    fn windows_cdp_does_not_inherit_linux_platform_fields() {
+        let mut manager = fixture_manager();
+        for key in [
+            "window_manager",
+            "display_server",
+            "distro",
+            "runtime_environment",
+        ] {
+            manager.local_base[key] = "synthetic-linux-value".into();
+        }
+        let captured = snapshot("account", "renderer");
+        manager.set_from_cdp(&captured.base64, &captured.decoded);
+        assert_eq!(manager.request_identity().base64, captured.base64);
     }
 
     #[test]
@@ -1072,7 +1154,7 @@ mod tests {
             candidate.request_identity().properties["client_app_state"],
             "unfocused"
         );
-        candidate.logout();
+        candidate.logout().unwrap();
         assert!(candidate.request_identity().heartbeat_session_id.is_none());
         assert_eq!(
             candidate.properties["client_launch_id"],
@@ -1099,7 +1181,7 @@ mod tests {
         assert_eq!(std::fs::read(&path).unwrap(), original);
         candidate.commit(&current);
         assert_ne!(std::fs::read(&path).unwrap(), original);
-        candidate.logout();
+        candidate.logout().unwrap();
         assert!(!path.exists());
         std::fs::remove_dir_all(dir).unwrap();
     }

@@ -23,12 +23,15 @@
         return null;
     };
     const analytics = find('properties', value => typeof value?.getSuperPropertiesBase64 === 'function' && typeof value?.getSuperProperties === 'function');
+    if (!analytics) throw Error('properties_module_unavailable');
     const user = find('user', value => typeof value?.getCurrentUser === 'function' && typeof value?.getUser === 'function');
     const accountId = user?.getCurrentUser()?.id;
     if (!accountId) throw Error('account_unavailable');
     // Decode the cache that the client uses for HTTP requests.
-    const base64 = analytics?.getSuperPropertiesBase64() ?? '';
-    const decoded = base64 ? JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(base64), char => char.charCodeAt(0)))) : {};
+    const base64 = analytics.getSuperPropertiesBase64();
+    if (typeof base64 !== 'string' || !base64) throw Error('properties_cache_unavailable');
+    const decoded = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(base64), char => char.charCodeAt(0))));
+    if (!decoded || Array.isArray(decoded) || typeof decoded !== 'object' || !Object.keys(decoded).length) throw Error('properties_cache_unavailable');
     const windowStore = find('window', value => typeof value?.isAppFocused === 'function');
     const focused = windowStore ? !!windowStore.isAppFocused() : document.hasFocus();
     let heartbeatKnown = false, heartbeatSessionId = null;

@@ -28,7 +28,7 @@ mod token_extractor;
 use discord_api::DiscordApiClient;
 use models::*;
 use once_cell::sync::Lazy;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 use super_properties::XSuperPropertiesManager;
 use tauri::ipc::Channel;
@@ -83,6 +83,7 @@ static APP_EXIT_CLEANUP: AppExitCleanupState = AppExitCleanupState::new();
 /// Global state: Discord API client
 struct AppState {
     client: Mutex<Option<DiscordApiClient>>,
+    authentication_generation: AuthenticationGeneration,
     authenticated_user: Mutex<Option<DiscordUser>>,
     quest_state: Mutex<Option<QuestState>>,
     manual_cdp_game: tokio::sync::Mutex<ManualCdpGameSessionState>,
@@ -91,6 +92,49 @@ struct AppState {
     /// Serializes quest startup, manual CDP startup, and active-work teardown
     /// so the two Discord-activity owners cannot both pass their idle checks.
     activity_gate: tokio::sync::Mutex<()>,
+}
+
+#[derive(Default)]
+struct AuthenticationGeneration(AtomicU64);
+
+impl AuthenticationGeneration {
+    fn capture(&self) -> u64 {
+        self.0.load(Ordering::Acquire)
+    }
+
+    fn invalidate(&self) {
+        self.0.fetch_add(1, Ordering::AcqRel);
+    }
+
+    fn ensure_current(&self, expected: u64) -> Result<(), String> {
+        if self.capture() != expected {
+            return Err("Login cancelled because the authenticated session changed".into());
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod authentication_generation_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn logout_invalidates_a_login_waiting_to_commit() {
+        let generation = std::sync::Arc::new(AuthenticationGeneration::default());
+        let gate = std::sync::Arc::new(tokio::sync::Mutex::new(()));
+        let expected = generation.capture();
+        let logout_guard = gate.lock().await;
+        let pending_generation = generation.clone();
+        let pending_gate = gate.clone();
+        let login = tokio::spawn(async move {
+            let _guard = pending_gate.lock().await;
+            pending_generation.ensure_current(expected)
+        });
+        generation.invalidate();
+        drop(logout_guard);
+        assert!(login.await.unwrap().is_err());
+        assert!(generation.ensure_current(generation.capture()).is_ok());
+    }
 }
 
 #[derive(Debug, Default)]
@@ -477,17 +521,30 @@ mod auth_progress_tests {
 
 /// Resolve fallback metadata in a candidate, never the authenticated context.
 async fn initialize_candidate_metadata(client: &DiscordApiClient) {
+    use crate::logger::{log, LogCategory, LogLevel};
     let (build, info) = tokio::join!(
         token_extractor::fetch_build_number_from_discord(),
         token_extractor::fetch_discord_client_info(),
     );
     let identity = client.candidate_identity();
     let mut manager = identity.lock().unwrap_or_else(|error| error.into_inner());
-    if let Ok(build) = build {
-        manager.set_from_remote_js(build);
+    match build {
+        Ok(build) => manager.set_from_remote_js(build),
+        Err(error) => log(
+            LogLevel::Warn,
+            LogCategory::Api,
+            "Could not refresh client build metadata; retaining fallback",
+            Some(&format!("{error:#}")),
+        ),
     }
-    if let Ok(info) = info {
-        manager.set_client_info(info.client_version(), info.native_build_number);
+    match info {
+        Ok(info) => manager.set_client_info(info.client_version(), info.native_build_number),
+        Err(error) => log(
+            LogLevel::Warn,
+            LogCategory::Api,
+            "Could not refresh client version metadata; retaining fallback",
+            Some(&format!("{error:#}")),
+        ),
     }
 }
 
@@ -498,6 +555,7 @@ async fn set_token(
     state: State<'_, AppState>,
     on_progress: Channel<AuthProgress>,
 ) -> Result<DiscordUser, String> {
+    let authentication_generation = state.authentication_generation.capture();
     let _ = on_progress.send(AuthProgress::phase(AuthProgressPhase::PreparingSession));
     let client =
         DiscordApiClient::new(token).map_err(|e| format!("Failed to create API client: {e:#}"))?;
@@ -517,6 +575,9 @@ async fn set_token(
     super_properties::cdp::prepare(&identity).await;
     let _gate = state.activity_gate.lock().await;
     state.game_idle.ensure_idle().await?;
+    state
+        .authentication_generation
+        .ensure_current(authentication_generation)?;
     client.commit_identity();
     *state.authenticated_user.lock().unwrap() = Some(user.clone());
     *state.client.lock().unwrap() = Some(client);
@@ -542,6 +603,7 @@ async fn auto_login_via_cdp(
     use crate::logger::{log, LogCategory, LogLevel};
     use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 
+    let authentication_generation = state.authentication_generation.capture();
     let cdp_port = port.unwrap_or(cdp_client::DEFAULT_CDP_PORT);
 
     log(
@@ -600,6 +662,9 @@ async fn auto_login_via_cdp(
     //    super properties.
     let _gate = state.activity_gate.lock().await;
     state.game_idle.ensure_idle().await?;
+    state
+        .authentication_generation
+        .ensure_current(authentication_generation)?;
     client.commit_identity();
     *state.authenticated_user.lock().unwrap() = Some(user.clone());
     *state.client.lock().unwrap() = Some(client);
@@ -621,12 +686,14 @@ async fn clear_authenticated_session(state: State<'_, AppState>) -> Result<(), S
     let _gate = state.activity_gate.lock().await;
     state.game_idle.ensure_idle().await?;
     stop_active_work_internal(&state).await?;
-    *state.client.lock().unwrap() = None;
-    *state.authenticated_user.lock().unwrap() = None;
+    state.authentication_generation.invalidate();
     SUPER_PROPERTIES_MANAGER
         .lock()
         .unwrap_or_else(|e| e.into_inner())
-        .logout();
+        .logout()
+        .map_err(|error| format!("Failed to clear persisted heartbeat session: {error}"))?;
+    *state.client.lock().unwrap() = None;
+    *state.authenticated_user.lock().unwrap() = None;
     Ok(())
 }
 
@@ -2145,6 +2212,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState {
             client: Mutex::new(None),
+            authentication_generation: AuthenticationGeneration::default(),
             authenticated_user: Mutex::new(None),
             quest_state: Mutex::new(None),
             manual_cdp_game: tokio::sync::Mutex::new(ManualCdpGameSessionState::default()),
@@ -2687,6 +2755,11 @@ async fn fetch_super_properties_cdp(
     port: Option<u16>,
 ) -> Result<cdp_client::CdpSuperProperties, String> {
     let port = port.unwrap_or(cdp_client::DEFAULT_CDP_PORT);
+    let key = SUPER_PROPERTIES_MANAGER
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .session_key
+        .clone();
     let snapshot = super_properties::cdp::refresh(port)
         .await
         .map_err(|error| error.to_string())?;
@@ -2694,7 +2767,10 @@ async fn fetch_super_properties_cdp(
         let mut manager = SUPER_PROPERTIES_MANAGER
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        manager.accept_cdp(&snapshot).map_err(str::to_string)?;
+        if manager.session_key != key {
+            return Err("Session changed while refreshing client properties".into());
+        }
+        manager.refresh_cdp(&snapshot).map_err(str::to_string)?;
         manager.cdp_port = Some(port);
     }
     Ok(cdp_client::CdpSuperProperties {
@@ -2760,7 +2836,23 @@ async fn auto_fetch_super_properties(cdp_port: Option<u16>) -> serde_json::Value
         manager.cdp_port = Some(port);
         manager.session_key.clone()
     };
-    super_properties::cdp::prepare(&SUPER_PROPERTIES_MANAGER).await;
+    let captured = super_properties::cdp::refresh(port).await;
+    {
+        let mut manager = SUPER_PROPERTIES_MANAGER
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if manager.session_key != key {
+            return serde_json::json!({"success":false,"mode":manager.get_mode().as_str(),"build_number":manager.get_build_number()});
+        }
+        match captured {
+            Ok(snapshot) => {
+                if let Ok(identity) = manager.refresh_cdp(&snapshot) {
+                    return serde_json::json!({"success":true,"mode":"cdp","build_number":identity.properties["client_build_number"]});
+                }
+            }
+            Err(_) => manager.use_local(Some("cdp_unavailable".into())),
+        }
+    }
     let needs_remote = SUPER_PROPERTIES_MANAGER
         .lock()
         .unwrap_or_else(|e| e.into_inner())

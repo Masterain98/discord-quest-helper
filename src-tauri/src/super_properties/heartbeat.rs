@@ -75,6 +75,10 @@ impl Heartbeat {
             });
         }
         self.session.as_mut().unwrap().last_used_timestamp = now;
+        self.persist(now);
+    }
+
+    fn persist(&mut self, now: u64) {
         if self.defer_writes
             || self
                 .last_save
@@ -92,9 +96,13 @@ impl Heartbeat {
         self.last_save = Some(now);
     }
 
-    pub fn commit(&mut self) {
+    pub fn commit(&mut self, now: u64) {
         self.defer_writes = false;
         self.last_save = None;
+        if self.id(now).is_some() {
+            self.persist(now);
+            return;
+        }
         // A changed credential invalidates the old persisted record even when
         // the newly committed client is currently unfocused.
         if let Some(path) = &self.path {
@@ -107,14 +115,22 @@ impl Heartbeat {
         }
     }
 
-    pub fn clear(&mut self) {
+    pub fn clear(&mut self) -> std::io::Result<()> {
+        if let Some(path) = &self.path {
+            match std::fs::remove_file(path) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => {
+                    self.storage_error = true;
+                    return Err(error);
+                }
+            }
+        }
         self.session = None;
         self.credential = None;
         self.last_save = None;
-        if let Some(path) = &self.path {
-            self.storage_error = std::fs::remove_file(path)
-                .is_err_and(|error| error.kind() != std::io::ErrorKind::NotFound);
-        }
+        self.storage_error = false;
+        Ok(())
     }
 }
 
@@ -165,7 +181,7 @@ mod tests {
         assert!(state.id(1000 + EXPIRES_MS).is_none());
         state.update(true, 1000 + EXPIRES_MS);
         assert_ne!(state.id(1000 + EXPIRES_MS), Some(first));
-        state.clear();
+        state.clear().unwrap();
         assert!(state.id(1000 + EXPIRES_MS).is_none());
     }
     #[test]
@@ -187,7 +203,52 @@ mod tests {
         assert!(restored.id(2000).is_none());
         state.session.as_mut().unwrap().version = 2;
         assert!(state.id(2000).is_none());
-        restored.clear();
+        restored.clear().unwrap();
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn commit_persists_deferred_session_without_renewing_activity() {
+        let dir = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
+        let path = dir.join("heartbeat.json");
+        let mut state = Heartbeat {
+            path: Some(path.clone()),
+            defer_writes: true,
+            ..Default::default()
+        };
+        state.bind("credential".into(), 1000);
+        state.update(true, 1000);
+        assert!(!path.exists());
+        state.update(false, 2000);
+        state.commit(2000);
+        let stored: Stored = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(stored.session.last_used_timestamp, 1000);
+        assert_eq!(Some(stored.session.uuid), state.id(2000));
+        let mut restored = Heartbeat {
+            path: Some(path),
+            ..Default::default()
+        };
+        restored.bind("credential".into(), 2000);
+        assert_eq!(restored.id(2000), state.id(2000));
+        state.clear().unwrap();
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn failed_clear_preserves_session_and_reports_storage_error() {
+        let dir = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut state = Heartbeat::default();
+        state.bind("credential".into(), 1000);
+        state.update(true, 1000);
+        let id = state.id(1000);
+        state.path = Some(dir.clone());
+        assert!(state.clear().is_err());
+        assert!(state.storage_error);
+        assert_eq!(state.id(1000), id);
+        assert_eq!(state.credential.as_deref(), Some("credential"));
+        std::fs::remove_dir_all(dir).unwrap();
+        state.clear().unwrap();
+        assert!(state.id(1000).is_none());
     }
 }

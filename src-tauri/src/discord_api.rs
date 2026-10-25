@@ -243,6 +243,7 @@ pub struct DiscordApiClient {
     token: String,
     identity: Arc<std::sync::Mutex<crate::super_properties::XSuperPropertiesManager>>,
     identity_key: String,
+    identity_committed: Arc<AtomicBool>,
     cached_user_id: Arc<ArcSwap<Option<String>>>,
     last_user_id_lookup_failure_ms: Arc<AtomicU64>,
     cached_app_catalog:
@@ -388,6 +389,7 @@ impl DiscordApiClient {
         Ok(Self {
             identity: Arc::new(std::sync::Mutex::new(identity)),
             identity_key,
+            identity_committed: Arc::new(AtomicBool::new(false)),
             client: Arc::new(ArcSwap::from_pointee(client)),
             proxy_fingerprint: Arc::new(AtomicU64::new(proxy_state.fingerprint)),
             proxy_has_proxy: Arc::new(AtomicBool::new(proxy_state.has_proxy)),
@@ -519,12 +521,7 @@ impl DiscordApiClient {
     fn identity_manager(
         &self,
     ) -> Arc<std::sync::Mutex<crate::super_properties::XSuperPropertiesManager>> {
-        if crate::SUPER_PROPERTIES_MANAGER
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .session_key
-            == self.identity_key
-        {
+        if self.identity_committed.load(Ordering::Acquire) {
             Arc::clone(&crate::SUPER_PROPERTIES_MANAGER)
         } else {
             Arc::clone(&self.identity)
@@ -542,17 +539,14 @@ impl DiscordApiClient {
             .unwrap_or_else(|e| e.into_inner());
         candidate.commit(&current);
         *current = candidate;
+        self.identity_committed.store(true, Ordering::Release);
     }
 
-    async fn prepare_identity(&self) -> crate::super_properties::RequestIdentity {
-        crate::super_properties::cdp::prepare_for(&self.identity_manager(), &self.identity_key)
+    async fn prepare_identity(&self) -> Result<crate::super_properties::RequestIdentity> {
+        let manager = self.identity_manager();
+        crate::super_properties::cdp::prepare_for(&manager, &self.identity_key)
             .await
-            .unwrap_or_else(|| {
-                self.identity
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .request_identity()
-            })
+            .context("Authenticated session changed while preparing request")
     }
 
     fn quest_referer_for_url(url: &str) -> Option<&'static str> {
@@ -572,9 +566,9 @@ impl DiscordApiClient {
     }
 
     /// Resolve dynamic state once, then use the same snapshot throughout a request.
-    async fn request(&self, method: Method, url: &str) -> RequestBuilder {
-        let identity = self.prepare_identity().await;
-        self.request_with_identity(method, url, &identity)
+    async fn request(&self, method: Method, url: &str) -> Result<RequestBuilder> {
+        let identity = self.prepare_identity().await?;
+        Ok(self.request_with_identity(method, url, &identity))
     }
 
     fn request_with_identity(
@@ -593,7 +587,7 @@ impl DiscordApiClient {
             .request(method, url)
             .header("x-super-properties", &identity.base64);
 
-        if let Some(value) = Self::header_value(&user_agent, "User-Agent") {
+        if let Some(value) = Self::header_value(user_agent, "User-Agent") {
             request = request.header(USER_AGENT, value);
         }
         if let Some(value) = Self::header_value(&header_profile.timezone, "x-discord-timezone") {
@@ -682,7 +676,7 @@ impl DiscordApiClient {
 
         let response = self
             .request(Method::GET, &url)
-            .await
+            .await?
             .send_reconnecting(self)
             .await
             .map_err(|e| {
@@ -750,10 +744,13 @@ impl DiscordApiClient {
             return None;
         }
         let url = format!("{}/users/@me", DISCORD_API_BASE);
-        match tokio::time::timeout(
-            ENRICHMENT_LOOKUP_TIMEOUT,
-            self.request(Method::GET, &url).await.send(),
-        )
+        match tokio::time::timeout(ENRICHMENT_LOOKUP_TIMEOUT, async {
+            self.request(Method::GET, &url)
+                .await?
+                .send()
+                .await
+                .map_err(anyhow::Error::from)
+        })
         .await
         {
             Ok(Ok(response)) if response.status().is_success() => {
@@ -861,10 +858,13 @@ impl DiscordApiClient {
             "{}/applications/public?application_ids={}",
             DISCORD_API_BASE, application_id
         );
-        match tokio::time::timeout(
-            ENRICHMENT_LOOKUP_TIMEOUT,
-            self.request(Method::GET, &url).await.send(),
-        )
+        match tokio::time::timeout(ENRICHMENT_LOOKUP_TIMEOUT, async {
+            self.request(Method::GET, &url)
+                .await?
+                .send()
+                .await
+                .map_err(anyhow::Error::from)
+        })
         .await
         {
             Ok(Ok(response)) if response.status().is_success() => {
@@ -1016,7 +1016,7 @@ impl DiscordApiClient {
 
         let response = self
             .request(Method::GET, &url)
-            .await
+            .await?
             .send_reconnecting(self)
             .await
             .context("Request for quest list failed")?;
@@ -1069,7 +1069,7 @@ impl DiscordApiClient {
     }
 
     pub async fn get_quest_decision_debug(&self, placement: u64) -> Result<serde_json::Value> {
-        let identity = self.prepare_identity().await;
+        let identity = self.prepare_identity().await?;
 
         let response = self
             .decision_request("decision", placement, None, &identity)?
@@ -1095,7 +1095,7 @@ impl DiscordApiClient {
         placement: u64,
         num: u64,
     ) -> Result<serde_json::Value> {
-        let identity = self.prepare_identity().await;
+        let identity = self.prepare_identity().await?;
 
         let response = self
             .decision_request("get-decisions", placement, Some(num), &identity)?
@@ -1120,7 +1120,7 @@ impl DiscordApiClient {
         let url = format!("{}/users/@me/badges", DISCORD_API_BASE);
         let response = self
             .request(Method::GET, &url)
-            .await
+            .await?
             .send_reconnecting(self)
             .await
             .context("Request for user badges failed")?;
@@ -1136,7 +1136,7 @@ impl DiscordApiClient {
 
         let response = self
             .request(Method::GET, &url)
-            .await
+            .await?
             .send_reconnecting(self)
             .await
             .context("Request for virtual currency balance failed")?;
@@ -1161,7 +1161,7 @@ impl DiscordApiClient {
         );
         let response = self
             .request(Method::GET, &url)
-            .await
+            .await?
             .send_reconnecting(self)
             .await
             .context("Request for virtual currency total redeemed failed")?;
@@ -1191,7 +1191,7 @@ impl DiscordApiClient {
 
         let response = self
             .request(Method::GET, &url)
-            .await
+            .await?
             .send_reconnecting(self)
             .await
             .context("Request for billing subscriptions failed")?;
@@ -1211,7 +1211,7 @@ impl DiscordApiClient {
 
         let response = self
             .request(Method::GET, &url)
-            .await
+            .await?
             .send_reconnecting(self)
             .await
             .context("Request for program rewards failed")?;
@@ -1240,7 +1240,7 @@ impl DiscordApiClient {
 
         let response = self
             .request(Method::POST, &url)
-            .await
+            .await?
             .json(&payload)
             .send_reconnecting(self)
             .await
@@ -1270,7 +1270,7 @@ impl DiscordApiClient {
 
         let response = self
             .request(Method::POST, &url)
-            .await
+            .await?
             .json(&payload)
             .send_reconnecting(self)
             .await
@@ -1302,7 +1302,7 @@ impl DiscordApiClient {
 
         let response = self
             .request(Method::POST, &url)
-            .await
+            .await?
             .json(&payload)
             .send_reconnecting(self)
             .await
@@ -1368,7 +1368,7 @@ impl DiscordApiClient {
 
         let response = self
             .request(Method::POST, &url)
-            .await
+            .await?
             .json(&payload)
             .send_reconnecting(self)
             .await
@@ -1408,7 +1408,7 @@ impl DiscordApiClient {
 
         let response = self
             .request(Method::POST, &url)
-            .await
+            .await?
             .json(&payload)
             .send_reconnecting(self)
             .await
@@ -1453,7 +1453,7 @@ impl DiscordApiClient {
 
         let response = self
             .request(Method::POST, &url)
-            .await
+            .await?
             .json(&payload)
             .send_reconnecting(self)
             .await
@@ -1471,7 +1471,7 @@ impl DiscordApiClient {
         let minimal_payload = serde_json::json!({ "location": 11 });
         let fallback_response = self
             .request(Method::POST, &url)
-            .await
+            .await?
             .json(&minimal_payload)
             .send_reconnecting(self)
             .await
@@ -1502,8 +1502,8 @@ impl DiscordApiClient {
         let games_url = format!("{}/applications/detectable", DISCORD_API_BASE);
         let apps_url = format!("{}/applications/non-games/detectable", DISCORD_API_BASE);
         fetch_detectable_catalog(
-            self.request(Method::GET, &games_url).await,
-            self.request(Method::GET, &apps_url).await,
+            self.request(Method::GET, &games_url).await?,
+            self.request(Method::GET, &apps_url).await?,
             |request| request.send_reconnecting(self),
         )
         .await
@@ -2109,6 +2109,7 @@ mod tests {
         let request = client
             .request(Method::GET, "https://discord.com/api/v9/quests/@me")
             .await
+            .unwrap()
             .build()
             .unwrap();
 
@@ -2143,9 +2144,14 @@ mod tests {
             manager.set_focused(true);
             manager.authenticate("synthetic-account".into());
         }
-        let snapshot = client.prepare_identity().await;
+        let snapshot = client.prepare_identity().await.unwrap();
         // A later logout/source change must not alter an already prepared request.
-        client.candidate_identity().lock().unwrap().logout();
+        client
+            .candidate_identity()
+            .lock()
+            .unwrap()
+            .logout()
+            .unwrap();
         for (endpoint, num) in [("decision", None), ("get-decisions", Some(2))] {
             let request = client
                 .decision_request(endpoint, 1, num, &snapshot)
@@ -2170,7 +2176,12 @@ mod tests {
                 properties["browser_user_agent"].as_str().unwrap()
             );
         }
-        let anonymous = client.prepare_identity().await;
+        assert!(client.prepare_identity().await.is_err());
+        let anonymous = DiscordApiClient::new("anonymous-candidate".into())
+            .unwrap()
+            .prepare_identity()
+            .await
+            .unwrap();
         let request = client
             .decision_request("decision", 1, None, &anonymous)
             .unwrap()
@@ -2195,13 +2206,28 @@ mod tests {
         assert!(first
             .prepare_identity()
             .await
+            .unwrap()
             .heartbeat_session_id
             .is_some());
         assert!(second
             .prepare_identity()
             .await
+            .unwrap()
             .heartbeat_session_id
             .is_none());
+    }
+
+    #[tokio::test]
+    async fn replaced_session_cannot_fall_back_to_the_committed_candidate() {
+        let client = DiscordApiClient::new("retired-token".into()).unwrap();
+        assert!(client.prepare_identity().await.is_ok());
+        // A committed client must use the live manager even after its key changes.
+        client.identity_committed.store(true, Ordering::Release);
+        assert!(client.prepare_identity().await.is_err());
+        assert!(client
+            .request(Method::GET, "http://127.0.0.1:1/")
+            .await
+            .is_err());
     }
 
     #[tokio::test]
@@ -2222,6 +2248,7 @@ mod tests {
         let request = client
             .request(Method::GET, "https://discord.com/api/v9/users/@me")
             .await
+            .unwrap()
             .build()
             .unwrap();
         assert_eq!(

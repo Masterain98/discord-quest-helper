@@ -4,12 +4,12 @@ import fs from 'node:fs/promises'
 import vm from 'node:vm'
 
 const source = await fs.readFile(new URL('../src-tauri/src/super_properties/cdp_snapshot.js', import.meta.url), 'utf8')
-function read({ properties = {}, heartbeat = null, known = true, focused = false, globals = {}, ids = {} } = {}) {
+function read({ properties = {client_build_number:123456}, heartbeat = null, known = true, focused = false, globals = {}, ids = {}, analyticsAvailable = true, encoded } = {}) {
   let writeCalls = 0
-  const api = {getSuperPropertiesBase64: () => Buffer.from(JSON.stringify(properties)).toString('base64'), getSuperProperties: () => properties, extendSuperProperties: () => writeCalls++}
+  const api = {getSuperPropertiesBase64: () => encoded ?? Buffer.from(JSON.stringify(properties)).toString('base64'), getSuperProperties: () => properties, extendSuperProperties: () => writeCalls++}
   const req = {
     c: {
-      a: {exports:{default:api}},
+      a: {exports:{default:analyticsAvailable ? api : {}}},
       u: {exports:{default:{getCurrentUser:()=>({id:'synthetic-account'}),getUser:()=>null}}},
       w: {exports:{A:{isAppFocused:()=>focused}}},
       h: {exports:known ? {Vc:()=>heartbeat, Ht:()=>{writeCalls++}} : {}},
@@ -70,4 +70,12 @@ test('uses cached module IDs and rediscovers invalidated IDs without relying on 
 test('generation guard rejects renderer reloads',()=>{
   const script=source.replace('__GENERATION__','"previous-renderer"').replace('__MODULE_IDS__','{}')
   assert.throws(()=>new vm.Script(script).runInNewContext({performance:{timeOrigin:1}}),/renderer_changed/)
+})
+
+test('rejects missing properties modules and unavailable cached properties',()=>{
+  assert.throws(()=>read({analyticsAvailable:false}),/properties_module_unavailable/)
+  assert.throws(()=>read({encoded:''}),/properties_cache_unavailable/)
+  for (const properties of [{},null,[]]) {
+    assert.throws(()=>read({properties}),/properties_cache_unavailable/)
+  }
 })
