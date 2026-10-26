@@ -162,7 +162,8 @@
     "hide_progress": "Masquer la fenêtre de progression",
     "up_next": "Suivant",
     "submitted": "Soumis",
-    "pending": "Local en attente"
+    "pending": "Local en attente",
+    "keep_alive_active": "Le jeu reste connecté — {time} restant"
   },
   "queue": {
     "remove": "Retirer {name} de la file",
@@ -352,7 +353,12 @@
     "cdp_dialog_title_disconnected_vesktop": "Redémarrer Vesktop pour activer CDP ?",
     "cdp_dialog_desc_disconnected_vesktop": "Vesktop est en cours d'exécution mais n'est pas connecté à CDP. Vesktop doit être redémarré avec le port de débogage CDP activé.",
     "desktop_client": "Client de bureau",
-    "desktop_client_desc": "Lorsque Discord et Vesktop sont installés, ce choix ne concerne que la connexion CDP. L'extraction locale des jetons utilise toujours le client Discord officiel."
+    "desktop_client_desc": "Lorsque Discord et Vesktop sont installés, ce choix ne concerne que la connexion CDP. L'extraction locale des jetons utilise toujours le client Discord officiel.",
+    "keep_alive_after_quest": "Connexion après Quest",
+    "keep_alive_enabled": "Garder le jeu connecté après la fin",
+    "keep_alive_desc": "Après la fin d'une Quest de jeu simulée, le jeu reste connecté encore un moment avant d'être fermé. La file n'avance qu'après cette attente.",
+    "keep_alive_duration": "Durée de connexion",
+    "keep_alive_simulate_only": "S'applique uniquement aux Quests simulées par processus ; les Quests CDP coupent leur présence dès qu'elles se terminent."
   },
   "version": {
     "update_available": "Une nouvelle version est disponible !",
@@ -599,7 +605,18 @@
     "search_limit": "{count} éléments sur {total}. Affinez avec la recherche.",
     "catalog_error": "Impossible de charger le catalogue. Essayez de l’actualiser.",
     "skip_occurrence": "Ignorer cette occurrence",
-    "persistence_error": "Impossible d’enregistrer les paramètres du mode inactif. Les modifications peuvent être perdues après un redémarrage."
+    "persistence_error": "Impossible d’enregistrer les paramètres du mode inactif. Les modifications peuvent être perdues après un redémarrage.",
+    "duration_fixed": "Fixe",
+    "duration_random": "Aléatoire",
+    "duration_min": "Min",
+    "duration_max": "Max",
+    "unit_minutes": "min",
+    "unit_seconds": "s",
+    "crash_simulation": "Simulation de plantage",
+    "crash_simulation_desc": "Ferme aléatoirement le jeu en cours pendant la rotation puis le rouvre après un court délai, simulant une déconnexion.",
+    "crash_after": "Plantage après",
+    "reopen_delay": "Délai de réouverture",
+    "crash_simulation_error": "Le délai de plantage doit être un entier positif et le délai de réouverture, nul ou positif."
   },
   "desktop_clients": {
     "ask_each_time": "Me demander à chaque fois",

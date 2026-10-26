@@ -162,7 +162,8 @@
     "hide_progress": "Sembunyikan jendela progres",
     "up_next": "Selanjutnya",
     "submitted": "Dikirim",
-    "pending": "Lokal Tertunda"
+    "pending": "Lokal Tertunda",
+    "keep_alive_active": "Menjaga game tetap terhubung — sisa {time}"
   },
   "queue": {
     "remove": "Hapus {name} dari antrean",
@@ -352,7 +353,12 @@
     "cdp_dialog_title_disconnected_vesktop": "Mulai ulang Vesktop untuk mengaktifkan CDP?",
     "cdp_dialog_desc_disconnected_vesktop": "Vesktop sedang berjalan tetapi belum terhubung ke CDP. Vesktop perlu dimulai ulang dengan port debug CDP diaktifkan.",
     "desktop_client": "Klien desktop",
-    "desktop_client_desc": "Saat Discord dan Vesktop terpasang, pilihan ini hanya memengaruhi login CDP. Ekstraksi token lokal selalu menggunakan klien Discord resmi."
+    "desktop_client_desc": "Saat Discord dan Vesktop terpasang, pilihan ini hanya memengaruhi login CDP. Ekstraksi token lokal selalu menggunakan klien Discord resmi.",
+    "keep_alive_after_quest": "Koneksi pasca-Quest",
+    "keep_alive_enabled": "Tetap terhubung setelah Quest selesai",
+    "keep_alive_desc": "Setelah Quest game tersimulasi selesai, game tetap terhubung selama beberapa waktu sebelum ditutup. Antrean berlanjut hanya setelah jeda ini.",
+    "keep_alive_duration": "Durasi terhubung",
+    "keep_alive_simulate_only": "Hanya berlaku untuk Quest simulasi proses; Quest CDP memutus presence begitu selesai."
   },
   "version": {
     "update_available": "Versi baru telah tersedia!",
@@ -599,7 +605,18 @@
     "search_limit": "Menampilkan {count} dari {total}. Cari untuk mempersempit hasil.",
     "catalog_error": "Katalog gagal dimuat. Coba muat ulang.",
     "skip_occurrence": "Lewati kali ini",
-    "persistence_error": "Pengaturan idle tidak dapat disimpan. Perubahan mungkin hilang setelah memulai ulang."
+    "persistence_error": "Pengaturan idle tidak dapat disimpan. Perubahan mungkin hilang setelah memulai ulang.",
+    "duration_fixed": "Tetap",
+    "duration_random": "Acak",
+    "duration_min": "Min",
+    "duration_max": "Maks",
+    "unit_minutes": "mnt",
+    "unit_seconds": "dtk",
+    "crash_simulation": "Simulasi crash",
+    "crash_simulation_desc": "Menutup game saat ini secara acak selama rotasi lalu membukanya kembali setelah jeda singkat untuk mensimulasikan terputus.",
+    "crash_after": "Crash setelah",
+    "reopen_delay": "Jeda buka ulang",
+    "crash_simulation_error": "Jeda crash harus berupa bilangan bulat positif dan jeda buka ulang nol atau positif."
   },
   "desktop_clients": {
     "ask_each_time": "Tanya saya setiap kali",

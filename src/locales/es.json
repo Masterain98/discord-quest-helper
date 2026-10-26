@@ -162,7 +162,8 @@
     "hide_progress": "Ocultar ventana de progreso",
     "up_next": "Siguiente",
     "submitted": "Enviado",
-    "pending": "Pendiente"
+    "pending": "Pendiente",
+    "keep_alive_active": "Manteniendo el juego conectado — {time} restante"
   },
   "queue": {
     "remove": "Quitar {name} de la cola",
@@ -352,7 +353,12 @@
     "cdp_dialog_title_disconnected_vesktop": "¿Reiniciar Vesktop para activar CDP?",
     "cdp_dialog_desc_disconnected_vesktop": "Vesktop está ejecutándose, pero no está conectado a CDP. Tenemos que reiniciarlo con el puerto de depuración CDP activado.",
     "desktop_client": "Cliente de escritorio",
-    "desktop_client_desc": "Cuando Discord y Vesktop están instalados, esta opción solo afecta al inicio de sesión mediante CDP. La extracción local de tokens siempre usa el cliente oficial de Discord."
+    "desktop_client_desc": "Cuando Discord y Vesktop están instalados, esta opción solo afecta al inicio de sesión mediante CDP. La extracción local de tokens siempre usa el cliente oficial de Discord.",
+    "keep_alive_after_quest": "Conexión tras misión",
+    "keep_alive_enabled": "Mantener el juego conectado tras completar",
+    "keep_alive_desc": "Tras completar una misión de juego simulado, el juego permanece conectado un rato antes de cerrarse. La cola avanza solo después de esta espera.",
+    "keep_alive_duration": "Tiempo conectado",
+    "keep_alive_simulate_only": "Se aplica solo a misiones con juego simulado; las misiones CDP cortan su presencia en cuanto se completan."
   },
   "version": {
     "update_available": "¡Nueva versión disponible!",
@@ -599,7 +605,18 @@
     "search_limit": "Se muestran {count} de {total}. Busca para filtrar.",
     "catalog_error": "No se pudo cargar el catálogo. Intenta actualizarlo.",
     "skip_occurrence": "Omitir esta vez",
-    "persistence_error": "No se pudo guardar la configuración de inactividad. Los cambios pueden perderse al reiniciar."
+    "persistence_error": "No se pudo guardar la configuración de inactividad. Los cambios pueden perderse al reiniciar.",
+    "duration_fixed": "Fijo",
+    "duration_random": "Aleatorio",
+    "duration_min": "Mín",
+    "duration_max": "Máx",
+    "unit_minutes": "min",
+    "unit_seconds": "s",
+    "crash_simulation": "Simular fallo",
+    "crash_simulation_desc": "Cierra aleatoriamente el juego actual durante la rotación y lo vuelve a abrir tras una breve pausa, simulando una desconexión.",
+    "crash_after": "Fallo tras",
+    "reopen_delay": "Retardo de reapertura",
+    "crash_simulation_error": "El retardo del fallo debe ser un entero positivo y el de reapertura, cero o positivo."
   },
   "desktop_clients": {
     "ask_each_time": "Preguntarme cada vez",

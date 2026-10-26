@@ -164,7 +164,8 @@
     "hide_progress": "Hide task progress",
     "up_next": "Up Next",
     "submitted": "Submitted",
-    "pending": "Local Pending"
+    "pending": "Local Pending",
+    "keep_alive_active": "Keeping the game connected — {time} remaining"
   },
   "queue": {
     "remove": "Remove {name} from queue",
@@ -354,7 +355,12 @@
     "debug_already_unlocked": "Developer mode enabled",
     "disable_developer_mode": "Disable Developer Mode",
     "disable_debug_confirm_title": "Disable Developer Mode?",
-    "disable_debug_confirm_desc": "The Debug tab and developer tools will be hidden. You can re-enable it by tapping the version number 7 times."
+    "disable_debug_confirm_desc": "The Debug tab and developer tools will be hidden. You can re-enable it by tapping the version number 7 times.",
+    "keep_alive_after_quest": "Post-quest connection",
+    "keep_alive_enabled": "Keep the game connected after completion",
+    "keep_alive_desc": "After a simulated game quest completes, keep the game connected for a while before closing it. The queue advances only after this wait.",
+    "keep_alive_duration": "Connected time",
+    "keep_alive_simulate_only": "Only applies to process-simulated quests; CDP quests drop their presence as soon as they complete."
   },
   "version": {
     "update_available": "A new version is available!",
@@ -601,7 +607,18 @@
     "search_limit": "Showing {count} of {total}. Search to narrow the results.",
     "catalog_error": "Could not load the catalog. Try refreshing.",
     "skip_occurrence": "Skip this occurrence",
-    "persistence_error": "Idle settings could not be saved. Changes may be lost after restarting."
+    "persistence_error": "Idle settings could not be saved. Changes may be lost after restarting.",
+    "duration_fixed": "Fixed",
+    "duration_random": "Random",
+    "duration_min": "Min",
+    "duration_max": "Max",
+    "unit_minutes": "min",
+    "unit_seconds": "s",
+    "crash_simulation": "Crash simulation",
+    "crash_simulation_desc": "Randomly close the current game during rotation and reopen it after a short delay, simulating a disconnect.",
+    "crash_after": "Crash after",
+    "reopen_delay": "Reopen delay",
+    "crash_simulation_error": "Crash delay must be a positive whole number and the reopen delay zero or positive."
   },
   "desktop_clients": {
     "ask_each_time": "Ask me every time",

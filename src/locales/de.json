@@ -162,7 +162,8 @@
     "hide_progress": "Fortschrittsfenster ausblenden",
     "up_next": "Als nächstes",
     "submitted": "Eingereicht",
-    "pending": "Lokal ausstehend"
+    "pending": "Lokal ausstehend",
+    "keep_alive_active": "Spiel bleibt verbunden — noch {time}"
   },
   "queue": {
     "remove": "{name} aus der Warteschlange entfernen",
@@ -352,7 +353,12 @@
     "cdp_dialog_title_disconnected_vesktop": "Vesktop neu starten, um CDP zu aktivieren?",
     "cdp_dialog_desc_disconnected_vesktop": "Vesktop läuft, ist aber nicht mit CDP verbunden. Vesktop muss mit aktiviertem CDP-Debug-Port neu gestartet werden.",
     "desktop_client": "Desktop-Client",
-    "desktop_client_desc": "Wenn Discord und Vesktop installiert sind, betrifft diese Auswahl nur die CDP-Anmeldung. Die lokale Token-Extraktion verwendet weiterhin den offiziellen Discord-Client."
+    "desktop_client_desc": "Wenn Discord und Vesktop installiert sind, betrifft diese Auswahl nur die CDP-Anmeldung. Die lokale Token-Extraktion verwendet weiterhin den offiziellen Discord-Client.",
+    "keep_alive_after_quest": "Verbindung nach der Quest",
+    "keep_alive_enabled": "Spiel nach Abschluss verbunden lassen",
+    "keep_alive_desc": "Nach Abschluss einer simulierten Spielquest bleibt das Spiel noch eine Weile verbunden, bevor es geschlossen wird. Die Warteschlange läuft erst nach dieser Wartezeit weiter.",
+    "keep_alive_duration": "Verbundene Zeit",
+    "keep_alive_simulate_only": "Gilt nur für prozesssimulierte Quests; CDP-Quests beenden die Präsenz sofort bei Abschluss."
   },
   "version": {
     "update_available": "Eine neue Version ist verfügbar!",
@@ -599,7 +605,18 @@
     "search_limit": "{count} von {total} angezeigt. Suche zum Eingrenzen.",
     "catalog_error": "Katalog konnte nicht geladen werden. Bitte aktualisieren.",
     "skip_occurrence": "Diesen Durchlauf überspringen",
-    "persistence_error": "Die Leerlaufeinstellungen konnten nicht gespeichert werden. Änderungen können nach einem Neustart verloren gehen."
+    "persistence_error": "Die Leerlaufeinstellungen konnten nicht gespeichert werden. Änderungen können nach einem Neustart verloren gehen.",
+    "duration_fixed": "Fest",
+    "duration_random": "Zufällig",
+    "duration_min": "Min",
+    "duration_max": "Max",
+    "unit_minutes": "Min.",
+    "unit_seconds": "Sek.",
+    "crash_simulation": "Absturz simulieren",
+    "crash_simulation_desc": "Schließt das aktuelle Spiel während der Rotation zufällig und öffnet es nach kurzer Verzögerung wieder, um eine Trennung zu simulieren.",
+    "crash_after": "Absturz nach",
+    "reopen_delay": "Verzögerung beim Neustart",
+    "crash_simulation_error": "Die Absturzverzögerung muss eine positive ganze Zahl sein und die Neustartverzögerung null oder positiv."
   },
   "desktop_clients": {
     "ask_each_time": "Jedes Mal fragen",
