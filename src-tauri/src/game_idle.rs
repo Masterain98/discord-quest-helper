@@ -293,6 +293,19 @@ struct IdleShared {
 }
 
 impl IdleShared {
+    fn record_relaunch_failure(
+        &mut self,
+        error: StartSimulationError,
+        cancelled: bool,
+    ) -> Result<(), String> {
+        if error.running.is_none() && cancelled {
+            return Ok(());
+        }
+        // Retain a failed rollback's process for the manager's Stop cleanup.
+        self.running = error.running;
+        Err(error.message)
+    }
+
     fn refresh_status_lists(&mut self) {
         self.status.recent = self.recent.iter().cloned().collect();
         self.status.upcoming = self.upcoming.iter().cloned().collect();
@@ -861,21 +874,19 @@ async fn run_session(
                             emit_status(&app, &state.status);
                         }
                         Err(error) => {
-                            if *cancel.borrow() {
-                                // A stop that interrupted the relaunch backoff
-                                // is a normal stop, not a failed relaunch:
-                                // fall through to the cycle-end cleanup.
-                                cancelled = true;
-                                crash_window = closed_at.elapsed();
-                            } else {
-                                // Keep ownership of any orphaned relaunch for
-                                // the Stop path, then finalize history: the
-                                // session is over, and leaving the segment
-                                // open would keep accruing wall-clock time.
-                                shared.lock().await.running = error.running;
+                            let relaunch_result = {
+                                let cancelled = *cancel.borrow();
+                                shared
+                                    .lock()
+                                    .await
+                                    .record_relaunch_failure(error, cancelled)
+                            };
+                            if let Err(error) = relaunch_result {
+                                // Finalize history now that the play cycle has
+                                // ended, retaining any process for Stop cleanup.
                                 let mut detail = format!(
                                     "Failed to relaunch {} after the simulated crash: {}",
-                                    candidate.name, error.message
+                                    candidate.name, error
                                 );
                                 if let Err(finish_error) =
                                     history.finish(&history_path, Some(&app)).await
@@ -886,6 +897,12 @@ async fn run_session(
                                 }
                                 set_error(&shared, &app, detail).await;
                                 return;
+                            } else {
+                                // A stop that interrupted the relaunch backoff
+                                // is a normal stop, not a failed relaunch:
+                                // fall through to the cycle-end cleanup.
+                                cancelled = true;
+                                crash_window = closed_at.elapsed();
                             }
                         }
                     }
@@ -1316,6 +1333,48 @@ mod tests {
         assert_eq!(queue.all.len(), 2);
         assert_eq!(queue.status.selected_app_ids, vec!["0", "1"]);
         assert!(queue.removed_this_cycle.is_empty());
+    }
+
+    #[test]
+    fn cancelled_relaunch_retains_failed_rollback_process_for_stop() {
+        let mut shared = manual_queue(1);
+        let error = StartSimulationError {
+            message: "RPC connection failed; process cleanup also failed".into(),
+            running: Some(RunningSimulation::Process {
+                executable_name: "orphaned.exe".into(),
+            }),
+        };
+
+        let result = shared.record_relaunch_failure(error, true);
+
+        assert_eq!(
+            result,
+            Err("RPC connection failed; process cleanup also failed".into())
+        );
+        assert!(matches!(
+            shared.running.as_ref(),
+            Some(RunningSimulation::Process { executable_name }) if executable_name == "orphaned.exe"
+        ));
+    }
+
+    #[test]
+    fn cancelled_relaunch_without_a_process_remains_a_normal_stop() {
+        let mut shared = manual_queue(1);
+
+        let result = shared.record_relaunch_failure("Start failed".to_string().into(), true);
+
+        assert_eq!(result, Ok(()));
+        assert!(shared.running.is_none());
+    }
+
+    #[test]
+    fn uncancelled_relaunch_failure_keeps_its_error() {
+        let mut shared = manual_queue(1);
+
+        let result = shared.record_relaunch_failure("Start failed".to_string().into(), false);
+
+        assert_eq!(result, Err("Start failed".into()));
+        assert!(shared.running.is_none());
     }
 
     #[test]
