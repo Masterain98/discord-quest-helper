@@ -95,6 +95,36 @@ impl GameIdleDuration {
     }
 }
 
+/// Optional simulated disconnect during a game's play window: close the game,
+/// wait, relaunch it, and keep the same play cycle going.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct GameIdleCrashConfig {
+    pub enabled: bool,
+    pub crash_after_minutes: GameIdleDuration,
+    pub reopen_delay_seconds: GameIdleDuration,
+}
+
+impl Default for GameIdleCrashConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            crash_after_minutes: GameIdleDuration {
+                mode: GameIdleDurationMode::Random,
+                fixed: 10,
+                min: 5,
+                max: 15,
+            },
+            reopen_delay_seconds: GameIdleDuration {
+                mode: GameIdleDurationMode::Random,
+                fixed: 45,
+                min: 30,
+                max: 60,
+            },
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct GameIdleConfig {
@@ -104,6 +134,7 @@ pub struct GameIdleConfig {
     pub selected_app_ids: Vec<String>,
     pub play_duration: GameIdleDuration,
     pub rest_duration: GameIdleDuration,
+    pub crash_simulation: GameIdleCrashConfig,
     pub cdp_port: u16,
     pub simulation_path: String,
 }
@@ -117,6 +148,7 @@ impl Default for GameIdleConfig {
             selected_app_ids: Vec::new(),
             play_duration: GameIdleDuration::default(),
             rest_duration: GameIdleDuration::default(),
+            crash_simulation: GameIdleCrashConfig::default(),
             cdp_port: 0,
             simulation_path: String::new(),
         }
@@ -127,6 +159,14 @@ impl GameIdleConfig {
     pub fn validate(&self) -> Result<(), String> {
         self.play_duration.validate("Game simulation duration", 1)?;
         self.rest_duration.validate("Rest duration", 0)?;
+        if self.crash_simulation.enabled {
+            self.crash_simulation
+                .crash_after_minutes
+                .validate("Crash delay", 1)?;
+            self.crash_simulation
+                .reopen_delay_seconds
+                .validate("Reopen delay", 0)?;
+        }
         if self.mode == GameIdleMode::Cdp && self.cdp_port == 0 {
             return Err("CDP port must be between 1 and 65535".to_string());
         }
@@ -177,6 +217,7 @@ pub struct GameIdleStatus {
     pub rest_minutes: u32,
     pub play_duration: GameIdleDuration,
     pub rest_duration: GameIdleDuration,
+    pub crash_simulation: GameIdleCrashConfig,
     pub current: Option<GameIdleItem>,
     pub recent: Vec<GameIdleItem>,
     pub upcoming: Vec<GameIdleItem>,
@@ -203,6 +244,7 @@ impl GameIdleStatus {
             rest_minutes: config.rest_duration.resolve(),
             play_duration: config.play_duration,
             rest_duration: config.rest_duration,
+            crash_simulation: config.crash_simulation,
             current: None,
             recent: Vec::new(),
             upcoming: Vec::new(),
@@ -553,6 +595,55 @@ impl GameIdleManager {
     }
 }
 
+/// Sleeps for `duration` unless the session is cancelled; returns true when a
+/// stop was observed.
+async fn wait_cancellable(
+    duration: Duration,
+    cancel: &mut tokio::sync::watch::Receiver<bool>,
+) -> bool {
+    tokio::select! {
+        _ = tokio::time::sleep(duration) => false,
+        _ = cancel.changed() => true,
+    }
+}
+
+/// Runs at most two start attempts with a 2s backoff. An error carrying
+/// `running` means the rollback inside `start_simulation` also failed and the
+/// caller must keep ownership of the orphaned process for the Stop path.
+async fn start_simulation_with_retry(
+    candidate: &GameIdleItem,
+    config: &GameIdleConfig,
+    app: &tauri::AppHandle,
+    cancel: &mut tokio::sync::watch::Receiver<bool>,
+) -> Result<RunningSimulation, StartSimulationError> {
+    let first = match start_simulation(candidate, config, app).await {
+        Ok(value) => return Ok(value),
+        Err(error) => error,
+    };
+    if first.running.is_some() {
+        return Err(first);
+    }
+    tokio::select! {
+        _ = tokio::time::sleep(Duration::from_secs(2)) => {}
+        _ = cancel.changed() => return Err(first),
+    }
+    start_simulation(candidate, config, app).await
+}
+
+/// Decides this cycle's simulated crash: None when disabled, when the sampled
+/// moment lands at or after the game's natural end, or when the delay is zero;
+/// otherwise `(crash_at_seconds, reopen_delay_seconds)`.
+fn crash_plan(crash: &GameIdleCrashConfig, play_secs: u64) -> Option<(u64, u64)> {
+    if !crash.enabled {
+        return None;
+    }
+    let crash_at = u64::from(crash.crash_after_minutes.resolve()) * 60;
+    if crash_at == 0 || crash_at >= play_secs {
+        return None;
+    }
+    Some((crash_at, u64::from(crash.reopen_delay_seconds.resolve())))
+}
+
 async fn run_session(
     config: GameIdleConfig,
     shared: Arc<tokio::sync::Mutex<IdleShared>>,
@@ -590,35 +681,24 @@ async fn run_session(
 
         let mut running = None;
         let mut last_error = String::new();
-        for attempt in 0..2 {
-            match start_simulation(&candidate, &config, &app).await {
-                Ok(value) => {
-                    running = Some(value);
-                    break;
+        match start_simulation_with_retry(&candidate, &config, &app, &mut cancel).await {
+            Ok(value) => running = Some(value),
+            Err(error) => {
+                if let Some(orphaned) = error.running {
+                    // The attempted rollback failed. Retain ownership for
+                    // the normal Stop retry instead of launching it again.
+                    shared.lock().await.running = Some(orphaned);
+                    set_error(&shared, &app, error.message).await;
+                    return;
                 }
-                Err(error) => {
-                    last_error = error.message;
-                    if let Some(running) = error.running {
-                        // The attempted rollback failed. Retain ownership for
-                        // the normal Stop retry instead of launching it again.
-                        shared.lock().await.running = Some(running);
-                        set_error(&shared, &app, last_error).await;
-                        return;
-                    }
-                    if attempt == 0 {
-                        tokio::select! {
-                            _ = tokio::time::sleep(Duration::from_secs(2)) => {},
-                            _ = cancel.changed() => { break; }
-                        }
-                    }
-                }
+                last_error = error.message;
             }
         }
 
         // Stopping during the retry delay is not a failed game start. Exit
         // without removing the candidate, emitting a warning, or incrementing
         // the consecutive-failure circuit breaker.
-        if *cancel.borrow() && running.is_none() {
+        if running.is_none() && *cancel.borrow() {
             break;
         }
 
@@ -708,30 +788,101 @@ async fn run_session(
             emit_status(&app, &state.status);
         }
 
-        let play_duration = Duration::from_secs(u64::from(play_minutes) * 60);
-        let cancelled = tokio::select! {
-            _ = tokio::time::sleep(play_duration) => false,
-            _ = cancel.changed() => true,
-        };
+        // `running` degrades to None while a simulated crash has closed the
+        // game, so cleanup and Stop requests never target a dead simulation.
+        let mut running = Some(running);
+        let mut crash_window = Duration::ZERO;
+        let mut cancelled = false;
+        let play_duration_secs = u64::from(play_minutes) * 60;
+        let mut remaining_secs = play_duration_secs;
+        if let Some((crash_at, reopen_after)) =
+            crash_plan(&config.crash_simulation, play_duration_secs)
+        {
+            cancelled = wait_cancellable(Duration::from_secs(crash_at), &mut cancel).await;
+            if !cancelled {
+                if let Some(current) = running.take() {
+                    if let Err(error) = stop_simulation(&current, &app).await {
+                        set_error(
+                            &shared,
+                            &app,
+                            format!("Failed to stop {}: {}", candidate.name, error),
+                        )
+                        .await;
+                        return;
+                    }
+                }
+                shared.lock().await.running = None;
+                let closed_at = Instant::now();
+                cancelled = wait_cancellable(Duration::from_secs(reopen_after), &mut cancel).await;
+                if cancelled {
+                    crash_window = closed_at.elapsed();
+                } else {
+                    match start_simulation_with_retry(&candidate, &config, &app, &mut cancel).await
+                    {
+                        Ok(restarted) => {
+                            let window = closed_at.elapsed();
+                            crash_window = window;
+                            remaining_secs = play_duration_secs.saturating_sub(crash_at);
+                            running = Some(restarted);
+                            // Shift the phase by the closed window so the UI
+                            // countdown still points at the real end of play.
+                            let window_millis = window.as_millis() as i64;
+                            let mut state = shared.lock().await;
+                            state.running = running.clone();
+                            state.status.phase_started_at += window_millis;
+                            state.status.phase_ends_at = state
+                                .status
+                                .phase_ends_at
+                                .map(|ends_at| ends_at + window_millis);
+                            emit_status(&app, &state.status);
+                        }
+                        Err(error) => {
+                            shared.lock().await.running = error.running;
+                            set_error(
+                                &shared,
+                                &app,
+                                format!(
+                                    "Failed to relaunch {} after the simulated crash: {}",
+                                    candidate.name, error.message
+                                ),
+                            )
+                            .await;
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+        if !cancelled {
+            cancelled = wait_cancellable(Duration::from_secs(remaining_secs), &mut cancel).await;
+        }
 
-        let cleanup = stop_simulation(&running, &app).await;
-        if let Err(error) = cleanup {
-            set_error(
-                &shared,
-                &app,
-                format!("Failed to stop {}: {}", candidate.name, error),
-            )
-            .await;
-            return;
+        if let Some(current) = running.as_ref() {
+            let cleanup = stop_simulation(current, &app).await;
+            if let Err(error) = cleanup {
+                set_error(
+                    &shared,
+                    &app,
+                    format!("Failed to stop {}: {}", candidate.name, error),
+                )
+                .await;
+                return;
+            }
         }
         {
             let mut state = shared.lock().await;
             state.running = None;
+            let active = play_started.elapsed().saturating_sub(crash_window);
             state.status.accumulated_played_seconds = state
                 .status
                 .accumulated_played_seconds
-                .saturating_add(play_started.elapsed().as_secs());
+                .saturating_add(active.as_secs());
         }
+        // The history segment deliberately stays open across the simulated
+        // crash and its reopen delay: per-app history counts that wall-clock
+        // window even though `accumulated_played_seconds` excludes it, and
+        // splitting the segment mid-crash would add a failure path for no
+        // user-visible gain.
         if let Err(error) = history.finish(&history_path, Some(&app)).await {
             set_error(&shared, &app, error).await;
             return;
@@ -996,6 +1147,7 @@ mod tests {
                 rest_minutes: 1,
                 play_duration: fixed_duration(1),
                 rest_duration: fixed_duration(1),
+                crash_simulation: GameIdleCrashConfig::default(),
                 current: None,
                 recent: vec![],
                 upcoming: vec![],
@@ -1198,6 +1350,81 @@ mod tests {
     }
 
     #[test]
+    fn crash_plan_requires_an_enabled_config_inside_the_play_window() {
+        let disabled = GameIdleCrashConfig::default();
+        assert_eq!(crash_plan(&disabled, 3600), None);
+
+        let mut crash = GameIdleCrashConfig {
+            enabled: true,
+            ..GameIdleCrashConfig::default()
+        };
+        crash.crash_after_minutes = GameIdleDuration {
+            mode: GameIdleDurationMode::Fixed,
+            fixed: 30,
+            min: 30,
+            max: 30,
+        };
+        // A crash moment at or after the natural end of play never triggers.
+        assert_eq!(crash_plan(&crash, 1800), None);
+        crash.crash_after_minutes = GameIdleDuration {
+            mode: GameIdleDurationMode::Fixed,
+            fixed: 0,
+            min: 0,
+            max: 0,
+        };
+        assert_eq!(crash_plan(&crash, 3600), None);
+
+        crash.crash_after_minutes = GameIdleDuration {
+            mode: GameIdleDurationMode::Fixed,
+            fixed: 10,
+            min: 10,
+            max: 10,
+        };
+        crash.reopen_delay_seconds = GameIdleDuration {
+            mode: GameIdleDurationMode::Fixed,
+            fixed: 45,
+            min: 45,
+            max: 45,
+        };
+        assert_eq!(crash_plan(&crash, 3600), Some((600, 45)));
+    }
+
+    #[test]
+    fn crash_simulation_validation_gates_only_the_enabled_config() {
+        let mut config = GameIdleConfig {
+            mode: GameIdleMode::Cdp,
+            cdp_port: 9223,
+            ..GameIdleConfig::default()
+        };
+        // Even zero delays stay acceptable while the config is disabled.
+        config.crash_simulation.crash_after_minutes = GameIdleDuration {
+            mode: GameIdleDurationMode::Fixed,
+            fixed: 0,
+            min: 0,
+            max: 0,
+        };
+        assert!(config.validate().is_ok());
+
+        config.crash_simulation.enabled = true;
+        assert!(config.validate().is_err());
+        config.crash_simulation.crash_after_minutes = fixed_duration(10);
+        config.crash_simulation.reopen_delay_seconds = GameIdleDuration {
+            mode: GameIdleDurationMode::Fixed,
+            fixed: 0,
+            min: 0,
+            max: 0,
+        };
+        assert!(config.validate().is_ok());
+        config.crash_simulation.reopen_delay_seconds = GameIdleDuration {
+            mode: GameIdleDurationMode::Random,
+            fixed: 30,
+            min: 90,
+            max: 60,
+        };
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
     fn cdp_pool_deduplicates_but_keeps_entries_without_executables() {
         let games = vec![
             game("1", "win32"),
@@ -1262,6 +1489,7 @@ mod tests {
                 rest_minutes: 0,
                 play_duration: fixed_duration(1),
                 rest_duration: fixed_duration(0),
+                crash_simulation: GameIdleCrashConfig::default(),
                 current: None,
                 recent: vec![],
                 upcoming: vec![],
@@ -1313,6 +1541,7 @@ mod tests {
                 rest_minutes: 0,
                 play_duration: fixed_duration(1),
                 rest_duration: fixed_duration(0),
+                crash_simulation: GameIdleCrashConfig::default(),
                 current: None,
                 recent: vec![],
                 upcoming: vec![],
@@ -1366,6 +1595,7 @@ mod tests {
                 rest_minutes: 0,
                 play_duration: fixed_duration(1),
                 rest_duration: fixed_duration(0),
+                crash_simulation: GameIdleCrashConfig::default(),
                 current: None,
                 recent: vec![],
                 upcoming: vec![],
@@ -1416,6 +1646,7 @@ mod tests {
                 rest_minutes: 0,
                 play_duration: fixed_duration(1),
                 rest_duration: fixed_duration(0),
+                crash_simulation: GameIdleCrashConfig::default(),
                 current: None,
                 recent: vec![],
                 upcoming: vec![],
@@ -1469,6 +1700,7 @@ mod tests {
                 rest_minutes: 0,
                 play_duration: fixed_duration(1),
                 rest_duration: fixed_duration(0),
+                crash_simulation: GameIdleCrashConfig::default(),
                 current: Some(candidates[0].clone()),
                 recent: vec![],
                 upcoming: vec![],

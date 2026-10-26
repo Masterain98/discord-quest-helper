@@ -90,6 +90,21 @@ describe('game idle store', () => {
     expect(store.playDuration).toEqual({ mode: 'fixed', fixed: 1, min: 1, max: 1 })
   })
 
+  it('persists crash simulation settings immediately and clamps their bounds', () => {
+    const store = useGameIdleStore()
+    expect(store.crashEnabled).toBe(false)
+    expect(store.crashAfterMinutes).toEqual({ mode: 'random', fixed: 10, min: 5, max: 15 })
+    expect(store.reopenDelaySeconds).toEqual({ mode: 'random', fixed: 45, min: 30, max: 60 })
+    store.crashEnabled = true
+    expect(storage.get('questHelper_gameIdleCrashEnabled')).toBe('true')
+    store.crashAfterMinutes = { mode: 'fixed', fixed: 0, min: 0, max: 0 }
+    expect(store.crashAfterMinutes).toEqual({ mode: 'fixed', fixed: 1, min: 1, max: 1 })
+    expect(JSON.parse(storage.get('questHelper_gameIdleCrashAfterMinutes')!))
+      .toEqual({ mode: 'fixed', fixed: 1, min: 1, max: 1 })
+    store.reopenDelaySeconds = { mode: 'fixed', fixed: -5, min: 0, max: 0 }
+    expect(store.reopenDelaySeconds).toEqual({ mode: 'fixed', fixed: 0, min: 0, max: 0 })
+  })
+
   it('can retry initialization after an API failure', async () => {
     mocks.getGameIdleStatus
       .mockRejectedValueOnce(new Error('temporary status failure'))
@@ -114,6 +129,7 @@ describe('game idle store', () => {
       restMinutes: 0,
       playDuration: { mode: 'fixed', fixed: 60, min: 60, max: 60 },
       restDuration: { mode: 'fixed', fixed: 0, min: 0, max: 0 },
+      crashSimulation: { enabled: false, crashAfterMinutes: { mode: 'fixed', fixed: 10, min: 10, max: 10 }, reopenDelaySeconds: { mode: 'fixed', fixed: 45, min: 45, max: 45 } },
       current: { id: 'current', name: 'Current', occurrenceId: 'current-1' },
       recent: [{ id: 'recent', name: 'Recent', occurrenceId: 'recent-1' }],
       upcoming: [{ id: 'next', name: 'Next', occurrenceId: 'next-1' }],
@@ -160,6 +176,7 @@ describe('game idle store', () => {
       playMinutes: 60, restMinutes: 0,
       playDuration: { mode: 'fixed', fixed: 60, min: 60, max: 60 },
       restDuration: { mode: 'fixed', fixed: 0, min: 0, max: 0 },
+      crashSimulation: { enabled: false, crashAfterMinutes: { mode: 'fixed', fixed: 10, min: 10, max: 10 }, reopenDelaySeconds: { mode: 'fixed', fixed: 45, min: 45, max: 45 } },
       current: null, recent: [], upcoming: [],
       phaseStartedAt: 0, phaseEndsAt: null, accumulatedPlayedSeconds: 0, warning: null,
     }
@@ -297,6 +314,11 @@ describe('game idle store', () => {
       mode: 'cdp', selectionMode: 'manual', candidateType: 'app', selectedAppIds: ['b', 'a'],
       playDuration: { mode: 'fixed', fixed: 60, min: 60, max: 60 },
       restDuration: { mode: 'fixed', fixed: 0, min: 0, max: 0 },
+      crashSimulation: {
+        enabled: false,
+        crashAfterMinutes: { mode: 'random', fixed: 10, min: 5, max: 15 },
+        reopenDelaySeconds: { mode: 'random', fixed: 45, min: 30, max: 60 },
+      },
     }), catalog)
     expect(storage.get('questHelper_gameIdleMode')).toBe('cdp')
     expect(JSON.parse(storage.get('questHelper_gameIdlePlayMinutes')!)).toEqual({ mode: 'fixed', fixed: 60, min: 60, max: 60 })
@@ -312,6 +334,7 @@ describe('game idle store', () => {
       phase: 'playing', playMinutes: 1, restMinutes: 1,
       playDuration: { mode: 'fixed', fixed: 1, min: 1, max: 1 },
       restDuration: { mode: 'fixed', fixed: 1, min: 1, max: 1 },
+      crashSimulation: { enabled: true, crashAfterMinutes: { mode: 'fixed', fixed: 5, min: 5, max: 5 }, reopenDelaySeconds: { mode: 'fixed', fixed: 0, min: 0, max: 0 } },
       current: null, recent: [], upcoming: [],
       phaseStartedAt: 0, phaseEndsAt: null, accumulatedPlayedSeconds: 0, warning: null,
     }
@@ -321,6 +344,9 @@ describe('game idle store', () => {
     await store.initialize()
     expect(store.selectionMode).toBe('manual')
     expect(store.candidateType).toBe('app')
+    expect(store.crashEnabled).toBe(true)
+    expect(store.crashAfterMinutes).toEqual({ mode: 'fixed', fixed: 5, min: 5, max: 5 })
+    expect(store.reopenDelaySeconds).toEqual({ mode: 'fixed', fixed: 0, min: 0, max: 0 })
     expect(store.playlist.map(item => item.id)).toEqual(['b', 'a'])
     store.removeFromPlaylist('a')
     store.movePlaylistItem('a', -1)
@@ -372,6 +398,7 @@ describe('game idle store', () => {
       phase: 'playing', playMinutes: 1, restMinutes: 0,
       playDuration: { mode: 'fixed', fixed: 1, min: 1, max: 1 },
       restDuration: { mode: 'fixed', fixed: 0, min: 0, max: 0 },
+      crashSimulation: { enabled: false, crashAfterMinutes: { mode: 'fixed', fixed: 10, min: 10, max: 10 }, reopenDelaySeconds: { mode: 'fixed', fixed: 45, min: 45, max: 45 } },
       current: null, recent: [], upcoming: [],
       phaseStartedAt: 0, phaseEndsAt: null, accumulatedPlayedSeconds: 0, warning: null,
     })

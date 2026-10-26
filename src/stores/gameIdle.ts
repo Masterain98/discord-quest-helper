@@ -1,6 +1,7 @@
 import { computed, ref, watch, type Ref } from 'vue'
 import { defineStore } from 'pinia'
 import type {
+  GameIdleCrashConfig,
   GameIdleMode,
   GameIdleSelectionMode,
   GameIdleCandidateType,
@@ -31,6 +32,11 @@ const CANDIDATE_TYPE_KEY = 'questHelper_gameIdleCandidateType'
 const PLAYLIST_KEY = 'questHelper_gameIdlePlaylist'
 const DEFAULT_PLAY_DURATION: GameIdleDuration = { mode: 'fixed', fixed: 60, min: 60, max: 60 }
 const DEFAULT_REST_DURATION: GameIdleDuration = { mode: 'fixed', fixed: 0, min: 0, max: 0 }
+const CRASH_ENABLED_KEY = 'questHelper_gameIdleCrashEnabled'
+const CRASH_AFTER_KEY = 'questHelper_gameIdleCrashAfterMinutes'
+const REOPEN_DELAY_KEY = 'questHelper_gameIdleReopenDelaySeconds'
+const DEFAULT_CRASH_AFTER_DURATION: GameIdleDuration = { mode: 'random', fixed: 10, min: 5, max: 15 }
+const DEFAULT_REOPEN_DELAY_DURATION: GameIdleDuration = { mode: 'random', fixed: 45, min: 30, max: 60 }
 
 type PlaylistItem = Pick<DetectableGame, 'id' | 'name' | 'icon' | 'type_name'>
 
@@ -89,6 +95,9 @@ export const useGameIdleStore = defineStore('gameIdle', () => {
   const savedCandidateType = localStorage.getItem(CANDIDATE_TYPE_KEY)
   const candidateType = ref<GameIdleCandidateType>(savedCandidateType === 'game' || savedCandidateType === 'app' ? savedCandidateType : 'all')
   const playlist = ref<PlaylistItem[]>(savedPlaylist())
+  const crashEnabled = ref(localStorage.getItem(CRASH_ENABLED_KEY) === 'true')
+  const crashAfterMinutes = ref(loadGameIdleDuration(CRASH_AFTER_KEY, DEFAULT_CRASH_AFTER_DURATION, 1))
+  const reopenDelaySeconds = ref(loadGameIdleDuration(REOPEN_DELAY_KEY, DEFAULT_REOPEN_DELAY_DURATION, 0))
   const status = ref<GameIdleStatus | null>(null)
   const history = ref<Record<string, GameSimulationHistoryEntry>>({})
   const loading = ref(false)
@@ -128,16 +137,24 @@ export const useGameIdleStore = defineStore('gameIdle', () => {
 
   // Duration edits can hold transient out-of-range values while the user is
   // typing; normalizing synchronously keeps every read (validation, start
-  // payload) within the backend's bounds.
-  function watchClampedDuration(target: Ref<GameIdleDuration>, minimum: number) {
+  // payload) within the backend's bounds. An optional key persists the
+  // normalized value immediately instead of waiting for the start-scoped
+  // persistConfig write.
+  function watchClampedDuration(target: Ref<GameIdleDuration>, minimum: number, persistKey?: string) {
     watch(target, (value) => {
       const next = clampGameIdleDuration(value, minimum)
       if (next !== value) target.value = next
+      if (persistKey) localStorage.setItem(persistKey, JSON.stringify(next))
     }, { flush: 'sync' })
   }
 
   watchClampedDuration(playDuration, 1)
   watchClampedDuration(restDuration, 0)
+  watchClampedDuration(crashAfterMinutes, 1, CRASH_AFTER_KEY)
+  watchClampedDuration(reopenDelaySeconds, 0, REOPEN_DELAY_KEY)
+  watch(crashEnabled, (enabled) => {
+    localStorage.setItem(CRASH_ENABLED_KEY, String(enabled))
+  }, { flush: 'sync' })
 
   function isCompatible(game: DetectableGame, selectedMode = mode.value): boolean {
     if (selectedMode === 'cdp') return true
@@ -220,6 +237,10 @@ export const useGameIdleStore = defineStore('gameIdle', () => {
   function validateConfig(): string | null {
     const durationError = validateDurations()
     if (durationError) return durationError
+    if (crashEnabled.value && (!isGameIdleDurationValid(crashAfterMinutes.value, 1)
+      || !isGameIdleDurationValid(reopenDelaySeconds.value, 0))) {
+      return 'crash_simulation'
+    }
     if (selectionMode.value === 'manual') {
       if (!playlist.value.length) return 'playlist_empty'
       if (playlistEntries.value.some(entry => entry.unavailable)) return 'playlist_unavailable'
@@ -248,6 +269,9 @@ export const useGameIdleStore = defineStore('gameIdle', () => {
       if (activeStatus && activeStatus.phase !== 'stopped') {
         playDuration.value = activeStatus.playDuration
         restDuration.value = activeStatus.restDuration
+        crashEnabled.value = activeStatus.crashSimulation.enabled
+        crashAfterMinutes.value = activeStatus.crashSimulation.crashAfterMinutes
+        reopenDelaySeconds.value = activeStatus.crashSimulation.reopenDelaySeconds
         mode.value = activeStatus.mode
         selectionMode.value = activeStatus.selectionMode
         candidateType.value = activeStatus.candidateType
@@ -288,6 +312,11 @@ export const useGameIdleStore = defineStore('gameIdle', () => {
     const selectedAppIds = selectedPlaylist.map(item => item.id)
     const selectedPlayDuration = playDuration.value
     const selectedRestDuration = restDuration.value
+    const selectedCrash: GameIdleCrashConfig = {
+      enabled: crashEnabled.value,
+      crashAfterMinutes: crashAfterMinutes.value,
+      reopenDelaySeconds: reopenDelaySeconds.value,
+    }
     const cdpPort = quests.cdpPort
     const generation = accountGeneration
     loading.value = true
@@ -316,6 +345,7 @@ export const useGameIdleStore = defineStore('gameIdle', () => {
             selectedAppIds: selectedSelectionMode === 'manual' ? selectedAppIds : [],
             playDuration: selectedPlayDuration,
             restDuration: selectedRestDuration,
+            crashSimulation: selectedCrash,
             cdpPort,
             simulationPath,
           },
@@ -403,6 +433,9 @@ export const useGameIdleStore = defineStore('gameIdle', () => {
   return {
     playDuration,
     restDuration,
+    crashEnabled,
+    crashAfterMinutes,
+    reopenDelaySeconds,
     mode,
     selectionMode,
     candidateType,

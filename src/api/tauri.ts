@@ -418,6 +418,12 @@ export interface GameIdleDuration {
   max: number
 }
 
+export interface GameIdleCrashConfig {
+  enabled: boolean
+  crashAfterMinutes: GameIdleDuration
+  reopenDelaySeconds: GameIdleDuration
+}
+
 export interface GameIdleConfig {
   mode: GameIdleMode
   selectionMode: GameIdleSelectionMode
@@ -425,6 +431,7 @@ export interface GameIdleConfig {
   selectedAppIds: string[]
   playDuration: GameIdleDuration
   restDuration: GameIdleDuration
+  crashSimulation: GameIdleCrashConfig
   cdpPort: number
   simulationPath: string
 }
@@ -449,6 +456,7 @@ export interface GameIdleStatus {
   restMinutes: number
   playDuration: GameIdleDuration
   restDuration: GameIdleDuration
+  crashSimulation: GameIdleCrashConfig
   current: GameIdleItem | null
   recent: GameIdleItem[]
   upcoming: GameIdleItem[]

@@ -19,6 +19,7 @@ import AnimatedSegmentedControl from '@/components/AnimatedSegmentedControl.vue'
 import DurationSettingInput from '@/components/DurationSettingInput.vue'
 import GameIdlePlaylistEditor from '@/components/GameIdlePlaylistEditor.vue'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { useAuthStore } from '@/stores/auth'
 import { useGameIdleStore, formatSimulationDuration } from '@/stores/gameIdle'
 import { useQuestsStore } from '@/stores/quests'
@@ -280,6 +281,34 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <GameIdlePlaylistEditor v-if="idle.selectionMode === 'manual'" />
+    </div>
+
+    <div v-if="!immersive" class="space-y-3">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="max-w-xl space-y-1">
+          <Label class="text-xs">{{ t('game_idle.crash_simulation') }}</Label>
+          <p class="text-xs text-muted-foreground">{{ t('game_idle.crash_simulation_desc') }}</p>
+        </div>
+        <Switch v-model="idle.crashEnabled" :disabled="active" :aria-label="t('game_idle.crash_simulation')" />
+      </div>
+      <div v-if="idle.crashEnabled" class="flex flex-wrap items-end gap-3">
+        <DurationSettingInput
+          v-model="idle.crashAfterMinutes"
+          :label="t('game_idle.crash_after')"
+          unit="minutes"
+          :min-allowed="1"
+          :disabled="active"
+          :invalid="configError === 'crash_simulation'"
+        />
+        <DurationSettingInput
+          v-model="idle.reopenDelaySeconds"
+          :label="t('game_idle.reopen_delay')"
+          unit="seconds"
+          :min-allowed="0"
+          :disabled="active"
+          :invalid="configError === 'crash_simulation'"
+        />
+      </div>
     </div>
 
     <div v-if="!immersive" class="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-muted-foreground">
