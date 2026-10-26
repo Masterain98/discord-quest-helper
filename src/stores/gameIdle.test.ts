@@ -88,6 +88,9 @@ describe('game idle store', () => {
     expect(store.restDuration).toEqual({ mode: 'random', fixed: 0, min: 0, max: 0 })
     store.playDuration = { mode: 'fixed', fixed: Number.NaN, min: 1, max: 1 }
     expect(store.playDuration).toEqual({ mode: 'fixed', fixed: 1, min: 1, max: 1 })
+    // Values beyond u32::MAX would be rejected by the Rust deserializer.
+    store.playDuration = { mode: 'fixed', fixed: 4_294_967_301, min: 1, max: 1 }
+    expect(store.playDuration).toEqual({ mode: 'fixed', fixed: 4_294_967_295, min: 1, max: 1 })
   })
 
   it('persists crash simulation settings immediately and clamps their bounds', () => {

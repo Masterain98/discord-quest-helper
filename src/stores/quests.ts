@@ -413,7 +413,7 @@ export const useQuestsStore = defineStore('quests', () => {
   // Account changes invalidate both cached rows and requests from the old session.
   function setQuestAccount(accountId: string | null) {
     if (questAccountId.value === accountId) return
-    cancelKeepAlive()
+    void cancelKeepAliveAndStopGame()
     resetOrbsState()
     questAccountId.value = accountId
     queueStartRevision++
@@ -586,6 +586,31 @@ export const useQuestsStore = defineStore('quests', () => {
     keepAliveGeneration++
   }
 
+  // Cancels a pending keep-alive and closes the game it was holding open:
+  // with the timer gone, nothing else would ever tear it down. No-op when no
+  // keep-alive is pending, so an in-flight quest is never touched.
+  async function cancelKeepAliveAndStopGame(): Promise<void> {
+    if (keepAliveQuestId === null) {
+      cancelKeepAlive()
+      return
+    }
+    const exe = activeGameExe.value
+    cancelKeepAlive()
+    if (!exe) return
+    try {
+      await stopSimulatedGame(exe)
+    } catch (cleanupError) {
+      console.error('Failed to close the game held open by keep-alive:', cleanupError)
+      return
+    }
+    if (activeGameExe.value === exe) activeGameExe.value = null
+  }
+
+  // Webview timers clamp delays above ~2^31 ms, so long keep-alives wait in
+  // timer-safe chunks and re-check the configured end time before tearing
+  // down (a clamped or early-firing timer must not close the game sooner).
+  const KEEP_ALIVE_MAX_TIMER_MS = 2_147_000_000
+
   function scheduleKeepAliveTeardown(questId: string, teardown: () => Promise<unknown>): boolean {
     if (!postQuestKeepAliveEnabled.value || !activeGameExe.value) return false
     if (keepAliveQuestId === questId) return true
@@ -594,13 +619,21 @@ export const useQuestsStore = defineStore('quests', () => {
     keepAliveQuestId = questId
     keepAliveEndsAt.value = Date.now() + minutes * 60_000
     const generation = keepAliveGeneration
-    keepAliveTimer = setTimeout(() => {
-      keepAliveTimer = null
-      if (generation !== keepAliveGeneration) return
-      keepAliveQuestId = null
-      keepAliveEndsAt.value = null
-      void teardown()
-    }, minutes * 60_000)
+    const wait = (remainingMs: number) => {
+      keepAliveTimer = setTimeout(() => {
+        keepAliveTimer = null
+        if (generation !== keepAliveGeneration) return
+        const leftMs = (keepAliveEndsAt.value ?? 0) - Date.now()
+        if (leftMs > 0) {
+          wait(Math.min(leftMs, KEEP_ALIVE_MAX_TIMER_MS))
+          return
+        }
+        keepAliveQuestId = null
+        keepAliveEndsAt.value = null
+        void teardown()
+      }, Math.min(remainingMs, KEEP_ALIVE_MAX_TIMER_MS))
+    }
+    wait(minutes * 60_000)
     return true
   }
 
@@ -620,9 +653,11 @@ export const useQuestsStore = defineStore('quests', () => {
   }
 
   async function completeActiveQuest(questId: string) {
-    // Null the active ID before the awaited cleanup: stop() relies on
-    // `completingQuestId && !activeQuestId` to skip already-owned cleanup,
-    // and the completed head must not look startable while history finishes.
+    // Claim completion and null the active ID before the awaited cleanup:
+    // stop() relies on `completingQuestId && !activeQuestId` to skip
+    // already-owned cleanup, and the completed head must not look startable
+    // while history finishes.
+    completingQuestId.value = questId
     activeQuestId.value = null
     const cleanupError = await stopQuestGameConnection()
     if (cleanupError !== null) {
@@ -631,6 +666,7 @@ export const useQuestsStore = defineStore('quests', () => {
       stopProgressSimulation()
       cleanupListeners()
       stopPolling()
+      completingQuestId.value = null
       return
     }
     // Normal single quest completion
@@ -640,6 +676,7 @@ export const useQuestsStore = defineStore('quests', () => {
     activeGameExe.value = null
     localProgress.value = 0
     stopProgressSimulation()
+    completingQuestId.value = null
 
     void fetchQuests(true, true)
     cleanupListeners()
@@ -1727,7 +1764,7 @@ export const useQuestsStore = defineStore('quests', () => {
     queueStartRevision++
     preparingQueuedQuestId.value = null
     cancelQueueAdvance()
-    cancelKeepAlive()
+    void cancelKeepAliveAndStopGame()
     stopDialogOpen.value = false
     stopDialogQuestId.value = null
     completingQuestId.value = null

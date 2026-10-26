@@ -25,7 +25,7 @@ export function loadGameIdleDuration(key: string, fallback: GameIdleDuration, mi
   }
   const legacy = Number(raw)
   return Number.isSafeInteger(legacy) && legacy >= minimum
-    ? { mode: 'fixed', fixed: legacy, min: Math.max(minimum, fallback.min), max: Math.max(minimum, fallback.max) }
+    ? { mode: 'fixed', fixed: Math.min(legacy, U32_MAX), min: Math.max(minimum, fallback.min), max: Math.max(minimum, fallback.max) }
     : { ...fallback }
 }
 
@@ -36,11 +36,15 @@ export function isGameIdleDurationValid(value: GameIdleDuration, minimum: number
     : value.min >= minimum && value.min <= value.max
 }
 
+/** Duration fields deserialize as u32 on the Rust side; larger values would be rejected at start. */
+const U32_MAX = 4_294_967_295
+
 /** Replaces invalid fields with safe bounds so a bad edit can never reach the backend. */
 export function clampGameIdleDuration(value: GameIdleDuration, minimum: number): GameIdleDuration {
   const round = (raw: number, floor: number): number => {
     const rounded = Math.round(raw)
-    return Number.isSafeInteger(rounded) && rounded >= floor ? rounded : floor
+    if (!Number.isSafeInteger(rounded) || rounded < floor) return floor
+    return Math.min(rounded, U32_MAX)
   }
   const fixed = round(value.fixed, minimum)
   const min = round(value.min, minimum)

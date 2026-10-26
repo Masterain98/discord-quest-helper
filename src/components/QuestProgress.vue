@@ -433,7 +433,7 @@ watch(() => questsStore.keepAliveEndsAt, (endsAt) => {
     clearInterval(keepAliveTicker)
     keepAliveTicker = null
   }
-})
+}, { immediate: true })
 onUnmounted(() => {
   if (keepAliveTicker !== null) clearInterval(keepAliveTicker)
 })

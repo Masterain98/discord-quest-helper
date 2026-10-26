@@ -156,4 +156,61 @@ describe('post-quest keep-alive', () => {
     expect(mocks.stopSimulatedGame).not.toHaveBeenCalled()
     expect(store.questQueue.map(item => item.id)).toEqual(['second'])
   })
+
+  it('does not repeat the native teardown when Stop lands during completion cleanup', async () => {
+    const store = await runningStore()
+    store.postQuestKeepAliveEnabled = true
+    store.postQuestKeepAlive = { mode: 'fixed', fixed: 1, min: 1, max: 1 }
+    await complete()
+    mocks.stopSimulatedGame.mockReturnValueOnce(new Promise<void>(() => undefined))
+
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(store.queueEditingDisabled).toBe(true)
+    expect(store.activeQuestId).toBeNull()
+
+    await store.stop('all')
+
+    expect(mocks.stopSimulatedGame).toHaveBeenCalledTimes(1)
+    // The in-flight teardown still owns the history finalization; Stop must
+    // not start a second one while it waits.
+    expect(mocks.stopGameSimulationUsage).toHaveBeenCalledTimes(0)
+    expect(store.questQueue).toEqual([])
+  })
+
+  it('closes the kept-alive game when the account changes during keep-alive', async () => {
+    const store = await runningStore()
+    store.postQuestKeepAliveEnabled = true
+    store.postQuestKeepAlive = { mode: 'fixed', fixed: 1, min: 1, max: 1 }
+    await complete()
+    expect(store.keepAliveEndsAt).not.toBeNull()
+
+    store.setQuestAccount('account-2')
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(mocks.stopSimulatedGame).toHaveBeenCalledTimes(1)
+    expect(store.keepAliveEndsAt).toBeNull()
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(mocks.stopSimulatedGame).toHaveBeenCalledTimes(1)
+  })
+
+  it('schedules waits longer than the webview timer limit in chunks', async () => {
+    // Re-fake without rAF: the fake rAF machinery keeps a ~16ms internal
+    // timer alive, which a multi-billion-ms tick would fire 100M+ times. The
+    // store uses no animation frames on this path (the global is stubbed).
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] })
+    vi.setSystemTime(0)
+    const store = await runningStore()
+    store.postQuestKeepAliveEnabled = true
+    store.postQuestKeepAlive = { mode: 'fixed', fixed: 43_200, min: 43_200, max: 43_200 }
+    await complete()
+    expect(store.keepAliveEndsAt).toBe(2_592_000_000)
+
+    await vi.advanceTimersByTimeAsync(2_147_000_000)
+    expect(mocks.stopSimulatedGame).not.toHaveBeenCalled()
+    expect(store.keepAliveEndsAt).not.toBeNull()
+
+    await vi.advanceTimersByTimeAsync(600_000_000)
+    expect(mocks.stopSimulatedGame).toHaveBeenCalledTimes(1)
+    expect(store.keepAliveEndsAt).toBeNull()
+  })
 })

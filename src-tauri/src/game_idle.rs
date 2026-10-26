@@ -228,7 +228,11 @@ pub struct GameIdleStatus {
 }
 
 impl GameIdleStatus {
-    fn starting(config: &GameIdleConfig, candidates: &[GameIdleItem]) -> Self {
+    fn starting(
+        config: &GameIdleConfig,
+        candidates: &[GameIdleItem],
+        first_play_minutes: u32,
+    ) -> Self {
         Self {
             session_id: uuid::Uuid::new_v4().to_string(),
             mode: config.mode,
@@ -240,7 +244,7 @@ impl GameIdleStatus {
                 Vec::new()
             },
             phase: GameIdlePhase::Starting,
-            play_minutes: config.play_duration.resolve(),
+            play_minutes: first_play_minutes,
             rest_minutes: config.rest_duration.resolve(),
             play_duration: config.play_duration,
             rest_duration: config.rest_duration,
@@ -429,7 +433,10 @@ impl GameIdleManager {
             });
         }
 
-        let status = GameIdleStatus::starting(&config, &candidates);
+        // Sample the first cycle's play duration once so the Starting-phase
+        // status and the actual first cycle agree on it.
+        let first_play_minutes = config.play_duration.resolve();
+        let status = GameIdleStatus::starting(&config, &candidates, first_play_minutes);
         let mut shared_value = IdleShared {
             status,
             all: candidates,
@@ -464,6 +471,7 @@ impl GameIdleManager {
                 history,
                 history_path,
                 task_app,
+                first_play_minutes,
             )
             .await;
         });
@@ -644,6 +652,7 @@ fn crash_plan(crash: &GameIdleCrashConfig, play_secs: u64) -> Option<(u64, u64)>
     Some((crash_at, u64::from(crash.reopen_delay_seconds.resolve())))
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_session(
     config: GameIdleConfig,
     shared: Arc<tokio::sync::Mutex<IdleShared>>,
@@ -652,8 +661,12 @@ async fn run_session(
     history: Arc<SimulationHistory>,
     history_path: PathBuf,
     app: tauri::AppHandle,
+    first_play_minutes: u32,
 ) {
     let mut consecutive_failures = 0usize;
+    // The first cycle reuses the duration sampled for the Starting status so
+    // the two cannot disagree; later cycles sample fresh.
+    let mut carried_play_minutes = Some(first_play_minutes);
     loop {
         if *cancel.borrow() {
             break;
@@ -764,7 +777,9 @@ async fn run_session(
         }
 
         let play_started = Instant::now();
-        let play_minutes = config.play_duration.resolve();
+        let play_minutes = carried_play_minutes
+            .take()
+            .unwrap_or_else(|| config.play_duration.resolve());
         {
             let mut state = shared.lock().await;
             if state
@@ -800,6 +815,7 @@ async fn run_session(
         {
             cancelled = wait_cancellable(Duration::from_secs(crash_at), &mut cancel).await;
             if !cancelled {
+                let frozen_ends_at;
                 if let Some(current) = running.take() {
                     if let Err(error) = stop_simulation(&current, &app).await {
                         set_error(
@@ -811,8 +827,18 @@ async fn run_session(
                         return;
                     }
                 }
-                shared.lock().await.running = None;
-                let closed_at = Instant::now();
+                let closed_at;
+                {
+                    let mut state = shared.lock().await;
+                    state.running = None;
+                    // Freeze the displayed countdown for the outage: a None
+                    // end time parks the panel instead of counting the closed
+                    // window as play; reopening re-bases both timestamps.
+                    frozen_ends_at = state.status.phase_ends_at;
+                    state.status.phase_ends_at = None;
+                    emit_status(&app, &state.status);
+                    closed_at = Instant::now();
+                }
                 cancelled = wait_cancellable(Duration::from_secs(reopen_after), &mut cancel).await;
                 if cancelled {
                     crash_window = closed_at.elapsed();
@@ -824,30 +850,43 @@ async fn run_session(
                             crash_window = window;
                             remaining_secs = play_duration_secs.saturating_sub(crash_at);
                             running = Some(restarted);
-                            // Shift the phase by the closed window so the UI
-                            // countdown still points at the real end of play.
+                            // Re-base the phase by the closed window so the
+                            // countdown resumes with the real remaining play.
                             let window_millis = window.as_millis() as i64;
                             let mut state = shared.lock().await;
                             state.running = running.clone();
                             state.status.phase_started_at += window_millis;
-                            state.status.phase_ends_at = state
-                                .status
-                                .phase_ends_at
-                                .map(|ends_at| ends_at + window_millis);
+                            state.status.phase_ends_at =
+                                frozen_ends_at.map(|ends_at| ends_at + window_millis);
                             emit_status(&app, &state.status);
                         }
                         Err(error) => {
-                            shared.lock().await.running = error.running;
-                            set_error(
-                                &shared,
-                                &app,
-                                format!(
+                            if *cancel.borrow() {
+                                // A stop that interrupted the relaunch backoff
+                                // is a normal stop, not a failed relaunch:
+                                // fall through to the cycle-end cleanup.
+                                cancelled = true;
+                                crash_window = closed_at.elapsed();
+                            } else {
+                                // Keep ownership of any orphaned relaunch for
+                                // the Stop path, then finalize history: the
+                                // session is over, and leaving the segment
+                                // open would keep accruing wall-clock time.
+                                shared.lock().await.running = error.running;
+                                let mut detail = format!(
                                     "Failed to relaunch {} after the simulated crash: {}",
                                     candidate.name, error.message
-                                ),
-                            )
-                            .await;
-                            return;
+                                );
+                                if let Err(finish_error) =
+                                    history.finish(&history_path, Some(&app)).await
+                                {
+                                    detail.push_str(&format!(
+                                        " History could not be finalized: {finish_error}"
+                                    ));
+                                }
+                                set_error(&shared, &app, detail).await;
+                                return;
+                            }
                         }
                     }
                 }
@@ -1206,7 +1245,7 @@ mod tests {
         config.selected_app_ids = vec!["b".into(), "a".into(), "b".into()];
         let selected =
             configured_candidates(&config, vec![game("a", "win32"), game("b", "win32")]).unwrap();
-        let status = GameIdleStatus::starting(&config, &selected);
+        let status = GameIdleStatus::starting(&config, &selected, config.play_duration.resolve());
         assert_eq!(status.selected_app_ids, vec!["b", "a"]);
         let serialized = serde_json::to_value(status).unwrap();
         assert_eq!(serialized["selectedAppIds"], serde_json::json!(["b", "a"]));
