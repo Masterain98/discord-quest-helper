@@ -1,6 +1,7 @@
 use crate::models::DetectableGame;
 use crate::simulation_history::SimulationHistory;
 use rand::seq::SliceRandom;
+use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashSet, VecDeque};
 use std::path::PathBuf;
@@ -36,27 +37,96 @@ pub enum GameIdleCandidateType {
     App,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum GameIdleDurationMode {
+    #[default]
+    Fixed,
+    Random,
+}
+
+/// A per-cycle duration that is either a constant or sampled from an
+/// inclusive range. Units are implied by the field that carries it.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct GameIdleDuration {
+    pub mode: GameIdleDurationMode,
+    pub fixed: u32,
+    pub min: u32,
+    pub max: u32,
+}
+
+impl Default for GameIdleDuration {
+    fn default() -> Self {
+        Self {
+            mode: GameIdleDurationMode::Fixed,
+            fixed: 1,
+            min: 1,
+            max: 1,
+        }
+    }
+}
+
+impl GameIdleDuration {
+    fn resolve(&self) -> u32 {
+        match self.mode {
+            GameIdleDurationMode::Fixed => self.fixed,
+            // The swap guard keeps a hand-edited config from panicking the
+            // session worker before `validate` ever sees it.
+            GameIdleDurationMode::Random => {
+                let (low, high) = (self.min.min(self.max), self.min.max(self.max));
+                rand::rng().random_range(low..=high)
+            }
+        }
+    }
+
+    fn validate(&self, field: &str, minimum: u32) -> Result<(), String> {
+        let valid = match self.mode {
+            GameIdleDurationMode::Fixed => self.fixed >= minimum,
+            GameIdleDurationMode::Random => self.min >= minimum && self.min <= self.max,
+        };
+        if valid {
+            Ok(())
+        } else {
+            Err(format!(
+                "{field} must be a fixed value of at least {minimum}, or a random range where min >= {minimum} and min <= max"
+            ))
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", default)]
 pub struct GameIdleConfig {
     pub mode: GameIdleMode,
-    #[serde(default)]
     pub selection_mode: GameIdleSelectionMode,
-    #[serde(default)]
     pub candidate_type: GameIdleCandidateType,
-    #[serde(default)]
     pub selected_app_ids: Vec<String>,
-    pub play_minutes: u32,
-    pub rest_minutes: u32,
+    pub play_duration: GameIdleDuration,
+    pub rest_duration: GameIdleDuration,
     pub cdp_port: u16,
     pub simulation_path: String,
 }
 
+impl Default for GameIdleConfig {
+    fn default() -> Self {
+        Self {
+            mode: GameIdleMode::Process,
+            selection_mode: GameIdleSelectionMode::default(),
+            candidate_type: GameIdleCandidateType::default(),
+            selected_app_ids: Vec::new(),
+            play_duration: GameIdleDuration::default(),
+            rest_duration: GameIdleDuration::default(),
+            cdp_port: 0,
+            simulation_path: String::new(),
+        }
+    }
+}
+
 impl GameIdleConfig {
     pub fn validate(&self) -> Result<(), String> {
-        if self.play_minutes == 0 {
-            return Err("Game simulation duration must be a positive integer".to_string());
-        }
+        self.play_duration.validate("Game simulation duration", 1)?;
+        self.rest_duration.validate("Rest duration", 0)?;
         if self.mode == GameIdleMode::Cdp && self.cdp_port == 0 {
             return Err("CDP port must be between 1 and 65535".to_string());
         }
@@ -101,8 +171,12 @@ pub struct GameIdleStatus {
     pub candidate_type: GameIdleCandidateType,
     pub selected_app_ids: Vec<String>,
     pub phase: GameIdlePhase,
+    /// Resolved minutes of the current cycle; `play_duration`/`rest_duration`
+    /// carry the configured fixed-or-random spec the UI editor restores from.
     pub play_minutes: u32,
     pub rest_minutes: u32,
+    pub play_duration: GameIdleDuration,
+    pub rest_duration: GameIdleDuration,
     pub current: Option<GameIdleItem>,
     pub recent: Vec<GameIdleItem>,
     pub upcoming: Vec<GameIdleItem>,
@@ -125,8 +199,10 @@ impl GameIdleStatus {
                 Vec::new()
             },
             phase: GameIdlePhase::Starting,
-            play_minutes: config.play_minutes,
-            rest_minutes: config.rest_minutes,
+            play_minutes: config.play_duration.resolve(),
+            rest_minutes: config.rest_duration.resolve(),
+            play_duration: config.play_duration,
+            rest_duration: config.rest_duration,
             current: None,
             recent: Vec::new(),
             upcoming: Vec::new(),
@@ -608,6 +684,7 @@ async fn run_session(
         }
 
         let play_started = Instant::now();
+        let play_minutes = config.play_duration.resolve();
         {
             let mut state = shared.lock().await;
             if state
@@ -623,14 +700,15 @@ async fn run_session(
                 state.recent.pop_front();
             }
             state.fill_upcoming();
+            state.status.play_minutes = play_minutes;
             state.status.phase = GameIdlePhase::Playing;
             state.status.phase_started_at = now_millis();
             state.status.phase_ends_at =
-                Some(state.status.phase_started_at + i64::from(config.play_minutes) * 60_000);
+                Some(state.status.phase_started_at + i64::from(play_minutes) * 60_000);
             emit_status(&app, &state.status);
         }
 
-        let play_duration = Duration::from_secs(u64::from(config.play_minutes) * 60);
+        let play_duration = Duration::from_secs(u64::from(play_minutes) * 60);
         let cancelled = tokio::select! {
             _ = tokio::time::sleep(play_duration) => false,
             _ = cancel.changed() => true,
@@ -662,16 +740,18 @@ async fn run_session(
             break;
         }
 
-        if config.rest_minutes > 0 {
+        let rest_minutes = config.rest_duration.resolve();
+        if rest_minutes > 0 {
             {
                 let mut state = shared.lock().await;
+                state.status.rest_minutes = rest_minutes;
                 state.status.phase = GameIdlePhase::Resting;
                 state.status.phase_started_at = now_millis();
                 state.status.phase_ends_at =
-                    Some(state.status.phase_started_at + i64::from(config.rest_minutes) * 60_000);
+                    Some(state.status.phase_started_at + i64::from(rest_minutes) * 60_000);
                 emit_status(&app, &state.status);
             }
-            let rest_duration = Duration::from_secs(u64::from(config.rest_minutes) * 60);
+            let rest_duration = Duration::from_secs(u64::from(rest_minutes) * 60);
             tokio::select! {
                 _ = tokio::time::sleep(rest_duration) => {},
                 _ = cancel.changed() => { break; }
@@ -886,10 +966,21 @@ mod tests {
 
     fn config() -> GameIdleConfig {
         serde_json::from_value(serde_json::json!({
-            "mode": "cdp", "playMinutes": 1, "restMinutes": 1,
+            "mode": "cdp",
+            "playDuration": { "mode": "fixed", "fixed": 1, "min": 1, "max": 1 },
+            "restDuration": { "mode": "fixed", "fixed": 1, "min": 1, "max": 1 },
             "cdpPort": 9223, "simulationPath": "simulation"
         }))
         .unwrap()
+    }
+
+    fn fixed_duration(minutes: u32) -> GameIdleDuration {
+        GameIdleDuration {
+            mode: GameIdleDurationMode::Fixed,
+            fixed: minutes,
+            min: minutes,
+            max: minutes,
+        }
     }
 
     fn manual_queue(count: usize) -> IdleShared {
@@ -903,6 +994,8 @@ mod tests {
                 phase: GameIdlePhase::Starting,
                 play_minutes: 1,
                 rest_minutes: 1,
+                play_duration: fixed_duration(1),
+                rest_duration: fixed_duration(1),
                 current: None,
                 recent: vec![],
                 upcoming: vec![],
@@ -1036,17 +1129,72 @@ mod tests {
 
     #[test]
     fn duration_validation_rejects_zero_play_time() {
-        let config = GameIdleConfig {
+        let mut config = GameIdleConfig {
             mode: GameIdleMode::Cdp,
-            selection_mode: GameIdleSelectionMode::Random,
-            candidate_type: GameIdleCandidateType::All,
-            selected_app_ids: vec![],
-            play_minutes: 0,
-            rest_minutes: 0,
             cdp_port: 9223,
-            simulation_path: String::new(),
+            ..GameIdleConfig::default()
+        };
+        config.play_duration = GameIdleDuration {
+            mode: GameIdleDurationMode::Fixed,
+            fixed: 0,
+            min: 0,
+            max: 0,
         };
         assert!(config.validate().is_err());
+        config.play_duration = GameIdleDuration {
+            mode: GameIdleDurationMode::Random,
+            fixed: 1,
+            min: 0,
+            max: 5,
+        };
+        assert!(config.validate().is_err());
+        config.play_duration = GameIdleDuration {
+            mode: GameIdleDurationMode::Random,
+            fixed: 1,
+            min: 6,
+            max: 5,
+        };
+        assert!(config.validate().is_err());
+        config.play_duration = GameIdleDuration {
+            mode: GameIdleDurationMode::Random,
+            fixed: 1,
+            min: 1,
+            max: 5,
+        };
+        config.rest_duration = GameIdleDuration {
+            mode: GameIdleDurationMode::Fixed,
+            fixed: 0,
+            min: 0,
+            max: 0,
+        };
+        assert!(config.validate().is_ok());
+        config.rest_duration = GameIdleDuration {
+            mode: GameIdleDurationMode::Random,
+            fixed: 0,
+            min: 0,
+            max: 3,
+        };
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn duration_resolution_stays_within_bounds() {
+        let random = GameIdleDuration {
+            mode: GameIdleDurationMode::Random,
+            fixed: 1,
+            min: 2,
+            max: 5,
+        };
+        for _ in 0..64 {
+            assert!((2..=5).contains(&random.resolve()));
+        }
+        let fixed = GameIdleDuration {
+            mode: GameIdleDurationMode::Fixed,
+            fixed: 7,
+            min: 2,
+            max: 5,
+        };
+        assert_eq!(fixed.resolve(), 7);
     }
 
     #[test]
@@ -1112,6 +1260,8 @@ mod tests {
                 phase: GameIdlePhase::Starting,
                 play_minutes: 1,
                 rest_minutes: 0,
+                play_duration: fixed_duration(1),
+                rest_duration: fixed_duration(0),
                 current: None,
                 recent: vec![],
                 upcoming: vec![],
@@ -1161,6 +1311,8 @@ mod tests {
                 phase: GameIdlePhase::Starting,
                 play_minutes: 1,
                 rest_minutes: 0,
+                play_duration: fixed_duration(1),
+                rest_duration: fixed_duration(0),
                 current: None,
                 recent: vec![],
                 upcoming: vec![],
@@ -1212,6 +1364,8 @@ mod tests {
                 phase: GameIdlePhase::Starting,
                 play_minutes: 1,
                 rest_minutes: 0,
+                play_duration: fixed_duration(1),
+                rest_duration: fixed_duration(0),
                 current: None,
                 recent: vec![],
                 upcoming: vec![],
@@ -1260,6 +1414,8 @@ mod tests {
                 phase: GameIdlePhase::Starting,
                 play_minutes: 1,
                 rest_minutes: 0,
+                play_duration: fixed_duration(1),
+                rest_duration: fixed_duration(0),
                 current: None,
                 recent: vec![],
                 upcoming: vec![],
@@ -1311,6 +1467,8 @@ mod tests {
                 phase: GameIdlePhase::Starting,
                 play_minutes: 1,
                 rest_minutes: 0,
+                play_duration: fixed_duration(1),
+                rest_duration: fixed_duration(0),
                 current: Some(candidates[0].clone()),
                 recent: vec![],
                 upcoming: vec![],

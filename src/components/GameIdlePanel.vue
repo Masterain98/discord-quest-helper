@@ -16,8 +16,8 @@ import {
 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import AnimatedSegmentedControl from '@/components/AnimatedSegmentedControl.vue'
+import DurationSettingInput from '@/components/DurationSettingInput.vue'
 import GameIdlePlaylistEditor from '@/components/GameIdlePlaylistEditor.vue'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAuthStore } from '@/stores/auth'
 import { useGameIdleStore, formatSimulationDuration } from '@/stores/gameIdle'
@@ -199,34 +199,22 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="flex flex-wrap items-end gap-3">
-        <div class="space-y-1.5">
-          <Label for="idle-play-minutes" class="text-xs">{{ t('game_idle.play_minutes') }}</Label>
-          <Input
-            id="idle-play-minutes"
-            v-model.number="idle.playMinutes"
-            type="number"
-            inputmode="numeric"
-            min="1"
-            step="1"
-            class="w-28 tabular-nums"
-            :disabled="active"
-            :aria-invalid="configError === 'play_minutes'"
-          />
-        </div>
-        <div class="space-y-1.5">
-          <Label for="idle-rest-minutes" class="text-xs">{{ t('game_idle.rest_minutes') }}</Label>
-          <Input
-            id="idle-rest-minutes"
-            v-model.number="idle.restMinutes"
-            type="number"
-            inputmode="numeric"
-            min="0"
-            step="1"
-            class="w-28 tabular-nums"
-            :disabled="active"
-            :aria-invalid="configError === 'rest_minutes'"
-          />
-        </div>
+        <DurationSettingInput
+          v-model="idle.playDuration"
+          :label="t('game_idle.play_minutes')"
+          unit="minutes"
+          :min-allowed="1"
+          :disabled="active"
+          :invalid="configError === 'play_minutes'"
+        />
+        <DurationSettingInput
+          v-model="idle.restDuration"
+          :label="t('game_idle.rest_minutes')"
+          unit="minutes"
+          :min-allowed="0"
+          :disabled="active"
+          :invalid="configError === 'rest_minutes'"
+        />
         <div class="space-y-1.5">
           <Label class="text-xs">{{ t('game_idle.simulation_mode') }}</Label>
           <AnimatedSegmentedControl :value="idle.mode" class="flex h-10 rounded-md border bg-background p-1" style="--segment-radius: 0.28rem" :aria-label="t('game_idle.simulation_mode')">
