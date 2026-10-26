@@ -162,7 +162,8 @@
     "hide_progress": "진행 창 숨기기",
     "up_next": "다음 퀘스트",
     "submitted": "제출됨",
-    "pending": "대기 중"
+    "pending": "대기 중",
+    "keep_alive_active": "게임 연결 유지 중 — {time} 남음"
   },
   "queue": {
     "remove": "{name} 대기열에서 제거",
@@ -353,7 +354,12 @@
     "cdp_dialog_desc_disconnected_vesktop": "Vesktop이 실행 중이지만 CDP에 연결되지 않았습니다. CDP 디버그 포트를 활성화하여 Vesktop을 다시 시작해야 합니다.",
     "desktop_client": "데스크톱 클라이언트",
     "desktop_client_desc": "Discord와 Vesktop이 모두 설치된 경우 이 선택은 CDP 로그인에만 영향을 줍니다. 로컬 토큰 추출에는 항상 공식 Discord 클라이언트를 사용합니다.",
-    "nav_notifications": "알림"
+    "nav_notifications": "알림",
+    "keep_alive_after_quest": "퀘스트 후 연결 유지",
+    "keep_alive_enabled": "완료 후 게임 연결 유지",
+    "keep_alive_desc": "시뮬레이션된 게임 퀘스트가 완료된 후 게임을 잠시 연결 상태로 유지했다가 종료합니다. 대기열은 이 대기 이후에 진행됩니다.",
+    "keep_alive_duration": "유지 시간",
+    "keep_alive_simulate_only": "프로세스 시뮬레이션 퀘스트에만 적용됩니다. CDP 퀘스트는 완료되는 즉시 프레즌스가 해제됩니다."
   },
   "version": {
     "update_available": "새 버전이 있습니다!",
@@ -606,7 +612,18 @@
     "search_limit": "{total}개 중 {count}개 표시. 검색으로 범위를 좁히세요.",
     "catalog_error": "후보 목록을 불러오지 못했습니다. 새로고침하세요.",
     "skip_occurrence": "이번만 건너뛰기",
-    "persistence_error": "자동 실행 설정을 저장하지 못했습니다. 다시 시작하면 변경 사항이 사라질 수 있습니다."
+    "persistence_error": "자동 실행 설정을 저장하지 못했습니다. 다시 시작하면 변경 사항이 사라질 수 있습니다.",
+    "duration_fixed": "고정",
+    "duration_random": "무작위",
+    "duration_min": "최소",
+    "duration_max": "최대",
+    "unit_minutes": "분",
+    "unit_seconds": "초",
+    "crash_simulation": "크래시 시뮬레이션",
+    "crash_simulation_desc": "순환 중에 현재 게임을 무작위로 종료한 뒤 짧은 지연 후 다시 실행하여 연결 끊김을 시뮬레이션합니다.",
+    "crash_after": "크래시 시점",
+    "reopen_delay": "재실행 지연",
+    "crash_simulation_error": "크래시 지연은 양의 정수여야 하고 재실행 지연은 0 이상이어야 합니다."
   },
   "desktop_clients": {
     "ask_each_time": "매번 묻기",

@@ -162,7 +162,8 @@
     "hide_progress": "İlerleme penceresini gizle",
     "up_next": "Sonraki",
     "submitted": "Gönderildi",
-    "pending": "Yerel Beklemede"
+    "pending": "Yerel Beklemede",
+    "keep_alive_active": "Oyun bağlı tutuluyor — {time} kaldı"
   },
   "queue": {
     "remove": "{name} görevini kuyruktan kaldır",
@@ -353,7 +354,12 @@
     "cdp_dialog_desc_disconnected_vesktop": "Vesktop çalışıyor ancak CDP'ye bağlı değil. Vesktop'u CDP hata ayıklama bağlantı noktası etkin olarak yeniden başlatmamız gerekiyor.",
     "desktop_client": "Masaüstü istemcisi",
     "desktop_client_desc": "Discord ve Vesktop birlikte yüklüyse bu seçim yalnızca CDP ile giriş yapmayı etkiler. Yerel token çıkarma her zaman resmi Discord istemcisini kullanır.",
-    "nav_notifications": "Bildirimler"
+    "nav_notifications": "Bildirimler",
+    "keep_alive_after_quest": "Quest sonrası bağlantı",
+    "keep_alive_enabled": "Tamamlandıktan sonra oyunu bağlı tut",
+    "keep_alive_desc": "Simüle edilen oyun Questi tamamlandıktan sonra oyun bir süre daha bağlı kalır ve ardından kapatılır. Kuyruk bu beklemenin ardından ilerler.",
+    "keep_alive_duration": "Bağlı kalma süresi",
+    "keep_alive_simulate_only": "Yalnızca işlem simülasyonu Questleri için geçerlidir; CDP Questleri tamamlanır tamamlanmaz varlıklarını keser."
   },
   "version": {
     "update_available": "Yeni bir sürüm mevcut!",
@@ -606,7 +612,18 @@
     "search_limit": "{total} sonuçtan {count} tanesi gösteriliyor. Daraltmak için arayın.",
     "catalog_error": "Katalog yüklenemedi. Yenilemeyi deneyin.",
     "skip_occurrence": "Bu sefer atla",
-    "persistence_error": "Boşta kalma ayarları kaydedilemedi. Değişiklikler yeniden başlatıldıktan sonra kaybolabilir."
+    "persistence_error": "Boşta kalma ayarları kaydedilemedi. Değişiklikler yeniden başlatıldıktan sonra kaybolabilir.",
+    "duration_fixed": "Sabit",
+    "duration_random": "Rastgele",
+    "duration_min": "Min",
+    "duration_max": "Maks",
+    "unit_minutes": "dk",
+    "unit_seconds": "sn",
+    "crash_simulation": "Çökme simülasyonu",
+    "crash_simulation_desc": "Döngü sırasında geçerli oyunu rastgele kapatır ve kısa bir gecikmeden sonra yeniden açarak bağlantı kopmasını simüle eder.",
+    "crash_after": "Çökme süresi",
+    "reopen_delay": "Yeniden açma gecikmesi",
+    "crash_simulation_error": "Çökme gecikmesi pozitif bir tam sayı, yeniden açma gecikmesi sıfır veya pozitif olmalıdır."
   },
   "desktop_clients": {
     "ask_each_time": "Her seferinde sor",

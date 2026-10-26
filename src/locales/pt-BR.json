@@ -162,7 +162,8 @@
     "hide_progress": "Ocultar janela de progresso",
     "up_next": "A seguir",
     "submitted": "Enviado",
-    "pending": "Local pendente"
+    "pending": "Local pendente",
+    "keep_alive_active": "Mantendo o jogo conectado — {time} restantes"
   },
   "queue": {
     "remove": "Remover {name} da fila",
@@ -353,7 +354,12 @@
     "cdp_dialog_desc_disconnected_vesktop": "O Vesktop está em execução, mas não está conectado ao CDP. Precisamos reiniciá-lo com a porta de depuração CDP ativada.",
     "desktop_client": "Cliente para desktop",
     "desktop_client_desc": "Quando Discord e Vesktop estão instalados, esta escolha afeta apenas o login por CDP. A extração local de tokens sempre usa o cliente oficial do Discord.",
-    "nav_notifications": "Notificações"
+    "nav_notifications": "Notificações",
+    "keep_alive_after_quest": "Conexão pós-quest",
+    "keep_alive_enabled": "Manter o jogo conectado após a conclusão",
+    "keep_alive_desc": "Após concluir uma quest de jogo simulado, mantém o jogo conectado por algum tempo antes de fechá-lo. A fila avança somente após essa espera.",
+    "keep_alive_duration": "Tempo conectado",
+    "keep_alive_simulate_only": "Vale apenas para quests com jogo simulado; quests em CDP encerram a presença assim que são concluídas."
   },
   "version": {
     "update_available": "Uma nova versão está disponível!",
@@ -606,7 +612,18 @@
     "search_limit": "Exibindo {count} de {total}. Use a busca para filtrar.",
     "catalog_error": "Não foi possível carregar o catálogo. Tente atualizar.",
     "skip_occurrence": "Pular esta ocorrência",
-    "persistence_error": "Não foi possível salvar as configurações de inatividade. As alterações podem ser perdidas ao reiniciar."
+    "persistence_error": "Não foi possível salvar as configurações de inatividade. As alterações podem ser perdidas ao reiniciar.",
+    "duration_fixed": "Fixo",
+    "duration_random": "Aleatório",
+    "duration_min": "Mín",
+    "duration_max": "Máx",
+    "unit_minutes": "min",
+    "unit_seconds": "s",
+    "crash_simulation": "Simular crash",
+    "crash_simulation_desc": "Fecha o jogo atual aleatoriamente durante a rotação e reabre-o após um pequeno atraso, simulando uma desconexão.",
+    "crash_after": "Crash após",
+    "reopen_delay": "Atraso para reabrir",
+    "crash_simulation_error": "O atraso do crash deve ser um número inteiro positivo e o atraso de reabertura, zero ou positivo."
   },
   "desktop_clients": {
     "ask_each_time": "Perguntar sempre",

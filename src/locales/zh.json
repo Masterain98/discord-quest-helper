@@ -164,7 +164,8 @@
     "hide_progress": "隐藏任务进度窗口",
     "up_next": "队列中",
     "submitted": "已提交",
-    "pending": "待提交"
+    "pending": "待提交",
+    "keep_alive_active": "正在保持游戏连接 — 剩余 {time}"
   },
   "queue": {
     "remove": "将 {name} 移出任务队列",
@@ -355,7 +356,12 @@
     "disable_developer_mode": "关闭开发者模式",
     "disable_debug_confirm_title": "确认关闭开发者模式？",
     "disable_debug_confirm_desc": "Debug 标签页和开发者工具将被隐藏。你可以通过连续点击版本号 7 次重新启用。",
-    "nav_notifications": "通知"
+    "nav_notifications": "通知",
+    "keep_alive_after_quest": "任务完成后保持连接",
+    "keep_alive_enabled": "任务完成后保持游戏连接",
+    "keep_alive_desc": "模拟游戏任务完成后，让游戏保持连接一段时间再关闭。队列会在此等待之后才继续。",
+    "keep_alive_duration": "保持时长",
+    "keep_alive_simulate_only": "仅适用于进程模拟任务；CDP 任务完成后会立即结束存在状态。"
   },
   "version": {
     "update_available": "发现新版本！",
@@ -608,7 +614,18 @@
     "search_limit": "显示 {total} 项中的前 {count} 项，可搜索缩小范围。",
     "catalog_error": "候选列表加载失败，请尝试刷新。",
     "skip_occurrence": "跳过这一次",
-    "persistence_error": "无法保存挂机设置，重启后可能丢失本次修改。"
+    "persistence_error": "无法保存挂机设置，重启后可能丢失本次修改。",
+    "duration_fixed": "固定",
+    "duration_random": "随机",
+    "duration_min": "最小",
+    "duration_max": "最大",
+    "unit_minutes": "分钟",
+    "unit_seconds": "秒",
+    "crash_simulation": "模拟崩溃",
+    "crash_simulation_desc": "在轮换期间随机关闭当前游戏，并在短暂延迟后重新打开，以模拟断线。",
+    "crash_after": "崩溃时间",
+    "reopen_delay": "重新打开延迟",
+    "crash_simulation_error": "崩溃延迟必须为正整数，重新打开延迟必须为零或正数。"
   },
   "desktop_clients": {
     "ask_each_time": "每次询问我",

@@ -162,7 +162,8 @@
     "hide_progress": "進捗ウィンドウを非表示",
     "up_next": "次のクエスト",
     "submitted": "送信済み",
-    "pending": "保留中"
+    "pending": "保留中",
+    "keep_alive_active": "ゲームの接続を維持中 — 残り {time}"
   },
   "queue": {
     "remove": "{name} をキューから削除",
@@ -353,7 +354,12 @@
     "cdp_dialog_desc_disconnected_vesktop": "Vesktopは実行中ですがCDPに接続されていません。CDPデバッグポートを有効にしてVesktopを再起動する必要があります。",
     "desktop_client": "デスクトップクライアント",
     "desktop_client_desc": "DiscordとVesktopの両方がインストールされている場合、この選択はCDPログインにのみ影響します。ローカルトークンの抽出には常に公式Discordクライアントを使用します。",
-    "nav_notifications": "通知"
+    "nav_notifications": "通知",
+    "keep_alive_after_quest": "クエスト後の接続維持",
+    "keep_alive_enabled": "クエスト完了後もゲームを接続したままにする",
+    "keep_alive_desc": "シミュレートしたゲームのクエストが完了した後、ゲームをしばらく接続したままにしてから終了します。キューはこの待機の後に進みます。",
+    "keep_alive_duration": "接続を維持する時間",
+    "keep_alive_simulate_only": "プロセス シミュレーションのクエストのみが対象です。CDP のクエストは完了と同時にプレゼンスが解除されます。"
   },
   "version": {
     "update_available": "新しいバージョンが利用可能です！",
@@ -606,7 +612,18 @@
     "search_limit": "{total} 件中 {count} 件を表示。検索で絞り込めます。",
     "catalog_error": "候補一覧を読み込めませんでした。更新してください。",
     "skip_occurrence": "今回のみスキップ",
-    "persistence_error": "放置モードの設定を保存できませんでした。再起動後に変更が失われる可能性があります。"
+    "persistence_error": "放置モードの設定を保存できませんでした。再起動後に変更が失われる可能性があります。",
+    "duration_fixed": "固定",
+    "duration_random": "ランダム",
+    "duration_min": "最小",
+    "duration_max": "最大",
+    "unit_minutes": "分",
+    "unit_seconds": "秒",
+    "crash_simulation": "クラッシュをシミュレート",
+    "crash_simulation_desc": "ローテーション中に現在のゲームをランダムに終了し、短い遅延の後に再起動して、切断をシミュレートします。",
+    "crash_after": "クラッシュまでの時間",
+    "reopen_delay": "再起動までの遅延",
+    "crash_simulation_error": "クラッシュまでの時間は正の整数、再起動までの遅延は 0 以上の整数で指定してください。"
   },
   "desktop_clients": {
     "ask_each_time": "毎回確認する",
