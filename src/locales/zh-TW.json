@@ -162,7 +162,8 @@
     "hide_progress": "隱藏任務進度視窗",
     "up_next": "隊列中",
     "submitted": "已提交",
-    "pending": "待提交"
+    "pending": "待提交",
+    "keep_alive_active": "正在保持遊戲連線 — 剩餘 {time}"
   },
   "queue": {
     "remove": "將 {name} 移出任務佇列",
@@ -352,7 +353,12 @@
     "cdp_dialog_title_disconnected_vesktop": "要重新啟動 Vesktop 以啟用 CDP 嗎？",
     "cdp_dialog_desc_disconnected_vesktop": "Vesktop 正在執行但尚未連線到 CDP。我們需要啟用 CDP 偵錯連接埠後重新啟動 Vesktop。",
     "desktop_client": "桌面用戶端",
-    "desktop_client_desc": "當 Discord 與 Vesktop 都已安裝時，此選項只會影響 CDP 登入。本機 token 擷取一律使用官方 Discord 用戶端。"
+    "desktop_client_desc": "當 Discord 與 Vesktop 都已安裝時，此選項只會影響 CDP 登入。本機 token 擷取一律使用官方 Discord 用戶端。",
+    "keep_alive_after_quest": "任務完成後保持連線",
+    "keep_alive_enabled": "任務完成後保持遊戲連線",
+    "keep_alive_desc": "模擬遊戲任務完成後，讓遊戲保持連線一段時間再關閉。佇列會在這段等待之後才繼續。",
+    "keep_alive_duration": "保持時長",
+    "keep_alive_simulate_only": "僅適用於處理程序模擬任務；CDP 任務完成後會立即結束顯示狀態。"
   },
   "version": {
     "update_available": "發現新版本！",
@@ -599,7 +605,18 @@
     "search_limit": "顯示 {total} 項中的前 {count} 項，可搜尋縮小範圍。",
     "catalog_error": "候選清單載入失敗，請嘗試重新整理。",
     "skip_occurrence": "略過這一次",
-    "persistence_error": "無法儲存掛機設定，重新啟動後可能遺失本次修改。"
+    "persistence_error": "無法儲存掛機設定，重新啟動後可能遺失本次修改。",
+    "duration_fixed": "固定",
+    "duration_random": "隨機",
+    "duration_min": "最小",
+    "duration_max": "最大",
+    "unit_minutes": "分鐘",
+    "unit_seconds": "秒",
+    "crash_simulation": "模擬當機",
+    "crash_simulation_desc": "在輪替期間隨機關閉目前的遊戲，並在短暫延遲後重新開啟，以模擬斷線。",
+    "crash_after": "當機時間",
+    "reopen_delay": "重新開啟延遲",
+    "crash_simulation_error": "當機延遲必須為正整數，重新開啟延遲必須為零或正數。"
   },
   "desktop_clients": {
     "ask_each_time": "每次詢問我",

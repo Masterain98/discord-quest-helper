@@ -408,14 +408,30 @@ export type GameIdleMode = 'process' | 'cdp'
 export type GameIdleSelectionMode = 'random' | 'manual'
 export type GameIdleCandidateType = 'all' | 'game' | 'app'
 export type GameIdlePhase = 'starting' | 'playing' | 'resting' | 'stopping' | 'error' | 'stopped'
+export type GameIdleDurationMode = 'fixed' | 'random'
+
+/** Fixed minutes/seconds or an inclusive random range; the unit is implied by the field carrying it. */
+export interface GameIdleDuration {
+  mode: GameIdleDurationMode
+  fixed: number
+  min: number
+  max: number
+}
+
+export interface GameIdleCrashConfig {
+  enabled: boolean
+  crashAfterMinutes: GameIdleDuration
+  reopenDelaySeconds: GameIdleDuration
+}
 
 export interface GameIdleConfig {
   mode: GameIdleMode
   selectionMode: GameIdleSelectionMode
   candidateType: GameIdleCandidateType
   selectedAppIds: string[]
-  playMinutes: number
-  restMinutes: number
+  playDuration: GameIdleDuration
+  restDuration: GameIdleDuration
+  crashSimulation: GameIdleCrashConfig
   cdpPort: number
   simulationPath: string
 }
@@ -435,8 +451,12 @@ export interface GameIdleStatus {
   candidateType: GameIdleCandidateType
   selectedAppIds: string[]
   phase: GameIdlePhase
+  /** Resolved duration of the current cycle; playDuration/restDuration carry the configured spec. */
   playMinutes: number
   restMinutes: number
+  playDuration: GameIdleDuration
+  restDuration: GameIdleDuration
+  crashSimulation: GameIdleCrashConfig
   current: GameIdleItem | null
   recent: GameIdleItem[]
   upcoming: GameIdleItem[]

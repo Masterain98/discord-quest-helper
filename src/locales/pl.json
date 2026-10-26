@@ -162,7 +162,8 @@
     "hide_progress": "Ukryj okno postępu",
     "up_next": "Dalej",
     "submitted": "Przesłane",
-    "pending": "Lokalne oczekujące"
+    "pending": "Lokalne oczekujące",
+    "keep_alive_active": "Utrzymywanie połączenia z grą — pozostało {time}"
   },
   "queue": {
     "remove": "Usuń {name} z kolejki",
@@ -352,7 +353,12 @@
     "cdp_dialog_title_disconnected_vesktop": "Uruchomić ponownie Vesktop, aby włączyć CDP?",
     "cdp_dialog_desc_disconnected_vesktop": "Vesktop jest uruchomiony, ale nie jest połączony z CDP. Należy uruchomić Vesktop ponownie z włączonym portem debugowania CDP.",
     "desktop_client": "Klient desktopowy",
-    "desktop_client_desc": "Gdy Discord i Vesktop są zainstalowane, ten wybór dotyczy tylko logowania CDP. Lokalna ekstrakcja tokenów zawsze używa oficjalnego klienta Discord."
+    "desktop_client_desc": "Gdy Discord i Vesktop są zainstalowane, ten wybór dotyczy tylko logowania CDP. Lokalna ekstrakcja tokenów zawsze używa oficjalnego klienta Discord.",
+    "keep_alive_after_quest": "Połączenie po Queście",
+    "keep_alive_enabled": "Pozostaw grę połączoną po ukończeniu",
+    "keep_alive_desc": "Po ukończeniu symulowanego Questa gra pozostaje połączona jeszcze przez chwilę przed zamknięciem. Kolejka rusza dopiero po tym oczekiwaniu.",
+    "keep_alive_duration": "Czas połączenia",
+    "keep_alive_simulate_only": "Dotyczy tylko Questów symulowanych procesowo; Questy CDP zrywają obecność od razu po ukończeniu."
   },
   "version": {
     "update_available": "Dostępna jest nowa wersja!",
@@ -599,7 +605,18 @@
     "search_limit": "Wyświetlono {count} z {total}. Użyj wyszukiwania, aby zawęzić wyniki.",
     "catalog_error": "Nie udało się wczytać katalogu. Spróbuj odświeżyć.",
     "skip_occurrence": "Pomiń to wystąpienie",
-    "persistence_error": "Nie udało się zapisać ustawień bezczynności. Zmiany mogą zostać utracone po ponownym uruchomieniu."
+    "persistence_error": "Nie udało się zapisać ustawień bezczynności. Zmiany mogą zostać utracone po ponownym uruchomieniu.",
+    "duration_fixed": "Stały",
+    "duration_random": "Losowy",
+    "duration_min": "Min",
+    "duration_max": "Maks",
+    "unit_minutes": "min",
+    "unit_seconds": "s",
+    "crash_simulation": "Symulacja awarii",
+    "crash_simulation_desc": "Losowo zamyka bieżącą grę podczas rotacji i otwiera ją ponownie po krótkiej przerwie, symulując rozłączenie.",
+    "crash_after": "Awaria po",
+    "reopen_delay": "Opóźnienie ponownego uruchomienia",
+    "crash_simulation_error": "Opóźnienie awarii musi być dodatnią liczbą całkowitą, a opóźnienie ponownego uruchomienia — zerem lub liczbą dodatnią."
   },
   "desktop_clients": {
     "ask_each_time": "Pytaj za każdym razem",

@@ -162,7 +162,8 @@
     "hide_progress": "ซ่อนหน้าต่างความคืบหน้า",
     "up_next": "ต่อไป",
     "submitted": "ส่งแล้ว",
-    "pending": "รอดำเนินการในท้องถิ่น"
+    "pending": "รอดำเนินการในท้องถิ่น",
+    "keep_alive_active": "กำลังเปิดเกมค้างไว้ — เหลืออีก {time}"
   },
   "queue": {
     "remove": "นำ {name} ออกจากคิว",
@@ -352,7 +353,12 @@
     "cdp_dialog_title_disconnected_vesktop": "เริ่ม Vesktop ใหม่เพื่อเปิดใช้ CDP หรือไม่",
     "cdp_dialog_desc_disconnected_vesktop": "Vesktop กำลังทำงานแต่ไม่ได้เชื่อมต่อกับ CDP เราจำเป็นต้องเริ่ม Vesktop ใหม่โดยเปิดใช้พอร์ตดีบัก CDP",
     "desktop_client": "ไคลเอนต์เดสก์ท็อป",
-    "desktop_client_desc": "เมื่อติดตั้งทั้ง Discord และ Vesktop ตัวเลือกนี้มีผลเฉพาะการเข้าสู่ระบบ CDP การดึงโทเค็นในเครื่องจะใช้ไคลเอนต์ Discord อย่างเป็นทางการเสมอ"
+    "desktop_client_desc": "เมื่อติดตั้งทั้ง Discord และ Vesktop ตัวเลือกนี้มีผลเฉพาะการเข้าสู่ระบบ CDP การดึงโทเค็นในเครื่องจะใช้ไคลเอนต์ Discord อย่างเป็นทางการเสมอ",
+    "keep_alive_after_quest": "การเชื่อมต่อหลัง Quest",
+    "keep_alive_enabled": "เปิดเกมค้างไว้หลัง Quest เสร็จ",
+    "keep_alive_desc": "หลังจาก Quest เกมจำลองเสร็จสิ้น เกมจะยังคงเชื่อมต่อไว้อีกระยะหนึ่งก่อนปิด คิวจะเดินต่อหลังจากรอช่วงนี้เท่านั้น",
+    "keep_alive_duration": "ระยะเวลาที่เชื่อมต่อ",
+    "keep_alive_simulate_only": "ใช้ได้กับ Quest ที่จำลองด้วยโปรเซสเท่านั้น Quest CDP จะยกเลิกสถานะทันทีที่เสร็จ"
   },
   "version": {
     "update_available": "มีเวอร์ชันใหม่แล้ว!",
@@ -599,7 +605,18 @@
     "search_limit": "แสดง {count} จาก {total} รายการ ค้นหาเพื่อจำกัดผลลัพธ์",
     "catalog_error": "โหลดรายการไม่สำเร็จ โปรดลองรีเฟรช",
     "skip_occurrence": "ข้ามครั้งนี้",
-    "persistence_error": "บันทึกการตั้งค่าโหมดว่างไม่ได้ การเปลี่ยนแปลงอาจหายไปหลังเริ่มใหม่"
+    "persistence_error": "บันทึกการตั้งค่าโหมดว่างไม่ได้ การเปลี่ยนแปลงอาจหายไปหลังเริ่มใหม่",
+    "duration_fixed": "คงที่",
+    "duration_random": "สุ่ม",
+    "duration_min": "ต่ำสุด",
+    "duration_max": "สูงสุด",
+    "unit_minutes": "นาที",
+    "unit_seconds": "วินาที",
+    "crash_simulation": "จำลองการค้าง",
+    "crash_simulation_desc": "ปิดเกมปัจจุบันแบบสุ่มระหว่างการหมุนเวียน แล้วเปิดใหม่หลังจากหน่วงเวลาสั้น ๆ เพื่อจำลองการหลุดการเชื่อมต่อ",
+    "crash_after": "ค้างหลังจาก",
+    "reopen_delay": "ดีเลย์ก่อนเปิดใหม่",
+    "crash_simulation_error": "ดีเลย์การค้างต้องเป็นจำนวนเต็มบวก และดีเลย์เปิดใหม่ต้องเป็นศูนย์หรือบวก"
   },
   "desktop_clients": {
     "ask_each_time": "ถามฉันทุกครั้ง",
