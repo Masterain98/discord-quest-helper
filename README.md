@@ -145,7 +145,7 @@ Explore the codebase with [![Ask DeepWiki](https://deepwiki.com/badge.svg)](http
 - **Platform-native credentials** — Windows DPAPI, macOS Keychain, and Linux Secret Service are used by the local extraction paths.
 - **HTTPS for Discord API requests** — Network requests use secure HTTPS connections.
 - **Sanitized diagnostics** — Logs and debug exports redact sensitive tokens and account data where applicable.
-- **No telemetry** — No analytics SDK or usage reporting is bundled. External requests are limited to Discord, GitHub (update check), the discordquest.com Global Quests catalog, and the ProtonVPN API when you use the optional Proton profile generator; your Discord token is never sent to Proton.
+- **No telemetry** — No analytics SDK or usage reporting is bundled. The app's own API requests go to Discord, GitHub (update check), the discordquest.com Global Quests catalog, and the ProtonVPN API when you use the optional Proton profile generator (which also resolves DNS through public resolvers and talks to ProtonVPN exit endpoints); your Discord token is never sent to Proton. The optional Live tunnel routes Discord's traffic through your VPN provider's endpoint, and its WireSock install step uses winget's own endpoints.
 
 ## 🤝 Contributing
 

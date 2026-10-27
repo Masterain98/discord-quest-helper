@@ -4,6 +4,16 @@ import { useI18n } from 'vue-i18n'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { open as openExternal } from '@tauri-apps/plugin-shell'
 import { CheckCircle2, CircleAlert, Download, KeyRound, Loader2, MonitorUp } from 'lucide-vue-next'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -36,6 +46,7 @@ const protonUsername = ref(localStorage.getItem(PROTON_USERNAME_KEY) ?? '')
 const protonPassword = ref('')
 const protonCountries = ref(localStorage.getItem(PROTON_COUNTRIES_KEY) ?? 'US,NL,JP')
 const protonError = ref('')
+const restartDialogOpen = ref(false)
 
 const configName = computed(() => configPath.value.split(/[\\/]/).pop() ?? '')
 const displayError = computed(() => error.value || status.value?.error || '')
@@ -144,6 +155,19 @@ async function restartDiscord(): Promise<boolean> {
   }
 }
 
+// Restarting Discord terminates the running client, so both the automatic
+// post-Proton step and the manual button go through the same confirmation.
+function requestRestart() {
+  restartDialogOpen.value = true
+}
+
+async function confirmRestart() {
+  restartDialogOpen.value = false
+  await restartDiscord()
+  if (!error.value) return
+  protonError.value = t('settings.live_tunnel_restart_hint')
+}
+
 async function startProton() {
   protonError.value = ''
   if (!protonUsername.value.trim()) {
@@ -164,16 +188,7 @@ async function startProton() {
     localStorage.setItem(PROTON_COUNTRIES_KEY, protonCountries.value)
     if (status.value.running) {
       await new Promise(resolve => setTimeout(resolve, 800))
-      let restarted = await restartDiscord()
-      if (!restarted) {
-        busy.value = true
-        await new Promise(resolve => setTimeout(resolve, 1200))
-        restarted = await restartDiscord()
-      }
-      if (!restarted) {
-        error.value = ''
-        protonError.value = t('settings.live_tunnel_restart_hint')
-      }
+      requestRestart()
     }
   } catch (e) {
     const message = commandErrorMessage(e)
@@ -267,6 +282,23 @@ onMounted(refreshStatus)
       {{ protonError }}
     </p>
   </SettingsSectionCard>
+
+  <AlertDialog :open="restartDialogOpen" @update:open="restartDialogOpen = $event">
+    <AlertDialogContent>
+      <AlertDialogHeader>
+        <AlertDialogTitle>{{ t('settings.live_tunnel_restart_confirm_title') }}</AlertDialogTitle>
+        <AlertDialogDescription>{{ t('settings.live_tunnel_restart_confirm_desc') }}</AlertDialogDescription>
+      </AlertDialogHeader>
+      <AlertDialogFooter>
+        <AlertDialogCancel :disabled="busy" @click="protonError = t('settings.live_tunnel_restart_hint')">
+          {{ t('settings.live_tunnel_restart_later') }}
+        </AlertDialogCancel>
+        <AlertDialogAction :disabled="busy" @click="confirmRestart">
+          {{ t('settings.cdp_restart') }}
+        </AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
+  </AlertDialog>
 
   <SettingsSectionCard
     class="mt-7 sm:mt-9"

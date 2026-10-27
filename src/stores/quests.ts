@@ -792,6 +792,16 @@ export const useQuestsStore = defineStore('quests', () => {
         cdpPort.value
       )
 
+      try {
+        await startGameSimulationUsage(appId, appName)
+      } catch (historyError) {
+        // Roll back the started CDP spoof; a stream without its
+        // account-scoped history segment would silently break accounting.
+        await stopQuest().catch(() => undefined)
+        const detail = historyError instanceof Error ? historyError.message : String(historyError)
+        throw new Error(`Failed to start stream simulation history: ${detail}`)
+      }
+
       activeQuestId.value = quest.id
       activeQuestType.value = 'stream'
       activeQuestProgress.value = progressPct

@@ -495,7 +495,9 @@ fn is_protected_executable_path(path: Option<&Path>) -> bool {
             .to_ascii_lowercase();
         normalized.starts_with("/sbin/")
             || normalized.starts_with("/usr/sbin/")
-            || normalized.starts_with("/system/")
+            // macOS user volumes live under /System/Volumes/Data; only the
+            // rest of /system holds protected OS binaries.
+            || (normalized.starts_with("/system/") && !normalized.starts_with("/system/volumes/data/"))
     }
 }
 

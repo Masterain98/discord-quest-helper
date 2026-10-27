@@ -3,11 +3,9 @@ package main
 
 import (
 	"cmp"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"slices"
 	"strings"
@@ -22,20 +20,6 @@ import (
 
 	"github.com/ProtonVPN/go-vpn-lib/ed25519"
 )
-
-func init() {
-	net.DefaultResolver = &net.Resolver{
-		PreferGo: true,
-		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-			var d net.Dialer
-			conn, err := d.DialContext(ctx, "udp", "1.1.1.1:53")
-			if err != nil {
-				return d.DialContext(ctx, "udp", "8.8.8.8:53")
-			}
-			return conn, nil
-		},
-	}
-}
 
 func main() {
 	if err := run(); err != nil {

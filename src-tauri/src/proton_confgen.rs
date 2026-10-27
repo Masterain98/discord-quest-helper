@@ -158,12 +158,11 @@ fn start_proton_tunnel_blocking(
             countries.as_str(),
             "--output",
             output_argument.as_str(),
-            "--duration",
-            "365d",
+            // Session-only certificate: nothing is registered on the Proton
+            // account, so repeated starts never pile up persistent devices.
+            "--no-save",
             "--session-duration",
             "0",
-            "--device-name",
-            "Discord Quest Helper",
         ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
