@@ -1,12 +1,20 @@
 #![cfg_attr(not(windows), allow(dead_code))]
 
+#[cfg(windows)]
 use std::fs;
+#[cfg(windows)]
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(windows)]
+use std::path::PathBuf;
+#[cfg(windows)]
 use std::process::{Command, Stdio};
+#[cfg(windows)]
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[cfg(windows)]
 use sha2::{Digest, Sha256};
+#[cfg(windows)]
 use zeroize::Zeroizing;
 
 use crate::live_tunnel::LiveTunnelStatus;
@@ -233,7 +241,7 @@ pub(crate) async fn start_proton_tunnel(
     #[cfg(not(windows))]
     {
         let _ = (app, username, password, countries);
-        return Err("Proton tunnel is only supported on Windows.".to_string());
+        Err("Proton tunnel is only supported on Windows.".to_string())
     }
 
     #[cfg(windows)]

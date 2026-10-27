@@ -411,7 +411,7 @@ pub(crate) fn start_live_tunnel_blocking(config_path: String) -> Result<LiveTunn
     #[cfg(not(windows))]
     {
         let _ = config_path;
-        return Err("Live tunnel is only supported on Windows.".to_string());
+        Err("Live tunnel is only supported on Windows.".to_string())
     }
 
     #[cfg(windows)]
@@ -519,7 +519,7 @@ pub(crate) fn start_live_tunnel_blocking(config_path: String) -> Result<LiveTunn
 fn stop_live_tunnel_blocking() -> Result<LiveTunnelStatus, String> {
     #[cfg(not(windows))]
     {
-        return Err("Live tunnel is only supported on Windows.".to_string());
+        Err("Live tunnel is only supported on Windows.".to_string())
     }
 
     #[cfg(windows)]
