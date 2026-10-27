@@ -85,6 +85,7 @@ If an older AppImage becomes blank after login and logs `GStreamer element autoa
 - ⚡ **Flexible Login** — Auto-detect supported local Discord profiles, connect through CDP, or enter a token manually.
 - 🖥️ **Discord & Vesktop Support** — Select the desktop client or installation used for CDP login, including custom paths.
 - 🐧 **Linux Desktop Support** — Available as an x86_64 AppImage or Debian package.
+- 🖥️ **Live Tunnel (Windows)** — Route only Discord through a WireGuard profile to use Live and screen sharing where they are unavailable. Requires WireSock and a `.conf` file.
 - 🎮 **Zero-Download Game Simulation** — Complete game quests without downloading or installing the actual game.
 - 📺 **Video & Stream Automation** — Start once and let quest progress update in the background.
 - 🔍 **Advanced Quest Filters** — Filter by reward type, completion status, and more.
@@ -93,16 +94,16 @@ If an older AppImage becomes blank after login and logs `GStreamer element autoa
 
 ## 📸 Screenshots
 
-| Login | Home |
-|:-----:|:----:|
+|                                           Login                                           |                                           Home                                           |
+| :---------------------------------------------------------------------------------------: | :--------------------------------------------------------------------------------------: |
 | ![Login](https://github.com/user-attachments/assets/a67369e9-7bd5-46ca-afdc-f16e54f64824) | ![Home](https://github.com/user-attachments/assets/bde65569-c4e0-4d0e-971a-a28ab9f38468) |
 
-| Multi-Account | Game Simulator |
-|:-------------:|:--------------:|
+|                                           Multi-Account                                           |                                           Game Simulator                                           |
+| :-----------------------------------------------------------------------------------------------: | :------------------------------------------------------------------------------------------------: |
 | ![Multi-Account](https://github.com/user-attachments/assets/0abcfd9e-5716-451a-ba5e-bac38b7324f5) | ![Game Simulator](https://github.com/user-attachments/assets/d1f9d481-39f6-4bef-8b4a-9bf90c9ad4e3) |
 
-| Quest Progress | Settings |
-|:--------------:|:--------:|
+|                                           Quest Progress                                           |                                           Settings                                           |
+| :------------------------------------------------------------------------------------------------: | :------------------------------------------------------------------------------------------: |
 | ![Quest Progress](https://github.com/user-attachments/assets/7a1d6c82-63a6-4595-a060-cefae05676e5) | ![Settings](https://github.com/user-attachments/assets/1261a2f5-8b99-4c55-ab7e-18e7b9617e8e) |
 
 ## 🏗️ Architecture
@@ -144,6 +145,7 @@ Explore the codebase with [![Ask DeepWiki](https://deepwiki.com/badge.svg)](http
 - **Platform-native credentials** — Windows DPAPI, macOS Keychain, and Linux Secret Service are used by the local extraction paths.
 - **HTTPS for Discord API requests** — Network requests use secure HTTPS connections.
 - **Sanitized diagnostics** — Logs and debug exports redact sensitive tokens and account data where applicable.
+- **No telemetry** — No analytics SDK or usage reporting is bundled. External requests are limited to Discord, GitHub (update check), the discordquest.com Global Quests catalog, and the ProtonVPN API when you use the optional Proton profile generator; your Discord token is never sent to Proton.
 
 ## 🤝 Contributing
 
@@ -158,10 +160,12 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for:
 
 MIT License — see the [LICENSE](LICENSE) file.
 
+The bundled `proton-confgen` generator is GPL-3.0; its source and license are in `tools/proton-confgen`, and the notices are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## 🙏 Credits
 
 **Inspiration & Resources**
+
 - [markterence/discord-quest-completer](https://github.com/markterence/discord-quest-completer)
 - [power0matin/discord-quest-auto-completer](https://github.com/power0matin/discord-quest-auto-completer)
 - [taisrisk/Discord-Quest-Helper](https://github.com/taisrisk/Discord-Quest-Helper)
@@ -169,4 +173,5 @@ MIT License — see the [LICENSE](LICENSE) file.
 - [docs.discord.food](https://docs.discord.food/)
 
 **Technologies**
+
 - [Tauri](https://tauri.app/) • [Vue.js](https://vuejs.org/) • [Pinia](https://pinia.vuejs.org/) • [vue-i18n](https://vue-i18n.intlify.dev/) • [shadcn-vue](https://www.shadcn-vue.com/) • [TailwindCSS](https://tailwindcss.com/) • [Lucide Icons](https://lucide.dev/)

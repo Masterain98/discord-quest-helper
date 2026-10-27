@@ -1,0 +1,13 @@
+POST /auth/2fa HTTP/1.1
+Host: 127.0.0.1:18201
+x-pm-appversion: linux-vpn-gui@5.8.7+aarch64
+User-Agent: ProtonVPN/5.8.7 (Linux; ubuntu/24.04)
+x-pm-uid: UIDVALUE
+Authorization: Bearer TOKENVALUE
+x-pm-timezone: Europe/Zurich
+Accept: */*
+Accept-Encoding: gzip, deflate
+Content-Length: 27
+Content-Type: application/json
+
+{"TwoFactorCode": "123456"}

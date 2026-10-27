@@ -10,9 +10,11 @@ mod discord_console;
 mod discord_gateway;
 mod game_idle;
 mod game_simulator;
+mod live_tunnel;
 mod logger;
 mod models;
 mod platform_capabilities;
+mod proton_confgen;
 mod quest_completer;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 mod runtime_bridge;
@@ -2251,6 +2253,10 @@ pub fn run() {
             start_play_activity_quest,
             start_cdp_quest,
             stop_quest,
+            live_tunnel::live_tunnel_status,
+            live_tunnel::start_live_tunnel,
+            live_tunnel::stop_live_tunnel,
+            proton_confgen::start_proton_tunnel,
             create_simulated_game,
             run_simulated_game,
             stop_simulated_game,
@@ -2281,8 +2287,6 @@ pub fn run() {
             open_in_explorer,
             force_video_progress,
             export_logs,
-            log_ip_info_diagnostic,
-            get_ip_info,
             get_debug_info,
             get_runner_info,
             check_cdp_status,
@@ -2429,6 +2433,7 @@ async fn cleanup_local_resources_on_exit() {
     if !APP_EXIT_CLEANUP.claim_local_cleanup() {
         return;
     }
+    live_tunnel::stop_for_exit();
     game_simulator::cleanup_all_simulated_games();
     if let Some(client) = take_discord_rpc_client_for_exit() {
         if tokio::time::timeout(APP_EXIT_RPC_DISCONNECT_TIMEOUT, client.discord.disconnect())
@@ -2445,6 +2450,7 @@ fn cleanup_local_resources_on_exit_sync() {
     if !APP_EXIT_CLEANUP.claim_local_cleanup() {
         return;
     }
+    live_tunnel::stop_for_exit();
     game_simulator::cleanup_all_simulated_games();
     if let Some(client) = take_discord_rpc_client_for_exit() {
         tauri::async_runtime::spawn(async move {
@@ -2527,144 +2533,6 @@ async fn force_video_progress(
 #[tauri::command]
 async fn export_logs() -> Result<String, String> {
     logger::export_logs().map_err(|e| format!("Failed to export logs: {}", e))
-}
-
-/// Forward IP location diagnostics from the WebView to the app's terminal log.
-#[tauri::command]
-fn log_ip_info_diagnostic(level: String, event: String, details: Option<String>) {
-    let level = match level.as_str() {
-        "info" => logger::LogLevel::Info,
-        "warn" => logger::LogLevel::Warn,
-        "error" => logger::LogLevel::Error,
-        _ => logger::LogLevel::Debug,
-    };
-    let event = event
-        .chars()
-        .filter(|character| !character.is_control())
-        .take(100)
-        .collect::<String>();
-    let details = details.map(|details| {
-        details
-            .chars()
-            .filter(|character| !character.is_control())
-            .take(700)
-            .collect::<String>()
-    });
-    logger::log(
-        level,
-        logger::LogCategory::Api,
-        &format!("[IPInfo] {event}"),
-        details.as_deref(),
-    );
-}
-
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-struct IpInfo {
-    country: String,
-    country_code: String,
-}
-
-/// Resolve the current public IP's country without exposing the lookup to WebView CORS.
-#[tauri::command]
-async fn get_ip_info() -> Result<IpInfo, String> {
-    const ENDPOINT: &str = "https://my.ippure.com/v1/info";
-    const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
-
-    logger::log(
-        logger::LogLevel::Debug,
-        logger::LogCategory::Api,
-        "[IPInfo] starting native HTTP request",
-        Some(ENDPOINT),
-    );
-
-    let client = reqwest::Client::builder()
-        .timeout(TIMEOUT)
-        .build()
-        .map_err(|error| {
-            let message = format!("[IPInfo] failed to create HTTP client: {error}");
-            logger::log(
-                logger::LogLevel::Error,
-                logger::LogCategory::Api,
-                &message,
-                None,
-            );
-            error.to_string()
-        })?;
-
-    let response = client
-        .get(ENDPOINT)
-        .header(reqwest::header::ACCEPT, "application/json")
-        .send()
-        .await
-        .map_err(|error| {
-            let message = format!("[IPInfo] native HTTP request failed: {error}");
-            logger::log(
-                logger::LogLevel::Error,
-                logger::LogCategory::Api,
-                &message,
-                None,
-            );
-            error.to_string()
-        })?;
-
-    let status = response.status();
-    logger::log(
-        logger::LogLevel::Debug,
-        logger::LogCategory::Api,
-        "[IPInfo] received HTTP response",
-        Some(&status.to_string()),
-    );
-    if !status.is_success() {
-        let message = format!("IPPure returned HTTP status {status}");
-        logger::log(
-            logger::LogLevel::Error,
-            logger::LogCategory::Api,
-            &format!("[IPInfo] {message}"),
-            None,
-        );
-        return Err(message);
-    }
-
-    let mut info = response.json::<IpInfo>().await.map_err(|error| {
-        let message = format!("[IPInfo] response JSON could not be decoded: {error}");
-        logger::log(
-            logger::LogLevel::Error,
-            logger::LogCategory::Api,
-            &message,
-            None,
-        );
-        "IPPure returned an invalid response".to_string()
-    })?;
-    info.country = info.country.trim().to_string();
-    info.country_code = info.country_code.trim().to_ascii_uppercase();
-    if info.country.is_empty()
-        || info.country_code.len() != 2
-        || !info
-            .country_code
-            .bytes()
-            .all(|byte| byte.is_ascii_uppercase())
-    {
-        let message = "[IPInfo] response is missing a valid country or country code";
-        logger::log(
-            logger::LogLevel::Error,
-            logger::LogCategory::Api,
-            message,
-            None,
-        );
-        return Err("IPPure returned an invalid country".to_string());
-    }
-
-    logger::log(
-        logger::LogLevel::Info,
-        logger::LogCategory::Api,
-        "[IPInfo] location lookup succeeded",
-        Some(&format!(
-            "country={} country_code={}",
-            info.country, info.country_code
-        )),
-    );
-    Ok(info)
 }
 
 /// Get debug info including X-Super-Properties

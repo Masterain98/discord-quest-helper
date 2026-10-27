@@ -605,21 +605,6 @@ export async function getDebugInfo(): Promise<DebugInfo> {
   return await invoke('get_debug_info')
 }
 
-export type IpInfoDiagnosticLevel = 'debug' | 'info' | 'warn' | 'error'
-
-export async function logIpInfoDiagnostic(
-  level: IpInfoDiagnosticLevel,
-  event: string,
-  details?: Record<string, string | number>,
-): Promise<void> {
-  if (!('__TAURI_INTERNALS__' in window)) return
-  await invoke('log_ip_info_diagnostic', {
-    level,
-    event,
-    details: details ? JSON.stringify(details) : null,
-  })
-}
-
 export type RuntimeIdentityLevel = 'full' | 'degraded' | 'disabled' | 'notApplicable'
 
 export interface RuntimeIdentityStatus {
@@ -943,6 +928,36 @@ export async function restartDiscordCdp(
   client?: DesktopClientArg,
 ): Promise<DiscordCdpLaunchResult> {
   return await invoke('restart_discord_cdp', { port, channel, client })
+}
+
+export interface LiveTunnelStatus {
+  supported: boolean
+  wiresockInstalled: boolean
+  wiresockPath: string | null
+  running: boolean
+  externalWiresockRunning: boolean
+  configPath: string | null
+  error: string | null
+}
+
+export async function getLiveTunnelStatus(): Promise<LiveTunnelStatus> {
+  return await invoke('live_tunnel_status')
+}
+
+export async function startLiveTunnel(configPath: string): Promise<LiveTunnelStatus> {
+  return await invoke('start_live_tunnel', { configPath })
+}
+
+export async function stopLiveTunnel(): Promise<LiveTunnelStatus> {
+  return await invoke('stop_live_tunnel')
+}
+
+export async function startProtonTunnel(
+  username: string,
+  password: string,
+  countries: string,
+): Promise<LiveTunnelStatus> {
+  return await invoke('start_proton_tunnel', { username, password, countries })
 }
 
 export async function createDiscordCdpLauncherShortcut(

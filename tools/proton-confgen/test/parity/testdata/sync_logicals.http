@@ -1,0 +1,12 @@
+GET /vpn/v1/logicals?SecureCoreFilter=all&WithState=true HTTP/1.1
+Host: 127.0.0.1:18203
+x-pm-appversion: linux-vpn-gui@5.8.7+aarch64
+User-Agent: ProtonVPN/5.8.7 (Linux; ubuntu/24.04)
+x-pm-uid: UIDVALUE
+Authorization: Bearer TOKENVALUE
+x-pm-timezone: Europe/Zurich
+X-PM-netzone: 192.0.2.0
+If-Modified-Since: Thu, 01 Jan 1970 00:00:00 GMT
+Accept: */*
+Accept-Encoding: gzip, deflate
+

@@ -1,0 +1,43 @@
+name: Parity drift
+
+# Re-records the wire goldens from Proton's current Linux client packages and
+# runs the parity tests against them. The regular CI run only compares against
+# the goldens in the repository, so it cannot notice Proton shipping a client
+# that behaves differently; this does. A failure means the official client
+# changed: re-record locally with `make parity-goldens`, adapt, and commit.
+#
+# The post-login goldens need a live session to record and are not refreshed
+# here, so drift in those requests is only caught by a manual re-record.
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    name: Compare with the official client
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Re-record goldens from the official client
+        run: make parity-goldens
+
+      - name: Report the recorded client version
+        run: |
+          recorded=$(grep -ao 'linux-vpn-gui@[0-9.]*' test/parity/testdata/ping.http | head -1)
+          echo "Official client identifies as \`$recorded\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "$recorded"
+
+      - name: Run parity tests against the fresh recording
+        run: go test ./internal/api/ ./internal/auth/ -run 'OfficialClient|EncodesLikePython|MatchesAiohttp'

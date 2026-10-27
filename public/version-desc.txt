@@ -4,7 +4,7 @@
 
 1. Added Global Quests, where you can browse unexpired quests from different regions and preview upcoming quests.
 2. Search by quest or game name, and filter by eligible country or region, task type, reward type, and age restrictions. View rewards, requirements, and start and end times, or open a quest directly in Discord.
-3. See your current network region and which quests your account has accepted or completed. The catalog loads in the background, and your last loaded results remain available if a refresh fails.
+3. See which quests your account has accepted or completed. The catalog loads in the background, and your last loaded results remain available if a refresh fails.
 
 The global quest catalog is provided by discordquest.com. Check the quest in Discord to confirm whether your account is eligible.
 

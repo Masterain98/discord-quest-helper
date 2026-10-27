@@ -1,0 +1,11 @@
+POST /auth HTTP/1.1
+Host: 127.0.0.1:18201
+x-pm-appversion: linux-vpn-gui@5.8.7+aarch64
+User-Agent: ProtonVPN/5.8.7 (Linux; ubuntu/24.04)
+x-pm-timezone: Europe/Zurich
+Accept: */*
+Accept-Encoding: gzip, deflate
+Content-Length: 806
+Content-Type: application/json
+
+{"Username": "parityuser", "ClientEphemeral": "TqFSLc4Wt5dBJyzhLgMpzyZfCNZ6CZ9hazFX0EcfLYVTaUJimdc64ZkgiVSbTcGYN0ZxDgCgndiAvaXdCqJa/cFH2SwppoPdJ9D/uWj6UI0JCNLjCHhUvf3s5diTWfZM1XAvhkPK80U8VIZD7GyipuVgdewikqwueKWYJgxdvO2xf/Tg9N4KfoUNpNnhykeVomyAYTPFYIH3gGW1XHT6ozNYoaKIAzdWADFsEV0HKZOMvedwklHfMi7CHIpA4llderITpiLb+wKcwZsITIemFJIbQZETJJMJQnvX2jdR3xY2q19/12EMG3CswXcD9rf1yiRA4nWt7UdkXyRkCji4qg==", "ClientProof": "Wy5lwMFRbg/HWnmpO61HBb2VhBIRhHwgZYqWJiGe2oQ9PivFS+83FhpzvQ+NR4/OUZpFsEWh+TVFwMvUo9ISA1zWE/JXmeyVL4tiYzZlBP8RWWjbnspDqDXmHiMKS0BJaWHzxIbbP74LDSljXPTduDE/8/ctJ1eugeaBWDZNnhztyd/Fuj5gS8/hJl8bxQYhDi4/x8NRKPWtxT7BEiF5R+mbqz1B/zEe1UyWXwUfNMQPgcbNLNGZNd8ax6pZ/0+26akGbh7t2jaglUsdMReXCCofXAjJL/3vdaA5U6VPWDCMHCTDNH0bgC9h60X8XODivbnPwsfd4G5+fE674Qub+Q==", "SRPSession": "9f2fdc8b19427e8d0d66e0ec4fc6a2c5"}

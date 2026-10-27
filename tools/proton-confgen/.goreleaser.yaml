@@ -1,0 +1,82 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+version: 2
+
+project_name: protonvpn-wg-confgen
+
+before:
+  hooks:
+    - go mod tidy
+
+# Version the official Linux client identifies as: python-proton-vpn-api-core's
+# versions.yml, not the GTK app's. Override by exporting PROTON_VERSION.
+env:
+  - PROTON_VERSION={{ envOrDefault "PROTON_VERSION" "5.8.7" }}
+
+builds:
+  - id: protonvpn-wg-confgen
+    main: ./cmd/protonvpn-wg
+    binary: protonvpn-wg-confgen
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+      - arm
+    goarm:
+      - "7"
+    ignore:
+      # Windows ARM (32-bit) not commonly used
+      - goos: windows
+        goarch: arm
+      # macOS ARM (32-bit) doesn't exist
+      - goos: darwin
+        goarch: arm
+    ldflags:
+      - -s -w
+      - -X 'protonvpn-wg-confgen/internal/constants.ClientVersion={{ .Env.PROTON_VERSION }}'
+
+archives:
+  - id: default
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+      - "^chore:"
+      - Merge pull request
+      - Merge branch
+
+release:
+  github:
+    owner: '{{ envOrDefault "GITHUB_REPOSITORY_OWNER" "" }}'
+    name: protonvpn-wg-confgen
+  draft: false
+  prerelease: auto
+  mode: replace
+  name_template: "v{{.Version}}"

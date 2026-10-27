@@ -217,6 +217,37 @@ describe('per-quest startup', () => {
     store.resetForLogout()
   })
 
+  it('starts a stream quest through CDP and tracks its progress', async () => {
+    mocks.startCdpQuest.mockResolvedValueOnce(undefined)
+    const store = useQuestsStore()
+    await store.initPlatformCapabilities()
+    store.gameQuestMode = 'cdp'
+    store.cdpAvailable = true
+
+    await store.startStreamCdp(quest('first', 'STREAM_ON_DESKTOP'), 60, 15)
+
+    expect(mocks.startCdpQuest).toHaveBeenCalledWith('first', 'stream', 'app', 'Game', 60, 15, 9223)
+    expect(store.activeQuestId).toBe('first')
+    expect(store.activeQuestType).toBe('stream')
+    expect(store.activeQuestProgress).toBe(25)
+    expect(store.activeQuestTargetDuration).toBe(60)
+    expect(store.startingQuestId).toBeNull()
+    store.resetForLogout()
+  })
+
+  it('refuses a stream quest through CDP when CDP is unavailable', async () => {
+    const store = useQuestsStore()
+    await store.initPlatformCapabilities()
+    store.gameQuestMode = 'cdp'
+    store.cdpAvailable = false
+
+    await expect(store.startStreamCdp(quest('first', 'STREAM_ON_DESKTOP'), 60, 0))
+      .rejects.toThrow('CDP mode is selected but Discord CDP is not available')
+    expect(mocks.startCdpQuest).not.toHaveBeenCalled()
+    expect(store.startingQuestId).toBeNull()
+    store.resetForLogout()
+  })
+
   it('does not clear list loading when startup fails during the initial fetch', async () => {
     const pending = deferred<ReturnType<typeof response>>()
     mocks.getQuestsFull.mockReturnValueOnce(pending.promise)
