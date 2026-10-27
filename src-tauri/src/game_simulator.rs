@@ -9,6 +9,10 @@ use std::sync::Mutex;
 
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+/// Bounded runtime for taskkill/tasklist so a stalled enumeration cannot
+/// block Stop or the application-exit cleanup indefinitely.
+#[cfg(target_os = "windows")]
+const COMMAND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 use once_cell::sync::Lazy;
 
@@ -287,8 +291,6 @@ pub fn run_simulated_game(
 /// Stop the simulated game
 #[cfg(target_os = "windows")]
 pub fn stop_simulated_game(exec_name: &str) -> Result<()> {
-    use std::os::windows::process::CommandExt;
-
     // taskkill /IM needs image name (filename), not path.
     // Robustly handle both / and \\ separators
     let file_name = exec_name.rsplit(['/', '\\']).next().unwrap_or(exec_name);
@@ -303,70 +305,169 @@ pub fn stop_simulated_game(exec_name: &str) -> Result<()> {
     // now retried and verified against the process list before success is
     // reported; until the process is confirmed gone the game stays tracked
     // so the application-exit cleanup keeps ownership of it.
-    let mut last_kill_error: Option<String> = None;
     for attempt in 0..3 {
-        let output = Command::new("taskkill")
-            .args(["/F", "/IM", file_name])
-            .creation_flags(CREATE_NO_WINDOW)
-            .output()
-            .context("Could not execute taskkill command")?;
+        match run_command_bounded(
+            {
+                let mut command = Command::new("taskkill");
+                command.args(["/F", "/IM", file_name]);
+                command
+            },
+            COMMAND_TIMEOUT,
+        ) {
+            Ok(output) if output.status.success() => {}
+            Ok(output) => {
+                // A non-zero exit usually means the process is already gone;
+                // the probe below decides, not the exit code alone.
+                let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                println!(
+                    "taskkill returned non-zero (attempt {}): {}",
+                    attempt + 1,
+                    stderr
+                );
+            }
+            Err(error) => {
+                println!("taskkill failed (attempt {}): {}", attempt + 1, error);
+            }
+        }
 
-        if output.status.success() {
-            last_kill_error = None;
-        } else {
-            // A non-zero exit usually means the process is already gone.
-            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            println!(
-                "taskkill returned non-zero (attempt {}): {}",
+        match simulated_process_is_running(file_name) {
+            Ok(false) => {
+                untrack_running_game(exec_name);
+                println!("Simulated game {} stopped", exec_name);
+                return Ok(());
+            }
+            Ok(true) => println!(
+                "'{}' is still running after kill attempt {}",
+                file_name,
+                attempt + 1
+            ),
+            Err(probe_error) => println!(
+                "process probe failed (attempt {}): {}",
                 attempt + 1,
-                stderr
-            );
-            last_kill_error = Some(stderr);
+                probe_error
+            ),
         }
 
-        if !simulated_process_is_running(file_name) {
-            break;
-        }
         if attempt + 1 < 3 {
             std::thread::sleep(std::time::Duration::from_millis(250));
         }
     }
 
-    if simulated_process_is_running(file_name) {
-        let detail = last_kill_error.unwrap_or_else(|| {
-            "taskkill reported success but the process is still running".to_string()
-        });
-        return Err(anyhow::anyhow!(
-            "Simulated game '{}' could not be stopped: {detail}",
+    // Every attempt failed. One final probe builds the report and catches the
+    // game exiting between the last attempt and this probe; either way the
+    // game stays registered while it is alive so the exit cleanup can retry.
+    match simulated_process_is_running(file_name) {
+        Ok(false) => {
+            untrack_running_game(exec_name);
+            println!("Simulated game {} stopped", exec_name);
+            Ok(())
+        }
+        Ok(true) => Err(anyhow::anyhow!(
+            "Simulated game '{}' could not be stopped after three attempts. It stays registered so the exit cleanup can retry.",
             file_name
-        ));
+        )),
+        Err(probe_error) => Err(anyhow::anyhow!(
+            "Simulated game '{}' could not be stopped and its state is unknown: {probe_error}. It stays registered so the exit cleanup can retry.",
+            file_name
+        )),
     }
-
-    // Remove from tracking set
-    untrack_running_game(exec_name);
-
-    println!("Simulated game {} stopped", exec_name);
-    Ok(())
 }
 
-/// Whether Windows still lists the image among running processes. A probe
-/// failure is treated as "gone" so a broken tasklist cannot block a cleanup
-/// that taskkill already reported as successful.
+/// Whether Windows still lists the image among running processes. The CSV
+/// output is used because the default table truncates long image names,
+/// which would make a live game look gone. Only a successful probe that
+/// confirms the absence reports `false`; a failed or unusable probe is an
+/// error so the caller never untracks an unverified game.
 #[cfg(target_os = "windows")]
-fn simulated_process_is_running(file_name: &str) -> bool {
-    use std::os::windows::process::CommandExt;
+fn simulated_process_is_running(file_name: &str) -> Result<bool, String> {
+    let mut command = Command::new("tasklist");
+    command.args([
+        "/FI",
+        &format!("IMAGENAME eq {file_name}"),
+        "/NH",
+        "/FO",
+        "CSV",
+    ]);
+    let output = run_command_bounded(command, COMMAND_TIMEOUT)?;
+    Ok(csv_output_contains_image(
+        &String::from_utf8_lossy(&output.stdout),
+        file_name,
+    ))
+}
 
-    let output = Command::new("tasklist")
-        .args(["/FI", &format!("IMAGENAME eq {file_name}"), "/NH"])
+/// Runs a command with piped output and a hard deadline. The output of the
+/// targeted commands is small enough for the pipe buffer, so waiting for the
+/// child before draining the pipes cannot deadlock.
+#[cfg(target_os = "windows")]
+fn run_command_bounded(
+    mut command: Command,
+    timeout: std::time::Duration,
+) -> Result<std::process::Output, String> {
+    use std::io::Read;
+    use std::os::windows::process::CommandExt;
+    use std::process::Stdio;
+
+    command
         .creation_flags(CREATE_NO_WINDOW)
-        .output();
-    match output {
-        Ok(output) => {
-            let text = String::from_utf8_lossy(&output.stdout).to_ascii_lowercase();
-            text.contains(&file_name.to_ascii_lowercase())
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("could not spawn the process: {error}"))?;
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let mut stdout = Vec::new();
+                let mut stderr = Vec::new();
+                if let Some(mut pipe) = child.stdout.take() {
+                    let _ = pipe.read_to_end(&mut stdout);
+                }
+                if let Some(mut pipe) = child.stderr.take() {
+                    let _ = pipe.read_to_end(&mut stderr);
+                }
+                return Ok(std::process::Output {
+                    status,
+                    stdout,
+                    stderr,
+                });
+            }
+            Ok(None) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            Ok(None) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!(
+                    "the process did not finish within {timeout:?} and was terminated"
+                ));
+            }
+            Err(error) => return Err(format!("could not wait for the process: {error}")),
         }
-        Err(_) => false,
     }
+}
+
+/// Whether the tasklist CSV output lists the image name. The first CSV field
+/// is the image name; the header/INFO lines that tasklist prints when no
+/// task matches never parse as a matching CSV row.
+#[cfg(any(target_os = "windows", test))]
+fn csv_output_contains_image(output: &str, file_name: &str) -> bool {
+    let needle = file_name.to_ascii_lowercase();
+    output.lines().any(|line| {
+        let trimmed = line.trim();
+        if !trimmed.starts_with('"') {
+            return false;
+        }
+        let first_field = trimmed
+            .trim_start_matches('"')
+            .split("\",")
+            .next()
+            .unwrap_or_default()
+            .trim_end_matches('"')
+            .to_ascii_lowercase();
+        first_field == needle
+    })
 }
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -792,9 +893,20 @@ fn cleanup_all_tracked_games() {
         "Cleaning up {} simulated game process(es) on exit...",
         games.len()
     );
+    let mut failures: Vec<String> = Vec::new();
     for name in &games {
         println!("  Stopping: {}", name);
-        let _ = stop_simulated_game(name);
+        if let Err(error) = stop_simulated_game(name) {
+            println!("  Failed to stop '{}': {}", name, error);
+            failures.push(name.clone());
+        }
+    }
+    // A game that survived every attempt stays registered so a later cleanup
+    // (for example a retried close) still owns and retries it.
+    if !failures.is_empty() {
+        if let Ok(mut set) = RUNNING_GAMES.lock() {
+            set.extend(failures);
+        }
     }
 }
 
@@ -850,6 +962,43 @@ mod tests {
             }
             Err(e) => println!("Test skipped (expected): {}", e),
         }
+    }
+
+    #[test]
+    fn csv_probe_matches_the_image_name_case_insensitively() {
+        assert!(csv_output_contains_image(
+            "\"My Game.exe\",\"1234\",\"Console\"",
+            "my game.exe"
+        ));
+        assert!(!csv_output_contains_image(
+            "\"My Game.exe\",\"1234\",\"Console\"",
+            "other.exe"
+        ));
+    }
+
+    #[test]
+    fn csv_probe_ignores_info_lines_and_prefix_lookalikes() {
+        assert!(!csv_output_contains_image(
+            "INFO: No tasks are running which match the specified criteria.",
+            "game.exe"
+        ));
+        assert!(!csv_output_contains_image(
+            "\"Game Pro.exe\",\"1\"",
+            "game.exe"
+        ));
+    }
+
+    #[test]
+    fn csv_probe_matches_long_image_names_the_table_would_truncate() {
+        let long = format!("{}a.exe", "a".repeat(59));
+        assert!(!csv_output_contains_image(
+            &format!("\"{}\",\"1\"", &long[..40]),
+            &long
+        ));
+        assert!(csv_output_contains_image(
+            &format!("\"{}\",\"1\"", long),
+            &long
+        ));
     }
 
     #[test]
