@@ -7,6 +7,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
 
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
 use once_cell::sync::Lazy;
 
 /// Global set that tracks image names of running simulated game processes.
@@ -284,6 +287,8 @@ pub fn run_simulated_game(
 /// Stop the simulated game
 #[cfg(target_os = "windows")]
 pub fn stop_simulated_game(exec_name: &str) -> Result<()> {
+    use std::os::windows::process::CommandExt;
+
     // taskkill /IM needs image name (filename), not path.
     // Robustly handle both / and \\ separators
     let file_name = exec_name.rsplit(['/', '\\']).next().unwrap_or(exec_name);
@@ -293,19 +298,48 @@ pub fn stop_simulated_game(exec_name: &str) -> Result<()> {
         exec_name, file_name
     );
 
-    // Use taskkill command to terminate process
-    let output = Command::new("taskkill")
-        .args(["/F", "/IM", file_name])
-        .output()
-        .context("Could not execute taskkill command")?;
+    // A failed taskkill used to be swallowed and the game untracked anyway,
+    // leaving an orphan the exit cleanup could never see again. The kill is
+    // now retried and verified against the process list before success is
+    // reported; until the process is confirmed gone the game stays tracked
+    // so the application-exit cleanup keeps ownership of it.
+    let mut last_kill_error: Option<String> = None;
+    for attempt in 0..3 {
+        let output = Command::new("taskkill")
+            .args(["/F", "/IM", file_name])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+            .context("Could not execute taskkill command")?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        // Don't error out, process may not exist
-        println!(
-            "taskkill returned non-zero, process may not exist: {}",
-            stderr
-        );
+        if output.status.success() {
+            last_kill_error = None;
+        } else {
+            // A non-zero exit usually means the process is already gone.
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            println!(
+                "taskkill returned non-zero (attempt {}): {}",
+                attempt + 1,
+                stderr
+            );
+            last_kill_error = Some(stderr);
+        }
+
+        if !simulated_process_is_running(file_name) {
+            break;
+        }
+        if attempt + 1 < 3 {
+            std::thread::sleep(std::time::Duration::from_millis(250));
+        }
+    }
+
+    if simulated_process_is_running(file_name) {
+        let detail = last_kill_error.unwrap_or_else(|| {
+            "taskkill reported success but the process is still running".to_string()
+        });
+        return Err(anyhow::anyhow!(
+            "Simulated game '{}' could not be stopped: {detail}",
+            file_name
+        ));
     }
 
     // Remove from tracking set
@@ -313,6 +347,26 @@ pub fn stop_simulated_game(exec_name: &str) -> Result<()> {
 
     println!("Simulated game {} stopped", exec_name);
     Ok(())
+}
+
+/// Whether Windows still lists the image among running processes. A probe
+/// failure is treated as "gone" so a broken tasklist cannot block a cleanup
+/// that taskkill already reported as successful.
+#[cfg(target_os = "windows")]
+fn simulated_process_is_running(file_name: &str) -> bool {
+    use std::os::windows::process::CommandExt;
+
+    let output = Command::new("tasklist")
+        .args(["/FI", &format!("IMAGENAME eq {file_name}"), "/NH"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output();
+    match output {
+        Ok(output) => {
+            let text = String::from_utf8_lossy(&output.stdout).to_ascii_lowercase();
+            text.contains(&file_name.to_ascii_lowercase())
+        }
+        Err(_) => false,
+    }
 }
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
