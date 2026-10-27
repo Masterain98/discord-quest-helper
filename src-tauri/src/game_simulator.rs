@@ -389,6 +389,16 @@ fn simulated_process_is_running(file_name: &str) -> Result<bool, String> {
         "CSV",
     ]);
     let output = run_command_bounded(command, COMMAND_TIMEOUT)?;
+    if !output.status.success() {
+        return Err(format!(
+            "tasklist exited with status {}",
+            output
+                .status
+                .code()
+                .map(|code| code.to_string())
+                .unwrap_or_else(|| "signal".to_string())
+        ));
+    }
     Ok(csv_output_contains_image(
         &String::from_utf8_lossy(&output.stdout),
         file_name,
