@@ -13,19 +13,17 @@ account's executable quest list.
 - The datasets are requested concurrently using browser `fetch`, with omitted
   credentials, no Authorization header, no browser cache, and a 20-second timeout
   covering both the request and response body.
-- After the application mounts, the Pinia store preloads both datasets and the
-  current IP country concurrently, without waiting before making the UI usable.
-  Each app session initializes once; opening the tab only reads shared memory,
-  even after the five-minute catalog cache expires. There is no scheduled refresh
-  or automatic retry. The catalog and location refresh buttons update their
-  respective data manually, coalescing requests already in flight.
+- After the application mounts, the Pinia store preloads both datasets without
+  waiting before making the UI usable. Each app session initializes once;
+  opening the tab only reads shared memory, even after the five-minute catalog
+  cache expires. There is no scheduled refresh or automatic retry. The catalog
+  refresh button updates it manually, coalescing requests already in flight.
 - Each dataset is published independently as soon as it arrives. Failed refreshes
   preserve its previous data and display a warning; missing restriction data
   stays unknown.
-- IP country lookup retains the native `get_ip_info` transport and its timeout
-  and sanitized diagnostics. Its cached country survives tab switches and failed
-  refreshes. Account quest status loads silently at the app level on login or
-  account change, sharing the existing quest reader with Home.
+- No IP geolocation lookup is performed. The user's country is selected manually
+  in the country filter. Account quest status loads silently at the app level on
+  login or account change, sharing the existing quest reader with Home.
 
 ## Normalization and display
 

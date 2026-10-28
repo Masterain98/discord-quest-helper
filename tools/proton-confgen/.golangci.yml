@@ -1,0 +1,107 @@
+# yaml-language-server: $schema=https://golangci-lint.run/jsonschema/golangci.v2.jsonschema.json
+version: "2"
+
+linters:
+  enable:
+    # Default linters
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    # Code quality
+    - gocritic
+    - gocognit
+    - gocyclo
+    - revive
+    - misspell
+    - unconvert
+    - dupl
+    - prealloc
+    # Error handling
+    - nilerr
+    - errorlint
+    # Security
+    - gosec
+    # Style & formatting
+    - whitespace
+    - wastedassign
+    # Best practices
+    - exhaustive
+    - nolintlint
+    - goconst
+    - nakedret
+    - nestif
+    - bodyclose
+    - usestdlibvars
+    - copyloopvar
+    - intrange
+
+  settings:
+    revive:
+      severity: warning
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: exported
+        - name: package-comments
+        - name: range
+        - name: receiver-naming
+        - name: indent-error-flow
+        - name: superfluous-else
+
+    gocyclo:
+      min-complexity: 15
+
+    gocognit:
+      min-complexity: 30
+
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - experimental
+        - opinionated
+        - performance
+        - style
+
+    dupl:
+      threshold: 100
+
+    goconst:
+      min-len: 3
+      min-occurrences: 3
+
+    nakedret:
+      max-func-lines: 30
+
+    nestif:
+      min-complexity: 4
+
+    errorlint:
+      errorf: true
+      asserts: true
+      comparison: true
+
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+
+  exclusions:
+    paths:
+      - vendor
+
+issues:
+  max-issues-per-linter: 50
+  max-same-issues: 10
+
+run:
+  timeout: 5m
+  tests: true
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

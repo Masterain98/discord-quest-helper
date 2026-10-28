@@ -915,6 +915,53 @@ export const useQuestsStore = defineStore('quests', () => {
     }
   }
 
+  async function startStreamCdp(quest: Quest, secondsNeeded: number, initialProgress: number) {
+    startingQuestId.value = quest.id
+    error.value = null
+    try {
+      const appId = quest.config.application?.id
+      if (!appId) throw new Error('Quest missing application ID')
+      if (!cdpAvailable.value) throw new Error('CDP mode is selected but Discord CDP is not available')
+
+      const appName = quest.config.application?.name || quest.config.messages.game_title || 'Game'
+      const progressPct = (secondsNeeded > 0) ? (initialProgress / secondsNeeded) * 100 : 0
+
+      console.log(`Starting stream quest via CDP for AppID: ${appId}`)
+      await startCdpQuest(
+        quest.id,
+        'stream',
+        appId,
+        appName,
+        secondsNeeded,
+        initialProgress,
+        cdpPort.value
+      )
+
+      try {
+        await startGameSimulationUsage(appId, appName)
+      } catch (historyError) {
+        // Roll back the started CDP spoof; a stream without its
+        // account-scoped history segment would silently break accounting.
+        await stopQuest().catch(() => undefined)
+        const detail = historyError instanceof Error ? historyError.message : String(historyError)
+        throw new Error(`Failed to start stream simulation history: ${detail}`)
+      }
+
+      activeQuestId.value = quest.id
+      activeQuestType.value = 'stream'
+      activeQuestProgress.value = progressPct
+      activeQuestTargetDuration.value = secondsNeeded
+
+      startProgressSimulation(1.0)
+      setupListeners()
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : String(e)
+      throw e
+    } finally {
+      startingQuestId.value = null
+    }
+  }
+
   async function startPlay(quest: Quest, secondsNeeded: number, initialProgress: number, selectedExeName?: string) {
     startingQuestId.value = quest.id
     error.value = null
@@ -1941,6 +1988,7 @@ export const useQuestsStore = defineStore('quests', () => {
     updateQuestEnrollment,
     startVideo,
     startStream,
+    startStreamCdp,
     startPlay,
     startActivity,
     startPlayActivity,

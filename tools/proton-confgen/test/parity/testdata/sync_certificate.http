@@ -1,0 +1,13 @@
+POST /vpn/v1/certificate HTTP/1.1
+Host: 127.0.0.1:18203
+x-pm-appversion: linux-vpn-gui@5.8.7+aarch64
+User-Agent: ProtonVPN/5.8.7 (Linux; ubuntu/24.04)
+x-pm-uid: UIDVALUE
+Authorization: Bearer TOKENVALUE
+x-pm-timezone: Europe/Zurich
+Accept: */*
+Accept-Encoding: gzip, deflate
+Content-Length: 164
+Content-Type: application/json
+
+{"ClientPublicKey": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEApG1xguey1bXLJL8mXRmvjbzzxbYy7UWnMKb8qLNo25A=\n-----END PUBLIC KEY-----\n", "Duration": "10080 min"}

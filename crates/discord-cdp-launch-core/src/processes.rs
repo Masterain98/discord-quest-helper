@@ -450,12 +450,73 @@ pub fn is_client_installation_running(
     }
 }
 
+fn is_protected_process_name(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "winlogon.exe"
+            | "csrss.exe"
+            | "wininit.exe"
+            | "services.exe"
+            | "lsass.exe"
+            | "smss.exe"
+            | "system"
+            | "registry"
+            | "memory compression"
+            | "init"
+            | "systemd"
+            | "launchd"
+    )
+}
+
+fn is_protected_executable_path(path: Option<&Path>) -> bool {
+    let Some(path) = path else {
+        return false;
+    };
+
+    #[cfg(windows)]
+    {
+        let normalized = path
+            .to_string_lossy()
+            .replace('/', "\\")
+            .to_ascii_lowercase();
+        let windows = std::env::var("SystemRoot")
+            .unwrap_or_else(|_| "C:\\Windows".to_string())
+            .replace('/', "\\");
+        let windows = windows.trim_end_matches('\\').to_ascii_lowercase();
+        normalized.starts_with(&format!("{windows}\\system32\\"))
+            || normalized.starts_with(&format!("{windows}\\syswow64\\"))
+    }
+
+    #[cfg(not(windows))]
+    {
+        let normalized = path
+            .to_string_lossy()
+            .replace('\\', "/")
+            .to_ascii_lowercase();
+        normalized.starts_with("/sbin/")
+            || normalized.starts_with("/usr/sbin/")
+            // macOS user volumes live under /System/Volumes/Data; only the
+            // rest of /system holds protected OS binaries.
+            || (normalized.starts_with("/system/") && !normalized.starts_with("/system/volumes/data/"))
+    }
+}
+
+fn is_protected_system_process(process: &sysinfo::Process) -> bool {
+    is_protected_process_name(&process.name().to_string_lossy())
+        || is_protected_executable_path(process.exe())
+}
+
 /// Terminates only the process tree whose root executable matches the exact
 /// selected installation. Every target is revalidated by PID, start time, and
 /// executable immediately before termination. `sysinfo` does not expose stable
 /// cross-platform process handles, so this narrows PID-reuse risk without
 /// claiming an OS-level race-free guarantee.
 pub fn terminate_installation_process_tree(executable_path: &Path) -> Result<(), LaunchError> {
+    if is_protected_executable_path(Some(executable_path)) {
+        return Err(LaunchError::InvalidInstallation {
+            details: "Refusing to terminate a protected system executable.".into(),
+        });
+    }
     terminate_matching_process_trees(|process| {
         process
             .exe()
@@ -478,6 +539,7 @@ pub(crate) fn terminate_matching_process_trees(
     let roots: HashSet<_> = system
         .processes()
         .iter()
+        .filter(|(_, process)| !is_protected_system_process(process))
         .filter_map(|(pid, process)| matches_root(process).then_some((*pid, process.start_time())))
         .collect();
     if roots.is_empty() {
@@ -488,6 +550,9 @@ pub(crate) fn terminate_matching_process_trees(
     loop {
         let previous_len = targets.len();
         for (pid, process) in system.processes() {
+            if is_protected_system_process(process) {
+                continue;
+            }
             if process
                 .parent()
                 .is_some_and(|parent| targets.contains(&parent))
@@ -538,6 +603,8 @@ pub(crate) fn terminate_matching_process_trees(
         };
         if process.start_time() != *expected_start
             || process.exe().map(Path::to_path_buf) != *expected_executable
+            || is_protected_process_name(&process.name().to_string_lossy())
+            || is_protected_executable_path(expected_executable.as_deref())
         {
             continue;
         }
@@ -1155,5 +1222,39 @@ mod tests {
         assert_eq!(result.failures[1].channel, DiscordChannel::Ptb);
         assert!(result.failures.iter().all(|failure| failure.error
             == "Discord CDP launcher is only supported on Windows, macOS, and Linux."));
+    }
+
+    #[test]
+    fn protected_system_processes_are_never_termination_targets() {
+        assert!(is_protected_process_name("winlogon.exe"));
+        assert!(is_protected_process_name("WinLogon.EXE"));
+        assert!(is_protected_process_name("System"));
+        assert!(!is_protected_process_name("Discord.exe"));
+
+        #[cfg(windows)]
+        {
+            let system_root =
+                std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".to_string());
+            let winlogon = PathBuf::from(system_root)
+                .join("System32")
+                .join("winlogon.exe");
+            assert!(is_protected_executable_path(Some(&winlogon)));
+            let discord =
+                PathBuf::from("C:\\Users\\me\\AppData\\Local\\Discord\\app-1.0.0\\Discord.exe");
+            assert!(!is_protected_executable_path(Some(&discord)));
+
+            let error = terminate_installation_process_tree(&winlogon).unwrap_err();
+            assert!(matches!(error, LaunchError::InvalidInstallation { .. }));
+        }
+
+        #[cfg(not(windows))]
+        {
+            assert!(is_protected_executable_path(Some(Path::new(
+                "/usr/sbin/sshd"
+            ))));
+            assert!(!is_protected_executable_path(Some(Path::new(
+                "/home/me/discord"
+            ))));
+        }
     }
 }

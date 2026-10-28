@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { storeToRefs } from 'pinia'
 import { onClickOutside, useNow } from '@vueuse/core'
 import { nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -36,7 +35,6 @@ const countrySearchInput = ref<HTMLInputElement | null>(null)
 const countryOptions = ref<HTMLElement | null>(null)
 const linkError = ref(false)
 const openingQuest = ref<string | null>(null)
-const { ipInfo, ipInfoFailed, ipInfoLoading } = storeToRefs(store)
 const completed = computed(() => completedGlobalQuestIds(accountQuests.quests, auth.user?.id ?? null, accountQuests.questAccountId))
 const accepted = computed(() => acceptedGlobalQuestIds(accountQuests.quests, auth.user?.id ?? null, accountQuests.questAccountId))
 const visible = computed(() => filterGlobalQuests(store.quests, store.restrictions, store.filters, now.value.getTime(), completed.value, accepted.value))
@@ -167,25 +165,6 @@ async function refresh() {
         <button type="button" class="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary" @click="openSource">
           {{ t('global_quests.source_label') }} <ExternalLink class="h-3 w-3" />
         </button>
-        <div class="inline-flex max-w-full items-center gap-2 rounded-md border border-border/70 bg-card px-3 py-1 text-xs text-muted-foreground" role="status" aria-live="polite" :aria-label="`${t('global_quests.location_label')}: ${ipInfo ? regionNames.of(ipInfo.countryCode) ?? ipInfo.country : ipInfoFailed ? t('global_quests.location_unavailable') : t('general.loading')}`">
-          <Globe2 class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-          <span class="shrink-0">{{ t('global_quests.location_label') }}:</span>
-          <template v-if="ipInfo">
-            <img :src="`/flags/${ipInfo.countryCode}.svg`" alt="" width="21" height="14" class="h-3.5 w-[21px] shrink-0 rounded-[2px] ring-1 ring-border/50">
-          </template>
-          <span v-else class="truncate">{{ ipInfoFailed ? t('global_quests.location_unavailable') : t('general.loading') }}</span>
-          <Button
-            variant="ghost"
-            size="icon"
-            class="ml-1 h-8 w-8 shrink-0 border-l border-border/70 pl-1"
-            :aria-label="t('general.refresh')"
-            :title="t('general.refresh')"
-            :disabled="ipInfoLoading"
-            @click="store.refreshIpInfo()"
-          >
-            <RotateCw class="h-4 w-4" :class="ipInfoLoading && 'animate-spin'" />
-          </Button>
-        </div>
       </div>
     </div>
 

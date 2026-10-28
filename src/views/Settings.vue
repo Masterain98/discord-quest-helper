@@ -6,8 +6,10 @@ import AppearanceSettings from '@/components/settings/AppearanceSettings.vue'
 import AboutSettings from '@/components/settings/AboutSettings.vue'
 import DiagnosticsSettings from '@/components/settings/DiagnosticsSettings.vue'
 import DiscordIntegrationSettings from '@/components/settings/DiscordIntegrationSettings.vue'
+import LiveTunnelSettings from '@/components/settings/LiveTunnelSettings.vue'
 import QuestBehaviorSettings from '@/components/settings/QuestBehaviorSettings.vue'
 import SettingsOverview from '@/components/settings/SettingsOverview.vue'
+import { useQuestsStore } from '@/stores/quests'
 import type { SettingsSection } from '@/composables/useSettingsNavigation'
 import { useSettingsScroll } from '@/composables/useSettingsScroll'
 import { useSettingsSearch, type SettingsSearchResult } from '@/composables/useSettingsSearch'
@@ -15,6 +17,7 @@ import { isDebugModeEnabled } from '@/utils/debugMode'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
+const questsStore = useQuestsStore()
 const props = withDefaults(defineProps<{
   selectedSection: SettingsSection
   navigationRequest?: number
@@ -60,6 +63,14 @@ useSettingsSearch(page, () => props.searchQuery, results => emit('search-results
       </section>
       <section id="settings-section-discord_integration" data-settings-section="discord_integration" :aria-label="t('settings.nav_discord_integration')">
         <DiscordIntegrationSettings />
+      </section>
+      <section
+        v-if="questsStore.platformCapabilities?.os === 'windows'"
+        id="settings-section-live_tunnel"
+        data-settings-section="live_tunnel"
+        :aria-label="t('settings.nav_live_tunnel')"
+      >
+        <LiveTunnelSettings />
       </section>
       <section id="settings-section-appearance" data-settings-section="appearance" :aria-label="t('settings.nav_appearance')">
         <AppearanceSettings />
