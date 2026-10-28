@@ -155,6 +155,7 @@ impl ProxyState {
         }
     }
 
+    /// Return a human-readable description of the active system/environment proxy state.
     fn description(&self) -> &'static str {
         #[cfg(target_os = "linux")]
         {
@@ -175,7 +176,63 @@ impl ProxyState {
     }
 }
 
+/// Whether a request failed before Discord answered, so its connection is suspect.
+fn is_connection_error(error: &reqwest::Error) -> bool {
+    error.is_connect() || error.is_timeout() || error.is_request()
+}
+
+/// Execute `request`; after a connection error, ask `reconnect` for a fresh
+/// client and retry GET requests once. Other methods are not retried, since
+/// Discord may already have processed them.
+async fn execute_reconnecting<F>(
+    client: reqwest::Client,
+    request: reqwest::Request,
+    reconnect: F,
+) -> reqwest::Result<reqwest::Response>
+where
+    F: FnOnce(&reqwest::Error) -> reqwest::Client,
+{
+    let retry = if request.method() == Method::GET {
+        request.try_clone()
+    } else {
+        None
+    };
+
+    match client.execute(request).await {
+        Err(error) if is_connection_error(&error) => {
+            let client = reconnect(&error);
+            match retry {
+                Some(request) => client.execute(request).await,
+                None => Err(error),
+            }
+        }
+        result => result,
+    }
+}
+
+trait SendReconnecting {
+    /// Send through the API client, reconnecting after a connection error.
+    async fn send_reconnecting(self, api: &DiscordApiClient) -> reqwest::Result<reqwest::Response>;
+}
+
+impl SendReconnecting for RequestBuilder {
+    async fn send_reconnecting(self, api: &DiscordApiClient) -> reqwest::Result<reqwest::Response> {
+        let (client, request) = self.build_split();
+        execute_reconnecting(client, request?, |error| api.reset_connections(error)).await
+    }
+}
+
 /// Discord API client
+const ENRICHMENT_POSITIVE_CACHE_TTL: Duration = Duration::from_secs(600);
+const ENRICHMENT_NEGATIVE_CACHE_TTL: Duration = Duration::from_secs(60);
+const ENRICHMENT_LOOKUP_TIMEOUT: Duration = Duration::from_secs(3);
+
+type CachedAppCatalogEntry = (
+    Option<(String, Vec<crate::cdp_game_spoof::ApplicationExecutable>)>,
+    Instant,
+);
+
+/// HTTP API client for Discord quest and user endpoints.
 #[derive(Clone)]
 pub struct DiscordApiClient {
     client: Arc<ArcSwap<reqwest::Client>>,
@@ -184,9 +241,48 @@ pub struct DiscordApiClient {
     created_at: Arc<Instant>,
     last_proxy_check_elapsed_ms: Arc<AtomicU64>,
     token: String,
+    identity: Arc<std::sync::Mutex<crate::super_properties::XSuperPropertiesManager>>,
+    identity_key: String,
+    identity_committed: Arc<AtomicBool>,
+    cached_user_id: Arc<ArcSwap<Option<String>>>,
+    last_user_id_lookup_failure_ms: Arc<AtomicU64>,
+    cached_app_catalog:
+        Arc<std::sync::Mutex<std::collections::HashMap<String, CachedAppCatalogEntry>>>,
 }
 
 impl DiscordApiClient {
+    /// Extract the numeric Discord user snowflake encoded in the first segment of a user token.
+    pub(crate) fn extract_user_id_from_token(token: &str) -> Option<String> {
+        use base64::{
+            engine::general_purpose::{STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD},
+            Engine as _,
+        };
+
+        let raw = token
+            .trim()
+            .strip_prefix("Bot ")
+            .or_else(|| token.trim().strip_prefix("Bearer "))
+            .unwrap_or(token.trim());
+        let first_segment = raw.split('.').next()?.trim();
+        if first_segment.is_empty() {
+            return None;
+        }
+        let decoded = URL_SAFE_NO_PAD
+            .decode(first_segment)
+            .or_else(|_| STANDARD_NO_PAD.decode(first_segment))
+            .or_else(|_| URL_SAFE.decode(first_segment))
+            .or_else(|_| STANDARD.decode(first_segment))
+            .ok()?;
+        let user_id = String::from_utf8(decoded).ok()?;
+        let trimmed = user_id.trim();
+        if !trimmed.is_empty() && trimmed.chars().all(|c| c.is_ascii_digit()) {
+            Some(trimmed.to_string())
+        } else {
+            None
+        }
+    }
+
+    /// Normalize a floating-point video progress timestamp into a non-negative integer second count.
     fn normalize_video_timestamp(timestamp: f64) -> u64 {
         if !timestamp.is_finite() || timestamp <= 0.0 {
             return 0;
@@ -216,10 +312,16 @@ impl DiscordApiClient {
     fn build_http_client(token: &str, proxy_state: &ProxyState) -> Result<reqwest::Client> {
         let headers = Self::build_default_headers(token)?;
 
+        // Keep-alive pings close connections whose network route disappeared,
+        // such as a VPN being switched, before a request waits on them.
         let builder = reqwest::Client::builder()
             .default_headers(headers)
             .connect_timeout(Duration::from_secs(8))
-            .timeout(Duration::from_secs(20));
+            .timeout(Duration::from_secs(20))
+            .pool_idle_timeout(Duration::from_secs(30))
+            .http2_keep_alive_interval(Duration::from_secs(10))
+            .http2_keep_alive_timeout(Duration::from_secs(5))
+            .http2_keep_alive_while_idle(true);
 
         let builder = Self::apply_desktop_proxy(builder, proxy_state)?;
 
@@ -275,17 +377,32 @@ impl DiscordApiClient {
         );
 
         let created_at = Arc::new(Instant::now());
+        let initial_user_id = Self::extract_user_id_from_token(&token);
 
+        use sha2::{Digest, Sha256};
+        let credential = format!("{:x}", Sha256::digest(token.as_bytes()));
+        let identity = crate::SUPER_PROPERTIES_MANAGER
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .candidate(credential);
+        let identity_key = identity.session_key.clone();
         Ok(Self {
+            identity: Arc::new(std::sync::Mutex::new(identity)),
+            identity_key,
+            identity_committed: Arc::new(AtomicBool::new(false)),
             client: Arc::new(ArcSwap::from_pointee(client)),
             proxy_fingerprint: Arc::new(AtomicU64::new(proxy_state.fingerprint)),
             proxy_has_proxy: Arc::new(AtomicBool::new(proxy_state.has_proxy)),
             created_at,
             last_proxy_check_elapsed_ms: Arc::new(AtomicU64::new(0)),
             token,
+            cached_user_id: Arc::new(ArcSwap::from_pointee(initial_user_id)),
+            last_user_id_lookup_failure_ms: Arc::new(AtomicU64::new(0)),
+            cached_app_catalog: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         })
     }
 
+    /// Return the number of milliseconds elapsed since this client instance was created.
     fn elapsed_millis_since_creation(&self) -> u64 {
         let millis = self.created_at.elapsed().as_millis();
         if millis > u64::MAX as u128 {
@@ -395,44 +512,41 @@ impl DiscordApiClient {
         }
     }
 
-    /// Get the current X-Super-Properties value (dynamically obtained to ensure latest data)
-    fn get_super_properties_header(&self) -> HeaderValue {
-        let super_props = {
-            let manager = crate::SUPER_PROPERTIES_MANAGER
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
-            manager.get_super_properties_base64()
-        };
+    pub fn candidate_identity(
+        &self,
+    ) -> Arc<std::sync::Mutex<crate::super_properties::XSuperPropertiesManager>> {
+        Arc::clone(&self.identity)
+    }
 
-        // Log the generated properties for audit purposes
-        #[cfg(debug_assertions)]
-        {
-            use crate::logger::{log, LogCategory, LogLevel};
-            use base64::Engine as _;
-            // Decode only to validate shape; avoid logging decoded payload contents
-            if base64::engine::general_purpose::STANDARD
-                .decode(&super_props)
-                .ok()
-                .and_then(|d| String::from_utf8(d).ok())
-                .is_some()
-            {
-                log(
-                    LogLevel::Debug,
-                    LogCategory::Api,
-                    &format!(
-                        "Injecting X-Super-Properties (base64_len={})",
-                        super_props.len()
-                    ),
-                    None,
-                );
-            }
+    fn identity_manager(
+        &self,
+    ) -> Arc<std::sync::Mutex<crate::super_properties::XSuperPropertiesManager>> {
+        if self.identity_committed.load(Ordering::Acquire) {
+            Arc::clone(&crate::SUPER_PROPERTIES_MANAGER)
+        } else {
+            Arc::clone(&self.identity)
         }
+    }
 
-        HeaderValue::from_str(&super_props).unwrap_or_else(|e| {
-            eprintln!("Failed to create X-Super-Properties header: {}", e);
-            // Fallback to minimal valid base64 JSON
-            HeaderValue::from_static("e30=") // base64("{}")
-        })
+    pub fn commit_identity(&self) {
+        let mut candidate = self
+            .identity
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        let mut current = crate::SUPER_PROPERTIES_MANAGER
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        candidate.commit(&current);
+        *current = candidate;
+        self.identity_committed.store(true, Ordering::Release);
+    }
+
+    async fn prepare_identity(&self) -> Result<crate::super_properties::RequestIdentity> {
+        let manager = self.identity_manager();
+        crate::super_properties::cdp::prepare_for(&manager, &self.identity_key)
+            .await
+            .context("Authenticated session changed while preparing request")
     }
 
     fn quest_referer_for_url(url: &str) -> Option<&'static str> {
@@ -451,24 +565,29 @@ impl DiscordApiClient {
         }
     }
 
-    /// Centralized request builder to enforce security headers
-    fn request(&self, method: Method, url: &str) -> RequestBuilder {
-        let (user_agent, header_profile) = {
-            let manager = crate::SUPER_PROPERTIES_MANAGER
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
-            (
-                manager.get_user_agent_string(),
-                manager.get_header_profile(),
-            )
-        };
+    /// Resolve dynamic state once, then use the same snapshot throughout a request.
+    async fn request(&self, method: Method, url: &str) -> Result<RequestBuilder> {
+        let identity = self.prepare_identity().await?;
+        Ok(self.request_with_identity(method, url, &identity))
+    }
 
+    fn request_with_identity(
+        &self,
+        method: Method,
+        url: &str,
+        identity: &crate::super_properties::RequestIdentity,
+    ) -> RequestBuilder {
+        debug_assert!(identity.properties["browser_user_agent"]
+            .as_str()
+            .is_none_or(|ua| ua == identity.user_agent));
+        let user_agent = &identity.user_agent;
+        let header_profile = &identity.header_profile;
         let mut request = self
             .current_client()
             .request(method, url)
-            .header("x-super-properties", self.get_super_properties_header());
+            .header("x-super-properties", &identity.base64);
 
-        if let Some(value) = Self::header_value(&user_agent, "User-Agent") {
+        if let Some(value) = Self::header_value(user_agent, "User-Agent") {
             request = request.header(USER_AGENT, value);
         }
         if let Some(value) = Self::header_value(&header_profile.timezone, "x-discord-timezone") {
@@ -493,6 +612,51 @@ impl DiscordApiClient {
         request
     }
 
+    /// Replace the HTTP client so no pooled connection from a previous network
+    /// route is reused, returning the client to use from now on.
+    fn reset_connections(&self, reason: &reqwest::Error) -> reqwest::Client {
+        use crate::logger::{log, LogCategory, LogLevel};
+
+        let proxy_state = ProxyState::current();
+        match Self::build_http_client(&self.token, &proxy_state) {
+            Ok(client) => {
+                self.client.store(Arc::new(client.clone()));
+                self.proxy_fingerprint
+                    .store(proxy_state.fingerprint, Ordering::Release);
+                self.proxy_has_proxy
+                    .store(proxy_state.has_proxy, Ordering::Release);
+                log(
+                    LogLevel::Warn,
+                    LogCategory::Api,
+                    "Connection error, reconnecting with a new HTTP client",
+                    Some(&Self::error_chain(reason)),
+                );
+                client
+            }
+            Err(err) => {
+                log(
+                    LogLevel::Warn,
+                    LogCategory::Api,
+                    "Failed to rebuild HTTP client after connection error",
+                    Some(&format!("{err:#}")),
+                );
+                self.client.load_full().as_ref().clone()
+            }
+        }
+    }
+
+    /// Join an error with its sources, like anyhow's `{:#}`.
+    fn error_chain(error: &(dyn std::error::Error + 'static)) -> String {
+        let mut message = error.to_string();
+        let mut source = error.source();
+        while let Some(cause) = source {
+            message.push_str(": ");
+            message.push_str(&cause.to_string());
+            source = cause.source();
+        }
+        message
+    }
+
     #[allow(dead_code)]
     pub fn get_token(&self) -> &str {
         &self.token
@@ -510,15 +674,20 @@ impl DiscordApiClient {
             Some(&url),
         );
 
-        let response = self.request(Method::GET, &url).send().await.map_err(|e| {
-            log(
-                LogLevel::Error,
-                LogCategory::Api,
-                "Network request failed for /users/@me",
-                Some(&e.to_string()),
-            );
-            anyhow::anyhow!("Request for current user info failed: {}", e)
-        })?;
+        let response = self
+            .request(Method::GET, &url)
+            .await?
+            .send_reconnecting(self)
+            .await
+            .map_err(|e| {
+                log(
+                    LogLevel::Error,
+                    LogCategory::Api,
+                    "Network request failed for /users/@me",
+                    Some(&Self::error_chain(&e)),
+                );
+                anyhow::Error::from(e).context("Request for current user info failed")
+            })?;
 
         let status = response.status();
         log(
@@ -542,6 +711,10 @@ impl DiscordApiClient {
         }
 
         let user: DiscordUser = response.json().await.context("Failed to parse user info")?;
+        if !user.id.trim().is_empty() {
+            self.cached_user_id
+                .store(Arc::new(Some(user.id.trim().to_string())));
+        }
 
         log(
             LogLevel::Debug,
@@ -551,6 +724,245 @@ impl DiscordApiClient {
         );
 
         Ok(user)
+    }
+
+    /// Resolve the authenticated Discord account's user ID from the cached token prefix or `/users/@me`.
+    async fn resolve_user_id(&self) -> Option<String> {
+        use crate::logger::{log, LogCategory, LogLevel};
+
+        if let Some(existing) = self.cached_user_id.load().as_ref().clone() {
+            if !existing.is_empty() {
+                return Some(existing);
+            }
+        }
+        let now_ms = self.elapsed_millis_since_creation();
+        let last_fail_ms = self.last_user_id_lookup_failure_ms.load(Ordering::Acquire);
+        if last_fail_ms > 0
+            && now_ms.saturating_sub(last_fail_ms)
+                < ENRICHMENT_NEGATIVE_CACHE_TTL.as_millis() as u64
+        {
+            return None;
+        }
+        let url = format!("{}/users/@me", DISCORD_API_BASE);
+        match tokio::time::timeout(ENRICHMENT_LOOKUP_TIMEOUT, async {
+            self.request(Method::GET, &url)
+                .await?
+                .send()
+                .await
+                .map_err(anyhow::Error::from)
+        })
+        .await
+        {
+            Ok(Ok(response)) if response.status().is_success() => {
+                match tokio::time::timeout(
+                    ENRICHMENT_LOOKUP_TIMEOUT,
+                    response.json::<DiscordUser>(),
+                )
+                .await
+                {
+                    Ok(Ok(user)) => {
+                        let trimmed = user.id.trim();
+                        if !trimmed.is_empty() {
+                            let resolved = trimmed.to_string();
+                            self.cached_user_id.store(Arc::new(Some(resolved.clone())));
+                            self.last_user_id_lookup_failure_ms
+                                .store(0, Ordering::Release);
+                            return Some(resolved);
+                        }
+                        self.last_user_id_lookup_failure_ms
+                            .store(now_ms.max(1), Ordering::Release);
+                    }
+                    Ok(Err(err)) => {
+                        log(
+                            LogLevel::Warn,
+                            LogCategory::Api,
+                            "Failed to parse /users/@me response during heartbeat enrichment",
+                            Some(&err.to_string()),
+                        );
+                    }
+                    Err(_) => {
+                        log(
+                            LogLevel::Warn,
+                            LogCategory::Api,
+                            "Timed out reading /users/@me body during heartbeat enrichment",
+                            None,
+                        );
+                        self.last_user_id_lookup_failure_ms
+                            .store(now_ms.max(1), Ordering::Release);
+                    }
+                }
+            }
+            Ok(Ok(response)) => {
+                let status = response.status();
+                log(
+                    LogLevel::Warn,
+                    LogCategory::Api,
+                    "Non-success status from /users/@me during heartbeat enrichment",
+                    Some(&status.to_string()),
+                );
+                if status.is_client_error() && status != reqwest::StatusCode::TOO_MANY_REQUESTS {
+                    self.last_user_id_lookup_failure_ms
+                        .store(now_ms.max(1), Ordering::Release);
+                }
+            }
+            Ok(Err(err)) => {
+                log(
+                    LogLevel::Warn,
+                    LogCategory::Api,
+                    "Network error querying /users/@me during heartbeat enrichment",
+                    Some(&err.to_string()),
+                );
+            }
+            Err(_) => {
+                log(
+                    LogLevel::Warn,
+                    LogCategory::Api,
+                    "Timed out querying /users/@me during heartbeat enrichment",
+                    None,
+                );
+                self.last_user_id_lookup_failure_ms
+                    .store(now_ms.max(1), Ordering::Release);
+            }
+        }
+        None
+    }
+
+    /// Resolve the host-OS executable path and PE64 bitness for `application_id` from `/applications/public` and live process hints.
+    async fn resolve_game_exe_path(&self, application_id: &str) -> Option<(String, bool)> {
+        use crate::logger::{log, LogCategory, LogLevel};
+
+        let hints = crate::game_simulator::simulated_process_hints();
+        let host_os = crate::cdp_game_spoof::DetectableOs::from_host();
+        let now = Instant::now();
+        if let Ok(cache) = self.cached_app_catalog.lock() {
+            if let Some((cached, fetched_at)) = cache.get(application_id) {
+                let ttl = if cached.is_some() {
+                    ENRICHMENT_POSITIVE_CACHE_TTL
+                } else {
+                    ENRICHMENT_NEGATIVE_CACHE_TTL
+                };
+                if now.duration_since(*fetched_at) < ttl {
+                    return cached.as_ref().and_then(|(name, executables)| {
+                        crate::cdp_game_spoof::resolve_application_exe_metadata(
+                            host_os,
+                            name,
+                            executables,
+                            &hints,
+                        )
+                    });
+                }
+            }
+        }
+
+        let url = format!(
+            "{}/applications/public?application_ids={}",
+            DISCORD_API_BASE, application_id
+        );
+        match tokio::time::timeout(ENRICHMENT_LOOKUP_TIMEOUT, async {
+            self.request(Method::GET, &url)
+                .await?
+                .send()
+                .await
+                .map_err(anyhow::Error::from)
+        })
+        .await
+        {
+            Ok(Ok(response)) if response.status().is_success() => {
+                match tokio::time::timeout(
+                    ENRICHMENT_LOOKUP_TIMEOUT,
+                    response.json::<Vec<serde_json::Value>>(),
+                )
+                .await
+                {
+                    Ok(Ok(apps)) => {
+                        if let Some(app) = apps.first() {
+                            let app_name = app
+                                .get("name")
+                                .and_then(|v| v.as_str())
+                                .map(str::trim)
+                                .filter(|s| !s.is_empty())
+                                .map(ToOwned::to_owned);
+                            let executables: Vec<crate::cdp_game_spoof::ApplicationExecutable> =
+                                app.get("executables")
+                                    .and_then(|v| serde_json::from_value(v.clone()).ok())
+                                    .unwrap_or_default();
+                            if let Some(name) = app_name {
+                                let resolved =
+                                    crate::cdp_game_spoof::resolve_application_exe_metadata(
+                                        host_os,
+                                        &name,
+                                        &executables,
+                                        &hints,
+                                    );
+                                if let Ok(mut cache) = self.cached_app_catalog.lock() {
+                                    cache.insert(
+                                        application_id.to_string(),
+                                        (Some((name, executables)), Instant::now()),
+                                    );
+                                }
+                                return resolved;
+                            }
+                        }
+                        if let Ok(mut cache) = self.cached_app_catalog.lock() {
+                            cache.insert(application_id.to_string(), (None, Instant::now()));
+                        }
+                    }
+                    Ok(Err(err)) => {
+                        log(
+                            LogLevel::Warn,
+                            LogCategory::Api,
+                            "Failed to parse /applications/public response during heartbeat enrichment",
+                            Some(&format!("app_id={application_id}: {err}")),
+                        );
+                    }
+                    Err(_) => {
+                        log(
+                            LogLevel::Warn,
+                            LogCategory::Api,
+                            "Timed out reading /applications/public body during heartbeat enrichment",
+                            Some(&format!("app_id={application_id}")),
+                        );
+                        if let Ok(mut cache) = self.cached_app_catalog.lock() {
+                            cache.insert(application_id.to_string(), (None, Instant::now()));
+                        }
+                    }
+                }
+            }
+            Ok(Ok(response)) => {
+                let status = response.status();
+                log(
+                    LogLevel::Warn,
+                    LogCategory::Api,
+                    "Non-success status from /applications/public during heartbeat enrichment",
+                    Some(&format!("app_id={application_id}, status={status}")),
+                );
+                if status.is_client_error() && status != reqwest::StatusCode::TOO_MANY_REQUESTS {
+                    if let Ok(mut cache) = self.cached_app_catalog.lock() {
+                        cache.insert(application_id.to_string(), (None, Instant::now()));
+                    }
+                }
+            }
+            Ok(Err(err)) => {
+                log(
+                    LogLevel::Warn,
+                    LogCategory::Api,
+                    "Network error querying /applications/public during heartbeat enrichment",
+                    Some(&format!("app_id={application_id}: {err}")),
+                );
+            }
+            Err(_) => {
+                log(
+                    LogLevel::Warn,
+                    LogCategory::Api,
+                    "Timed out querying /applications/public during heartbeat enrichment",
+                    Some(&format!("app_id={application_id}")),
+                );
+                if let Ok(mut cache) = self.cached_app_catalog.lock() {
+                    cache.insert(application_id.to_string(), (None, Instant::now()));
+                }
+            }
+        }
+        None
     }
 
     /// Get progress for a specific quest.
@@ -604,7 +1016,8 @@ impl DiscordApiClient {
 
         let response = self
             .request(Method::GET, &url)
-            .send()
+            .await?
+            .send_reconnecting(self)
             .await
             .context("Request for quest list failed")?;
 
@@ -632,26 +1045,35 @@ impl DiscordApiClient {
         Ok(data)
     }
 
-    pub async fn get_quest_decision_debug(&self, placement: u64) -> Result<serde_json::Value> {
-        let (heartbeat_session_id, ad_session_id) = {
-            let manager = crate::SUPER_PROPERTIES_MANAGER
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
-            (
-                manager.client_heartbeat_session_id(),
-                manager.client_ad_session_id(),
-            )
-        };
-
-        let mut url = reqwest::Url::parse(&format!("{}/quests/decision", DISCORD_API_BASE))?;
+    fn decision_request(
+        &self,
+        endpoint: &str,
+        placement: u64,
+        num: Option<u64>,
+        identity: &crate::super_properties::RequestIdentity,
+    ) -> Result<RequestBuilder> {
+        let mut url = reqwest::Url::parse(&format!("{DISCORD_API_BASE}/quests/{endpoint}"))?;
         url.query_pairs_mut()
-            .append_pair("placement", &placement.to_string())
-            .append_pair("client_heartbeat_session_id", &heartbeat_session_id)
-            .append_pair("client_ad_session_id", &ad_session_id);
+            .append_pair("placement", &placement.to_string());
+        if let Some(num) = num {
+            url.query_pairs_mut()
+                .append_pair("num_decisions_requested", &num.to_string());
+        }
+        url.query_pairs_mut()
+            .append_pair("client_ad_session_id", &identity.ad_session_id);
+        if let Some(id) = &identity.heartbeat_session_id {
+            url.query_pairs_mut()
+                .append_pair("client_heartbeat_session_id", id);
+        }
+        Ok(self.request_with_identity(Method::GET, url.as_str(), identity))
+    }
+
+    pub async fn get_quest_decision_debug(&self, placement: u64) -> Result<serde_json::Value> {
+        let identity = self.prepare_identity().await?;
 
         let response = self
-            .request(Method::GET, url.as_str())
-            .send()
+            .decision_request("decision", placement, None, &identity)?
+            .send_reconnecting(self)
             .await
             .context("Request for quest placement decision failed")?;
 
@@ -673,26 +1095,11 @@ impl DiscordApiClient {
         placement: u64,
         num: u64,
     ) -> Result<serde_json::Value> {
-        let (heartbeat_session_id, ad_session_id) = {
-            let manager = crate::SUPER_PROPERTIES_MANAGER
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
-            (
-                manager.client_heartbeat_session_id(),
-                manager.client_ad_session_id(),
-            )
-        };
-
-        let mut url = reqwest::Url::parse(&format!("{}/quests/get-decisions", DISCORD_API_BASE))?;
-        url.query_pairs_mut()
-            .append_pair("placement", &placement.to_string())
-            .append_pair("num_decisions_requested", &num.to_string())
-            .append_pair("client_heartbeat_session_id", &heartbeat_session_id)
-            .append_pair("client_ad_session_id", &ad_session_id);
+        let identity = self.prepare_identity().await?;
 
         let response = self
-            .request(Method::GET, url.as_str())
-            .send()
+            .decision_request("get-decisions", placement, Some(num), &identity)?
+            .send_reconnecting(self)
             .await
             .context("Request for quest placement decisions failed")?;
 
@@ -709,12 +1116,28 @@ impl DiscordApiClient {
         serde_json::from_str(&body).context("Failed to parse quest placement decisions")
     }
 
+    pub async fn get_current_user_badges(&self) -> Result<serde_json::Value> {
+        let url = format!("{}/users/@me/badges", DISCORD_API_BASE);
+        let response = self
+            .request(Method::GET, &url)
+            .await?
+            .send_reconnecting(self)
+            .await
+            .context("Request for user badges failed")?;
+        let status = response.status();
+        if !status.is_success() {
+            anyhow::bail!("Failed to get user badges: {}", status);
+        }
+        response.json().await.context("Failed to parse user badges")
+    }
+
     pub async fn get_virtual_currency_balance(&self) -> Result<serde_json::Value> {
         let url = format!("{}/users/@me/virtual-currency/balance", DISCORD_API_BASE);
 
         let response = self
             .request(Method::GET, &url)
-            .send()
+            .await?
+            .send_reconnecting(self)
             .await
             .context("Request for virtual currency balance failed")?;
 
@@ -738,7 +1161,8 @@ impl DiscordApiClient {
         );
         let response = self
             .request(Method::GET, &url)
-            .send()
+            .await?
+            .send_reconnecting(self)
             .await
             .context("Request for virtual currency total redeemed failed")?;
 
@@ -767,7 +1191,8 @@ impl DiscordApiClient {
 
         let response = self
             .request(Method::GET, &url)
-            .send()
+            .await?
+            .send_reconnecting(self)
             .await
             .context("Request for billing subscriptions failed")?;
 
@@ -786,7 +1211,8 @@ impl DiscordApiClient {
 
         let response = self
             .request(Method::GET, &url)
-            .send()
+            .await?
+            .send_reconnecting(self)
             .await
             .context("Request for program rewards failed")?;
 
@@ -814,8 +1240,9 @@ impl DiscordApiClient {
 
         let response = self
             .request(Method::POST, &url)
+            .await?
             .json(&payload)
-            .send()
+            .send_reconnecting(self)
             .await
             .context("Request to claim quest reward failed")?;
 
@@ -843,8 +1270,9 @@ impl DiscordApiClient {
 
         let response = self
             .request(Method::POST, &url)
+            .await?
             .json(&payload)
-            .send()
+            .send_reconnecting(self)
             .await
             .context("Failed to send video progress")?;
 
@@ -874,8 +1302,9 @@ impl DiscordApiClient {
 
         let response = self
             .request(Method::POST, &url)
+            .await?
             .json(&payload)
-            .send()
+            .send_reconnecting(self)
             .await
             .context("Failed to send heartbeat")?;
 
@@ -897,9 +1326,39 @@ impl DiscordApiClient {
     ) -> Result<bool> {
         let url = format!("{}/quests/{}/heartbeat", DISCORD_API_BASE, quest_id);
 
+        let (resolved_user_id, resolved_exe) = tokio::join!(
+            self.resolve_user_id(),
+            self.resolve_game_exe_path(application_id)
+        );
+
+        let (executable_path, executable_fingerprint) =
+            match (resolved_user_id.as_deref(), resolved_exe.as_ref()) {
+                (Some(user_id), Some((exe_path, is_pe64)))
+                    if !user_id.is_empty() && !exe_path.is_empty() =>
+                {
+                    (
+                        Some(crate::cdp_game_spoof::format_quest_executable_path(
+                            exe_path,
+                        )),
+                        Some(
+                            crate::cdp_game_spoof::synthesize_signed_executable_fingerprint(
+                                user_id,
+                                application_id,
+                                exe_path,
+                                None,
+                                *is_pe64,
+                            ),
+                        ),
+                    )
+                }
+                _ => (None, None),
+            };
+
         let payload = GameHeartbeatPayload {
             application_id: application_id.to_string(),
             terminal,
+            executable_path,
+            executable_fingerprint,
         };
 
         println!(
@@ -909,8 +1368,9 @@ impl DiscordApiClient {
 
         let response = self
             .request(Method::POST, &url)
+            .await?
             .json(&payload)
-            .send()
+            .send_reconnecting(self)
             .await
             .context("Failed to send game heartbeat")?;
 
@@ -948,8 +1408,9 @@ impl DiscordApiClient {
 
         let response = self
             .request(Method::POST, &url)
+            .await?
             .json(&payload)
-            .send()
+            .send_reconnecting(self)
             .await
             .context("Failed to send PLAY_ACTIVITY heartbeat")?;
 
@@ -992,8 +1453,9 @@ impl DiscordApiClient {
 
         let response = self
             .request(Method::POST, &url)
+            .await?
             .json(&payload)
-            .send()
+            .send_reconnecting(self)
             .await
             .context("Failed to accept quest")?;
 
@@ -1009,8 +1471,9 @@ impl DiscordApiClient {
         let minimal_payload = serde_json::json!({ "location": 11 });
         let fallback_response = self
             .request(Method::POST, &url)
+            .await?
             .json(&minimal_payload)
-            .send()
+            .send_reconnecting(self)
             .await
             .context("Failed to accept quest with minimal payload")?;
 
@@ -1039,25 +1502,33 @@ impl DiscordApiClient {
         let games_url = format!("{}/applications/detectable", DISCORD_API_BASE);
         let apps_url = format!("{}/applications/non-games/detectable", DISCORD_API_BASE);
         fetch_detectable_catalog(
-            self.request(Method::GET, &games_url),
-            self.request(Method::GET, &apps_url),
+            self.request(Method::GET, &games_url).await?,
+            self.request(Method::GET, &apps_url).await?,
+            |request| request.send_reconnecting(self),
         )
         .await
     }
 }
 
-async fn fetch_detectable_catalog(
+async fn fetch_detectable_catalog<F, Fut>(
     games_request: reqwest::RequestBuilder,
     apps_request: reqwest::RequestBuilder,
-) -> Result<Vec<DetectableGame>> {
-    let fetch_list = |request: reqwest::RequestBuilder| async move {
-        request
-            .send()
-            .await?
-            .error_for_status()?
-            .json::<Vec<DetectableGame>>()
-            .await
-            .context("Invalid detectable catalog response")
+    send: F,
+) -> Result<Vec<DetectableGame>>
+where
+    F: Fn(reqwest::RequestBuilder) -> Fut,
+    Fut: std::future::Future<Output = reqwest::Result<reqwest::Response>>,
+{
+    let fetch_list = |request: reqwest::RequestBuilder| {
+        let response = send(request);
+        async move {
+            response
+                .await?
+                .error_for_status()?
+                .json::<Vec<DetectableGame>>()
+                .await
+                .context("Invalid detectable catalog response")
+        }
     };
     let (games_result, apps_result) =
         tokio::join!(fetch_list(games_request), fetch_list(apps_request));
@@ -1165,6 +1636,129 @@ mod tests {
     use super::*;
     use std::sync::Mutex;
 
+    /// Accepts connections until aborted and records each request head. The
+    /// first `dropped` connections are closed after their request is read;
+    /// later ones receive `status`.
+    fn spawn_flaky_server(
+        listener: tokio::net::TcpListener,
+        dropped: usize,
+        status: u16,
+    ) -> (Arc<Mutex<Vec<String>>>, tokio::task::JoinHandle<()>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let recorded = requests.clone();
+        let server = tokio::spawn(async move {
+            loop {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut request = Vec::new();
+                while !request.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
+                    let mut buffer = [0; 4096];
+                    match stream.read(&mut buffer).await {
+                        Ok(0) | Err(_) => break,
+                        Ok(count) => request.extend_from_slice(&buffer[..count]),
+                    }
+                }
+                let index = {
+                    let mut recorded = recorded.lock().unwrap();
+                    recorded.push(String::from_utf8_lossy(&request).to_ascii_lowercase());
+                    recorded.len() - 1
+                };
+                if index < dropped {
+                    continue;
+                }
+                let response = format!(
+                    "HTTP/1.1 {status} Test\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                );
+                stream.write_all(response.as_bytes()).await.unwrap();
+                // Keep the socket briefly so Windows does not reset the response.
+                tokio::time::sleep(Duration::from_millis(400)).await;
+            }
+        });
+        (requests, server)
+    }
+
+    fn proxyless_client() -> reqwest::Client {
+        reqwest::Client::builder().no_proxy().build().unwrap()
+    }
+
+    /// A client whose requests the test server can tell apart from the original's.
+    fn replacement_client() -> reqwest::Client {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-test-client", HeaderValue::from_static("replacement"));
+        reqwest::Client::builder()
+            .no_proxy()
+            .default_headers(headers)
+            .build()
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn get_requests_retry_once_on_a_new_client_after_a_connection_error() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/quests/@me", listener.local_addr().unwrap());
+        let (requests, server) = spawn_flaky_server(listener, 1, 200);
+        let client = proxyless_client();
+        let request = client.get(&url).build().unwrap();
+        let mut reconnects = 0;
+
+        let response = execute_reconnecting(client, request, |_| {
+            reconnects += 1;
+            replacement_client()
+        })
+        .await;
+        server.abort();
+
+        assert_eq!(response.unwrap().status(), 200);
+        assert_eq!(reconnects, 1);
+        let requests = requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert!(!requests[0].contains("x-test-client: replacement"));
+        assert!(requests[1].contains("x-test-client: replacement"));
+    }
+
+    #[tokio::test]
+    async fn non_get_requests_reconnect_without_retrying() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/quests/1/enroll", listener.local_addr().unwrap());
+        let (requests, server) = spawn_flaky_server(listener, usize::MAX, 200);
+        let client = proxyless_client();
+        let request = client.post(&url).body("{}").build().unwrap();
+        let mut reconnects = 0;
+
+        let error = execute_reconnecting(client, request, |_| {
+            reconnects += 1;
+            replacement_client()
+        })
+        .await
+        .unwrap_err();
+        server.abort();
+
+        assert!(is_connection_error(&error));
+        assert_eq!(reconnects, 1);
+        assert_eq!(requests.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn http_error_statuses_do_not_reconnect() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/quests/@me", listener.local_addr().unwrap());
+        let (requests, server) = spawn_flaky_server(listener, 0, 500);
+        let client = proxyless_client();
+        let request = client.get(&url).build().unwrap();
+        let mut reconnects = 0;
+
+        let response = execute_reconnecting(client, request, |_| {
+            reconnects += 1;
+            replacement_client()
+        })
+        .await;
+        server.abort();
+
+        assert_eq!(response.unwrap().status(), 500);
+        assert_eq!(reconnects, 0);
+        assert_eq!(requests.lock().unwrap().len(), 1);
+    }
+
     async fn detectable_catalog_response(
         games_status: u16,
         apps_status: u16,
@@ -1208,6 +1802,7 @@ mod tests {
             fetch_detectable_catalog(
                 client.get(format!("http://{address}/games")),
                 client.get(format!("http://{address}/apps")),
+                |request| request.send(),
             ),
         )
         .await
@@ -1505,13 +2100,16 @@ mod tests {
         );
     }
 
-    #[test]
-    fn request_injects_user_agent_matching_x_super_properties() {
+    /// Verify that `DiscordApiClient::request` injects a `User-Agent` matching `x-super-properties`.
+    #[tokio::test]
+    async fn request_injects_user_agent_matching_x_super_properties() {
         use base64::Engine as _;
 
         let client = DiscordApiClient::new("test-token".to_string()).unwrap();
         let request = client
             .request(Method::GET, "https://discord.com/api/v9/quests/@me")
+            .await
+            .unwrap()
             .build()
             .unwrap();
 
@@ -1536,6 +2134,147 @@ mod tests {
         assert!(headers.get("accept-language").is_some());
     }
 
+    #[tokio::test]
+    async fn decision_query_headers_and_user_agent_share_a_frozen_snapshot() {
+        use base64::Engine as _;
+        let client = DiscordApiClient::new("synthetic-token".into()).unwrap();
+        {
+            let identity = client.candidate_identity();
+            let mut manager = identity.lock().unwrap();
+            manager.set_focused(true);
+            manager.authenticate("synthetic-account".into());
+        }
+        let snapshot = client.prepare_identity().await.unwrap();
+        // A later logout/source change must not alter an already prepared request.
+        client
+            .candidate_identity()
+            .lock()
+            .unwrap()
+            .logout()
+            .unwrap();
+        for (endpoint, num) in [("decision", None), ("get-decisions", Some(2))] {
+            let request = client
+                .decision_request(endpoint, 1, num, &snapshot)
+                .unwrap()
+                .build()
+                .unwrap();
+            let properties: serde_json::Value = serde_json::from_slice(
+                &base64::engine::general_purpose::STANDARD
+                    .decode(request.headers()["x-super-properties"].to_str().unwrap())
+                    .unwrap(),
+            )
+            .unwrap();
+            let query: std::collections::HashMap<_, _> = request.url().query_pairs().collect();
+            assert_eq!(
+                query
+                    .get("client_heartbeat_session_id")
+                    .map(|id| id.as_ref()),
+                properties["client_heartbeat_session_id"].as_str()
+            );
+            assert_eq!(
+                request.headers()[USER_AGENT].to_str().unwrap(),
+                properties["browser_user_agent"].as_str().unwrap()
+            );
+        }
+        assert!(client.prepare_identity().await.is_err());
+        let anonymous = DiscordApiClient::new("anonymous-candidate".into())
+            .unwrap()
+            .prepare_identity()
+            .await
+            .unwrap();
+        let request = client
+            .decision_request("decision", 1, None, &anonymous)
+            .unwrap()
+            .build()
+            .unwrap();
+        assert!(!request
+            .url()
+            .query_pairs()
+            .any(|(key, _)| key == "client_heartbeat_session_id"));
+    }
+
+    #[tokio::test]
+    async fn candidate_validation_has_no_other_accounts_session() {
+        let first = DiscordApiClient::new("synthetic-first-token".into()).unwrap();
+        let second = DiscordApiClient::new("synthetic-second-token".into()).unwrap();
+        {
+            let identity = first.candidate_identity();
+            let mut manager = identity.lock().unwrap();
+            manager.set_focused(true);
+            manager.authenticate("first-account".into());
+        }
+        assert!(first
+            .prepare_identity()
+            .await
+            .unwrap()
+            .heartbeat_session_id
+            .is_some());
+        assert!(second
+            .prepare_identity()
+            .await
+            .unwrap()
+            .heartbeat_session_id
+            .is_none());
+    }
+
+    #[tokio::test]
+    async fn replaced_session_cannot_fall_back_to_the_committed_candidate() {
+        let client = DiscordApiClient::new("retired-token".into()).unwrap();
+        assert!(client.prepare_identity().await.is_ok());
+        // A committed client must use the live manager even after its key changes.
+        client.identity_committed.store(true, Ordering::Release);
+        assert!(client.prepare_identity().await.is_err());
+        assert!(client
+            .request(Method::GET, "http://127.0.0.1:1/")
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn explicit_null_user_agent_is_preserved_with_a_usable_http_fallback() {
+        use base64::{engine::general_purpose::STANDARD, Engine};
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/super-properties.json"))
+                .unwrap();
+        let mut properties = fixture["desktop"]["properties"].clone();
+        properties["browser_user_agent"] = serde_json::Value::Null;
+        let raw = STANDARD.encode(serde_json::to_vec(&properties).unwrap());
+        let client = DiscordApiClient::new("synthetic-token".into()).unwrap();
+        client
+            .candidate_identity()
+            .lock()
+            .unwrap()
+            .set_from_cdp(&raw, &properties);
+        let request = client
+            .request(Method::GET, "https://discord.com/api/v9/users/@me")
+            .await
+            .unwrap()
+            .build()
+            .unwrap();
+        assert_eq!(
+            request.headers()["x-super-properties"].to_str().unwrap(),
+            raw
+        );
+        assert!(!request.headers()[USER_AGENT].to_str().unwrap().is_empty());
+    }
+
+    /// Verify that `DiscordApiClient::extract_user_id_from_token` decodes the numeric snowflake prefix.
+    #[test]
+    fn extract_user_id_from_token_parses_snowflake_prefix() {
+        use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+        let encoded = URL_SAFE_NO_PAD.encode("257900031351193600");
+        let token = format!("{encoded}.X12345.fake_hmac_signature");
+        assert_eq!(
+            DiscordApiClient::extract_user_id_from_token(&token).as_deref(),
+            Some("257900031351193600")
+        );
+        assert_eq!(
+            DiscordApiClient::extract_user_id_from_token("test-token"),
+            None
+        );
+    }
+
+    /// Manual integration smoke test for `DiscordApiClient::get_current_user`.
     #[tokio::test]
     #[ignore] // Requires valid token
     async fn test_get_current_user() {

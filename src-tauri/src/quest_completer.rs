@@ -145,7 +145,7 @@ pub async fn complete_video_quest(
             }
             Err(e) => {
                 println!("Video progress update failed: {}", e);
-                let _ = app_handle.emit("quest-error", e.to_string());
+                let _ = app_handle.emit("quest-error", format!("{:#}", e));
                 return Err(e);
             }
         }
@@ -241,11 +241,16 @@ pub async fn complete_game_quest_via_heartbeat(
         // Determine if this is the last heartbeat (terminal)
         let is_last = i == total_heartbeats - 1;
 
-        // Send heartbeat
-        match client
-            .send_game_heartbeat(&quest_id, &application_id, is_last)
-            .await
-        {
+        // Send heartbeat (abort enrichment/POST immediately if cancelled)
+        let heartbeat_result = tokio::select! {
+            res = client.send_game_heartbeat(&quest_id, &application_id, is_last) => res,
+            _ = cancel_rx.recv() => {
+                println!("Game quest cancelled during heartbeat");
+                let _ = app_handle.emit("quest-stopped", ());
+                return Ok(());
+            }
+        };
+        match heartbeat_result {
             Ok(completed) => {
                 // Calculate and send progress percentage
                 let progress = ((i + 1) as f64 / total_heartbeats as f64) * 100.0;
@@ -266,7 +271,7 @@ pub async fn complete_game_quest_via_heartbeat(
             }
             Err(e) => {
                 println!("Game heartbeat failed: {}", e);
-                let _ = app_handle.emit("quest-error", e.to_string());
+                let _ = app_handle.emit("quest-error", format!("{:#}", e));
                 return Err(e);
             }
         }

@@ -604,21 +604,7 @@ fn channel_from_process_name(name: &OsStr) -> Option<DiscordChannel> {
 }
 
 fn paths_refer_to_same_executable(left: &Path, right: &Path) -> bool {
-    #[cfg(target_os = "windows")]
-    {
-        let paths_match = |left: &Path, right: &Path| {
-            left.to_string_lossy()
-                .eq_ignore_ascii_case(&right.to_string_lossy())
-        };
-        match (std::fs::canonicalize(left), std::fs::canonicalize(right)) {
-            (Ok(left), Ok(right)) => paths_match(&left, &right),
-            _ => paths_match(left, right),
-        }
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        left == right
-    }
+    crate::same_executable_path(left, right)
 }
 
 fn installation_executable_path(install: &crate::ClientInstallation) -> Option<&Path> {

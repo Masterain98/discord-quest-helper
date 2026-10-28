@@ -197,6 +197,8 @@ const JS_INIT_QUEST_MODULES: &str = r#"
 })()
 "#;
 
+/// Build the JavaScript payload that sends an activity quest heartbeat (`POST /quests/{id}/heartbeat`)
+/// via Discord's internal API client and parses `PLAY_ACTIVITY`, `ACHIEVEMENT_IN_ACTIVITY`, or `ACHIEVEMENT_IN_GAME` progress.
 fn js_play_activity_heartbeat(
     quest_id: &str,
     application_id: Option<&str>,
@@ -234,7 +236,11 @@ fn js_play_activity_heartbeat(
             ))
         ]);
         const body = response?.body;
-        const progress = Number(body?.progress?.PLAY_ACTIVITY?.value);
+        const progress = Number(
+            body?.progress?.PLAY_ACTIVITY?.value
+                ?? body?.progress?.ACHIEVEMENT_IN_ACTIVITY?.value
+                ?? body?.progress?.ACHIEVEMENT_IN_GAME?.value
+        );
         if (!body || !Number.isFinite(progress)) {{
             return JSON.stringify({{
                 success: false,
@@ -247,6 +253,8 @@ fn js_play_activity_heartbeat(
             progress,
             completed: body.completed_at != null
                 || body?.progress?.PLAY_ACTIVITY?.completed_at != null
+                || body?.progress?.ACHIEVEMENT_IN_ACTIVITY?.completed_at != null
+                || body?.progress?.ACHIEVEMENT_IN_GAME?.completed_at != null
         }});
     }} catch (error) {{
         return JSON.stringify({{ success: false, error: String(error) }});
@@ -256,6 +264,8 @@ fn js_play_activity_heartbeat(
     )
 }
 
+/// Build the JavaScript payload that fetches `/quests/@me` via Discord's internal API client
+/// and extracts current `PLAY_ACTIVITY`, `ACHIEVEMENT_IN_ACTIVITY`, or `ACHIEVEMENT_IN_GAME` progress and completion status.
 fn js_play_activity_status(quest_id: &str) -> String {
     let quest_id_json = serde_json::to_string(quest_id).unwrap_or_else(|_| "\"\"".to_string());
     format!(
@@ -287,7 +297,10 @@ fn js_play_activity_status(quest_id: &str) -> String {
         }}
         const userStatus = quest.user_status ?? quest.userStatus;
         const progress = Number(
-            userStatus?.progress?.PLAY_ACTIVITY?.value ?? 0
+            userStatus?.progress?.PLAY_ACTIVITY?.value
+                ?? userStatus?.progress?.ACHIEVEMENT_IN_ACTIVITY?.value
+                ?? userStatus?.progress?.ACHIEVEMENT_IN_GAME?.value
+                ?? 0
         );
         const completedAt = userStatus?.completed_at ?? userStatus?.completedAt ?? null;
 
@@ -320,6 +333,8 @@ fn js_spoof_play_game(app_id: &str, app_name: &str) -> String {
     )
 }
 
+/// Build the JavaScript payload that injects a spoofed running game entry for `host_os`
+/// and optional `process_hints` into `RunningGameStore`.
 fn js_spoof_play_game_for(
     app_id: &str,
     app_name: &str,
@@ -339,6 +354,9 @@ fn js_spoof_play_game_for(
     })
     .to_string();
     let hints_json = serde_json::to_string(&process_hints).unwrap_or_else(|_| "[]".to_string());
+    let host_hw_token_json =
+        serde_json::to_string(crate::cdp_game_spoof::local_machine_renderer_hw_token())
+            .unwrap_or_else(|_| "\"\"".to_string());
     let unix_host = if host_os.is_unix() { "true" } else { "false" };
 
     format!(
@@ -352,6 +370,7 @@ fn js_spoof_play_game_for(
         const osPriority = {os_priority_json};
         const pathTemplates = {path_templates_json};
         const processHints = {hints_json};
+        const hostHwToken = {host_hw_token_json};
         const unixHost = {unix_host};
 
         function sanitizeApp(name) {{
@@ -443,10 +462,10 @@ fn js_spoof_play_game_for(
                 allExeNames = allExes.map(x => x && x.name).filter(Boolean);
                 let selected = null;
                 for (const os of osPriority) {{
-                    selected = allExes.find(x => x && x.os === os && x.name);
+                    selected = allExes.find(x => x && x.os === os && typeof x.name === "string" && x.name.trim().length > 0);
                     if (selected) {{ selectedOs = os; break; }}
                 }}
-                if (!selected && allExes[0] && allExes[0].name) {{
+                if (!selected && allExes[0] && typeof allExes[0].name === "string" && allExes[0].name.trim().length > 0) {{
                     selected = allExes[0];
                     selectedOs = allExes[0].os || null;
                 }}
@@ -466,11 +485,13 @@ fn js_spoof_play_game_for(
         const builtPath = render(pathTemplates.exePath, sanitizeApp(applicationName), exeName);
 
         let seenMatch = null;
+        let seenGames = [];
         try {{
             const seen = typeof dqh.RunningGameStore.getGamesSeen === "function"
                 ? dqh.RunningGameStore.getGamesSeen(false)
                 : [];
             if (Array.isArray(seen)) {{
+                seenGames = seen;
                 seenMatch = seen.find(g => g && String(g.id) === String(applicationId)) || null;
             }}
         }} catch(e) {{}}
@@ -519,10 +540,15 @@ fn js_spoof_play_game_for(
         }}
 
         let realGames = [];
-        try {{ realGames = dqh._origGetRunningGames.call(dqh.RunningGameStore); }} catch(e) {{
-            try {{ realGames = dqh._origGetRunningGames(); }} catch(e2) {{ realGames = []; }}
+        try {{
+            const rawReal = dqh._origGetRunningGames.call(dqh.RunningGameStore);
+            if (Array.isArray(rawReal)) realGames.push(...rawReal);
+        }} catch(e) {{
+            try {{
+                const rawReal = dqh._origGetRunningGames();
+                if (Array.isArray(rawReal)) realGames.push(...rawReal);
+            }} catch(e2) {{}}
         }}
-        if (!Array.isArray(realGames)) realGames = [];
         if (!(hint && hint.pid)) {{
             // Discord's native game/session subscribers call PID APIs before
             // QuestProgressManager. They accept a positive integer even when
@@ -530,6 +556,107 @@ fn js_spoof_play_game_for(
             // Use a high synthetic value instead of monitoring an unrelated
             // real process; avoid collisions with games already in the store.
             fakeGame.pid = allocateSyntheticPid(realGames);
+        }}
+
+        // Synthesize a valid 196-char Base64 executableFingerprint matching
+        // discord_utils.node (sub_a3990 -> sub_a4120 -> sub_1350, 0x92 = 146 bytes)
+        let fingerprintError = null;
+        dqh._lastFingerprintError = null;
+        try {{
+            if (typeof crypto !== "undefined" && crypto.subtle && typeof crypto.subtle.digest === "function") {{
+                const enc = new TextEncoder();
+                const sha256 = async (text) => new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(text)));
+                let currentUserId = "";
+                try {{
+                    const wpReq = webpackChunkdiscord_app.push([[Symbol()], {{}}, r => r]);
+                    webpackChunkdiscord_app.pop();
+                    for (const m of Object.values(wpReq.c)) {{
+                        try {{
+                            const exp = m?.exports;
+                            const u = exp?.default?.getCurrentUser?.() || exp?.Ay?.getCurrentUser?.();
+                            if (u && u.id) {{ currentUserId = String(u.id); break; }}
+                            const authId = exp?.default?.getId?.() || exp?.Ay?.getId?.();
+                            if (typeof authId === "string" && /^\d+$/.test(authId)) {{ currentUserId = authId; break; }}
+                        }} catch(_) {{}}
+                    }}
+                }} catch(_) {{}}
+                if (!currentUserId) {{
+                    fingerprintError = "missing_current_user_id";
+                    dqh._lastFingerprintError = fingerprintError;
+                }} else {{
+                    const xorKey = await sha256(currentUserId + "https://discord.com/careers");
+                    let harvestedHw = null;
+                    for (const cand of realGames) {{
+                        if (!cand || typeof cand.executableFingerprint !== "string" || cand.executableFingerprint.length !== 196) continue;
+                        try {{
+                            const raw = Uint8Array.from(atob(cand.executableFingerprint), c => c.charCodeAt(0));
+                            if (raw.length === 0x92 && raw[0] === 0x01) {{
+                                const plain = new Uint8Array(0x92);
+                                plain[0] = raw[0];
+                                for (let i = 1; i < 0x92; i++) plain[i] = raw[i] ^ xorKey[(i - 1) & 31];
+                                const plainView = new DataView(plain.buffer);
+                                const flags = plain[1];
+                                const fileSizeLow = plainView.getUint32(0x02, true);
+                                const fileSizeHigh = plainView.getUint32(0x06, true);
+                                const tds = plainView.getUint32(0x0A, true);
+                                const imgSize = plainView.getUint32(0x0E, true);
+                                // File signing status does not determine the machine/user hash.
+                                if ((flags & 0xFC) === 0
+                                    && fileSizeHigh === 0 && fileSizeLow >= 4096
+                                    && tds >= 0x386D4380 && tds <= 0x7FFFFFFF
+                                    && imgSize >= 0x1000 && (imgSize & 0xFFF) === 0) {{
+                                    harvestedHw = plain.slice(0x32, 0x52);
+                                    break;
+                                }}
+                            }}
+                        }} catch(_) {{}}
+                    }}
+                    const normPath = String(fakeGame.exePath || "").toLowerCase().replace(/\\/g, "/").split("/").filter(Boolean).slice(-2).join("/");
+                    const seed = applicationId + ":" + normPath;
+                    const seedHash = await sha256("seed:" + seed);
+                    const seedView = new DataView(seedHash.buffer);
+                    const baseMb = 20 + (seedView.getUint32(0, true) % 120);
+                    const extraBytes = (seedView.getUint32(4, true) % 1024) * 512;
+                    const fileSize = BigInt(baseMb * 1024 * 1024 + extraBytes);
+                    const timeDateStamp = (1704067200 + (seedView.getUint32(8, true) % 55000000)) >>> 0;
+                    const pages = 0x3800 + (seedView.getUint16(12, true) % 0x4000);
+                    const sizeOfImage = (pages * 0x1000) >>> 0;
+                    const hPeHeaders = await sha256("PE_HEADERS_V1:" + seed + ":" + timeDateStamp + ":" + sizeOfImage);
+                    const hSections = await sha256("PE_SECTIONS_V1:" + seed + ":" + sizeOfImage);
+                    const hCert = await sha256("AUTHENTICODE_CERT_V1:" + seed);
+                    const buf = new Uint8Array(0x92);
+                    const pktView = new DataView(buf.buffer);
+                    const isPe64 = selectedOs === "win32" || normPath.endsWith(".exe");
+                    buf[0x00] = 0x01; // version = 1 (un-XORed in sub_1350)
+                    buf[0x01] = isPe64 ? 0x03 : 0x01; // flags = is_signed (0x01) | is_pe64 (0x02 for Windows PE64)
+                    pktView.setBigUint64(0x02, fileSize, true);
+                    pktView.setUint32(0x0A, timeDateStamp, true);
+                    pktView.setUint32(0x0E, sizeOfImage, true);
+                    buf.set(hPeHeaders, 0x12);
+                    if (harvestedHw && harvestedHw.length === 32) {{
+                        buf.set(harvestedHw, 0x32);
+                    }} else {{
+                        const hHw = (typeof hostHwToken === "string" && hostHwToken.length > 0)
+                            ? await sha256(hostHwToken + ":" + currentUserId)
+                            : await sha256("hw:" + hostOs + ":" + (navigator.hardwareConcurrency || 8) + ":" + currentUserId);
+                        buf.set(hHw, 0x32);
+                    }}
+                    buf.set(hSections, 0x52);
+                    buf.set(hCert, 0x72);
+                    const out = new Uint8Array(0x92);
+                    out[0] = buf[0];
+                    for (let i = 1; i < 0x92; i++) out[i] = buf[i] ^ xorKey[(i - 1) & 31];
+                    let bin = "";
+                    for (let i = 0; i < out.length; i++) bin += String.fromCharCode(out[i]);
+                    fakeGame.executableFingerprint = btoa(bin);
+                }}
+            }} else {{
+                fingerprintError = "webcrypto_subtle_unavailable";
+                dqh._lastFingerprintError = fingerprintError;
+            }}
+        }} catch(fpErr) {{
+            fingerprintError = String(fpErr);
+            dqh._lastFingerprintError = fingerprintError;
         }}
 
         dqh._spoofActive = true;
@@ -701,7 +828,7 @@ fn js_spoof_play_game_for(
         subscribeHeartbeats();
         dqh.FluxDispatcher.dispatch({{ type: "RUNNING_GAMES_CHANGE", removed: [], added: [fakeGame], games: mergedGames }});
 
-        return JSON.stringify({{ success: true, wrappedObserver, pid: fakeGame.pid || null, patchCount: patchCount, exeName: exeName, allExeNames: allExeNames, appDataName: appDataDebug, realGamesCount: realGames.length, mergedCount: mergedGames.length, hostOs: hostOs, selectedOs: selectedOs, usedHint: !!hint }});
+        return JSON.stringify({{ success: true, wrappedObserver, pid: fakeGame.pid || null, patchCount: patchCount, exeName: exeName, allExeNames: allExeNames, appDataName: appDataDebug, realGamesCount: realGames.length, mergedCount: mergedGames.length, hostOs: hostOs, selectedOs: selectedOs, usedHint: !!hint, hasFingerprint: typeof fakeGame.executableFingerprint === "string", fingerprintError: fingerprintError }});
     }} catch (e) {{
         return JSON.stringify({{ success: false, error: String(e) }});
     }}
@@ -1961,6 +2088,24 @@ pub async fn start_manual_game_spoof(port: u16, app_id: &str, app_name: &str) ->
         }
     };
     log_partial_target_failures("manual game simulation", &summary.target_failures);
+    if let Some(first) = summary.successful_results.first() {
+        let has_fp = first
+            .get("hasFingerprint")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let fp_err = first.get("fingerprintError").and_then(|v| v.as_str());
+        if !has_fp || fp_err.is_some() {
+            log(
+                LogLevel::Warn,
+                LogCategory::TokenExtraction,
+                &format!(
+                    "CDP manual game simulation: executableFingerprint missing or errored (hasFingerprint={}, error={:?})",
+                    has_fp, fp_err
+                ),
+                None,
+            );
+        }
+    }
 
     log(
         LogLevel::Info,
@@ -2190,14 +2335,31 @@ pub async fn complete_play_quest_via_cdp(
                 .join(", ")
         })
         .unwrap_or_default();
+    let has_fingerprint = parsed
+        .get("hasFingerprint")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let fingerprint_error = parsed.get("fingerprintError").and_then(|v| v.as_str());
+    if !has_fingerprint || fingerprint_error.is_some() {
+        log(
+            LogLevel::Warn,
+            LogCategory::TokenExtraction,
+            &format!(
+                "CDP: Spoofed game missing executableFingerprint (hasFingerprint={}, fingerprintError={:?})",
+                has_fingerprint, fingerprint_error
+            ),
+            None,
+        );
+    }
     log(LogLevel::Info, LogCategory::TokenExtraction,
         &format!(
-            "CDP: Game spoofed successfully on {}/{} target(s) (max {} RunningGameStore patches, exe={}, allExes=[{}], dispatch interceptor active). Polling progress...",
+            "CDP: Game spoofed successfully on {}/{} target(s) (max {} RunningGameStore patches, exe={}, allExes=[{}], hasFingerprint={}, dispatch interceptor active). Polling progress...",
             spoof_summary.successful_results.len(),
             spoof_summary.total_targets,
             patch_count,
             exe_name,
-            all_exes
+            all_exes,
+            has_fingerprint
         ),
         None,
     );
@@ -2301,6 +2463,7 @@ pub async fn complete_play_quest_via_cdp(
     }
 }
 
+/// Initialize CDP quest modules and start both stream metadata spoofing and companion running-game spoofing.
 async fn cdp_start_stream_spoof(port: u16, app_id: &str) -> Result<CdpJsonExecutionSummary> {
     let result = async {
         cdp_prepare_quest_modules(port, "stream quest").await?;
@@ -2322,6 +2485,24 @@ async fn cdp_start_stream_spoof(port: u16, app_id: &str) -> Result<CdpJsonExecut
         )
         .await?;
         log_partial_target_failures("stream companion game spoof", &game.target_failures);
+        if let Some(first) = game.successful_results.first() {
+            let has_fp = first
+                .get("hasFingerprint")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let fp_err = first.get("fingerprintError").and_then(|v| v.as_str());
+            if !has_fp || fp_err.is_some() {
+                crate::logger::log(
+                    crate::logger::LogLevel::Warn,
+                    crate::logger::LogCategory::TokenExtraction,
+                    &format!(
+                        "CDP stream companion game spoof: executableFingerprint missing or errored (hasFingerprint={}, error={:?})",
+                        has_fp, fp_err
+                    ),
+                    None,
+                );
+            }
+        }
         Ok(stream)
     }
     .await;

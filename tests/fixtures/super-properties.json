@@ -1,0 +1,106 @@
+{
+  "desktop": {
+    "properties": {
+      "os": "Windows",
+      "browser": "Discord Client",
+      "release_channel": "stable",
+      "client_version": "1.2.3",
+      "os_version": "10.0.12345",
+      "os_arch": "x64",
+      "app_arch": "arm64",
+      "system_locale": "zh-TW",
+      "has_client_mods": false,
+      "client_launch_id": "test-launch-id",
+      "browser_user_agent": "Test Client/1.2.3 Electron/42.0.0",
+      "browser_version": "42.0.0",
+      "os_sdk_version": "12345",
+      "client_build_number": 123456,
+      "native_build_number": 123,
+      "client_event_source": null,
+      "launch_signature": null,
+      "client_heartbeat_session_id": "test-session",
+      "client_app_state": "focused",
+      "custom_text": "中文测试",
+      "custom_null": null
+    },
+    "base64": "eyJvcyI6IldpbmRvd3MiLCJicm93c2VyIjoiRGlzY29yZCBDbGllbnQiLCJyZWxlYXNlX2NoYW5uZWwiOiJzdGFibGUiLCJjbGllbnRfdmVyc2lvbiI6IjEuMi4zIiwib3NfdmVyc2lvbiI6IjEwLjAuMTIzNDUiLCJvc19hcmNoIjoieDY0IiwiYXBwX2FyY2giOiJhcm02NCIsInN5c3RlbV9sb2NhbGUiOiJ6aC1UVyIsImhhc19jbGllbnRfbW9kcyI6ZmFsc2UsImNsaWVudF9sYXVuY2hfaWQiOiJ0ZXN0LWxhdW5jaC1pZCIsImJyb3dzZXJfdXNlcl9hZ2VudCI6IlRlc3QgQ2xpZW50LzEuMi4zIEVsZWN0cm9uLzQyLjAuMCIsImJyb3dzZXJfdmVyc2lvbiI6IjQyLjAuMCIsIm9zX3Nka192ZXJzaW9uIjoiMTIzNDUiLCJjbGllbnRfYnVpbGRfbnVtYmVyIjoxMjM0NTYsIm5hdGl2ZV9idWlsZF9udW1iZXIiOjEyMywiY2xpZW50X2V2ZW50X3NvdXJjZSI6bnVsbCwibGF1bmNoX3NpZ25hdHVyZSI6bnVsbCwiY2xpZW50X2hlYXJ0YmVhdF9zZXNzaW9uX2lkIjoidGVzdC1zZXNzaW9uIiwiY2xpZW50X2FwcF9zdGF0ZSI6ImZvY3VzZWQiLCJjdXN0b21fdGV4dCI6IuS4reaWh+a1i+ivlSIsImN1c3RvbV9udWxsIjpudWxsfQ=="
+  },
+  "signatures": [
+    {
+      "bits": [],
+      "expected": "ff7fefef-f7ef-47ff-9f7e-ffbffefff7ff"
+    },
+    {
+      "bits": [
+        8
+      ],
+      "expected": "ffffefef-f7ef-47ff-9f7e-ffbffefff7ff"
+    },
+    {
+      "bits": [
+        19
+      ],
+      "expected": "ff7fffef-f7ef-47ff-9f7e-ffbffefff7ff"
+    },
+    {
+      "bits": [
+        27
+      ],
+      "expected": "ff7fefff-f7ef-47ff-9f7e-ffbffefff7ff"
+    },
+    {
+      "bits": [
+        36
+      ],
+      "expected": "ff7fefef-ffef-47ff-9f7e-ffbffefff7ff"
+    },
+    {
+      "bits": [
+        43
+      ],
+      "expected": "ff7fefef-f7ff-47ff-9f7e-ffbffefff7ff"
+    },
+    {
+      "bits": [
+        52
+      ],
+      "expected": "ff7fefef-f7ef-4fff-9f7e-ffbffefff7ff"
+    },
+    {
+      "bits": [
+        66
+      ],
+      "expected": "ff7fefef-f7ef-47ff-bf7e-ffbffefff7ff"
+    },
+    {
+      "bits": [
+        72
+      ],
+      "expected": "ff7fefef-f7ef-47ff-9ffe-ffbffefff7ff"
+    },
+    {
+      "bits": [
+        79
+      ],
+      "expected": "ff7fefef-f7ef-47ff-9f7f-ffbffefff7ff"
+    },
+    {
+      "bits": [
+        89
+      ],
+      "expected": "ff7fefef-f7ef-47ff-9f7e-fffffefff7ff"
+    },
+    {
+      "bits": [
+        103
+      ],
+      "expected": "ff7fefef-f7ef-47ff-9f7e-ffbffffff7ff"
+    },
+    {
+      "bits": [
+        116
+      ],
+      "expected": "ff7fefef-f7ef-47ff-9f7e-ffbffeffffff"
+    }
+  ]
+}

@@ -1,0 +1,154 @@
+{
+  "events": {
+    "quest_started": false,
+    "quest_completed": true,
+    "queue_completed": true
+  },
+  "channels": [
+    {
+      "id": "system",
+      "name_key": "notifications.system",
+      "description_key": "notifications.system_desc",
+      "icon": "monitor",
+      "fields": [],
+      "help_links": [],
+      "enabled": true,
+      "configured": true,
+      "values": {},
+      "secret_fields_set": []
+    },
+    {
+      "id": "telegram",
+      "name_key": "notifications.telegram",
+      "description_key": null,
+      "icon": "send",
+      "fields": [
+        {
+          "id": "token",
+          "label_key": "notifications.bot_token",
+          "kind": "password",
+          "required": true,
+          "placeholder": null
+        },
+        {
+          "id": "chat_id",
+          "label_key": "notifications.chat_id",
+          "kind": "text",
+          "required": true,
+          "placeholder": "123456789 / -100123456789 / @channel"
+        },
+        {
+          "id": "topic_id",
+          "label_key": "notifications.topic_id",
+          "kind": "numeric",
+          "required": false,
+          "placeholder": null
+        }
+      ],
+      "help_links": [
+        {
+          "label_key": "notifications.setup_help",
+          "url": "https://core.telegram.org/bots/tutorial"
+        },
+        {
+          "label_key": "notifications.target_help",
+          "url": "https://core.telegram.org/bots/api#getupdates"
+        }
+      ],
+      "enabled": false,
+      "configured": false,
+      "values": {
+        "chat_id": "",
+        "topic_id": ""
+      },
+      "secret_fields_set": []
+    },
+    {
+      "id": "discord",
+      "name_key": "notifications.discord",
+      "description_key": null,
+      "icon": "bell",
+      "fields": [
+        {
+          "id": "webhook_url",
+          "label_key": "notifications.webhook_url",
+          "kind": "password",
+          "required": true,
+          "placeholder": null
+        },
+        {
+          "id": "thread_id",
+          "label_key": "notifications.thread_id",
+          "kind": "numeric",
+          "required": false,
+          "placeholder": null
+        }
+      ],
+      "help_links": [
+        {
+          "label_key": "notifications.setup_help",
+          "url": "https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks"
+        }
+      ],
+      "enabled": false,
+      "configured": false,
+      "values": {
+        "thread_id": ""
+      },
+      "secret_fields_set": []
+    },
+    {
+      "id": "fixture",
+      "name_key": "notifications.message_test",
+      "description_key": null,
+      "icon": "future_icon",
+      "fields": [
+        {
+          "id": "endpoint",
+          "label_key": "notifications.webhook_url",
+          "kind": "url",
+          "required": true,
+          "placeholder": "https://example.invalid/push"
+        },
+        {
+          "id": "api_key",
+          "label_key": "notifications.bot_token",
+          "kind": "password",
+          "required": true,
+          "placeholder": null
+        },
+        {
+          "id": "signing_key",
+          "label_key": "notifications.secret_saved",
+          "kind": "password",
+          "required": true,
+          "placeholder": null
+        },
+        {
+          "id": "recipient",
+          "label_key": "notifications.chat_id",
+          "kind": "numeric",
+          "required": false,
+          "placeholder": null
+        }
+      ],
+      "help_links": [
+        {
+          "label_key": "notifications.setup_help",
+          "url": "https://example.invalid/help"
+        }
+      ],
+      "enabled": false,
+      "configured": true,
+      "values": {
+        "endpoint": "https://example.invalid/push",
+        "recipient": "18446744073709551615"
+      },
+      "secret_fields_set": [
+        "api_key",
+        "signing_key"
+      ]
+    }
+  ],
+  "results": {}
+}

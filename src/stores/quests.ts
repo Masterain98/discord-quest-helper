@@ -6,6 +6,8 @@ import { canQueueGroupMember } from '@/utils/questGroups'
 import { clampGameIdleDuration, loadGameIdleDuration, resolveGameIdleDuration } from '@/utils/durationSetting'
 import { resolveSimulationExecutable } from '@/utils/executables'
 import { commandErrorMessage } from '@/utils/commandError'
+import { QuestNotifications, notificationRewardImage, estimatedCompletionAt } from '@/utils/questNotifications'
+import { dispatchNotification } from '@/api/notifications'
 
 /** Quest with optional pre-selected executable name for batch game quest processing */
 interface QueueItem extends Quest {
@@ -71,6 +73,21 @@ const STORAGE_SPEED_KEY = 'questHelper_speedMultiplier'
 const STORAGE_SIMULATION_PATH_KEY = 'questHelper_simulationPath'
 
 export const useQuestsStore = defineStore('quests', () => {
+  const notifications = new QuestNotifications(event => {
+    // Delivery is independent of task execution. Never surface native errors (or URLs)
+    // through the quest error/log path; the notification settings own delivery status.
+    void dispatchNotification(event).catch(() => undefined)
+  })
+  let notificationGeneration = 0
+  function notifyStarted(questId: string, generation: number, remainingSeconds: number, speed = 1, source?: Quest) {
+    if (generation !== notificationGeneration || activeQuestId.value !== questId) return
+    const quest = source ?? quests.value.find(item => item.id === questId)
+    if (isQueueRunning.value) notifications.beginQueue()
+    notifications.started(questId, quest?.config.messages.quest_name || quest?.config.messages.game_title || questId, {
+      reward_image: quest ? notificationRewardImage(quest) : null,
+      estimated_complete_at: estimatedCompletionAt(remainingSeconds, speed),
+    })
+  }
   const quests = ref<Quest[]>([])
   const excludedQuests = ref<ExcludedQuest[]>([])
   const questEnrollmentBlockedUntil = ref<string | null>(null)
@@ -413,6 +430,8 @@ export const useQuestsStore = defineStore('quests', () => {
   // Account changes invalidate both cached rows and requests from the old session.
   function setQuestAccount(accountId: string | null) {
     if (questAccountId.value === accountId) return
+    notificationGeneration++
+    notifications.reset()
     void cancelKeepAliveAndStopGame()
     resetOrbsState()
     questAccountId.value = accountId
@@ -722,6 +741,7 @@ export const useQuestsStore = defineStore('quests', () => {
     if (!isQueueRunning.value || questQueue.value[0]?.id !== questId || activeQuestId.value !== questId) return
     if (completionClaimedFor === questId) return
     completionClaimedFor = questId
+    notifications.completed(questId)
     // While keep-alive holds the game open the quest stays the locked queue
     // head; the queue advances only after the delayed teardown closes it.
     if (scheduleKeepAliveTeardown(questId, () => completeQueuedQuest(questId))) return
@@ -746,6 +766,7 @@ export const useQuestsStore = defineStore('quests', () => {
       console.log('Quest completed detected via polling.')
       if (completionClaimedFor === quest.id) return
       completionClaimedFor = quest.id
+      notifications.completed(quest.id)
       activeQuestProgress.value = 100
       // Polling stays alive during keep-alive: the claim plus the scheduled
       // quest ID make repeated ticks no-ops, and stop() remains the
@@ -867,6 +888,7 @@ export const useQuestsStore = defineStore('quests', () => {
   }
 
   async function startVideo(questId: string, secondsNeeded: number, initialProgress: number) {
+    const notificationEpoch = notificationGeneration
     startingQuestId.value = questId
     try {
       const progressPct = (secondsNeeded > 0) ? (initialProgress / secondsNeeded) * 100 : 0
@@ -887,6 +909,7 @@ export const useQuestsStore = defineStore('quests', () => {
       // CDP video progress is server-enforced real-time; don't inflate local simulation
       startProgressSimulation(gameQuestMode.value === 'cdp' ? 1.0 : speedMultiplier.value)
       setupListeners()
+      notifyStarted(questId, notificationEpoch, secondsNeeded - initialProgress, gameQuestMode.value === 'cdp' ? 1 : speedMultiplier.value)
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
       throw e
@@ -896,6 +919,7 @@ export const useQuestsStore = defineStore('quests', () => {
   }
 
   async function startStream(questId: string, streamKey: string, secondsNeeded: number, initialProgress: number) {
+    const notificationEpoch = notificationGeneration
     startingQuestId.value = questId
     try {
       const progressPct = (secondsNeeded > 0) ? (initialProgress / secondsNeeded) * 100 : 0
@@ -907,6 +931,7 @@ export const useQuestsStore = defineStore('quests', () => {
 
       startProgressSimulation(1.0)
       setupListeners()
+      notifyStarted(questId, notificationEpoch, secondsNeeded - initialProgress)
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
       throw e
@@ -916,6 +941,7 @@ export const useQuestsStore = defineStore('quests', () => {
   }
 
   async function startPlay(quest: Quest, secondsNeeded: number, initialProgress: number, selectedExeName?: string) {
+    const notificationEpoch = notificationGeneration
     startingQuestId.value = quest.id
     error.value = null
     // Remember the request so a soft error can offer "switch to CDP and retry".
@@ -1067,6 +1093,7 @@ export const useQuestsStore = defineStore('quests', () => {
         const detail = historyError instanceof Error ? historyError.message : String(historyError)
         throw new Error(`Failed to start game simulation history: ${detail}`)
       }
+      notifyStarted(quest.id, notificationEpoch, secondsNeeded - initialProgress, 1, quest)
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
       // Clean up if started (only for simulate mode)
@@ -1087,6 +1114,7 @@ export const useQuestsStore = defineStore('quests', () => {
   }
 
   async function startActivity(quest: Quest) {
+    const notificationEpoch = notificationGeneration
     startingQuestId.value = quest.id
     error.value = null
     try {
@@ -1156,6 +1184,7 @@ export const useQuestsStore = defineStore('quests', () => {
       startProgressSimulation(1.0)
       setupListeners()
 
+      notifyStarted(quest.id, notificationEpoch, remainingSeconds, 1, quest)
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
       throw e
@@ -1165,6 +1194,7 @@ export const useQuestsStore = defineStore('quests', () => {
   }
 
   async function startPlayActivity(quest: Quest, secondsNeeded: number, initialProgress: number) {
+    const notificationEpoch = notificationGeneration
     startingQuestId.value = quest.id
     error.value = null
     let preserveActiveState = false
@@ -1216,6 +1246,7 @@ export const useQuestsStore = defineStore('quests', () => {
         }
         throw new Error(`Failed to start activity simulation history: ${detail}`)
       }
+      notifyStarted(quest.id, notificationEpoch, secondsNeeded - initialProgress, 1, quest)
     } catch (e) {
       if (!preserveActiveState && activeQuestId.value === quest.id) {
         activeQuestId.value = null
@@ -1286,6 +1317,8 @@ export const useQuestsStore = defineStore('quests', () => {
     // teardown and let this function do the immediate cleanup.
     cancelKeepAlive()
     const stoppedQuestId = activeQuestId.value
+    notificationGeneration++
+    notifications.abandonQueue()
     cancelQueueAdvance()
     queueStartRevision++
     preparingQueuedQuestId.value = null
@@ -1385,6 +1418,7 @@ export const useQuestsStore = defineStore('quests', () => {
       localProgress.value = 0
 
       cleanupListeners()
+      notifications.cancelActive()
       stoppedSuccessfully = true
 
       // Refresh quests to get latest status
@@ -1428,6 +1462,7 @@ export const useQuestsStore = defineStore('quests', () => {
       } else {
         if (completionClaimedFor === listenedQuestId) return
         completionClaimedFor = listenedQuestId
+        notifications.completed(listenedQuestId)
         if (scheduleKeepAliveTeardown(listenedQuestId, () => completeActiveQuest(listenedQuestId))) return
         await completeActiveQuest(listenedQuestId)
       }
@@ -1437,6 +1472,8 @@ export const useQuestsStore = defineStore('quests', () => {
     })
 
     onQuestError(async (err) => {
+      if (!listenedQuestId || activeQuestId.value !== listenedQuestId) return
+      notifications.failed()
       console.log('Received quest-error event:', err)
       // An errored quest is not a completed one; drop any pending keep-alive.
       cancelKeepAlive()
@@ -1564,6 +1601,7 @@ export const useQuestsStore = defineStore('quests', () => {
     if (index < 0) return false
     questQueue.value.splice(index, 1)
     if (questQueue.value.length === 0) {
+      notifications.abandonQueue()
       isQueueRunning.value = false
       cancelQueueAdvance()
     }
@@ -1599,6 +1637,7 @@ export const useQuestsStore = defineStore('quests', () => {
 
   function clearUpcomingQueue() {
     if (queueEditingDisabled.value) return
+    notifications.abandonQueue()
     questQueue.value = questQueue.value.filter(item => item.id === lockedQueueQuestId.value)
     if (questQueue.value.length === 0) {
       isQueueRunning.value = false
@@ -1610,10 +1649,12 @@ export const useQuestsStore = defineStore('quests', () => {
     if (stopping.value || lockedQueueQuestId.value) return
     cancelQueueAdvance()
     if (questQueue.value.length === 0) {
+      notifications.drained()
       isQueueRunning.value = false
       return
     }
 
+    notifications.beginQueue()
     const revision = ++queueStartRevision
     isQueueRunning.value = true
     queuePauseReason.value = null
@@ -1637,6 +1678,7 @@ export const useQuestsStore = defineStore('quests', () => {
         preparingQueuedQuestId.value = queued.id
         const latest = quests.value.find(quest => quest.id === queued.id)
         if (!latest || !canQueueGroupMember(latest)) {
+          notifications.skipped()
           questQueue.value.shift()
           continue
         }
@@ -1653,9 +1695,11 @@ export const useQuestsStore = defineStore('quests', () => {
         }
         return // Existing completion handlers advance the serial queue.
       }
+      notifications.drained()
       isQueueRunning.value = false
     } catch (e) {
       if (revision !== queueStartRevision) return
+      notifications.failed()
       error.value = e instanceof Error ? e.message : String(e)
       questQueue.value.shift()
       if (isQueueRunning.value) scheduleNextQueuedQuest()
@@ -1686,6 +1730,7 @@ export const useQuestsStore = defineStore('quests', () => {
     const members = new Set(ids)
     questQueue.value = questQueue.value.filter(item => item.id === lockedQueueQuestId.value || !members.has(item.id))
     if (!questQueue.value.length) {
+      notifications.abandonQueue()
       isQueueRunning.value = false
       cancelQueueAdvance()
     }
@@ -1721,6 +1766,7 @@ export const useQuestsStore = defineStore('quests', () => {
     }
 
     questQueue.value.push(q)
+    notifications.beginQueue()
     isQueueRunning.value = true
     return true
   }
@@ -1761,6 +1807,8 @@ export const useQuestsStore = defineStore('quests', () => {
   }
 
   function resetForLogout() {
+    notificationGeneration++
+    notifications.reset()
     queueStartRevision++
     preparingQueuedQuestId.value = null
     cancelQueueAdvance()
@@ -1870,6 +1918,7 @@ export const useQuestsStore = defineStore('quests', () => {
     queuePauseReason.value = null
 
     if (wasSimIncompatible && isQueueRunning.value && questQueue.value.length > 0) {
+      notifications.skipped()
       questQueue.value.shift()
       void processQueue()
     }

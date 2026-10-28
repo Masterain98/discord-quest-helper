@@ -11,7 +11,10 @@ const mocks = vi.hoisted(() => ({
   stopSimulatedGame: vi.fn(),
   stopGameSimulationUsage: vi.fn(),
   onQuestComplete: vi.fn(),
+  dispatchNotification: vi.fn().mockResolvedValue(undefined),
 }))
+
+vi.mock('@/api/notifications', () => ({ dispatchNotification: mocks.dispatchNotification }))
 
 vi.mock('@/api/tauri', () => ({
   getPlatformCapabilities: mocks.getPlatformCapabilities,
@@ -104,6 +107,10 @@ describe('post-quest keep-alive', () => {
     expect(store.keepAliveEndsAt).toBe(Date.now() + 60_000)
     expect(mocks.stopSimulatedGame).not.toHaveBeenCalled()
     expect(store.questQueue.map(item => item.id)).toEqual(['first', 'second'])
+    expect(mocks.dispatchNotification.mock.calls.filter(([event]) => event.kind === 'quest_completed')).toHaveLength(1)
+
+    await complete()
+    expect(mocks.dispatchNotification.mock.calls.filter(([event]) => event.kind === 'quest_completed')).toHaveLength(1)
 
     await vi.advanceTimersByTimeAsync(60_000)
 
@@ -113,6 +120,26 @@ describe('post-quest keep-alive', () => {
     expect(store.questQueue.map(item => item.id)).toEqual(['second'])
     expect(store.activeQuestId).toBeNull()
     expect(store.keepAliveEndsAt).toBeNull()
+    expect(mocks.dispatchNotification.mock.calls.filter(([event]) => event.kind === 'quest_completed')).toHaveLength(1)
+  })
+
+  it('notifies single-quest completion once before its delayed teardown', async () => {
+    const store = await runningStore()
+    store.isQueueRunning = false
+    store.postQuestKeepAliveEnabled = true
+    store.postQuestKeepAlive = { mode: 'fixed', fixed: 1, min: 1, max: 1 }
+
+    await complete()
+    await complete()
+
+    expect(mocks.dispatchNotification.mock.calls.filter(([event]) => event.kind === 'quest_completed')).toHaveLength(1)
+    expect(mocks.stopSimulatedGame).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(60_000)
+
+    expect(mocks.stopSimulatedGame).toHaveBeenCalledTimes(1)
+    expect(store.activeQuestId).toBeNull()
+    expect(mocks.dispatchNotification.mock.calls.filter(([event]) => event.kind === 'quest_completed')).toHaveLength(1)
   })
 
   it('stops immediately when requested during keep-alive and never repeats the teardown', async () => {

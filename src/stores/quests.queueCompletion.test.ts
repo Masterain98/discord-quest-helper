@@ -11,7 +11,10 @@ const mocks = vi.hoisted(() => ({
   stopQuest: vi.fn(),
   getQuestsFull: vi.fn(),
   forceVideoProgress: vi.fn(),
+  dispatchNotification: vi.fn().mockResolvedValue(undefined),
 }))
+
+vi.mock('@/api/notifications', () => ({ dispatchNotification: mocks.dispatchNotification }))
 
 vi.mock('@/api/tauri', () => ({
   getPlatformCapabilities: mocks.getPlatformCapabilities,
@@ -60,6 +63,7 @@ describe('queued quest completion', () => {
     setActivePinia(createPinia())
     vi.useFakeTimers()
     vi.clearAllMocks()
+    mocks.dispatchNotification.mockResolvedValue(undefined)
     mocks.getPlatformCapabilities.mockResolvedValue({
       os: 'windows', defaultGameQuestMode: 'simulate', executableOsPriority: ['win32'],
     })
@@ -104,6 +108,7 @@ describe('queued quest completion', () => {
     releaseHistory()
     await Promise.all([first, duplicate])
     expect(store.questQueue.map(item => item.id)).toEqual(['second'])
+    expect(mocks.dispatchNotification.mock.calls.filter(([event]) => event.kind === 'quest_completed')).toHaveLength(1)
   })
 
   it('pauses the queue when the completed item cannot save its history', async () => {
@@ -115,6 +120,44 @@ describe('queued quest completion', () => {
     expect(store.isQueueRunning).toBe(false)
     expect(store.activeQuestId).toBe('first')
     expect(store.error).toContain('history disk full')
+    expect(mocks.dispatchNotification.mock.calls.filter(([event]) => event.kind === 'quest_completed')).toHaveLength(1)
+  })
+
+  it('sends start only after native startup succeeds and never on failure', async () => {
+    let resolveStart!: () => void
+    mocks.startVideoQuest.mockReturnValueOnce(new Promise<void>(resolve => { resolveStart = resolve }))
+    const store = useQuestsStore()
+    store.quests = [quest('first')]
+    const starting = store.startVideo('first', 60, 0)
+    expect(mocks.dispatchNotification).not.toHaveBeenCalled()
+    resolveStart(); await starting
+    expect(mocks.dispatchNotification).toHaveBeenCalledWith(expect.objectContaining({ kind: 'quest_started', quest_name: 'first' }))
+    expect(mocks.dispatchNotification.mock.calls[0][0].estimated_complete_at).toBe(new Date(Date.now() + 60_000).toISOString())
+    mocks.startVideoQuest.mockRejectedValueOnce(new Error('startup failed'))
+    await expect(store.startVideo('second', 60, 0)).rejects.toThrow('startup failed')
+    expect(mocks.dispatchNotification).toHaveBeenCalledTimes(1)
+  })
+
+  it('sends one queue summary after the last task, independently of delivery failures', async () => {
+    mocks.dispatchNotification.mockRejectedValue(new Error('notification unavailable'))
+    const store = await queuedStore()
+    await complete(); await vi.advanceTimersByTimeAsync(2000); await complete()
+    expect(mocks.dispatchNotification.mock.calls.filter(([e]) => e.kind === 'queue_completed')).toHaveLength(0)
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(mocks.dispatchNotification.mock.calls.filter(([e]) => e.kind === 'quest_completed')).toHaveLength(2)
+    expect(mocks.dispatchNotification).toHaveBeenCalledWith(expect.objectContaining({ kind: 'queue_completed', succeeded: 2, failed: 0, skipped: 0 }))
+    expect(store.isQueueRunning).toBe(false)
+    mocks.dispatchNotification.mockResolvedValue(undefined)
+  })
+
+  it('does not notify a startup that resolves after an account change', async () => {
+    let resolveStart!: () => void
+    mocks.startVideoQuest.mockReturnValueOnce(new Promise<void>(resolve => { resolveStart = resolve }))
+    const store = useQuestsStore()
+    const starting = store.startVideo('first', 60, 0)
+    store.setQuestAccount('new-account')
+    resolveStart(); await starting
+    expect(mocks.dispatchNotification).not.toHaveBeenCalled()
   })
 
   it('protects the current head while removing and reordering only upcoming tasks', async () => {

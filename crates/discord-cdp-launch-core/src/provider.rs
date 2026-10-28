@@ -15,6 +15,15 @@ pub trait DesktopClientProvider: Send + Sync {
     fn id(&self) -> ProviderId;
     fn display_name(&self) -> &'static str;
     fn discover(&self) -> Result<Vec<ClientInstallation>, LaunchError>;
+    fn discover_with_issues(&self) -> (Vec<ClientInstallation>, Vec<String>) {
+        match self.discover() {
+            Ok(found) => (found, Vec::new()),
+            Err(error) => (
+                Vec::new(),
+                vec![format!("{}: {error}", self.display_name())],
+            ),
+        }
+    }
     fn validate_target(&self, target: &LaunchTarget) -> ValidationState;
 
     fn process_matches(
@@ -70,6 +79,15 @@ impl DesktopClientProvider for OfficialDiscordProvider {
             .into_iter()
             .map(official_installation)
             .collect())
+    }
+
+    #[cfg(windows)]
+    fn discover_with_issues(&self) -> (Vec<ClientInstallation>, Vec<String>) {
+        let (found, issues) = crate::platform::windows::find_installs_with_issues();
+        (
+            found.into_iter().map(official_installation).collect(),
+            issues,
+        )
     }
 
     fn validate_target(&self, target: &LaunchTarget) -> ValidationState {
@@ -146,10 +164,9 @@ pub fn discover_client_installations() -> (Vec<ClientInstallation>, Vec<String>)
     let mut installations = Vec::new();
     let mut issues = Vec::new();
     for provider in provider_registry() {
-        match provider.discover() {
-            Ok(found) => installations.extend(found),
-            Err(error) => issues.push(format!("{}: {error}", provider.display_name())),
-        }
+        let (found, errors) = provider.discover_with_issues();
+        installations.extend(found);
+        issues.extend(errors);
     }
     (installations, issues)
 }
@@ -205,8 +222,29 @@ pub fn refresh_installation_validation(mut install: ClientInstallation) -> Clien
 pub fn official_installation(install: DiscordInstall) -> ClientInstallation {
     let provider_id = ProviderId::official_discord();
     let variant_id = VariantId(install.channel.as_str().to_string());
+    #[cfg(not(windows))]
+    let id = {
+        let identity_path = install
+            .executable_path
+            .ancestors()
+            .find(|path| {
+                cfg!(target_os = "macos") && path.extension().is_some_and(|ext| ext == "app")
+            })
+            .unwrap_or(&install.executable_path);
+        installation_id_for_key(
+            &provider_id,
+            &format!(
+                "official-installation\0{}\0{}",
+                install.channel.as_str(),
+                identity_path.to_string_lossy()
+            ),
+        )
+    };
+    #[cfg(windows)]
+    let id = crate::windows_official_installation_id(&install.executable_path, install.channel)
+        .unwrap_or_else(|| installation_id(&provider_id, &install.executable_path));
     ClientInstallation {
-        id: installation_id(&provider_id, &install.executable_path),
+        id,
         provider_id,
         variant_id: Some(variant_id),
         display_name: format!("Discord {}", install.channel.display_name()),
@@ -222,6 +260,104 @@ pub fn official_installation(install: DiscordInstall) -> ClientInstallation {
             restore_normal: true,
         },
         validation: ValidationState::Valid,
+    }
+}
+
+/// Refresh automatic official installations without replacing a user-supplied
+/// executable or following a different installation of the same channel.
+pub fn refresh_automatic_installation(
+    install: &ClientInstallation,
+) -> std::io::Result<Option<ClientInstallation>> {
+    #[cfg(windows)]
+    return crate::refresh_windows_official_installation(install);
+    #[cfg(not(windows))]
+    {
+        if install.source != DiscoverySource::StandardPath
+            || install.provider_id != ProviderId::official_discord()
+        {
+            return Ok(Some(refresh_installation_validation(install.clone())));
+        }
+        let Some(mut official) = installation_as_official_unvalidated(install) else {
+            return Ok(Some(refresh_installation_validation(install.clone())));
+        };
+        #[cfg(target_os = "macos")]
+        if let Some(bundle) = official
+            .executable_path
+            .ancestors()
+            .find(|path| path.extension().is_some_and(|ext| ext == "app"))
+            .map(Path::to_path_buf)
+        {
+            let names = match official.channel {
+                crate::DiscordChannel::Stable => ["Discord", "Discord"],
+                crate::DiscordChannel::Ptb => ["Discord PTB", "Discord"],
+                crate::DiscordChannel::Canary => ["Discord Canary", "Discord"],
+            };
+            for name in names {
+                let path = bundle.join("Contents/MacOS").join(name);
+                match std::fs::metadata(&path) {
+                    Ok(meta) if meta.is_file() => {
+                        official.executable_path = path;
+                        break;
+                    }
+                    Ok(_) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => return Err(error),
+                }
+            }
+        }
+        match std::fs::metadata(&official.executable_path) {
+            Ok(meta) if meta.is_file() => {
+                official.working_dir = std::fs::canonicalize(&official.executable_path)
+                    .unwrap_or_else(|_| official.executable_path.clone())
+                    .parent()
+                    .unwrap()
+                    .to_path_buf();
+                Ok(Some(official_installation(official)))
+            }
+            Ok(_) => Ok(None),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn installation_as_official_unvalidated(install: &ClientInstallation) -> Option<DiscordInstall> {
+    let mut install = install.clone();
+    install.validation = ValidationState::Valid;
+    installation_as_official(&install)
+}
+
+/// Resolve aliases even when an updater has removed the final path components.
+pub(crate) fn canonicalize_existing_ancestor(path: &Path) -> PathBuf {
+    let mut suffix = Vec::new();
+    let mut ancestor = path;
+    loop {
+        if let Ok(mut resolved) = std::fs::canonicalize(ancestor) {
+            for part in suffix.iter().rev() {
+                resolved.push(part);
+            }
+            return resolved;
+        }
+        let Some(name) = ancestor.file_name() else {
+            return path.to_path_buf();
+        };
+        suffix.push(name.to_os_string());
+        let Some(parent) = ancestor.parent() else {
+            return path.to_path_buf();
+        };
+        ancestor = parent;
+    }
+}
+
+pub fn same_executable_path(left: &Path, right: &Path) -> bool {
+    let left = canonicalize_existing_ancestor(left);
+    let right = canonicalize_existing_ancestor(right);
+    if cfg!(windows) {
+        left.to_string_lossy()
+            .eq_ignore_ascii_case(&right.to_string_lossy())
+    } else {
+        left == right
     }
 }
 
@@ -475,7 +611,7 @@ fn installation_id(provider_id: &ProviderId, path: &Path) -> InstallationId {
     installation_id_for_key(provider_id, &normalized_path_key(path))
 }
 
-fn installation_id_for_key(provider_id: &ProviderId, key: &str) -> InstallationId {
+pub(crate) fn installation_id_for_key(provider_id: &ProviderId, key: &str) -> InstallationId {
     let value = format!("{}\0{key}", provider_id.as_str());
     let mut hash = 0xcbf29ce484222325u64;
     for byte in value.as_bytes() {

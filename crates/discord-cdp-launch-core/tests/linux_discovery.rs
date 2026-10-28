@@ -59,21 +59,15 @@ fn discovers_channels_by_priority_and_orders_stable_ptb_canary() {
             DiscordChannel::Canary
         ]
     );
-    assert_eq!(
-        installs[0].executable_path,
-        fs::canonicalize(usr_bin.join("discord")).unwrap()
-    );
+    assert_eq!(installs[0].executable_path, usr_bin.join("discord"));
     assert_eq!(
         installs[1].executable_path,
-        fs::canonicalize(opt.join("DiscordPTB/DiscordPTB")).unwrap()
+        opt.join("DiscordPTB/DiscordPTB")
     );
-    assert_eq!(
-        installs[2].executable_path,
-        fs::canonicalize(user_bin.join("discord-canary")).unwrap()
-    );
+    assert_eq!(installs[2].executable_path, user_bin.join("discord-canary"));
     assert_eq!(
         installs[1].working_dir,
-        installs[1].executable_path.parent().unwrap()
+        fs::canonicalize(installs[1].executable_path.parent().unwrap()).unwrap()
     );
 
     fs::remove_dir_all(&root).ok();
@@ -92,7 +86,7 @@ fn ignores_non_executable_files() {
 }
 
 #[test]
-fn resolves_symlink_to_canonical_target_and_dedupes() {
+fn symlink_launcher_survives_target_updates_and_dedupes() {
     let root = unique_temp_root("dqh-linux-symlink");
     let real = root.join("opt/Discord/Discord");
     write_executable(&real);
@@ -105,12 +99,49 @@ fn resolves_symlink_to_canonical_target_and_dedupes() {
     let installs = discover_linux_installs_in(&[bin.clone(), root.join("opt")], &[], &[]);
     assert_eq!(installs.len(), 1);
     assert_eq!(installs[0].channel, DiscordChannel::Stable);
-    assert_eq!(
-        installs[0].executable_path,
-        fs::canonicalize(&real).unwrap()
+    assert_eq!(installs[0].executable_path, bin.join("discord"));
+
+    use discord_cdp_launch_core::{
+        custom_executable_installation, refresh_automatic_installation, DiscoverySource,
+        LaunchTarget, ProviderId,
+    };
+    let mut saved =
+        custom_executable_installation(&ProviderId::official_discord(), bin.join("discord"))
+            .unwrap();
+    saved.source = DiscoverySource::StandardPath;
+    let saved = refresh_automatic_installation(&saved).unwrap().unwrap();
+    let updated = root.join("versions/next/Discord");
+    write_executable(&updated);
+    fs::remove_file(bin.join("discord")).unwrap();
+    std::os::unix::fs::symlink(&updated, bin.join("discord")).unwrap();
+    fs::remove_file(&real).unwrap();
+    let current = refresh_automatic_installation(&saved).unwrap().unwrap();
+    let expected_working_dir = fs::canonicalize(updated.parent().unwrap()).unwrap();
+    assert_eq!(current.id, saved.id);
+    assert!(
+        matches!(current.launch_target, LaunchTarget::Executable { path, working_dir, .. } if path == bin.join("discord") && working_dir == expected_working_dir)
     );
 
     fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn relative_path_entry_keeps_an_absolute_symlink_launcher() {
+    let relative_root = PathBuf::from(unique_temp_root("dqh-linux-relative").file_name().unwrap());
+    let root = std::env::current_dir().unwrap().join(&relative_root);
+    let target = root.join("versions/current/Discord");
+    write_executable(&target);
+    let bin = root.join("bin");
+    fs::create_dir_all(&bin).unwrap();
+    std::os::unix::fs::symlink(&target, bin.join("discord")).unwrap();
+
+    let installs = discover_linux_installs_in(&[], &[], &[relative_root.join("bin")]);
+    assert_eq!(installs.len(), 1);
+    assert_eq!(installs[0].executable_path, bin.join("discord"));
+    assert!(installs[0].executable_path.is_absolute());
+    assert_eq!(installs[0].working_dir, target.parent().unwrap());
+
+    fs::remove_dir_all(root).unwrap();
 }
 
 #[test]

@@ -562,13 +562,18 @@ mod tests {
                 if disconnect {
                     let _ = socket.close(None);
                 } else {
-                    let _ = socket.send(Message::Text(
-                        json!({"id":1,"error":{
-                            "code":-32601,"message":"unsupported"
-                        }})
-                        .to_string()
-                        .into(),
-                    ));
+                    socket
+                        .send(Message::Text(
+                            json!({"id":1,"error":{
+                                "code":-32601,"message":"unsupported"
+                            }})
+                            .to_string()
+                            .into(),
+                        ))
+                        .unwrap();
+                    // Keep the server alive until the client consumes the error
+                    // and closes. Dropping TCP immediately can race delivery on Windows.
+                    let _ = socket.read();
                 }
             });
             let target = CdpTarget {
