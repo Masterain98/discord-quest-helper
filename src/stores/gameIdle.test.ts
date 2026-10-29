@@ -3,6 +3,10 @@ import { createPinia, setActivePinia } from 'pinia'
 import { formatSimulationDuration, useGameIdleStore } from './gameIdle'
 import type { GameIdleStatus } from '@/api/tauri'
 
+function statusStats(): GameIdleStatus['stats'] {
+  return { gamesCompleted: 0, crashes: 0, lastCrashAt: null, lastCrashGame: null, skippedGames: 0 }
+}
+
 const mocks = vi.hoisted(() => ({
   getGameIdleStatus: vi.fn(),
   startGameIdle: vi.fn(),
@@ -139,6 +143,7 @@ describe('game idle store', () => {
       phaseStartedAt: 0,
       phaseEndsAt: null,
       accumulatedPlayedSeconds: 12,
+      stats: statusStats(),
       warning: null,
     }
     mocks.stopGameIdle.mockResolvedValue(stopped)
@@ -181,7 +186,7 @@ describe('game idle store', () => {
       restDuration: { mode: 'fixed', fixed: 0, min: 0, max: 0 },
       crashSimulation: { enabled: false, crashAfterMinutes: { mode: 'fixed', fixed: 10, min: 10, max: 10 }, reopenDelaySeconds: { mode: 'fixed', fixed: 45, min: 45, max: 45 } },
       current: null, recent: [], upcoming: [],
-      phaseStartedAt: 0, phaseEndsAt: null, accumulatedPlayedSeconds: 0, warning: null,
+      phaseStartedAt: 0, phaseEndsAt: null, accumulatedPlayedSeconds: 0, stats: statusStats(), warning: null,
     }
     mocks.stopGameIdle.mockResolvedValue({ ...active, phase: 'stopped' })
     const store = useGameIdleStore()
@@ -339,7 +344,7 @@ describe('game idle store', () => {
       restDuration: { mode: 'fixed', fixed: 1, min: 1, max: 1 },
       crashSimulation: { enabled: true, crashAfterMinutes: { mode: 'fixed', fixed: 5, min: 5, max: 5 }, reopenDelaySeconds: { mode: 'fixed', fixed: 0, min: 0, max: 0 } },
       current: null, recent: [], upcoming: [],
-      phaseStartedAt: 0, phaseEndsAt: null, accumulatedPlayedSeconds: 0, warning: null,
+      phaseStartedAt: 0, phaseEndsAt: null, accumulatedPlayedSeconds: 0, stats: statusStats(), warning: null,
     }
     mocks.getGameIdleStatus.mockResolvedValue(status)
     mocks.quests.detectableGames = [game('a'), game('b')]
@@ -403,7 +408,7 @@ describe('game idle store', () => {
       restDuration: { mode: 'fixed', fixed: 0, min: 0, max: 0 },
       crashSimulation: { enabled: false, crashAfterMinutes: { mode: 'fixed', fixed: 10, min: 10, max: 10 }, reopenDelaySeconds: { mode: 'fixed', fixed: 45, min: 45, max: 45 } },
       current: null, recent: [], upcoming: [],
-      phaseStartedAt: 0, phaseEndsAt: null, accumulatedPlayedSeconds: 0, warning: null,
+      phaseStartedAt: 0, phaseEndsAt: null, accumulatedPlayedSeconds: 0, stats: statusStats(), warning: null,
     })
     storage.set('questHelper_gameIdlePlaylist', JSON.stringify([game('b', 'App')]))
     mocks.quests.detectableGames = [game('a'), game('b'), game('b', 'App')]

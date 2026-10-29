@@ -579,6 +579,18 @@
     "stream_quest_desc": "Nhiệm vụ phát trực tuyến yêu cầu bạn phát trực tuyến trò chơi trên Discord theo cách thủ công. Bắt đầu phát trực tiếp bằng kênh thoại, sau đó sử dụng Trình mô phỏng trò chơi để mô phỏng trò chơi."
   },
   "game_idle": {
+    "stats_games_completed": "Game đã hoàn thành",
+    "stats_games_completed_hint": "Phiên này",
+    "stats_crashes": "Crash",
+    "stats_crashes_hint": "Mô phỏng trong phiên này",
+    "stats_last_crash": "Crash gần nhất",
+    "stats_last_crash_none": "Chưa có",
+    "stats_last_crash_hint": "{game} · {time}",
+    "stats_skipped": "Khởi động thất bại",
+    "stats_skipped_hint": "Game bị bỏ qua",
+    "stats_just_now": "vừa xong",
+    "stats_ago_minutes": "{count} phút trước",
+    "stats_ago_hours": "{hours} giờ {minutes} phút trước",
     "nav": "Treo trò chơi",
     "navigation_locked": "Chế độ treo đang chạy. Hãy dừng trước khi rời trang này.",
     "eyebrow": "Treo trò chơi",

@@ -202,6 +202,18 @@ pub enum GameIdlePhase {
     Stopped,
 }
 
+/// Session-scoped counters shown on the rotation screen. They reset with each
+/// new session and are never persisted, like the accumulated play time.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GameIdleSessionStats {
+    pub games_completed: u32,
+    pub crashes: u32,
+    pub last_crash_at: Option<i64>,
+    pub last_crash_game: Option<String>,
+    pub skipped_games: u32,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GameIdleStatus {
@@ -224,6 +236,7 @@ pub struct GameIdleStatus {
     pub phase_started_at: i64,
     pub phase_ends_at: Option<i64>,
     pub accumulated_played_seconds: u64,
+    pub stats: GameIdleSessionStats,
     pub warning: Option<String>,
 }
 
@@ -255,6 +268,7 @@ impl GameIdleStatus {
             phase_started_at: now_millis(),
             phase_ends_at: None,
             accumulated_played_seconds: 0,
+            stats: GameIdleSessionStats::default(),
             warning: None,
         }
     }
@@ -744,6 +758,8 @@ async fn run_session(
                     "Skipped {} after two failed start attempts: {}",
                     candidate.name, last_error
                 ));
+                state.status.stats.skipped_games =
+                    state.status.stats.skipped_games.saturating_add(1);
                 state.fill_upcoming();
                 emit_status(&app, &state.status);
             }
@@ -844,6 +860,9 @@ async fn run_session(
                 {
                     let mut state = shared.lock().await;
                     state.running = None;
+                    state.status.stats.crashes = state.status.stats.crashes.saturating_add(1);
+                    state.status.stats.last_crash_at = Some(now_millis());
+                    state.status.stats.last_crash_game = Some(candidate.name.clone());
                     // Freeze the displayed countdown for the outage: a None
                     // end time parks the panel instead of counting the closed
                     // window as play; reopening re-bases both timestamps.
@@ -945,6 +964,12 @@ async fn run_session(
         }
         if cancelled || *cancel.borrow() {
             break;
+        }
+
+        {
+            let mut state = shared.lock().await;
+            state.status.stats.games_completed =
+                state.status.stats.games_completed.saturating_add(1);
         }
 
         let rest_minutes = config.rest_duration.resolve();
@@ -1210,6 +1235,7 @@ mod tests {
                 phase_started_at: 0,
                 phase_ends_at: None,
                 accumulated_played_seconds: 0,
+                stats: GameIdleSessionStats::default(),
                 warning: None,
             },
             all: eligible_games(
@@ -1233,6 +1259,23 @@ mod tests {
         assert_eq!(config.selection_mode, GameIdleSelectionMode::Random);
         assert_eq!(config.candidate_type, GameIdleCandidateType::All);
         assert!(config.selected_app_ids.is_empty());
+    }
+
+    #[test]
+    fn status_exposes_session_stats_in_camel_case() {
+        let config = config();
+        let status = GameIdleStatus::starting(&config, &[], 5);
+        let serialized = serde_json::to_value(status).unwrap();
+        assert_eq!(
+            serialized["stats"],
+            serde_json::json!({
+                "gamesCompleted": 0,
+                "crashes": 0,
+                "lastCrashAt": null,
+                "lastCrashGame": null,
+                "skippedGames": 0
+            })
+        );
     }
 
     #[test]
@@ -1594,6 +1637,7 @@ mod tests {
                 phase_started_at: 0,
                 phase_ends_at: None,
                 accumulated_played_seconds: 0,
+                stats: GameIdleSessionStats::default(),
                 warning: None,
             },
             all,
@@ -1646,6 +1690,7 @@ mod tests {
                 phase_started_at: 0,
                 phase_ends_at: None,
                 accumulated_played_seconds: 0,
+                stats: GameIdleSessionStats::default(),
                 warning: None,
             },
             all,
@@ -1700,6 +1745,7 @@ mod tests {
                 phase_started_at: 0,
                 phase_ends_at: None,
                 accumulated_played_seconds: 0,
+                stats: GameIdleSessionStats::default(),
                 warning: None,
             },
             all,
@@ -1751,6 +1797,7 @@ mod tests {
                 phase_started_at: 0,
                 phase_ends_at: None,
                 accumulated_played_seconds: 0,
+                stats: GameIdleSessionStats::default(),
                 warning: None,
             },
             all: candidates,
@@ -1805,6 +1852,7 @@ mod tests {
                 phase_started_at: 0,
                 phase_ends_at: None,
                 accumulated_played_seconds: 0,
+                stats: GameIdleSessionStats::default(),
                 warning: None,
             },
             all: candidates.clone(),

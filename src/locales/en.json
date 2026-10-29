@@ -581,6 +581,18 @@
     "stream_quest_desc": "Stream quests require you to stream the game on Discord manually. Start a stream in a voice channel, then use the Game Simulator to simulate the game."
   },
   "game_idle": {
+    "stats_games_completed": "Games finished",
+    "stats_games_completed_hint": "This session",
+    "stats_crashes": "Crashes",
+    "stats_crashes_hint": "Simulated this session",
+    "stats_last_crash": "Last crash",
+    "stats_last_crash_none": "No crash yet",
+    "stats_last_crash_hint": "{game} · {time}",
+    "stats_skipped": "Failed starts",
+    "stats_skipped_hint": "Games skipped",
+    "stats_just_now": "just now",
+    "stats_ago_minutes": "{count} min ago",
+    "stats_ago_hours": "{hours}h {minutes}min ago",
     "nav": "Game idle",
     "navigation_locked": "Game idle is running. Stop it before leaving this page.",
     "eyebrow": "Game idle",

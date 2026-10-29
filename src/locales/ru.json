@@ -579,6 +579,18 @@
     "stream_quest_desc": "Стрим-квесты требуют ручной трансляции игры в Discord. Начните трансляцию в голосовом канале, затем используйте симулятор игр."
   },
   "game_idle": {
+    "stats_games_completed": "Завершено игр",
+    "stats_games_completed_hint": "Эта сессия",
+    "stats_crashes": "Сбои",
+    "stats_crashes_hint": "Смоделированы в этой сессии",
+    "stats_last_crash": "Последний сбой",
+    "stats_last_crash_none": "Пока не было",
+    "stats_last_crash_hint": "{game} · {time}",
+    "stats_skipped": "Неудачные запуски",
+    "stats_skipped_hint": "Пропущено игр",
+    "stats_just_now": "только что",
+    "stats_ago_minutes": "{count} мин назад",
+    "stats_ago_hours": "{hours} ч {minutes} мин назад",
     "nav": "Игровой простой",
     "navigation_locked": "Режим простоя запущен. Остановите его, прежде чем покинуть эту страницу.",
     "eyebrow": "Игровой простой",

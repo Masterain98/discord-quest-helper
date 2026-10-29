@@ -579,6 +579,18 @@
     "stream_quest_desc": "Les quêtes de streaming nécessitent que vous diffusiez le jeu sur Discord manuellement. Démarrez un flux dans un canal vocal, puis utilisez Game Simulator pour simuler le jeu."
   },
   "game_idle": {
+    "stats_games_completed": "Parties terminées",
+    "stats_games_completed_hint": "Cette session",
+    "stats_crashes": "Plantages",
+    "stats_crashes_hint": "Simulés pendant cette session",
+    "stats_last_crash": "Dernier plantage",
+    "stats_last_crash_none": "Aucun pour l'instant",
+    "stats_last_crash_hint": "{game} · {time}",
+    "stats_skipped": "Démarrages échoués",
+    "stats_skipped_hint": "Jeux ignorés",
+    "stats_just_now": "à l'instant",
+    "stats_ago_minutes": "il y a {count} min",
+    "stats_ago_hours": "il y a {hours} h {minutes} min",
     "nav": "Jeu automatique",
     "navigation_locked": "Le mode inactif est en cours. Arrêtez-le avant de quitter cette page.",
     "eyebrow": "Jeu automatique",

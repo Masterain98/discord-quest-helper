@@ -444,6 +444,14 @@ export interface GameIdleItem {
   occurrenceId: string
 }
 
+export interface GameIdleSessionStats {
+  gamesCompleted: number
+  crashes: number
+  lastCrashAt: number | null
+  lastCrashGame: string | null
+  skippedGames: number
+}
+
 export interface GameIdleStatus {
   sessionId: string
   mode: GameIdleMode
@@ -463,6 +471,7 @@ export interface GameIdleStatus {
   phaseStartedAt: number
   phaseEndsAt: number | null
   accumulatedPlayedSeconds: number
+  stats: GameIdleSessionStats
   warning: string | null
 }
 

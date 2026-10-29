@@ -579,6 +579,18 @@
     "stream_quest_desc": "配信クエストは Discord で手動でゲームを配信する必要があります。ボイスチャンネルで配信を開始し、ゲームシミュレーターでゲームをシミュレートしてください。"
   },
   "game_idle": {
+    "stats_games_completed": "完了したゲーム",
+    "stats_games_completed_hint": "今回のセッション",
+    "stats_crashes": "クラッシュ",
+    "stats_crashes_hint": "今回のセッションでシミュレート",
+    "stats_last_crash": "最後のクラッシュ",
+    "stats_last_crash_none": "まだありません",
+    "stats_last_crash_hint": "{game} · {time}",
+    "stats_skipped": "起動失敗",
+    "stats_skipped_hint": "スキップされたゲーム",
+    "stats_just_now": "たった今",
+    "stats_ago_minutes": "{count} 分前",
+    "stats_ago_hours": "{hours} 時間 {minutes} 分前",
     "nav": "ゲーム放置",
     "navigation_locked": "ゲームアイドルが実行中です。このページを離れる前に停止してください。",
     "eyebrow": "ゲーム放置",

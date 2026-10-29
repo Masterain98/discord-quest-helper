@@ -579,6 +579,18 @@
     "stream_quest_desc": "直播任務需要你在 Discord 中手動直播遊戲。請在語音頻道中開始直播，然後使用遊戲模擬器模擬運行遊戲。"
   },
   "game_idle": {
+    "stats_games_completed": "已完成遊戲",
+    "stats_games_completed_hint": "本次工作階段",
+    "stats_crashes": "當機",
+    "stats_crashes_hint": "本次工作階段模擬",
+    "stats_last_crash": "最近一次當機",
+    "stats_last_crash_none": "尚無",
+    "stats_last_crash_hint": "{game} · {time}",
+    "stats_skipped": "啟動失敗",
+    "stats_skipped_hint": "略過的遊戲",
+    "stats_just_now": "剛剛",
+    "stats_ago_minutes": "{count} 分鐘前",
+    "stats_ago_hours": "{hours} 小時 {minutes} 分鐘前",
     "nav": "遊戲掛機",
     "navigation_locked": "掛機進行中，請先停止再離開此頁面。",
     "eyebrow": "遊戲掛機",

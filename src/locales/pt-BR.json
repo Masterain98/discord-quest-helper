@@ -579,6 +579,18 @@
     "stream_quest_desc": "As missões de transmissão exigem que você transmita o jogo em Discord manualmente. Inicie uma transmissão em um canal de voz e use o Game Simulator para simular o jogo."
   },
   "game_idle": {
+    "stats_games_completed": "Jogos concluídos",
+    "stats_games_completed_hint": "Nesta sessão",
+    "stats_crashes": "Crashes",
+    "stats_crashes_hint": "Simulados nesta sessão",
+    "stats_last_crash": "Último crash",
+    "stats_last_crash_none": "Nenhum ainda",
+    "stats_last_crash_hint": "{game} · {time}",
+    "stats_skipped": "Falhas ao iniciar",
+    "stats_skipped_hint": "Jogos pulados",
+    "stats_just_now": "agora",
+    "stats_ago_minutes": "há {count} min",
+    "stats_ago_hours": "há {hours}h {minutes}min",
     "nav": "Jogo em espera",
     "navigation_locked": "O modo ocioso está ativo. Pare-o antes de sair desta página.",
     "eyebrow": "Jogo em espera",

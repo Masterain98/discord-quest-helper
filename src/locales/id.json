@@ -579,6 +579,18 @@
     "stream_quest_desc": "Quest streaming mengharuskan Anda melakukan streaming game pada Discord secara manual. Mulai streaming di saluran suara, lalu gunakan Game Simulator untuk menyimulasikan game."
   },
   "game_idle": {
+    "stats_games_completed": "Game selesai",
+    "stats_games_completed_hint": "Sesi ini",
+    "stats_crashes": "Crash",
+    "stats_crashes_hint": "Disimulasikan di sesi ini",
+    "stats_last_crash": "Crash terakhir",
+    "stats_last_crash_none": "Belum ada",
+    "stats_last_crash_hint": "{game} · {time}",
+    "stats_skipped": "Gagal dimulai",
+    "stats_skipped_hint": "Game dilewati",
+    "stats_just_now": "baru saja",
+    "stats_ago_minutes": "{count} menit lalu",
+    "stats_ago_hours": "{hours} jam {minutes} menit lalu",
     "nav": "Game idle",
     "navigation_locked": "Mode idle sedang berjalan. Hentikan sebelum meninggalkan halaman ini.",
     "eyebrow": "Game idle",

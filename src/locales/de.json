@@ -579,6 +579,18 @@
     "stream_quest_desc": "Für Stream-Quests müssen Sie das Spiel manuell auf Discord streamen. Starten Sie einen Stream in einem Sprachkanal und simulieren Sie das Spiel dann mit dem Spielesimulator."
   },
   "game_idle": {
+    "stats_games_completed": "Abgeschlossene Spiele",
+    "stats_games_completed_hint": "Diese Sitzung",
+    "stats_crashes": "Abstürze",
+    "stats_crashes_hint": "In dieser Sitzung simuliert",
+    "stats_last_crash": "Letzter Absturz",
+    "stats_last_crash_none": "Noch keiner",
+    "stats_last_crash_hint": "{game} · {time}",
+    "stats_skipped": "Fehlgeschlagene Starts",
+    "stats_skipped_hint": "Übersprungene Spiele",
+    "stats_just_now": "gerade eben",
+    "stats_ago_minutes": "vor {count} Min.",
+    "stats_ago_hours": "vor {hours} Std. {minutes} Min.",
     "nav": "Spiel-Autopilot",
     "navigation_locked": "Der Leerlaufmodus läuft. Beende ihn, bevor du diese Seite verlässt.",
     "eyebrow": "Spiel-Autopilot",

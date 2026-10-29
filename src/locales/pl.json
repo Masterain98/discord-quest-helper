@@ -579,6 +579,18 @@
     "stream_quest_desc": "Zadania strumieniowe wymagają ręcznego przesyłania strumieniowego gry na Discord. Rozpocznij transmisję na kanale głosowym, a następnie użyj symulatora gry, aby zasymulować grę."
   },
   "game_idle": {
+    "stats_games_completed": "Ukończone gry",
+    "stats_games_completed_hint": "Ta sesja",
+    "stats_crashes": "Awarie",
+    "stats_crashes_hint": "Symulowane w tej sesji",
+    "stats_last_crash": "Ostatnia awaria",
+    "stats_last_crash_none": "Jeszcze brak",
+    "stats_last_crash_hint": "{game} · {time}",
+    "stats_skipped": "Nieudane starty",
+    "stats_skipped_hint": "Pominięte gry",
+    "stats_just_now": "przed chwilą",
+    "stats_ago_minutes": "{count} min temu",
+    "stats_ago_hours": "{hours} godz. {minutes} min temu",
     "nav": "Tryb bezczynny gier",
     "navigation_locked": "Tryb bezczynności działa. Zatrzymaj go przed opuszczeniem tej strony.",
     "eyebrow": "Tryb bezczynny gier",

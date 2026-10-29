@@ -579,6 +579,18 @@
     "stream_quest_desc": "스트리밍 퀘스트는 Discord에서 수동으로 게임을 스트리밍해야 합니다. 음성 채널에서 스트리밍을 시작한 후 게임 시뮬레이터로 게임을 시뮬레이션하세요."
   },
   "game_idle": {
+    "stats_games_completed": "완료한 게임",
+    "stats_games_completed_hint": "이번 세션",
+    "stats_crashes": "크래시",
+    "stats_crashes_hint": "이번 세션에서 시뮬레이션됨",
+    "stats_last_crash": "마지막 크래시",
+    "stats_last_crash_none": "아직 없음",
+    "stats_last_crash_hint": "{game} · {time}",
+    "stats_skipped": "시작 실패",
+    "stats_skipped_hint": "건너뛴 게임",
+    "stats_just_now": "방금 전",
+    "stats_ago_minutes": "{count}분 전",
+    "stats_ago_hours": "{hours}시간 {minutes}분 전",
     "nav": "게임 방치",
     "navigation_locked": "게임 유휴 모드가 실행 중입니다. 이 페이지를 떠나기 전에 중지하세요.",
     "eyebrow": "게임 방치",

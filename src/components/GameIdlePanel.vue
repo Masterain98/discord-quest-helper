@@ -25,7 +25,7 @@ import { useGameIdleStore, formatSimulationDuration } from '@/stores/gameIdle'
 import { useQuestsStore } from '@/stores/quests'
 import type { GameIdleItem } from '@/api/tauri'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const auth = useAuthStore()
 const idle = useGameIdleStore()
 const quests = useQuestsStore()
@@ -96,6 +96,29 @@ const sessionSeconds = computed(() => {
 })
 
 const sessionDuration = computed(() => formatSimulationDuration(sessionSeconds.value))
+const stats = computed(() => idle.status?.stats ?? null)
+const lastCrashValue = computed(() => {
+  const lastCrashAt = stats.value?.lastCrashAt
+  if (!lastCrashAt) return '—'
+  const seconds = Math.max(0, Math.floor((now.value - lastCrashAt) / 1000))
+  if (seconds < 60) return t('game_idle.stats_just_now')
+  if (seconds < 3600) {
+    return t('game_idle.stats_ago_minutes', { count: Math.floor(seconds / 60) })
+  }
+  const ago = formatSimulationDuration(seconds)
+  return t('game_idle.stats_ago_hours', { hours: ago.hours, minutes: ago.minutes })
+})
+const lastCrashHint = computed(() => {
+  const current = stats.value
+  if (!current?.lastCrashAt || !current.lastCrashGame) {
+    return t('game_idle.stats_last_crash_none')
+  }
+  const time = new Date(current.lastCrashAt).toLocaleTimeString(locale.value, {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+  return t('game_idle.stats_last_crash_hint', { game: current.lastCrashGame, time })
+})
 const configError = computed(() => idle.validateConfig())
 const currentIsQueued = computed(() => Boolean(
   idle.status?.current &&
@@ -384,6 +407,29 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
+      <div v-if="stats" class="idle-stats">
+        <div class="idle-stat">
+          <span>{{ t('game_idle.stats_games_completed') }}</span>
+          <strong>{{ stats.gamesCompleted }}</strong>
+          <small>{{ t('game_idle.stats_games_completed_hint') }}</small>
+        </div>
+        <div class="idle-stat">
+          <span>{{ t('game_idle.stats_crashes') }}</span>
+          <strong>{{ stats.crashes }}</strong>
+          <small>{{ t('game_idle.stats_crashes_hint') }}</small>
+        </div>
+        <div class="idle-stat">
+          <span>{{ t('game_idle.stats_last_crash') }}</span>
+          <strong>{{ lastCrashValue }}</strong>
+          <small>{{ lastCrashHint }}</small>
+        </div>
+        <div class="idle-stat">
+          <span>{{ t('game_idle.stats_skipped') }}</span>
+          <strong>{{ stats.skippedGames }}</strong>
+          <small>{{ t('game_idle.stats_skipped_hint') }}</small>
+        </div>
+      </div>
+
       <div v-if="active" class="idle-immersive-footer">
         <div class="idle-immersive-status">
           <span class="idle-live-dot" aria-hidden="true" />
@@ -574,6 +620,12 @@ onBeforeUnmount(() => {
 .idle-metric strong, .idle-metric small { grid-column: 1 / -1; }
 .idle-metric strong { margin-top: .42rem; font-variant-numeric: tabular-nums; font-size: 1.32rem; letter-spacing: -.025em; }
 .idle-metric small { margin-top: .12rem; color: hsl(var(--muted-foreground)); font-size: .68rem; }
+.idle-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid hsl(var(--border) / .55); background: hsl(var(--background) / .32); }
+.idle-stat { min-width: 0; padding: .8rem 1.2rem .95rem; border-left: 1px solid hsl(var(--border) / .55); }
+.idle-stat:first-child { border-left: 0; }
+.idle-stat span { display: block; color: hsl(var(--muted-foreground)); font-size: .68rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+.idle-stat strong { display: block; margin-top: .3rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; font-size: 1.1rem; letter-spacing: -.02em; }
+.idle-stat small { display: block; margin-top: .14rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: hsl(var(--muted-foreground)); font-size: .68rem; }
 .idle-empty { display: flex; min-height: 12rem; align-items: center; justify-content: center; gap: 1rem; border: 1px dashed hsl(var(--border)); border-radius: 1rem; background: hsl(var(--muted) / .18); }
 .idle-shell:not(.is-immersive) > .idle-empty { flex: 1; }
 .idle-empty-icon { display: grid; place-items: center; width: 3.4rem; height: 3.4rem; border-radius: 1rem; background: hsl(var(--primary) / .11); color: hsl(var(--primary)); }
@@ -591,6 +643,9 @@ onBeforeUnmount(() => {
   .idle-readout { grid-template-columns: 1fr 1fr; }
   .idle-primary-readout { grid-column: 1 / -1; border-bottom: 1px solid hsl(var(--border) / .55); }
   .idle-metric:first-of-type { border-left: 0; }
+  .idle-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .idle-stat:nth-child(odd) { border-left: 0; }
+  .idle-stat:nth-child(n + 3) { border-top: 1px solid hsl(var(--border) / .55); }
 
   .idle-shell.is-immersive { min-height: calc(100dvh - 1rem); padding: 0.75rem; }
   .idle-shell.is-immersive .idle-machine { min-height: min(38rem, 78dvh); }

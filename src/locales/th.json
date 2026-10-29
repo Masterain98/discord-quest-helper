@@ -579,6 +579,18 @@
     "stream_quest_desc": "ภารกิจการสตรีมต้องการให้คุณสตรีมเกมบน Discord ด้วยตนเอง เริ่มสตรีมในช่องเสียง จากนั้นใช้ Game Simulator เพื่อจำลองเกม"
   },
   "game_idle": {
+    "stats_games_completed": "เกมที่เล่นจบ",
+    "stats_games_completed_hint": "เซสชันนี้",
+    "stats_crashes": "แครช",
+    "stats_crashes_hint": "จำลองในเซสชันนี้",
+    "stats_last_crash": "แครชล่าสุด",
+    "stats_last_crash_none": "ยังไม่มี",
+    "stats_last_crash_hint": "{game} · {time}",
+    "stats_skipped": "เริ่มไม่สำเร็จ",
+    "stats_skipped_hint": "เกมที่ข้าม",
+    "stats_just_now": "เมื่อสักครู่",
+    "stats_ago_minutes": "{count} นาทีที่แล้ว",
+    "stats_ago_hours": "{hours} ชม. {minutes} นาทีที่แล้ว",
     "nav": "โหมดเล่นเกมอัตโนมัติ",
     "navigation_locked": "โหมดว่างกำลังทำงานอยู่ หยุดก่อนออกจากหน้านี้",
     "eyebrow": "โหมดเล่นเกมอัตโนมัติ",

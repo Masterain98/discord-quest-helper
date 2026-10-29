@@ -581,6 +581,18 @@
     "stream_quest_desc": "直播任务需要你在 Discord 中手动直播游戏。请在语音频道中开始直播，然后使用游戏模拟器模拟运行游戏。"
   },
   "game_idle": {
+    "stats_games_completed": "已完成游戏",
+    "stats_games_completed_hint": "本次会话",
+    "stats_crashes": "崩溃",
+    "stats_crashes_hint": "本次会话模拟",
+    "stats_last_crash": "最近一次崩溃",
+    "stats_last_crash_none": "暂无",
+    "stats_last_crash_hint": "{game} · {time}",
+    "stats_skipped": "启动失败",
+    "stats_skipped_hint": "跳过的游戏",
+    "stats_just_now": "刚刚",
+    "stats_ago_minutes": "{count} 分钟前",
+    "stats_ago_hours": "{hours} 小时 {minutes} 分钟前",
     "nav": "游戏挂机",
     "navigation_locked": "挂机进行中，请先停止再离开此页面。",
     "eyebrow": "游戏挂机",
