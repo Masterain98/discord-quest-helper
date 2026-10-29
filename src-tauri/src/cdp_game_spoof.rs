@@ -112,6 +112,8 @@ pub struct CleanupVerify {
     pub observer_hook: bool,
     pub fake_in_running_games: bool,
     pub debug_game_present: bool,
+    pub synthetic_game_count: u64,
+    pub synthetic_visible_game: bool,
 }
 
 /// Official Discord desktop game-quest heartbeat cadence, from
@@ -317,6 +319,8 @@ pub fn cleanup_verify_is_clean(verify: &CleanupVerify) -> bool {
         && !verify.observer_hook
         && !verify.fake_in_running_games
         && !verify.debug_game_present
+        && verify.synthetic_game_count == 0
+        && !verify.synthetic_visible_game
 }
 
 pub fn cleanup_verify_from_json(parsed: &serde_json::Value) -> Option<CleanupVerify> {
@@ -337,6 +341,8 @@ pub fn cleanup_verify_from_json(parsed: &serde_json::Value) -> Option<CleanupVer
         observer_hook: flag("observerHook")?,
         fake_in_running_games: flag("fakeInRunningGames")?,
         debug_game_present: flag("debugGamePresent")?,
+        synthetic_game_count: parsed.get("syntheticGameCount").and_then(|v| v.as_u64())?,
+        synthetic_visible_game: flag("syntheticVisibleGame")?,
     })
 }
 
@@ -568,6 +574,8 @@ mod tests {
             observer_hook: false,
             fake_in_running_games: false,
             debug_game_present: false,
+            synthetic_game_count: 0,
+            synthetic_visible_game: false,
         };
         assert!(cleanup_verify_is_clean(&clean));
         assert!(!cleanup_verify_is_clean(&CleanupVerify {
@@ -582,6 +590,14 @@ mod tests {
             debug_game_present: true,
             ..clean.clone()
         }));
+        assert!(!cleanup_verify_is_clean(&CleanupVerify {
+            synthetic_game_count: 1,
+            ..clean.clone()
+        }));
+        assert!(!cleanup_verify_is_clean(&CleanupVerify {
+            synthetic_visible_game: true,
+            ..clean.clone()
+        }));
         assert!(cleanup_verify_from_json(&serde_json::json!({
             "success": true,
             "dqhPresent": false,
@@ -591,7 +607,9 @@ mod tests {
             "broadPatchCount": 0,
             "observerHook": false,
             "fakeInRunningGames": false,
-            "debugGamePresent": false
+            "debugGamePresent": false,
+            "syntheticGameCount": 0,
+            "syntheticVisibleGame": false
         }))
         .is_some_and(|verify| cleanup_verify_is_clean(&verify)));
     }
@@ -607,7 +625,9 @@ mod tests {
             "broadPatchCount": 0,
             "observerHook": false,
             "fakeInRunningGames": false,
-            "debugGamePresent": false
+            "debugGamePresent": false,
+            "syntheticGameCount": 0,
+            "syntheticVisibleGame": false
         });
         assert!(cleanup_verify_from_json(&complete).is_some());
         for key in [
@@ -619,6 +639,8 @@ mod tests {
             "observerHook",
             "fakeInRunningGames",
             "debugGamePresent",
+            "syntheticGameCount",
+            "syntheticVisibleGame",
         ] {
             let mut missing = complete.clone();
             assert!(missing.as_object_mut().unwrap().remove(key).is_some());

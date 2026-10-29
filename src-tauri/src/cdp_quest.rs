@@ -1086,7 +1086,12 @@ fn js_query_progress(quest_id: &str) -> String {
 ///
 /// Discovers leftover bridges from earlier app processes (`__n` + 10 hex) and
 /// the historical `__dqh_cdp` name. The historical name is split so
-/// `with_bridge` cannot rewrite the lookup.
+/// `with_bridge` cannot rewrite the lookup. Beyond restoring the patched
+/// getters, it removes our own synthetic running games from Discord's live
+/// store: that store ignores the `RUNNING_GAMES_CHANGE` payload and only
+/// rebuilds its list from the native game observer, so a fake game that
+/// reached it survives a JS-only cleanup and keeps the profile showing
+/// "Playing <game>" through rest periods and after Stop.
 const JS_CLEANUP_SPOOF: &str = r#"
 (async () => {
     try {
@@ -1103,6 +1108,128 @@ const JS_CLEANUP_SPOOF: &str = r#"
                 || obj._origSetObservedGamesCallback
                 || (obj.initialized === true && obj.RunningGameStore)
             ));
+        }
+        function webpackModules() {
+            try {
+                const req = webpackChunkdiscord_app.push([[Symbol()], {}, r => r]);
+                webpackChunkdiscord_app.pop();
+                return req && req.c ? Object.values(req.c) : [];
+            } catch (e) {
+                return [];
+            }
+        }
+        function firstMatchingExport(predicate) {
+            for (const mod of webpackModules()) {
+                let exp;
+                try { exp = mod && mod.exports; } catch (e) { continue; }
+                if (!exp) continue;
+                let keys;
+                try { keys = Object.keys(exp); } catch (e) { continue; }
+                for (const key of keys) {
+                    let val;
+                    try { val = exp[key]; } catch (e) { continue; }
+                    try {
+                        if (val && predicate(val)) return val;
+                    } catch (e) {}
+                }
+            }
+            return null;
+        }
+        function findRunningGameStore() {
+            const strict = firstMatchingExport(val =>
+                typeof val.getDebugRunningGame === "function" &&
+                typeof val.getRunningGames === "function" &&
+                typeof val.getVisibleGame === "function");
+            if (strict) return strict;
+            return firstMatchingExport(val =>
+                typeof val.getRunningGames === "function" &&
+                typeof val.getVisibleGame === "function" &&
+                typeof val.getGamesSeen === "function");
+        }
+        function findFluxDispatcher(bridges) {
+            for (const dqh of bridges) {
+                const candidate = dqh && dqh.FluxDispatcher;
+                if (candidate && typeof candidate.dispatch === "function" &&
+                    typeof candidate.isDispatching === "function") return candidate;
+            }
+            return firstMatchingExport(val =>
+                typeof val.dispatch === "function" &&
+                typeof val.subscribe === "function" &&
+                typeof val.unsubscribe === "function" &&
+                typeof val.isDispatching === "function" &&
+                Array.isArray(val._waitQueue));
+        }
+        function collectFakePids(bridges) {
+            const pids = new Set();
+            for (const dqh of bridges) {
+                const fake = dqh && dqh._fakeGame;
+                if (fake && fake.pid != null) {
+                    const pid = Number(fake.pid);
+                    if (Number.isInteger(pid)) pids.add(pid);
+                }
+            }
+            return pids;
+        }
+        function isOwnedSyntheticGame(game, fakePids) {
+            if (!game) return false;
+            const pid = Number(game.pid);
+            if (!Number.isInteger(pid) || pid <= 0) return false;
+            if (fakePids.has(pid)) return true;
+            // Matches the reserved synthetic PID band the spoof allocates from
+            // (see allocateSyntheticPid); real detections carry their OS PID.
+            return pid >= 1000000000 && pid < 2000000000;
+        }
+        function purgeSyntheticRunningGames(bridges) {
+            const store = findRunningGameStore();
+            if (!store) return Promise.resolve({ storeFound: false, purged: 0, recomputeDispatched: false });
+            const fakePids = collectFakePids(bridges);
+            let games = null;
+            try { games = store.getRunningGames(); } catch (e) {}
+            let staleVisible = false;
+            try {
+                const visible = typeof store.getVisibleGame === "function" ? store.getVisibleGame() : null;
+                staleVisible = isOwnedSyntheticGame(visible, fakePids);
+            } catch (e) {}
+            try {
+                const analytics = typeof store.getCurrentGameForAnalytics === "function"
+                    ? store.getCurrentGameForAnalytics()
+                    : null;
+                staleVisible = staleVisible || isOwnedSyntheticGame(analytics, fakePids);
+            } catch (e) {}
+            let purged = 0;
+            if (Array.isArray(games)) {
+                const owned = games.filter(game => isOwnedSyntheticGame(game, fakePids));
+                for (const game of owned) {
+                    try { game.hidden = true; } catch (e) {}
+                }
+                for (let index = games.length - 1; index >= 0; index--) {
+                    if (isOwnedSyntheticGame(games[index], fakePids)) games.splice(index, 1);
+                }
+                purged = owned.length;
+            }
+            if (purged === 0 && !staleVisible) {
+                return Promise.resolve({ storeFound: true, purged: 0, recomputeDispatched: false });
+            }
+            const dispatcher = findFluxDispatcher(bridges);
+            if (!dispatcher) {
+                return Promise.resolve({ storeFound: true, purged: purged, recomputeDispatched: false });
+            }
+            let dispatched = null;
+            try {
+                // The store's handler ignores the payload but always calls
+                // eM(), which rebuilds the visible game and re-emits
+                // RUNNING_GAMES_CHANGE to every consumer.
+                dispatched = dispatcher.dispatch({ type: "RUNNING_GAME_SET_DEBUG_GAME", game: null });
+            } catch (e) {
+                return Promise.resolve({ storeFound: true, purged: purged, recomputeDispatched: false });
+            }
+            const settled = dispatched && typeof dispatched.then === "function"
+                ? dispatched.catch(() => {})
+                : Promise.resolve();
+            return Promise.race([
+                settled,
+                new Promise(resolve => setTimeout(resolve, 1000))
+            ]).then(() => ({ storeFound: true, purged: purged, recomputeDispatched: true }));
         }
         function detectableGamesPayload(dqh) {
             const store = dqh.DetectableGameStore;
@@ -1228,16 +1355,28 @@ const JS_CLEANUP_SPOOF: &str = r#"
 
         let cleaned = 0;
         let needsObserverSettle = false;
+        const bridges = [];
         for (const name of names) {
             const dqh = window[name];
             if (!isDqhBridge(dqh)) continue;
+            bridges.push(dqh);
             needsObserverSettle = (await cleanupOne(dqh, name)) || needsObserverSettle;
             cleaned++;
         }
+        // Runs even when no bridge is left behind (the ghost case): Discord's
+        // store keeps its own running list, so cleanup cannot depend on the JS
+        // bridge still existing to remove a fake game from it.
+        const purge = await purgeSyntheticRunningGames(bridges);
         if (needsObserverSettle) {
             await new Promise(resolve => setTimeout(resolve, 3000));
         }
-        return JSON.stringify({ success: true, cleaned });
+        return JSON.stringify({
+            success: true,
+            cleaned: cleaned,
+            storeFound: purge.storeFound,
+            purged: purge.purged,
+            recomputeDispatched: purge.recomputeDispatched
+        });
     } catch (e) {
         return JSON.stringify({ success: false, error: String(e) });
     }
@@ -1282,6 +1421,12 @@ const JS_VERIFY_CLEANUP_STATE: &str = r#"
         }
         let fakeInRunningGames = false;
         let debugGamePresent = false;
+        let syntheticGameCount = 0;
+        let syntheticVisibleGame = false;
+        const isSyntheticPid = pid => {
+            const value = Number(pid);
+            return Number.isInteger(value) && value >= 1000000000 && value < 2000000000;
+        };
         try {
             const webpackRequire = webpackChunkdiscord_app.push([[Symbol()], {}, r => r]);
             webpackChunkdiscord_app.pop();
@@ -1318,9 +1463,20 @@ const JS_VERIFY_CLEANUP_STATE: &str = r#"
                         && String(debugGame.id) === String(fakeApplicationId)
                     );
                     const games = store.getRunningGames() || [];
+                    syntheticGameCount = games.filter(g => g && isSyntheticPid(g.pid)).length;
                     if (fakeApplicationId) {
                         fakeInRunningGames = games.some(g => g && String(g.id) === String(fakeApplicationId));
                     }
+                    try {
+                        const visible = typeof store.getVisibleGame === "function" ? store.getVisibleGame() : null;
+                        syntheticVisibleGame = !!(visible && isSyntheticPid(visible.pid));
+                    } catch(e) {}
+                    try {
+                        const analytics = typeof store.getCurrentGameForAnalytics === "function"
+                            ? store.getCurrentGameForAnalytics()
+                            : null;
+                        syntheticVisibleGame = syntheticVisibleGame || !!(analytics && isSyntheticPid(analytics.pid));
+                    } catch(e) {}
                 } catch(e) {}
             }
             if (nativeUtils && nativeUtils.setObservedGamesCallback && nativeUtils.setObservedGamesCallback.toString && nativeUtils.setObservedGamesCallback.toString().includes("wrappedCb")) {
@@ -1336,7 +1492,9 @@ const JS_VERIFY_CLEANUP_STATE: &str = r#"
             broadPatchCount,
             observerHook,
             fakeInRunningGames,
-            debugGamePresent
+            debugGamePresent,
+            syntheticGameCount,
+            syntheticVisibleGame
         });
     } catch (e) {
         return JSON.stringify({ success: false, error: String(e) });
@@ -1865,7 +2023,7 @@ async fn cdp_cleanup_with_attempts(port: u16, max_attempts: u32) -> Result<()> {
                         verify_dirty += 1;
                         log(LogLevel::Warn, LogCategory::TokenExtraction,
                             &format!(
-                                "CDP cleanup verify found residual state (attempt {}): target='{}' url='{}' dqhPresent={} spoofActive={} fakeGamePresent={} hasDispatchHook={} broadPatchCount={} observerHook={} fakeInRunningGames={} debugGamePresent={}",
+                                "CDP cleanup verify found residual state (attempt {}): target='{}' url='{}' dqhPresent={} spoofActive={} fakeGamePresent={} hasDispatchHook={} broadPatchCount={} observerHook={} fakeInRunningGames={} debugGamePresent={} syntheticGameCount={} syntheticVisibleGame={}",
                                 attempt,
                                 item.target_title,
                                 item.target_url,
@@ -1876,7 +2034,9 @@ async fn cdp_cleanup_with_attempts(port: u16, max_attempts: u32) -> Result<()> {
                                 verify.broad_patch_count,
                                 verify.observer_hook,
                                 verify.fake_in_running_games,
-                                verify.debug_game_present
+                                verify.debug_game_present,
+                                verify.synthetic_game_count,
+                                verify.synthetic_visible_game
                             ),
                             None,
                         );
@@ -4019,7 +4179,7 @@ mod tests {
                 fake_script_reply(serde_json::json!({"success":true,"dqhPresent":false,
                     "spoofActive":false,"fakeGamePresent":false,"hasDispatchHook":false,
                     "broadPatchCount":0,"observerHook":false,"fakeInRunningGames":false,
-                    "debugGamePresent":false}))
+                    "debugGamePresent":false,"syntheticGameCount":0,"syntheticVisibleGame":false}))
             });
             let result = cdp_start_video_quest(
                 server.port,
@@ -4060,7 +4220,7 @@ mod tests {
             fake_script_reply(serde_json::json!({"success":true,"dqhPresent":false,
                 "spoofActive":false,"fakeGamePresent":false,"hasDispatchHook":false,
                 "broadPatchCount":0,"observerHook":false,"fakeInRunningGames":false,
-                "debugGamePresent":false}))
+                "debugGamePresent":false,"syntheticGameCount":0,"syntheticVisibleGame":false}))
         });
         cdp_cleanup_before_init(server.port).await.unwrap();
         cdp_prepare_quest_modules(server.port, "video quest")
@@ -4088,7 +4248,8 @@ mod tests {
                     fake_script_reply(serde_json::json!({"success":true,"dqhPresent":dirty,
                         "spoofActive":dirty,"fakeGamePresent":dirty,"hasDispatchHook":dirty,
                         "broadPatchCount":0,"observerHook":false,
-                        "fakeInRunningGames":dirty,"debugGamePresent":false}))
+                        "fakeInRunningGames":dirty,"debugGamePresent":false,
+                        "syntheticGameCount":0,"syntheticVisibleGame":false}))
                 } else {
                     panic!("initialization must not run during pre-cleanup");
                 }
@@ -4222,7 +4383,8 @@ mod tests {
                 }
                 fake_script_reply(serde_json::json!({"success":true,"dqhPresent":false,
                     "spoofActive":false,"fakeGamePresent":false,"hasDispatchHook":false,
-                    "broadPatchCount":0,"observerHook":false,"fakeInRunningGames":false,"debugGamePresent":false}))
+                    "broadPatchCount":0,"observerHook":false,"fakeInRunningGames":false,"debugGamePresent":false,
+                    "syntheticGameCount":0,"syntheticVisibleGame":false}))
             });
             let result = cdp_start_stream_spoof(server.port, "123").await;
             assert!(result.is_err());
@@ -4506,6 +4668,12 @@ mod tests {
         assert!(!JS_CLEANUP_SPOOF.contains("remaining.splice"));
         assert!(JS_CLEANUP_SPOOF.contains("sameId && (game.pid == null || game.pid === undefined)"));
         assert!(JS_CLEANUP_SPOOF.contains("needsObserverSettle"));
+        assert!(JS_CLEANUP_SPOOF.contains("purgeSyntheticRunningGames"));
+        assert!(JS_CLEANUP_SPOOF.contains("isOwnedSyntheticGame"));
+        assert!(JS_CLEANUP_SPOOF.contains("RUNNING_GAME_SET_DEBUG_GAME"));
+        assert!(JS_CLEANUP_SPOOF.contains("getDebugRunningGame"));
+        assert!(JS_VERIFY_CLEANUP_STATE.contains("syntheticGameCount"));
+        assert!(JS_VERIFY_CLEANUP_STATE.contains("syntheticVisibleGame"));
         assert!(JS_CLEANUP_SPOOF.contains(r#"__" + "dqh_cdp""#));
         assert!(JS_CLEANUP_SPOOF.contains("^__n[0-9a-f]{10}$"));
         assert!(JS_CLEANUP_SPOOF.contains("_origSetObservedGamesCallback"));
