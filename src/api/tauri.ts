@@ -1148,3 +1148,96 @@ export async function prepareAppExit(): Promise<void> {
 export async function exitAppNow(): Promise<void> {
   return await invoke('exit_app_now')
 }
+
+// ---------------------------------------------------------------------------
+// Message translation
+// ---------------------------------------------------------------------------
+
+export type TranslationProvider = 'google-translate' | 'microsoft-translator' | 'deepl'
+export type TranslationDisplayMode = 'below' | 'replace'
+export type ProviderKeyRef = 'microsoft' | 'deepl' | 'llm'
+export type TestProviderKind = 'message' | 'llm'
+
+export interface TranslationLabels {
+  translate: string
+  translating: string
+  summarize: string
+  summarizing: string
+  summaryTitle: string
+  summarySubtitle: string
+  copy: string
+  copied: string
+  close: string
+  errorPrefix: string
+  composerEmpty: string
+  llmMissing: string
+}
+
+export interface LlmConfig {
+  baseUrl: string
+  model: string
+}
+
+export interface TranslationConfig {
+  provider: TranslationProvider
+  targetLanguage: string
+  autoTranslate: boolean
+  displayMode: TranslationDisplayMode
+  accentColor: string
+  summaryCount: number
+  microsoftRegion: string | null
+  llm: LlmConfig | null
+  labels: TranslationLabels
+}
+
+export interface TranslationStatus {
+  enabled: boolean
+  translated: number
+  cacheHits: number
+  errors: number
+  lastError: string | null
+}
+
+export interface TestProviderRequest {
+  kind: TestProviderKind
+  provider: TranslationProvider
+  targetLanguage: string
+  microsoftRegion: string | null
+  llm: LlmConfig | null
+}
+
+export async function startMessageTranslation(config: TranslationConfig): Promise<TranslationStatus> {
+  return await invoke('start_message_translation', { config })
+}
+
+export async function stopMessageTranslation(): Promise<TranslationStatus> {
+  return await invoke('stop_message_translation')
+}
+
+export async function getTranslationStatus(): Promise<TranslationStatus> {
+  return await invoke('get_translation_status')
+}
+
+export async function testTranslationProvider(request: TestProviderRequest): Promise<string> {
+  return await invoke('test_translation_provider', { request })
+}
+
+export async function setProviderKey(keyRef: ProviderKeyRef, apiKey: string): Promise<void> {
+  return await invoke('set_translation_provider_key', { keyRef, apiKey })
+}
+
+export async function clearProviderKey(keyRef: ProviderKeyRef): Promise<void> {
+  return await invoke('clear_translation_provider_key', { keyRef })
+}
+
+export async function isProviderKeySet(keyRef: ProviderKeyRef): Promise<boolean> {
+  return await invoke('is_translation_provider_key_set', { keyRef })
+}
+
+export function onTranslationStatus(callback: (status: TranslationStatus) => void) {
+  return listen<TranslationStatus>('translation-status', event => callback(event.payload))
+}
+
+export function onTranslationError(callback: (payload: { message: string }) => void) {
+  return listen<{ message: string }>('translation-error', event => callback(event.payload))
+}

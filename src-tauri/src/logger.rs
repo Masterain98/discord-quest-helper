@@ -51,6 +51,7 @@ pub enum LogCategory {
     Gateway,
     GameSim,
     Rpc,
+    Translation,
     General,
 }
 
@@ -63,6 +64,7 @@ impl std::fmt::Display for LogCategory {
             LogCategory::Gateway => write!(f, "Gateway"),
             LogCategory::GameSim => write!(f, "GameSim"),
             LogCategory::Rpc => write!(f, "Rpc"),
+            LogCategory::Translation => write!(f, "Translation"),
             LogCategory::General => write!(f, "General"),
         }
     }

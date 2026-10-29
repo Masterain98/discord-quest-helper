@@ -1044,6 +1044,134 @@ impl DiscordApiClient {
         )
         .await
     }
+
+    /// Fetches the latest channel messages (newest first), used as the source
+    /// for channel summaries. Throttled per channel to stay under Discord's
+    /// ~5 req/5s message bucket; honors 429 Retry-After with one retry.
+    pub async fn get_channel_messages(
+        &self,
+        channel_id: &str,
+        limit: u32,
+    ) -> Result<Vec<ChannelMessage>> {
+        use crate::logger::{log, LogCategory, LogLevel};
+
+        let limit = clamp_message_limit(limit);
+        wait_for_channel_message_throttle(channel_id).await;
+        let url = url::Url::parse_with_params(
+            &format!("{}/channels/{}/messages", DISCORD_API_BASE, channel_id),
+            &[("limit", limit.to_string())],
+        )?;
+        let build = || self.request(Method::GET, url.as_str());
+
+        let mut response = build()
+            .send()
+            .await
+            .context("Request for channel messages failed")?;
+        if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            let retry_after = parse_retry_after_secs(response.headers());
+            log(
+                LogLevel::Warn,
+                LogCategory::Api,
+                &format!(
+                    "Channel messages rate limited; retrying in {:.1}s",
+                    retry_after
+                ),
+                Some(channel_id),
+            );
+            tokio::time::sleep(Duration::from_secs_f64(retry_after)).await;
+            response = build()
+                .send()
+                .await
+                .context("Channel messages retry request failed")?;
+        }
+
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        if !status.is_success() {
+            anyhow::bail!("Failed to get channel messages: {} - {}", status, body);
+        }
+        let parsed: Vec<serde_json::Value> =
+            serde_json::from_str(&body).context("Failed to parse channel messages")?;
+        Ok(parsed
+            .iter()
+            .filter_map(ChannelMessage::from_value)
+            .collect())
+    }
+}
+
+/// A message row as needed for channel summaries.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelMessage {
+    pub id: String,
+    pub author: String,
+    pub content: String,
+    pub timestamp: String,
+}
+
+impl ChannelMessage {
+    fn from_value(value: &serde_json::Value) -> Option<Self> {
+        Some(Self {
+            id: value.get("id")?.as_str()?.to_string(),
+            author: value
+                .pointer("/author/username")
+                .and_then(|field| field.as_str())
+                .unwrap_or("Unknown")
+                .to_string(),
+            content: value
+                .get("content")
+                .and_then(|field| field.as_str())
+                .unwrap_or("")
+                .to_string(),
+            timestamp: value
+                .get("timestamp")
+                .and_then(|field| field.as_str())
+                .unwrap_or("")
+                .to_string(),
+        })
+    }
+}
+
+pub fn clamp_message_limit(limit: u32) -> u32 {
+    limit.clamp(1, 100)
+}
+
+fn parse_retry_after_secs(headers: &HeaderMap) -> f64 {
+    headers
+        .get(reqwest::header::RETRY_AFTER)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.trim().parse::<f64>().ok())
+        .unwrap_or(1.0)
+        .clamp(0.0, 10.0)
+}
+
+/// Discord allows roughly 5 message fetches per 5 seconds per channel;
+/// 1.25s between fetch starts keeps a comfortable margin.
+const CHANNEL_MESSAGE_MIN_INTERVAL: Duration = Duration::from_millis(1250);
+
+static CHANNEL_MESSAGE_LAST_FETCH: once_cell::sync::Lazy<
+    std::sync::Mutex<std::collections::HashMap<String, Instant>>,
+> = once_cell::sync::Lazy::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
+async fn wait_for_channel_message_throttle(channel_id: &str) {
+    let wait = {
+        let mut last_fetch = CHANNEL_MESSAGE_LAST_FETCH
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let now = Instant::now();
+        let earliest = last_fetch
+            .get(channel_id)
+            .copied()
+            .map(|at| at + CHANNEL_MESSAGE_MIN_INTERVAL)
+            .unwrap_or(now);
+        last_fetch.insert(channel_id.to_string(), now.max(earliest));
+        earliest
+            .checked_duration_since(now)
+            .unwrap_or(Duration::ZERO)
+    };
+    if !wait.is_zero() {
+        tokio::time::sleep(wait).await;
+    }
 }
 
 async fn fetch_detectable_catalog(
@@ -1164,6 +1292,32 @@ fn convert_api_quest_to_quest(quest_json: &serde_json::Value) -> Option<Quest> {
 mod tests {
     use super::*;
     use std::sync::Mutex;
+
+    #[test]
+    fn message_limit_is_clamped_to_discord_bounds() {
+        assert_eq!(clamp_message_limit(0), 1);
+        assert_eq!(clamp_message_limit(50), 50);
+        assert_eq!(clamp_message_limit(500), 100);
+    }
+
+    #[test]
+    fn channel_message_parses_leniently() {
+        let value = serde_json::json!({
+            "id": "123",
+            "content": "hello world",
+            "timestamp": "2026-10-29T00:00:00Z",
+            "author": { "username": "klaus" }
+        });
+        let message = ChannelMessage::from_value(&value).unwrap();
+        assert_eq!(message.id, "123");
+        assert_eq!(message.author, "klaus");
+        assert_eq!(message.content, "hello world");
+
+        let missing_author = serde_json::json!({ "id": "5" });
+        let message = ChannelMessage::from_value(&missing_author).unwrap();
+        assert_eq!(message.author, "Unknown");
+        assert_eq!(message.content, "");
+    }
 
     async fn detectable_catalog_response(
         games_status: u16,

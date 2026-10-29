@@ -88,6 +88,7 @@ If an older AppImage becomes blank after login and logs `GStreamer element autoa
 - 🖥️ **Live Tunnel (Windows)** — Route only Discord through a WireGuard profile to use Live and screen sharing where they are unavailable. Requires WireSock and a `.conf` file.
 - 🎮 **Zero-Download Game Simulation** — Complete game quests without downloading or installing the actual game.
 - 📺 **Video & Stream Automation** — Start once and let quest progress update in the background.
+- 🌐 **Message Translation** — Translate Discord channel messages in place (Google Translate, Microsoft Translator or DeepL), auto-translate incoming messages, translate the composer draft and summarize channels through any OpenAI-compatible LLM endpoint, with caching and keys stored in the OS credential manager.
 - 🔍 **Advanced Quest Filters** — Filter by reward type, completion status, and more.
 - 👥 **Multi-Account Support** — Manage multiple Discord accounts in one app.
 - 🌏 **Multi-language** — English, Simplified Chinese, Traditional Chinese, Japanese, Korean, Russian, Spanish, German, French, Indonesian, Polish, Portuguese, Thai, Turkish, and Vietnamese.

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, useId } from 'vue'
 import type { Component } from 'vue'
-import { Gamepad2, Info, Palette, ScreenShare, Search, SlidersHorizontal, Stethoscope, User, Wifi, X } from 'lucide-vue-next'
+import { Gamepad2, Info, Languages, Palette, ScreenShare, Search, SlidersHorizontal, Stethoscope, User, Wifi, X } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useQuestsStore } from '@/stores/quests'
 import type { SettingsSection } from '@/composables/useSettingsNavigation'
@@ -42,13 +42,14 @@ const sections = computed<Array<{ key: SettingsSection, label: string, icon: Com
     { key: 'account', label: t('settings.nav_account'), icon: User },
     { key: 'quest_behavior', label: t('settings.nav_quest_behavior'), icon: Gamepad2 },
     { key: 'discord_integration', label: t('settings.nav_discord_integration'), icon: Wifi },
+    { key: 'translation', label: t('settings.nav_translation'), icon: Languages },
     { key: 'appearance', label: t('settings.nav_appearance'), icon: Palette },
     { key: 'diagnostics', label: t('settings.nav_diagnostics'), icon: Stethoscope },
     { key: 'advanced', label: t('settings.nav_advanced'), icon: SlidersHorizontal },
     { key: 'about', label: t('settings.nav_about'), icon: Info },
   ]
   if (questsStore.platformCapabilities?.os === 'windows') {
-    entries.splice(3, 0, {
+    entries.splice(4, 0, {
       key: 'live_tunnel',
       label: t('settings.nav_live_tunnel'),
       icon: ScreenShare,

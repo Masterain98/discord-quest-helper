@@ -42,6 +42,9 @@ tauri-plugin-dialog = "=2.6.0"
 zeroize = "1"
 sha2 = "0.10"
 libc = "0.2"
+# OS-native secret storage (Windows Credential Manager / macOS Keychain /
+# Linux Secret Service) for translation provider API keys.
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62", features = [

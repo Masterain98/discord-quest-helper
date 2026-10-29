@@ -9,6 +9,7 @@ import DiscordIntegrationSettings from '@/components/settings/DiscordIntegration
 import LiveTunnelSettings from '@/components/settings/LiveTunnelSettings.vue'
 import QuestBehaviorSettings from '@/components/settings/QuestBehaviorSettings.vue'
 import SettingsOverview from '@/components/settings/SettingsOverview.vue'
+import TranslationSettings from '@/components/settings/TranslationSettings.vue'
 import { useQuestsStore } from '@/stores/quests'
 import type { SettingsSection } from '@/composables/useSettingsNavigation'
 import { useSettingsScroll } from '@/composables/useSettingsScroll'
@@ -63,6 +64,13 @@ useSettingsSearch(page, () => props.searchQuery, results => emit('search-results
       </section>
       <section id="settings-section-discord_integration" data-settings-section="discord_integration" :aria-label="t('settings.nav_discord_integration')">
         <DiscordIntegrationSettings />
+      </section>
+      <section
+        id="settings-section-translation"
+        data-settings-section="translation"
+        :aria-label="t('settings.nav_translation')"
+      >
+        <TranslationSettings />
       </section>
       <section
         v-if="questsStore.platformCapabilities?.os === 'windows'"

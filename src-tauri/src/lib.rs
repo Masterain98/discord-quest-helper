@@ -4,6 +4,7 @@
 mod cdp_client;
 mod cdp_game_spoof;
 mod cdp_quest;
+mod cdp_translate;
 mod discord_api;
 mod discord_cdp_commands;
 mod discord_console;
@@ -25,6 +26,7 @@ mod simulation_history;
 mod stealth_pe;
 mod super_properties;
 mod token_extractor;
+mod translation;
 
 use discord_api::DiscordApiClient;
 use models::*;
@@ -82,8 +84,8 @@ impl AppExitCleanupState {
 static APP_EXIT_CLEANUP: AppExitCleanupState = AppExitCleanupState::new();
 
 /// Global state: Discord API client
-struct AppState {
-    client: Mutex<Option<DiscordApiClient>>,
+pub(crate) struct AppState {
+    pub(crate) client: Mutex<Option<DiscordApiClient>>,
     authenticated_user: Mutex<Option<DiscordUser>>,
     quest_state: Mutex<Option<QuestState>>,
     manual_cdp_game: tokio::sync::Mutex<ManualCdpGameSessionState>,
@@ -92,6 +94,7 @@ struct AppState {
     /// Serializes quest startup, manual CDP startup, and active-work teardown
     /// so the two Discord-activity owners cannot both pass their idle checks.
     activity_gate: tokio::sync::Mutex<()>,
+    translation: tokio::sync::Mutex<cdp_translate::TranslationRuntimeState>,
 }
 
 #[derive(Debug, Default)]
@@ -2202,6 +2205,7 @@ pub fn run() {
                 simulation_history::SimulationHistory::default(),
             ),
             activity_gate: tokio::sync::Mutex::new(()),
+            translation: tokio::sync::Mutex::new(cdp_translate::TranslationRuntimeState::default()),
         })
         .setup(|app| {
             // `pnpm tauri:dev` rebuilds the bundled launcher before Tauri
@@ -2317,7 +2321,14 @@ pub fn run() {
             navigate_discord_spa,
             platform_capabilities::get_platform_capabilities,
             runtime_identity::get_runtime_identity_status,
-            runtime_identity::get_runtime_identity_audit
+            runtime_identity::get_runtime_identity_audit,
+            cdp_translate::start_message_translation,
+            cdp_translate::stop_message_translation,
+            cdp_translate::get_translation_status,
+            cdp_translate::test_translation_provider,
+            cdp_translate::set_translation_provider_key,
+            cdp_translate::clear_translation_provider_key,
+            cdp_translate::is_translation_provider_key_set
         ])
         .on_window_event(|_window, event| {
             if let tauri::WindowEvent::Destroyed = event {
