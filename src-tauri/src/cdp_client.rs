@@ -20,6 +20,16 @@ pub use discord_cdp_launch_core::DEFAULT_CDP_PORT;
 /// Gate automation separately from read-only CDP connectivity. Discord's web
 /// modules also exist inside unsupported wrappers such as Equibop.
 pub async fn ensure_supported_automation_client(port: u16) -> Result<(), String> {
+    supported_automation_endpoint(port).await.map(|_| ())
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct AutomationEndpointIdentity {
+    browser_socket: String,
+    user_agent: String,
+}
+
+async fn supported_automation_endpoint(port: u16) -> Result<AutomationEndpointIdentity, String> {
     let owner = tauri::async_runtime::spawn_blocking(move || {
         discord_cdp_launch_core::inspect_cdp_port_owner(port)
     })
@@ -31,25 +41,12 @@ pub async fn ensure_supported_automation_client(port: u16) -> Result<(), String>
 async fn ensure_supported_automation_endpoint(
     port: u16,
     owner: discord_cdp_launch_core::CdpPortOwner,
-) -> Result<(), String> {
+) -> Result<AutomationEndpointIdentity, String> {
     use discord_cdp_launch_core::CdpPortOwner;
     // A port argument is not proof that the process owns the listening socket:
     // Discord and an unsupported wrapper can both request the same port. Always
     // identify the responding endpoint, including for recognized process names.
-    let metadata = reqwest::Client::builder()
-        .no_proxy()
-        .redirect(reqwest::redirect::Policy::none())
-        .timeout(Duration::from_secs(2))
-        .build()
-        .map_err(|e| format!("Could not inspect CDP client: {e}"))?
-        .get(format!("http://127.0.0.1:{port}/json/version"))
-        .send()
-        .await
-        .and_then(reqwest::Response::error_for_status)
-        .map_err(|_| format!("Could not identify the client on CDP port {port}. Make sure Discord or Vesktop is running with CDP enabled."))?
-        .json::<serde_json::Value>()
-        .await
-        .map_err(|_| format!("Invalid CDP client information on port {port}. Use official Discord or Vesktop."))?;
+    let metadata = read_browser_metadata(port).await?;
     let agent = metadata["User-Agent"].as_str().unwrap_or_default();
     let products: Vec<_> = agent
         .split_ascii_whitespace()
@@ -59,7 +56,6 @@ async fn ensure_supported_automation_endpoint(
                 .map(|(name, _)| name.to_ascii_lowercase())
         })
         .collect();
-    // A wrapper can advertise Chromium and Electron as well as its own name.
     if products.iter().any(|name| name == "equibop") {
         return Err(format!("Equibop is not currently supported for CDP quest automation (port {port}). Use official Discord or Vesktop. No quest code was injected."));
     }
@@ -68,9 +64,58 @@ async fn ensure_supported_automation_endpoint(
             .iter()
             .any(|name| name == "discord" || name == "vesktop")
     {
-        return Ok(());
+        return endpoint_identity(&metadata);
     }
     Err(format!("Unsupported CDP client on port {port}. Quest automation supports official Discord and Vesktop. This client could not be identified; no quest code was injected."))
+}
+
+fn endpoint_identity(metadata: &serde_json::Value) -> Result<AutomationEndpointIdentity, String> {
+    let browser_socket = metadata["webSocketDebuggerUrl"]
+        .as_str()
+        .filter(|value| !value.is_empty())
+        .ok_or("CDP client metadata has no browser identity")?;
+    Ok(AutomationEndpointIdentity {
+        browser_socket: browser_socket.into(),
+        user_agent: metadata["User-Agent"].as_str().unwrap_or_default().into(),
+    })
+}
+
+const CDP_METADATA_MAX_BYTES: usize = 64 * 1024;
+
+async fn read_browser_metadata(port: u16) -> Result<serde_json::Value, String> {
+    let mut response = reqwest::Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(Duration::from_secs(2))
+        .build()
+        .map_err(|e| format!("Could not inspect CDP client: {e}"))?
+        .get(format!("http://127.0.0.1:{port}/json/version"))
+        .send()
+        .await
+        .and_then(reqwest::Response::error_for_status)
+        .map_err(|_| format!("Could not identify the client on CDP port {port}. Make sure Discord or Vesktop is running with CDP enabled."))?;
+    let oversized =
+        || format!("CDP client metadata exceeds the {CDP_METADATA_MAX_BYTES}-byte limit");
+    if response
+        .content_length()
+        .is_some_and(|size| size > CDP_METADATA_MAX_BYTES as u64)
+    {
+        return Err(oversized());
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|e| format!("Could not read CDP client metadata: {e}"))?
+    {
+        if chunk.len() > CDP_METADATA_MAX_BYTES - body.len() {
+            return Err(oversized());
+        }
+        body.extend_from_slice(&chunk);
+    }
+    serde_json::from_slice(&body).map_err(|_| {
+        format!("Invalid CDP client information on port {port}. Use official Discord or Vesktop.")
+    })
 }
 
 /// SuperProperties result obtained via CDP
@@ -309,6 +354,24 @@ async fn watch_pinned_documents() -> anyhow::Error {
 pub(crate) struct VerifiedDiscordTarget {
     pub(crate) target: CdpTarget,
     pub(crate) generation: String,
+}
+
+/// Validate the client around selection of the exact renderer that will receive
+/// automation. A browser replacement must not inherit an earlier port check.
+pub(crate) async fn verify_primary_automation_target(port: u16) -> Result<VerifiedDiscordTarget> {
+    let endpoint = supported_automation_endpoint(port)
+        .await
+        .map_err(anyhow::Error::msg)?;
+    let target = verify_primary_discord_target(port).await?;
+    let current = read_browser_metadata(port)
+        .await
+        .map_err(anyhow::Error::msg)?;
+    if endpoint_identity(&current).map_err(anyhow::Error::msg)? != endpoint {
+        anyhow::bail!(
+            "cdp_target_invalidated: browser endpoint changed during automation preflight"
+        );
+    }
+    Ok(target)
 }
 
 pub async fn pin_discord_target(port: u16) -> Result<()> {
@@ -1453,6 +1516,7 @@ fn cdp_evaluation_socket_error(error: tokio_tungstenite::tungstenite::Error) -> 
         Error::ConnectionClosed
             | Error::AlreadyClosed
             | Error::Protocol(ProtocolError::ResetWithoutClosingHandshake)
+            | Error::Protocol(ProtocolError::HandshakeIncomplete)
     ) || matches!(&error, Error::Io(io) if matches!(io.kind(),
         std::io::ErrorKind::UnexpectedEof | std::io::ErrorKind::ConnectionReset
         | std::io::ErrorKind::ConnectionAborted | std::io::ErrorKind::BrokenPipe));
@@ -1476,6 +1540,7 @@ async fn execute_js_via_ws(
         tokio::time::timeout(Duration::from_secs(timeout_secs), connect_async(ws_url))
             .await
             .context("CDP WebSocket connection timed out")?
+            .map_err(cdp_evaluation_socket_error)
             .context("Failed to connect to CDP WebSocket")?;
     let (mut write, mut read) = ws_stream.split();
 
@@ -1719,7 +1784,8 @@ mod tests {
                     assert!(
                         String::from_utf8_lossy(&request).starts_with("GET /json/version HTTP/1.1")
                     );
-                    let body = serde_json::json!({"User-Agent": agent}).to_string();
+                    let body = serde_json::json!({"User-Agent": agent,
+                        "webSocketDebuggerUrl":format!("ws://127.0.0.1:{port}/devtools/browser/fixture")}).to_string();
                     write!(
                         stream,
                         "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
@@ -1733,41 +1799,106 @@ mod tests {
                     .or((owner == CdpPortOwner::Other).then_some("Unsupported CDP client"));
                 match expected_error {
                     Some(message) => assert!(result.unwrap_err().contains(message)),
-                    None => result.unwrap(),
+                    None => {
+                        result.unwrap();
+                    }
                 }
             }
         }
     }
 
     #[tokio::test]
-    async fn abrupt_evaluation_disconnect_produces_reconnect_guidance() {
+    async fn evaluation_disconnects_produce_reconnect_guidance() {
+        for graceful in [false, true] {
+            let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let server = std::thread::spawn(move || {
+                let (stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(3)))
+                    .unwrap();
+                let mut socket = tokio_tungstenite::tungstenite::accept(stream).unwrap();
+                let request: serde_json::Value =
+                    serde_json::from_str(&socket.read().unwrap().into_text().unwrap()).unwrap();
+                assert_eq!(request["method"], "Runtime.evaluate");
+                if graceful {
+                    socket.close(None).unwrap();
+                }
+                // Also simulate a renderer dying without a WebSocket Close frame.
+                drop(socket);
+            });
+            let error = execute_js_via_ws(&format!("ws://127.0.0.1:{port}"), "1", false, 3)
+                .await
+                .unwrap_err();
+            server.join().unwrap();
+            assert!(error_is_target_invalidated(&error));
+            let payload = crate::cdp_quest::quest_error_payload(
+                &error.context("game evaluation failed"),
+                "CDP quest failed",
+            );
+            assert!(payload
+                .as_str()
+                .unwrap()
+                .contains("reconnect before retrying"));
+        }
+    }
+
+    #[tokio::test]
+    async fn interrupted_handshake_produces_reconnect_guidance() {
         let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
         let port = listener.local_addr().unwrap().port();
         let server = std::thread::spawn(move || {
-            let (stream, _) = listener.accept().unwrap();
+            let (mut stream, _) = listener.accept().unwrap();
             stream
                 .set_read_timeout(Some(Duration::from_secs(3)))
                 .unwrap();
-            let mut socket = tokio_tungstenite::tungstenite::accept(stream).unwrap();
-            let request: serde_json::Value =
-                serde_json::from_str(&socket.read().unwrap().into_text().unwrap()).unwrap();
-            assert_eq!(request["method"], "Runtime.evaluate");
-            // Simulate a renderer/process dying without a WebSocket Close frame.
-            drop(socket);
+            read_fixture_http_request(&mut stream);
+            // Target disappears before the peer can finish the WS upgrade.
         });
         let error = execute_js_via_ws(&format!("ws://127.0.0.1:{port}"), "1", false, 3)
             .await
             .unwrap_err();
         server.join().unwrap();
         assert!(error_is_target_invalidated(&error));
-        let payload = crate::cdp_quest::quest_error_payload(
-            &error.context("game evaluation failed"),
-            "CDP quest failed",
+        assert!(
+            crate::cdp_quest::quest_error_payload(&error, "CDP quest failed")
+                .as_str()
+                .unwrap()
+                .contains("reconnect before retrying")
         );
-        assert!(payload
-            .as_str()
-            .unwrap()
-            .contains("reconnect before retrying"));
+    }
+
+    #[tokio::test]
+    async fn oversized_browser_metadata_is_rejected_with_and_without_content_length() {
+        use std::io::Write;
+        for chunked in [false, true] {
+            let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let server = std::thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(3)))
+                    .unwrap();
+                read_fixture_http_request(&mut stream);
+                if chunked {
+                    write!(stream, "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n").unwrap();
+                    let body = vec![b' '; CDP_METADATA_MAX_BYTES + 1];
+                    write!(stream, "{:x}\r\n", body.len()).unwrap();
+                    let _ = stream.write_all(&body);
+                    let _ = stream.write_all(b"\r\n0\r\n\r\n");
+                } else {
+                    write!(
+                        stream,
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        CDP_METADATA_MAX_BYTES + 1
+                    )
+                    .unwrap();
+                }
+            });
+            let error = read_browser_metadata(port).await.unwrap_err();
+            server.join().unwrap();
+            assert!(error.contains("exceeds"), "{error}");
+        }
     }
 
     #[test]
