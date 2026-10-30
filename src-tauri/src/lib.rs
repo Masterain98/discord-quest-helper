@@ -704,6 +704,8 @@ async fn ensure_cdp_account_consistency(
     state: &State<'_, AppState>,
     cdp_port: u16,
 ) -> Result<(), String> {
+    cdp_client::ensure_supported_automation_client(cdp_port).await?;
+
     let expected = state
         .authenticated_user
         .lock()
@@ -1001,10 +1003,10 @@ async fn start_play_activity_quest(
     let _gate = state.activity_gate.lock().await;
     state.game_idle.ensure_idle().await?;
     ensure_no_running_simulated_game()?;
-    stop_active_work_internal(&state).await?;
     if transport == PlayActivityTransport::Cdp {
         ensure_cdp_account_consistency(&state, cdp_port).await?;
     }
+    stop_active_work_internal(&state).await?;
     let quest_id_for_state = quest_id.clone();
     let (cancel_tx, cancel_rx) = tokio::sync::mpsc::channel::<()>(1);
     let join = tokio::spawn(async move {
@@ -1081,8 +1083,8 @@ async fn start_cdp_quest(
     let _gate = state.activity_gate.lock().await;
     state.game_idle.ensure_idle().await?;
     ensure_no_running_simulated_game()?;
-    stop_active_work_internal(&state).await?;
     ensure_cdp_account_consistency(&state, cdp_port).await?;
+    stop_active_work_internal(&state).await?;
     let quest_id_for_state = quest_id.clone();
     let (cancel_tx, cancel_rx) = tokio::sync::mpsc::channel::<()>(1);
 

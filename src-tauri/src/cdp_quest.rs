@@ -145,6 +145,23 @@ const JS_INIT_QUEST_MODULES: &str = r#"
         modules.api = apiMatches.length === 1 ? apiMatches[0] : null;
         const missing = required.filter(([name, method]) => typeof modules[name]?.[method] !== "function")
             .map(([name, method]) => name + "." + method);
+        // Web wrappers can expose the same JS methods while discord_utils is
+        // unavailable. RUNNING_GAMES_CHANGE then throws asynchronously inside
+        // Discord's session/overlay subscribers, after injection reports success.
+        if (required.some(([name]) => name === "RunningGameStore")) {
+            try {
+                const native = modules.NativeUtils?.getDiscordUtils?.();
+                if (!native || !["object", "function"].includes(typeof native)) {
+                    missing.push("NativeUtils.discord_utils");
+                } else if (typeof native.setGameCandidateOverrides !== "function") {
+                    // This wrapper calls the native method unconditionally.
+                    // Window/fullscreen and global-lock methods are optional.
+                    missing.push("NativeUtils.discord_utils.setGameCandidateOverrides");
+                }
+            } catch (_) {
+                missing.push("NativeUtils.discord_utils");
+            }
+        }
         if (missing.length) return JSON.stringify({success:false, code:"cdp_capability_missing", missing});
         if (discoverOnly) return JSON.stringify({success:true});
         const previous = window.__dqh_cdp;
@@ -1665,7 +1682,7 @@ fn module_script(operation: &str, discover_only: bool) -> String {
 
 async fn initialize_modules(port: u16, operation: &str) -> Result<()> {
     initialize_modules_with(
-        cdp_client::verify_primary_discord_target(port),
+        cdp_client::verify_primary_automation_target(port),
         operation,
         async |verified, script| {
             cdp_client::execute_js_on_verified_discord_target(verified, &script, true, 2).await
@@ -1748,16 +1765,25 @@ fn capability_error(operation: &str, result: &serde_json::Value) -> CdpCapabilit
     CdpCapabilityError {
         code: "cdp_capability_missing",
         params: serde_json::json!({"operation":operation,"missingCapabilities":missing}),
-        message: format!(
-            "CDP capability missing for {operation}: {}",
-            missing.join(", ")
-        ),
+        message: if missing
+            .iter()
+            .any(|name| name.starts_with("NativeUtils.discord_utils"))
+        {
+            format!("This client does not provide Discord's native game-monitoring module required for {operation}. Use official Discord for game or stream automation.")
+        } else {
+            format!(
+                "CDP capability missing for {operation}: {}",
+                missing.join(", ")
+            )
+        },
     }
 }
 
 pub(crate) fn quest_error_payload(error: &anyhow::Error, prefix: &str) -> serde_json::Value {
     if let Some(capability) = error.downcast_ref::<CdpCapabilityError>() {
         serde_json::to_value(capability).expect("capability error is serializable")
+    } else if cdp_client::error_is_target_invalidated(error) {
+        serde_json::json!(format!("{prefix}: The desktop client closed, reloaded, or disconnected. Reopen Discord or Vesktop and reconnect before retrying."))
     } else {
         serde_json::json!(format!("{prefix}: {error:#}"))
     }
@@ -2055,6 +2081,10 @@ async fn cdp_cleanup_with_attempts(port: u16, max_attempts: u32) -> Result<()> {
 /// `stop_manual_game_spoof` when the user stops the simulation.
 pub async fn start_manual_game_spoof(port: u16, app_id: &str, app_name: &str) -> Result<()> {
     use crate::logger::{log, LogCategory, LogLevel};
+
+    cdp_client::ensure_supported_automation_client(port)
+        .await
+        .map_err(anyhow::Error::msg)?;
 
     // Always begin from a verified clean state. This also recovers a spoof
     // left behind by an earlier app process that exited unexpectedly.
@@ -4057,6 +4087,16 @@ pub async fn complete_activity_quest_via_cdp(
 #[cfg(test)]
 mod tests {
     #[test]
+    fn closed_client_errors_explain_recovery_in_quest_events() {
+        let error = anyhow::anyhow!("cdp_target_invalidated: target closed during evaluation")
+            .context("game spoof failed");
+        let payload = quest_error_payload(&error, "CDP quest failed");
+        let message = payload.as_str().unwrap();
+        assert!(message.contains("closed, reloaded, or disconnected"));
+        assert!(message.contains("reconnect before retrying"));
+    }
+
+    #[test]
     fn capability_errors_keep_their_details_through_context_and_events() {
         let error = anyhow::Error::from(capability_error(
             "stream quest",
@@ -4090,7 +4130,14 @@ mod tests {
     }
 
     impl FakeQuestCdp {
-        fn start(mut evaluate: impl FnMut(&str) -> serde_json::Value + Send + 'static) -> Self {
+        fn start(evaluate: impl FnMut(&str) -> serde_json::Value + Send + 'static) -> Self {
+            Self::with_browser_ids(evaluate, vec!["fixture"])
+        }
+
+        fn with_browser_ids(
+            mut evaluate: impl FnMut(&str) -> serde_json::Value + Send + 'static,
+            mut browser_ids: Vec<&'static str>,
+        ) -> Self {
             use std::io::Write;
             let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
             listener.set_nonblocking(true).unwrap();
@@ -4110,10 +4157,22 @@ mod tests {
                     let mut request = [0u8; 1024];
                     let size = stream.peek(&mut request).unwrap();
                     if String::from_utf8_lossy(&request[..size]).starts_with("GET /json") {
+                        let version_request = String::from_utf8_lossy(&request[..size])
+                            .starts_with("GET /json/version");
                         cdp_client::read_fixture_http_request(&mut stream);
-                        let body = serde_json::json!([{"id":"quest", "type":"page", "title":"Discord",
+                        let body = if version_request {
+                            let id = if browser_ids.len() > 1 {
+                                browser_ids.remove(0)
+                            } else {
+                                browser_ids[0]
+                            };
+                            serde_json::json!({"User-Agent":"discord/0.0.100",
+                                "webSocketDebuggerUrl":format!("ws://127.0.0.1:{port}/devtools/browser/{id}")}).to_string()
+                        } else {
+                            serde_json::json!([{"id":"quest", "type":"page", "title":"Discord",
                             "url":"https://discord.com/channels/@me",
-                            "webSocketDebuggerUrl":format!("ws://127.0.0.1:{port}/devtools/page/quest")}]).to_string();
+                            "webSocketDebuggerUrl":format!("ws://127.0.0.1:{port}/devtools/page/quest")}]).to_string()
+                        };
                         stream
                             .write_all(
                                 format!(
@@ -4166,6 +4225,25 @@ mod tests {
         serde_json::json!({"id":1,"result":{"result":{"value":{
             "appRootPresent":true,"moduleLoaderPresent":true,"loading":false,
             "nativeBridgePresent":false,"focused":false,"documentGeneration":"100"}}}})
+    }
+
+    #[tokio::test]
+    async fn browser_replacement_during_preflight_never_receives_module_code() {
+        let server = FakeQuestCdp::with_browser_ids(
+            |expression| {
+                assert!(
+                    expression.contains("moduleLoaderPresent:"),
+                    "module code reached a replacement browser"
+                );
+                fake_runtime_reply()
+            },
+            vec!["original", "replacement"],
+        );
+        let error = initialize_modules(server.port, "video quest")
+            .await
+            .unwrap_err();
+        assert!(cdp_client::error_is_target_invalidated(&error));
+        assert!(error.to_string().contains("browser endpoint changed"));
     }
 
     fn fake_script_reply(value: serde_json::Value) -> serde_json::Value {
@@ -4725,6 +4803,56 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires a live Equibop CDP session on the default debugging port"]
+    async fn live_equibop_preflights_reject_without_installing_game_patches() {
+        let port = crate::cdp_client::DEFAULT_CDP_PORT;
+        let client_error = crate::cdp_client::ensure_supported_automation_client(port)
+            .await
+            .expect_err("Equibop should be identified as unsupported");
+        assert!(client_error.contains("Equibop is not currently supported"));
+
+        // Exercise the operation preflight too: it must protect any client
+        // missing discord_utils, even if its process name is recognized.
+        // Bypass only the product policy to exercise the read-only native
+        // discovery against the real unsupported client as a separate layer.
+        let error = initialize_modules_with(
+            cdp_client::verify_primary_discord_target(port),
+            "manual game simulation",
+            async |verified, script| {
+                cdp_client::execute_js_on_verified_discord_target(verified, &script, true, 2).await
+            },
+        )
+        .await
+        .expect_err("Equibop has no native Discord game-monitoring bridge");
+        let payload = quest_error_payload(&error, "CDP quest failed");
+        assert_eq!(payload["code"], "cdp_capability_missing");
+        assert!(payload["params"]["missingCapabilities"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("NativeUtils.discord_utils")));
+        let error = start_manual_game_spoof(port, "363445589247131668", "Roblox")
+            .await
+            .expect_err("scheduled/manual injections must run their own client preflight");
+        assert!(error
+            .to_string()
+            .contains("Equibop is not currently supported"));
+        let raw = crate::cdp_client::execute_js_via_primary_discord_target(
+            port,
+            &with_bridge(JS_VERIFY_CLEANUP_STATE),
+            false,
+            CDP_CLEANUP_VERIFY_TIMEOUT_SECS,
+        )
+        .await
+        .expect("Equibop must remain reachable");
+        let parsed = serde_json::from_str(&raw).unwrap();
+        let state = cleanup_verify_from_json(&parsed).unwrap();
+        assert!(
+            cleanup_verify_is_clean(&state),
+            "preflight installed game patches: {raw}"
+        );
+    }
+
+    #[tokio::test]
     #[ignore = "requires a live Discord CDP session on the default debugging port"]
     async fn live_cdp_running_game_spoof_ab() {
         let port = crate::cdp_client::DEFAULT_CDP_PORT;
@@ -4733,8 +4861,15 @@ mod tests {
             .expect("Discord CDP snapshot should be reachable");
         assert!(before.store_found, "RunningGameStore should be loaded");
 
-        let app_id = "1158877933042143272".to_string();
-        let app_name = "Counter-Strike 2".to_string();
+        let app_id = std::env::var("DQH_LIVE_CDP_APP_ID")
+            .unwrap_or_else(|_| "1158877933042143272".to_string());
+        let app_name = std::env::var("DQH_LIVE_CDP_APP_NAME")
+            .unwrap_or_else(|_| "Counter-Strike 2".to_string());
+        let hold_secs = std::env::var("DQH_LIVE_CDP_HOLD_SECS")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(0)
+            .min(120);
 
         let init = cdp_init_modules(port).await;
         if init.is_err() {
@@ -4751,6 +4886,12 @@ mod tests {
         let spoof_raw =
             crate::cdp_client::execute_js_via_primary_discord_target(port, &spoof_js, true, 30)
                 .await;
+        // Opt-in dwell lets native scanner and heartbeat subscribers run before
+        // cleanup. It also exposes asynchronous failures missed by an immediate snapshot.
+        if spoof_raw.is_ok() && hold_secs > 0 {
+            println!("Observing live CDP game state for {hold_secs}s before cleanup");
+            sleep(Duration::from_secs(hold_secs)).await;
+        }
         let during = crate::cdp_client::fetch_running_games_via_cdp(port).await;
         let cleanup = cdp_cleanup_with_attempts(port, CDP_CLEANUP_ATTEMPTS).await;
         let after = crate::cdp_client::fetch_running_games_via_cdp(port).await;
