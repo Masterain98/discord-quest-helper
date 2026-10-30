@@ -29,8 +29,11 @@ async function discover(required, options = { stream: false, game: true, discove
   if (options.detectableStore) modules.detectableStore = {
     games: [], getDetectableGame() {}, getGameByExecutable() {}, findGame() {},
   }
-  if (options.detectableStore) modules.nativeUtils = {
-    getDiscordUtils() {}, setObservedGamesCallback() {}, setGameCandidateOverrides() {},
+  if (options.native !== 'missing') modules.nativeUtils = {
+    getDiscordUtils() {
+      if (options.native === 'throws') throw new TypeError("Cannot read properties of undefined (reading 'nativeModules')")
+      return {}
+    }, setObservedGamesCallback() {}, setGameCandidateOverrides() {},
   }
   if (options.apiShape === 'inherited') modules.api = Object.create(modules.api)
   if (options.apiShape === 'accessor') {
@@ -71,6 +74,12 @@ async function discover(required, options = { stream: false, game: true, discove
 }
 
 describe('on-demand CDP module discovery', () => {
+  it.each(['missing', 'throws'])('rejects an unusable native game bridge (%s) before installing patches', async native => {
+    const { result, window, requests } = await discover(game, { game: true, native, discoverOnly: false })
+    expect(result).toEqual({ success: false, code: 'cdp_capability_missing', missing: ['NativeUtils.discord_utils'] })
+    expect(window.__dqh_cdp).toBeUndefined()
+    expect(requests).toBe(0)
+  })
   it.each([true, false])('rejects translation game databases (real store present=%s)', async detectableStore => {
     const result = await discover(game, {
       game: true, discoverOnly: false, detectableDecoy: true, detectableStore,

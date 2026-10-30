@@ -704,6 +704,8 @@ async fn ensure_cdp_account_consistency(
     state: &State<'_, AppState>,
     cdp_port: u16,
 ) -> Result<(), String> {
+    cdp_client::ensure_supported_automation_client(cdp_port).await?;
+
     let expected = state
         .authenticated_user
         .lock()

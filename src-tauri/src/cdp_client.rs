@@ -17,6 +17,58 @@ use zeroize::Zeroizing;
 /// Default CDP debugging port
 pub use discord_cdp_launch_core::DEFAULT_CDP_PORT;
 
+/// Gate automation separately from read-only CDP connectivity. Discord's web
+/// modules also exist inside unsupported wrappers such as Equibop.
+pub async fn ensure_supported_automation_client(port: u16) -> Result<(), String> {
+    use discord_cdp_launch_core::CdpPortOwner;
+    let owner = tauri::async_runtime::spawn_blocking(move || {
+        discord_cdp_launch_core::inspect_cdp_port_owner(port)
+    })
+    .await
+    .map_err(|_| "Could not identify the CDP client".to_string())?;
+    if matches!(owner, CdpPortOwner::Official | CdpPortOwner::Vesktop) {
+        return Ok(());
+    }
+
+    // OS process metadata can be unavailable in sandboxed installations. Use
+    // the browser product as a fallback, without evaluating renderer code.
+    let metadata = reqwest::Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(Duration::from_secs(2))
+        .build()
+        .map_err(|e| format!("Could not inspect CDP client: {e}"))?
+        .get(format!("http://127.0.0.1:{port}/json/version"))
+        .send()
+        .await
+        .and_then(reqwest::Response::error_for_status)
+        .map_err(|_| format!("Could not identify the client on CDP port {port}. Make sure Discord or Vesktop is running with CDP enabled."))?
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|_| format!("Invalid CDP client information on port {port}. Use official Discord or Vesktop."))?;
+    let agent = metadata["User-Agent"].as_str().unwrap_or_default();
+    let products: Vec<_> = agent
+        .split_ascii_whitespace()
+        .filter_map(|token| {
+            token
+                .split_once('/')
+                .map(|(name, _)| name.to_ascii_lowercase())
+        })
+        .collect();
+    // A wrapper can advertise Chromium and Electron as well as its own name.
+    if products.iter().any(|name| name == "equibop") {
+        return Err(format!("Equibop is not currently supported for CDP quest automation (port {port}). Use official Discord or Vesktop. No quest code was injected."));
+    }
+    if owner == CdpPortOwner::None
+        && products
+            .iter()
+            .any(|name| name == "discord" || name == "vesktop")
+    {
+        return Ok(());
+    }
+    Err(format!("Unsupported CDP client on port {port}. Quest automation supports official Discord and Vesktop. This client could not be identified; no quest code was injected."))
+}
+
 /// SuperProperties result obtained via CDP
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CdpSuperProperties {
@@ -1603,6 +1655,47 @@ pub(crate) fn read_fixture_http_request(stream: &mut std::net::TcpStream) -> Vec
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn automation_preflight_identifies_wrappers_without_renderer_injection() {
+        use std::io::Write;
+        for (agent, expected_error) in [
+            (
+                "Mozilla/5.0 equibop/3.3.2 Chrome/150 Electron/44",
+                Some("Equibop is not currently supported"),
+            ),
+            (
+                "Mozilla/5.0 Chrome/150 Electron/44",
+                Some("Unsupported CDP client"),
+            ),
+            ("Mozilla/5.0 Vesktop/1.6.0 Chrome/150", None),
+            ("Mozilla/5.0 discord/0.0.100 Chrome/150", None),
+        ] {
+            let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let server = std::thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(3)))
+                    .unwrap();
+                let request = read_fixture_http_request(&mut stream);
+                assert!(String::from_utf8_lossy(&request).starts_with("GET /json/version HTTP/1.1"));
+                let body = serde_json::json!({"User-Agent": agent}).to_string();
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                )
+                .unwrap();
+            });
+            let result = ensure_supported_automation_client(port).await;
+            server.join().unwrap();
+            match expected_error {
+                Some(message) => assert!(result.unwrap_err().contains(message)),
+                None => result.unwrap(),
+            }
+        }
+    }
 
     fn mk_target(target_type: &str, title: &str, url: &str) -> CdpTarget {
         mk_target_opt_ws(target_type, title, url, Some("ws://example".to_string()))
