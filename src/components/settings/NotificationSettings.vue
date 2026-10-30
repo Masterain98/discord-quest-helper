@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch, type Component } from 'vue'
 import { Bell, CheckCircle2, ChevronDown, CircleAlert, LoaderCircle, Monitor, Send, Settings2 } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { listen } from '@tauri-apps/api/event'
@@ -11,6 +11,8 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuRad
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import SettingsSectionCard from './SettingsSectionCard.vue'
 import SettingRow from './SettingRow.vue'
+import DiscordIcon from '@/components/icons/DiscordIcon.vue'
+import TelegramIcon from '@/components/icons/TelegramIcon.vue'
 import { open } from '@tauri-apps/plugin-shell'
 import { useQuestsStore } from '@/stores/quests'
 import { notificationRewardImage, estimatedCompletionAt } from '@/utils/questNotifications'
@@ -68,7 +70,7 @@ const testQuestOptions = computed(() => [
   { value: '', label: t('notifications.sample_quest') },
   ...quests.quests.map(quest => ({ value: quest.id, label: quest.config.messages.quest_name })),
 ])
-const icons: Record<string, typeof Bell> = { monitor: Monitor, send: Send, bell: Bell }
+const icons: Record<string, Component> = { monitor: Monitor, send: Send, bell: Bell, discord: DiscordIcon, telegram: TelegramIcon }
 const hasSavedConfig = computed(() => !!configuredChannel.value && (configuredChannel.value.configured || configuredChannel.value.secret_fields_set.length > 0 || Object.values(configuredChannel.value.values).some(Boolean) || configuredChannel.value.fields.some(field => field.template && Object.prototype.hasOwnProperty.call(configuredChannel.value!.values, field.id))))
 const dialogBusy = computed(() => testing.value || saveState.value === 'saving')
 let disposed = false
@@ -291,10 +293,20 @@ onUnmounted(() => { disposed = true; unlisten?.(); draft.value = { fields: {} };
           <legend class="text-sm font-semibold">{{ t('notifications.templates') }}</legend>
           <p class="text-xs leading-relaxed text-muted-foreground">{{ t('notifications.templates_desc') }}</p>
           <div class="grid gap-2">
-            <Label for="notification-template-event">{{ t('notifications.template_event') }}</Label>
-            <select id="notification-template-event" v-model="templateEvent" :disabled="dialogBusy" class="h-10 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-              <option v-for="event in events" :key="event" :value="event">{{ t('notifications.' + event) }}</option>
-            </select>
+            <Label id="notification-template-event-label" for="notification-template-event">{{ t('notifications.template_event') }}</Label>
+            <DropdownMenu>
+              <DropdownMenuTrigger as-child :disabled="dialogBusy">
+                <Button id="notification-template-event" type="button" variant="outline" class="w-full justify-between font-normal" aria-labelledby="notification-template-event-label">
+                  <span class="truncate">{{ t('notifications.' + templateEvent) }}</span>
+                  <ChevronDown class="ml-2 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" class="max-h-[min(20rem,var(--radix-dropdown-menu-content-available-height))] w-[var(--radix-dropdown-menu-trigger-width)] overflow-y-auto">
+                <DropdownMenuRadioGroup v-model="templateEvent">
+                  <DropdownMenuRadioItem v-for="event in events" :key="event" :value="event">{{ t('notifications.' + event) }}</DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
           <div v-for="field in templateFields" :key="field.id" class="grid min-w-0 gap-2">
             <div class="flex flex-wrap items-center justify-between gap-2">

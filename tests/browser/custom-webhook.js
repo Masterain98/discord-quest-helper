@@ -23,9 +23,14 @@ async (page) => {
   const custom = "  自定义\n{quest-name}\n{my-text}  ";
   await content().fill(custom);
   await dialog().getByText("Unknown variables will be sent unchanged: {my-text}", { exact: true }).waitFor();
-  await event().selectOption("quest_started");
+  await event().focus();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Home");
+  await page.keyboard.press("Enter");
   check((await content().inputValue()).includes("{estimated-complete-at}"), "Start default missing");
-  await event().selectOption("quest_completed");
+  await event().click();
+  check(await page.getByRole("menuitemradio", { name: "Task started", exact: true }).getAttribute("aria-checked") === "true", "Current event is not marked");
+  await page.getByRole("menuitemradio", { name: "Task completed", exact: true }).click();
   check(await content().inputValue() === custom, "Switching events lost the draft");
   await save();
   await page.evaluate(() => { window.__notificationQA.locale.value = "zh"; });

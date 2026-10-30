@@ -123,7 +123,8 @@ Descriptors are the source of truth for frontend forms. Input kinds are `Text`,
 recipient IDs. Password fields may contain URLs (Discord's webhook is a secret).
 Every secret must be declared `Password`; regular fields are stored in JSON.
 Use static translation keys in all 16 locales. Optional description/help links
-are supported; icons are `monitor`, `send`, `bell`, or `None` for the fallback.
+are supported; icons are `monitor`, `send`, `bell`, `discord`, `telegram`, or `None`
+for the fallback. The Discord and Telegram logos are bundled SVG components.
 
 The command contract is `draft: { fields: Record<string, string> }`.
 An optional `reset_fields: string[]` restores individual template defaults or

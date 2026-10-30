@@ -21,7 +21,7 @@
       "id": "telegram",
       "name_key": "notifications.telegram",
       "description_key": null,
-      "icon": "send",
+      "icon": "telegram",
       "fields": [
         {
           "id": "token",
@@ -67,7 +67,7 @@
       "id": "discord",
       "name_key": "notifications.discord",
       "description_key": null,
-      "icon": "bell",
+      "icon": "discord",
       "fields": [
         {
           "id": "webhook_url",

@@ -80,7 +80,7 @@ impl NotificationChannel for DiscordChannel {
             id: "discord",
             name_key: "notifications.discord",
             description_key: None,
-            icon: Some("bell"),
+            icon: Some("discord"),
             enabled_by_default: false,
             fields: &[
                 Field {

@@ -72,7 +72,7 @@ impl NotificationChannel for TelegramChannel {
             id: "telegram",
             name_key: "notifications.telegram",
             description_key: None,
-            icon: Some("send"),
+            icon: Some("telegram"),
             enabled_by_default: false,
             fields: &[
                 Field {
