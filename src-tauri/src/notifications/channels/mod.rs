@@ -1,4 +1,5 @@
 //! The only production registration point for built-in notification channels.
+mod custom_webhook;
 mod discord;
 mod system;
 mod telegram;
@@ -19,7 +20,8 @@ fn with_system(system: Arc<dyn NotificationChannel>) -> Result<Registry> {
     Registry::new(vec![
         system,
         Arc::new(telegram::TelegramChannel::new(client.clone())),
-        Arc::new(discord::DiscordChannel::new(client)),
+        Arc::new(discord::DiscordChannel::new(client.clone())),
+        Arc::new(custom_webhook::CustomWebhookChannel::new(client)),
     ])
 }
 

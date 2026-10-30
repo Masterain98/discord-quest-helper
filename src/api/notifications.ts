@@ -3,15 +3,16 @@ import { invoke, isTauri } from '@tauri-apps/api/core'
 export type NotificationChannel = string
 export type NotificationKind = 'quest_started' | 'quest_completed' | 'queue_completed'
 export type NotificationEvents = Record<NotificationKind, boolean>
-export interface NotificationDraft { fields: Record<string, string> }
+export interface NotificationDraft { fields: Record<string, string>; reset_fields?: string[] }
 export interface NotificationError { code: string; field?: string }
 export interface NotificationResult { channel: NotificationChannel; success: boolean; code: string; field?: string; at: string }
 export interface NotificationField {
   id: string
   label_key: string
-  kind: 'text' | 'password' | 'url' | 'numeric'
+  kind: 'text' | 'password' | 'url' | 'numeric' | 'textarea'
   required: boolean
   placeholder: string | null
+  template?: { event: NotificationKind; part: 'title' | 'content'; default_key: string }
 }
 export interface NotificationChannelView {
   id: NotificationChannel
@@ -24,6 +25,7 @@ export interface NotificationChannelView {
   configured: boolean
   values: Record<string, string>
   secret_fields_set: string[]
+  template_variables?: { name: string; description_key: string; events: NotificationKind[] }[]
 }
 export interface NotificationSettings {
   events: NotificationEvents

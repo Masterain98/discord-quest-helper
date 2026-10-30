@@ -3,6 +3,8 @@ use chrono::{DateTime, Local, Utc};
 
 #[derive(Clone)]
 pub struct Message {
+    /// Original business context for structured adapters; legacy display stays unchanged.
+    pub event: NotificationEvent,
     pub title: String,
     pub detail: String,
     pub reward_image: Option<String>,
@@ -44,6 +46,7 @@ pub(super) fn render(event: &NotificationEvent, generic_test: bool) -> Message {
         }
     };
     Message {
+        event: event.clone(),
         title: labels[key]
             .as_str()
             .unwrap_or("Discord Quest Helper")

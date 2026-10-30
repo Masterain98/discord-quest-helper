@@ -4,7 +4,7 @@ use super::{
         validate_required, Descriptor, Draft, InputKind, NotificationChannel, Registry,
         ResolvedConfig,
     },
-    error::{Code, Result},
+    error::{Code, Error, Result},
     model::Events,
     secrets::Secrets,
 };
@@ -149,8 +149,35 @@ pub(super) fn resolve(
     {
         return Err(Code::InvalidConfig.into());
     }
+    let mut resets = std::collections::HashSet::new();
+    for key in &draft.reset_fields {
+        let field = d
+            .fields
+            .iter()
+            .find(|f| f.id == key)
+            .ok_or(Code::InvalidConfig)?;
+        if !resets.insert(key.as_str())
+            || draft.fields.contains_key(key)
+            || !(field.template.is_some() || (field.kind == InputKind::Password && !field.required))
+        {
+            return Err(Error::new(Code::InvalidConfig).at(key));
+        }
+    }
     let mut values = BTreeMap::new();
     for field in d.fields {
+        if resets.contains(field.id) {
+            continue;
+        }
+        if field.template.is_some() {
+            if let Some(value) = draft
+                .fields
+                .get(field.id)
+                .or_else(|| saved.values.get(field.id))
+            {
+                values.insert(field.id.into(), Zeroizing::new(value.clone()));
+            }
+            continue;
+        }
         let input = draft.fields.get(field.id).map(|v| v.trim());
         let value = if field.kind == InputKind::Password {
             match input.filter(|v| !v.is_empty()) {
@@ -203,6 +230,11 @@ pub(super) fn update_with_save(
     let mut next = old.clone();
     let mut staged: Vec<String> = Vec::new();
     for field in d.fields {
+        if draft.reset_fields.iter().any(|key| key == field.id) {
+            next.values.remove(field.id);
+            next.secret_refs.remove(field.id);
+            continue;
+        }
         if field.kind == InputKind::Password {
             next.values.remove(field.id);
             if draft
@@ -220,7 +252,7 @@ pub(super) fn update_with_save(
                 next.secret_refs.insert(field.id.into(), reference.clone());
                 staged.push(reference);
             }
-        } else {
+        } else if values.contains(field.id) {
             next.values
                 .insert(field.id.into(), values.get(field.id).into());
         }

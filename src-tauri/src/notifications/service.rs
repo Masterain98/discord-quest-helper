@@ -98,11 +98,14 @@ impl NotificationService {
                         .fields
                         .iter()
                         .filter(|f| f.kind != InputKind::Password)
-                        .map(|f| {
-                            (
+                        .filter_map(|f| {
+                            if f.template.is_some() && !saved.values.contains_key(f.id) {
+                                return None;
+                            }
+                            Some((
                                 f.id.into(),
                                 saved.values.get(f.id).cloned().unwrap_or_default(),
-                            )
+                            ))
                         })
                         .collect();
                     let secret_fields_set = d
@@ -187,7 +190,13 @@ impl NotificationService {
         locale: String,
         event: Option<NotificationEvent>,
     ) -> Result<DeliveryResult> {
-        self.registry.get(&id)?;
+        let templated = self
+            .registry
+            .get(&id)?
+            .descriptor()
+            .fields
+            .iter()
+            .any(|f| f.template.is_some());
         self.settings(path).await?;
         let (saved, lease) = {
             let runtime = self.runtime.lock().map_err(|_| Code::Storage)?;
@@ -202,8 +211,16 @@ impl NotificationService {
             let lease = Arc::new(self.secrets.lease(saved.secret_refs.values().cloned()));
             (saved, lease)
         };
-        let generic_test = event.is_none();
+        let generic_test = event.is_none() && !templated;
+        let sample = event.is_none();
         let mut event = event.unwrap_or_else(|| NotificationEvent::sample(locale.clone()));
+        event.id = uuid::Uuid::new_v4().to_string();
+        if sample && templated {
+            event.quest_name = super::model::messages(&locale)["sample_quest"]
+                .as_str()
+                .unwrap_or("Sample task")
+                .into();
+        }
         event.locale = locale;
         let mut message = message::render(&event, generic_test);
         message.is_test = true;

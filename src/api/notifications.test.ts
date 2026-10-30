@@ -16,6 +16,13 @@ describe('notification test IPC contract', () => {
     await clearNotificationChannel('fixture')
     expect(invoke).toHaveBeenLastCalledWith('clear_notification_channel', { channel: 'fixture' })
   })
+  it('preserves sparse templates, explicit empty text and reset instructions through IPC', async () => {
+    const draft = { fields: { quest_completed_title: '', quest_completed_content: ' \n{quest-name}\n ' }, reset_fields: ['bearer_token', 'quest_started_content'] }
+    await saveNotificationChannel('custom_webhook', draft)
+    expect(invoke).toHaveBeenLastCalledWith('save_notification_channel', { channel: 'custom_webhook', draft })
+    await testNotificationChannel('custom_webhook', draft, 'zh')
+    expect(invoke).toHaveBeenLastCalledWith('test_notification_channel', { channel: 'custom_webhook', draft, locale: 'zh', event: null })
+  })
   it.each(requests)('sends the native request schema for $event.kind', async request => {
     const event: QuestNotification | undefined = request.event
       ? { ...request.event, kind: request.event.kind as NotificationKind }

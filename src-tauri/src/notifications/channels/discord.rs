@@ -76,6 +76,7 @@ fn webhook(raw: &str) -> Result<url::Url> {
 impl NotificationChannel for DiscordChannel {
     fn descriptor(&self) -> Descriptor {
         Descriptor {
+            template_variables: &[],
             id: "discord",
             name_key: "notifications.discord",
             description_key: None,
@@ -88,6 +89,7 @@ impl NotificationChannel for DiscordChannel {
                     kind: InputKind::Password,
                     required: true,
                     placeholder: None,
+                    template: None,
                 },
                 Field {
                     id: "thread_id",
@@ -95,6 +97,7 @@ impl NotificationChannel for DiscordChannel {
                     kind: InputKind::Numeric,
                     required: false,
                     placeholder: None,
+                    template: None,
                 },
             ],
             help_links: &[HelpLink {
