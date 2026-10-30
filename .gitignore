@@ -57,6 +57,10 @@ discord-quest-helper-v*.zip
 # i18n validation/audit reports
 reports/
 
+# Browser verification artifacts
+/.playwright-cli/
+/output/playwright/
+
 .workbuddy/
 .codebuddy/
 deliverables/

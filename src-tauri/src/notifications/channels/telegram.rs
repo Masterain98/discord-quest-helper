@@ -68,10 +68,11 @@ fn numeric(value: &str) -> bool {
 impl NotificationChannel for TelegramChannel {
     fn descriptor(&self) -> Descriptor {
         Descriptor {
+            template_variables: &[],
             id: "telegram",
             name_key: "notifications.telegram",
             description_key: None,
-            icon: Some("send"),
+            icon: Some("telegram"),
             enabled_by_default: false,
             fields: &[
                 Field {
@@ -80,6 +81,7 @@ impl NotificationChannel for TelegramChannel {
                     kind: InputKind::Password,
                     required: true,
                     placeholder: None,
+                    template: None,
                 },
                 Field {
                     id: "chat_id",
@@ -87,6 +89,7 @@ impl NotificationChannel for TelegramChannel {
                     kind: InputKind::Text,
                     required: true,
                     placeholder: Some("123456789 / -100123456789 / @channel"),
+                    template: None,
                 },
                 Field {
                     id: "topic_id",
@@ -94,6 +97,7 @@ impl NotificationChannel for TelegramChannel {
                     kind: InputKind::Numeric,
                     required: false,
                     placeholder: None,
+                    template: None,
                 },
             ],
             help_links: &[

@@ -5,7 +5,7 @@ const ROOT = process.cwd()
 const LOCALE_DIR = path.join(ROOT, 'src', 'locales')
 const REPORT_DIR = path.join(ROOT, 'reports')
 const SOURCE_LOCALE = 'en'
-const PLACEHOLDER_RE = /\{[a-zA-Z0-9_]+\}/g
+const PLACEHOLDER_RE = /\{[a-zA-Z0-9_-]+\}/g
 const TODO_RE = /\b(?:TODO|FIXME|TRANSLATE|UNTRANSLATED)\b/
 const TOKEN_RE = /\[\[/
 

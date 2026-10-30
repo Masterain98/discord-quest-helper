@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch, type Component } from 'vue'
 import { Bell, CheckCircle2, ChevronDown, CircleAlert, LoaderCircle, Monitor, Send, Settings2 } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { listen } from '@tauri-apps/api/event'
@@ -11,18 +11,20 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuRad
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import SettingsSectionCard from './SettingsSectionCard.vue'
 import SettingRow from './SettingRow.vue'
+import DiscordIcon from '@/components/icons/DiscordIcon.vue'
+import TelegramIcon from '@/components/icons/TelegramIcon.vue'
 import { open } from '@tauri-apps/plugin-shell'
 import { useQuestsStore } from '@/stores/quests'
 import { notificationRewardImage, estimatedCompletionAt } from '@/utils/questNotifications'
-import { channelDraft, clearDraftSecrets, fieldRequired, inputType } from '@/utils/notificationChannels'
+import { channelDraft, clearDraftSecrets, cloneDraft, fieldRequired, inputType, resetDraftField, setDraftField, unknownTemplateVariables } from '@/utils/notificationChannels'
 import {
   getNotificationSettings, saveNotificationEvents, saveNotificationChannel,
   setNotificationChannelEnabled, clearNotificationChannel, testNotificationChannel,
   type NotificationChannel, type NotificationKind, type NotificationSettings,
-  type NotificationDraft, type NotificationResult, type QuestNotification, type NotificationError,
+  type NotificationDraft, type NotificationResult, type QuestNotification, type NotificationError, type NotificationField,
 } from '@/api/notifications'
 
-const { t, locale } = useI18n()
+const { t, tm, locale } = useI18n()
 const props = defineProps<{ debugModeEnabled: boolean }>()
 const quests = useQuestsStore()
 const testDialogOpen = ref(false)
@@ -43,16 +45,33 @@ const testing = ref(false)
 const testResult = ref<NotificationResult | null>(null)
 const channels = computed(() => settings.value?.channels ?? [])
 const events: NotificationKind[] = ['quest_started', 'quest_completed', 'queue_completed']
+const templateEvent = ref<NotificationKind>('quest_completed')
+const variableHint = { variable: '{quest-name}', escaped: '{{quest-name}}' }
+const ordinaryFields = computed(() => configuredChannel.value?.fields.filter(field => !field.template) ?? [])
+const templateFields = computed(() => configuredChannel.value?.fields.filter(field => field.template?.event === templateEvent.value) ?? [])
+const hasTemplates = computed(() => configuredChannel.value?.fields.some(field => field.template) ?? false)
+function templated(channel?: NotificationChannel) {
+  return channels.value.find(item => item.id === channel)?.fields.some(field => field.template) ?? false
+}
+function templateValue(field: NotificationField) {
+  if (field.id in draft.value.fields) return draft.value.fields[field.id]
+  const value = field.template ? tm(field.template.default_key) : ''
+  return typeof value === 'string' ? value : ''
+}
+const unknownVariables = computed(() => [...new Set(templateFields.value.flatMap(field =>
+  unknownTemplateVariables(templateValue(field), configuredChannel.value?.template_variables?.map(variable => variable.name) ?? []),
+))])
+const availableVariables = computed(() => configuredChannel.value?.template_variables?.filter(variable => variable.events.includes(templateEvent.value)) ?? [])
 const testOptions = computed(() => [
-  { value: 'test', label: t('notifications.message_test') },
+  ...(!templated(pendingTest.value?.channel) ? [{ value: 'test', label: t('notifications.message_test') }] : []),
   ...events.map(value => ({ value, label: t(`notifications.${value}`) })),
 ])
 const testQuestOptions = computed(() => [
   { value: '', label: t('notifications.sample_quest') },
   ...quests.quests.map(quest => ({ value: quest.id, label: quest.config.messages.quest_name })),
 ])
-const icons: Record<string, typeof Bell> = { monitor: Monitor, send: Send, bell: Bell }
-const hasSavedConfig = computed(() => !!configuredChannel.value && (configuredChannel.value.configured || configuredChannel.value.secret_fields_set.length > 0 || Object.values(configuredChannel.value.values).some(Boolean)))
+const icons: Record<string, Component> = { monitor: Monitor, send: Send, bell: Bell, discord: DiscordIcon, telegram: TelegramIcon }
+const hasSavedConfig = computed(() => !!configuredChannel.value && (configuredChannel.value.configured || configuredChannel.value.secret_fields_set.length > 0 || Object.values(configuredChannel.value.values).some(Boolean) || configuredChannel.value.fields.some(field => field.template && Object.prototype.hasOwnProperty.call(configuredChannel.value!.values, field.id))))
 const dialogBusy = computed(() => testing.value || saveState.value === 'saving')
 let disposed = false
 let unlisten: (() => void) | undefined
@@ -72,13 +91,14 @@ async function load() {
   finally { busy.value = false }
 }
 function resultText(result: NotificationResult) {
-  return result.success ? t(result.code === 'submitted' ? 'notifications.submitted' : 'notifications.sent') : message(result)
+  return result.success ? t(result.code === 'submitted' ? (result.channel === 'system' ? 'notifications.submitted' : 'notifications.accepted') : 'notifications.sent') : message(result)
 }
 function configure(channel: NotificationChannel) {
   const selected = settings.value?.channels.find(item => item.id === channel)
   if (!selected) return
   configuredChannelId.value = channel
   draft.value = channelDraft(selected)
+  templateEvent.value = 'quest_completed'
   dialogError.value = ''; errorField.value = undefined
   saveState.value = 'idle'; testResult.value = null
   dialogOpen.value = true
@@ -108,8 +128,8 @@ async function saveChannel() {
   if (!configuredChannel.value) return
   saveState.value = 'saving'; dialogError.value = ''; testResult.value = null; errorField.value = undefined
   try {
-    settings.value = await saveNotificationChannel(configuredChannel.value.id, { fields: { ...draft.value.fields } })
-    clearDraftSecrets(draft.value, configuredChannel.value)
+    settings.value = await saveNotificationChannel(configuredChannel.value.id, cloneDraft(draft.value))
+    draft.value = channelDraft(configuredChannel.value)
     saveState.value = 'saved'
   } catch (e) { dialogError.value = message(e); errorField.value = (e as NotificationError)?.field; saveState.value = 'idle' }
 }
@@ -124,9 +144,10 @@ async function clearChannel() {
   } catch (e) { dialogError.value = message(e); errorField.value = (e as NotificationError)?.field; saveState.value = 'idle' }
 }
 function test(channel: NotificationChannel) {
-  const value: NotificationDraft = { fields: channel === configuredChannelId.value ? { ...draft.value.fields } : {} }
-  if (props.debugModeEnabled) {
+  const value: NotificationDraft = channel === configuredChannelId.value ? cloneDraft(draft.value) : { fields: {} }
+  if (props.debugModeEnabled || templated(channel)) {
     pendingTest.value = { channel, draft: value }
+    if (templated(channel)) testKind.value = templateEvent.value
     testQuestId.value = quests.activeQuestId ?? quests.quests[0]?.id ?? ''
     testDialogOpen.value = true
   } else {
@@ -145,7 +166,7 @@ async function sendSelectedTest() {
   const pending = pendingTest.value
   if (!pending) return
   let event: QuestNotification | undefined
-  if (props.debugModeEnabled && testKind.value !== 'test') {
+  if ((props.debugModeEnabled || templated(pending.channel)) && testKind.value !== 'test') {
     const quest = quests.quests.find(q => q.id === testQuestId.value)
     event = {
       id: crypto.randomUUID(), kind: testKind.value,
@@ -176,10 +197,17 @@ async function performTest(channel: NotificationChannel, value: NotificationDraf
     testing.value = false
   }
 }
-watch(() => props.debugModeEnabled, enabled => { if (!enabled) closeTest(false) })
-function input(field: string, event: Event) {
-  draft.value.fields[field] = (event.target as HTMLInputElement).value
+watch(() => props.debugModeEnabled, enabled => { if (!enabled && !templated(pendingTest.value?.channel)) closeTest(false) })
+function changed() {
   saveState.value = 'idle'; testResult.value = null; dialogError.value = ''; errorField.value = undefined
+}
+function input(field: string, event: Event) {
+  setDraftField(draft.value, field, (event.target as HTMLInputElement | HTMLTextAreaElement).value)
+  changed()
+}
+function resetField(field: string) {
+  resetDraftField(draft.value, field)
+  changed()
 }
 onMounted(async () => {
   await load()
@@ -245,15 +273,64 @@ onUnmounted(() => { disposed = true; unlisten?.(); draft.value = { fields: {} };
         <DialogDescription>{{ t('notifications.dialog_desc') }}</DialogDescription>
       </DialogHeader>
       <form v-if="configuredChannel" class="grid gap-4" autocomplete="off" @submit.prevent="saveChannel">
-        <div v-for="field in configuredChannel.fields" :key="field.id" class="grid gap-2">
+        <div v-for="field in ordinaryFields" :key="field.id" class="grid gap-2">
           <Label :for="'notification-field-' + field.id">{{ t(field.label_key) }}</Label>
-          <Input :id="'notification-field-' + field.id" :type="inputType(field)" :inputmode="field.kind === 'numeric' ? 'numeric' : undefined"
+          <textarea v-if="field.kind === 'textarea'" :id="'notification-field-' + field.id" :value="draft.fields[field.id] ?? ''"
+            rows="5" class="w-full min-w-0 resize-y rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+            :disabled="dialogBusy" :required="fieldRequired(field, configuredChannel)" :aria-invalid="errorField === field.id || undefined"
+            :aria-describedby="errorField === field.id ? 'notification-config-error' : undefined" @input="input(field.id, $event)" />
+          <Input v-else :id="'notification-field-' + field.id" :type="inputType(field)" :inputmode="field.kind === 'numeric' ? 'numeric' : undefined"
             :autocomplete="field.kind === 'password' ? 'new-password' : 'off'" spellcheck="false"
             :model-value="draft.fields[field.id] ?? ''" :required="fieldRequired(field, configuredChannel)"
-            :placeholder="field.kind === 'password' && configuredChannel.secret_fields_set.includes(field.id) ? t('notifications.secret_saved') : field.placeholder ?? (!field.required ? t('notifications.optional') : undefined)"
+            :placeholder="field.kind === 'password' && configuredChannel.secret_fields_set.includes(field.id) && !draft.reset_fields?.includes(field.id) ? t('notifications.secret_saved') : field.placeholder ?? (!field.required ? t('notifications.optional') : undefined)"
             :aria-invalid="errorField === field.id || undefined" :aria-describedby="errorField === field.id ? 'notification-config-error' : undefined"
             :disabled="dialogBusy" @input="input(field.id, $event)" />
+          <button v-if="field.kind === 'password' && !field.required && !draft.reset_fields?.includes(field.id) && (configuredChannel.secret_fields_set.includes(field.id) || draft.fields[field.id])"
+            type="button" class="justify-self-start text-xs text-destructive underline underline-offset-4" :disabled="dialogBusy" @click="resetField(field.id)">{{ t('notifications.remove_secret') }}</button>
+          <p v-if="field.kind === 'password' && draft.reset_fields?.includes(field.id)" role="status" class="text-xs text-muted-foreground">{{ t('notifications.secret_remove_pending') }}</p>
         </div>
+        <fieldset v-if="hasTemplates" class="grid min-w-0 gap-4 border-t border-border pt-4">
+          <legend class="text-sm font-semibold">{{ t('notifications.templates') }}</legend>
+          <p class="text-xs leading-relaxed text-muted-foreground">{{ t('notifications.templates_desc') }}</p>
+          <div class="grid gap-2">
+            <Label id="notification-template-event-label" for="notification-template-event">{{ t('notifications.template_event') }}</Label>
+            <DropdownMenu>
+              <DropdownMenuTrigger as-child :disabled="dialogBusy">
+                <Button id="notification-template-event" type="button" variant="outline" class="w-full justify-between font-normal" aria-labelledby="notification-template-event-label">
+                  <span class="truncate">{{ t('notifications.' + templateEvent) }}</span>
+                  <ChevronDown class="ml-2 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" class="max-h-[min(20rem,var(--radix-dropdown-menu-content-available-height))] w-[var(--radix-dropdown-menu-trigger-width)] overflow-y-auto">
+                <DropdownMenuRadioGroup v-model="templateEvent">
+                  <DropdownMenuRadioItem v-for="event in events" :key="event" :value="event">{{ t('notifications.' + event) }}</DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+          <div v-for="field in templateFields" :key="field.id" class="grid min-w-0 gap-2">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <Label :for="'notification-field-' + field.id">{{ t(field.label_key) }}</Label>
+              <button type="button" class="text-xs text-primary underline underline-offset-4" :disabled="dialogBusy" @click="resetField(field.id)">{{ t('notifications.restore_default') }}</button>
+            </div>
+            <textarea v-if="field.kind === 'textarea'" :id="'notification-field-' + field.id" :value="templateValue(field)"
+              rows="5" class="w-full min-w-0 resize-y rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+              :disabled="dialogBusy" :aria-invalid="errorField === field.id || undefined" :aria-describedby="errorField === field.id ? 'notification-config-error' : undefined" spellcheck="false" @input="input(field.id, $event)" />
+            <Input v-else :id="'notification-field-' + field.id" :model-value="templateValue(field)" :disabled="dialogBusy" :aria-invalid="errorField === field.id || undefined" :aria-describedby="errorField === field.id ? 'notification-config-error' : undefined" spellcheck="false" @input="input(field.id, $event)" />
+            <p class="text-xs text-muted-foreground">{{ t(field.id in draft.fields ? 'notifications.template_custom' : 'notifications.template_default') }}</p>
+          </div>
+          <p v-if="unknownVariables.length" role="status" class="break-words text-xs text-amber-700 dark:text-amber-300">{{ t('notifications.unknown_variables', { variables: unknownVariables.map(name => '{' + name + '}').join(', ') }) }}</p>
+          <details class="min-w-0 text-xs">
+            <summary class="cursor-pointer font-medium">{{ t('notifications.template_variables') }}</summary>
+            <p class="mt-2 leading-relaxed text-muted-foreground">{{ t('notifications.variables_hint', variableHint) }}</p>
+            <dl class="mt-3 grid gap-2">
+              <div v-for="variable in availableVariables" :key="variable.name" class="grid gap-0.5">
+                <dt class="break-all font-mono">{{ '{' + variable.name + '}' }}</dt>
+                <dd class="text-muted-foreground">{{ t(variable.description_key) }}</dd>
+              </div>
+            </dl>
+          </details>
+        </fieldset>
         <div class="flex flex-wrap gap-x-4 gap-y-2 text-xs">
           <a v-for="link in configuredChannel.help_links" :key="link.url" :href="link.url" class="text-primary underline underline-offset-4" @click.prevent="openExternal(link.url)">{{ t(link.label_key) }}</a>
           <button v-if="hasSavedConfig" type="button" class="text-destructive underline underline-offset-4" :disabled="dialogBusy" @click="clearChannel">{{ t('notifications.clear_config') }}</button>

@@ -24,6 +24,7 @@ impl SystemChannel {
 impl NotificationChannel for SystemChannel {
     fn descriptor(&self) -> Descriptor {
         Descriptor {
+            template_variables: &[],
             id: "system",
             name_key: "notifications.system",
             description_key: Some("notifications.system_desc"),

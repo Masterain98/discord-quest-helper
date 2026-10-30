@@ -19,8 +19,21 @@ pub enum InputKind {
     // Available to new adapters; current built-ins keep URLs in password fields.
     Url,
     Numeric,
+    Textarea,
 }
 
+#[derive(Clone, Serialize)]
+pub struct TemplateField {
+    pub event: super::model::EventKind,
+    pub part: &'static str,
+    pub default_key: &'static str,
+}
+#[derive(Clone, Serialize)]
+pub struct TemplateVariable {
+    pub name: &'static str,
+    pub description_key: &'static str,
+    pub events: &'static [super::model::EventKind],
+}
 #[derive(Clone, Serialize)]
 pub struct Field {
     pub id: &'static str,
@@ -28,6 +41,8 @@ pub struct Field {
     pub kind: InputKind,
     pub required: bool,
     pub placeholder: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub template: Option<TemplateField>,
 }
 #[derive(Clone, Serialize)]
 pub struct HelpLink {
@@ -42,6 +57,8 @@ pub struct Descriptor {
     pub icon: Option<&'static str>,
     pub fields: &'static [Field],
     pub help_links: &'static [HelpLink],
+    #[serde(skip_serializing_if = "<[TemplateVariable]>::is_empty")]
+    pub template_variables: &'static [TemplateVariable],
     #[serde(skip)]
     pub enabled_by_default: bool,
 }
@@ -51,6 +68,8 @@ pub struct Descriptor {
 pub struct Draft {
     #[serde(default)]
     pub fields: BTreeMap<String, String>,
+    #[serde(default)]
+    pub reset_fields: Vec<String>,
 }
 impl Drop for Draft {
     fn drop(&mut self) {
@@ -62,6 +81,9 @@ impl Drop for Draft {
 /// Deliberately lacks Serialize and Debug. Only one channel's values are supplied.
 pub struct ResolvedConfig(pub(super) BTreeMap<String, Zeroizing<String>>);
 impl ResolvedConfig {
+    pub fn contains(&self, key: &str) -> bool {
+        self.0.contains_key(key)
+    }
     pub fn get(&self, key: &str) -> &str {
         self.0.get(key).map(|v| v.as_str()).unwrap_or("")
     }

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import fixture from '../../tests/fixtures/notification-channels.json'
+import templateCases from '../../tests/fixtures/notification-template-cases.json'
 import type { NotificationSettings } from '@/api/notifications'
-import { channelDraft, clearDraftSecrets, fieldRequired, inputType } from './notificationChannels'
+import { channelDraft, clearDraftSecrets, cloneDraft, fieldRequired, inputType, resetDraftField, setDraftField, unknownTemplateVariables } from './notificationChannels'
 
 describe('descriptor driven channel forms', () => {
   // Rust asserts this shared JSON against the actual serialized settings contract.
@@ -34,5 +35,37 @@ describe('descriptor driven channel forms', () => {
     expect(value.fields.api_key).toBe(''); expect(value.fields).not.toHaveProperty('unregistered')
     clearDraftSecrets(value)
     expect(value.fields).toEqual({})
+  })
+})
+
+describe('Webhook template drafts', () => {
+  const channel = (fixture as unknown as NotificationSettings).channels.find(item => item.id === 'custom_webhook')!
+  it('keeps defaults absent and preserves explicit empty strings and whitespace', () => {
+    const fresh = channelDraft(channel)
+    expect(fresh.fields).toEqual({ endpoint: '', bearer_token: '' })
+    const saved = channelDraft({ ...channel, values: { quest_completed_title: '', quest_completed_content: ' \n{quest-name}\n ' } })
+    expect(saved.fields.quest_completed_title).toBe('')
+    expect(saved.fields.quest_completed_content).toBe(' \n{quest-name}\n ')
+    expect(saved.fields).not.toHaveProperty('quest_started_title')
+  })
+  it('resets independently, carries resets into tests and cancels resets on edits', () => {
+    const draft = channelDraft(channel)
+    setDraftField(draft, 'quest_completed_content', '')
+    resetDraftField(draft, 'quest_completed_content')
+    resetDraftField(draft, 'bearer_token')
+    resetDraftField(draft, 'bearer_token')
+    expect(draft.fields).not.toHaveProperty('quest_completed_content')
+    expect(draft.reset_fields).toEqual(['quest_completed_content', 'bearer_token'])
+    const copied = cloneDraft(draft)
+    setDraftField(copied, 'quest_completed_content', '  exact\n')
+    expect(copied.reset_fields).toEqual(['bearer_token'])
+    expect(draft.reset_fields).toEqual(['quest_completed_content', 'bearer_token'])
+    clearDraftSecrets(draft, channel)
+    expect(draft.fields).not.toHaveProperty('bearer_token')
+    expect(draft.reset_fields).toEqual(['quest_completed_content', 'bearer_token'])
+    expect(draft.fields.endpoint).toBe('')
+  })
+  it.each(templateCases)('warns without blocking or confusing escaped variables: $text', value => {
+    expect(unknownTemplateVariables(value.text, ['quest-name', 'timestamp', 'succeeded', 'failed', 'skipped'])).toEqual(value.unknown)
   })
 })

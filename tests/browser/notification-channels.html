@@ -26,6 +26,7 @@
         debug,
         failSave: false,
         testError: false,
+        locale: i18n.global.locale,
       });
       window.__TAURI_INTERNALS__ = {
         transformCallback: () => 1,
@@ -44,7 +45,13 @@
             if (qa.failSave)
               throw { code: "invalid_config", field: "endpoint" };
             for (const field of channel.fields) {
-              const value = args.draft.fields[field.id] ?? "";
+              if (args.draft.reset_fields?.includes(field.id)) {
+                delete channel.values[field.id];
+                channel.secret_fields_set = channel.secret_fields_set.filter(id => id !== field.id);
+                continue;
+              }
+              const value = args.draft.fields[field.id];
+              if (value === undefined) continue;
               if (field.kind === "password") {
                 if (value && !channel.secret_fields_set.includes(field.id))
                   channel.secret_fields_set.push(field.id);
@@ -64,7 +71,8 @@
             channel.configured = false;
             channel.secret_fields_set = [];
             for (const field of channel.fields)
-              if (field.kind !== "password") channel.values[field.id] = "";
+              if (field.template) delete channel.values[field.id];
+              else if (field.kind !== "password") channel.values[field.id] = "";
             return clone(settings);
           }
           if (command === "set_notification_channel_enabled") {
@@ -79,7 +87,7 @@
                 ? "invalid_config"
                 : args.channel === "system"
                   ? "submitted"
-                  : "sent",
+                  : qa.testCode ?? "sent",
               at: new Date().toISOString(),
               ...(qa.testError ? { field: "endpoint" } : {}),
             };

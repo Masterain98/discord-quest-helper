@@ -21,7 +21,7 @@
       "id": "telegram",
       "name_key": "notifications.telegram",
       "description_key": null,
-      "icon": "send",
+      "icon": "telegram",
       "fields": [
         {
           "id": "token",
@@ -67,7 +67,7 @@
       "id": "discord",
       "name_key": "notifications.discord",
       "description_key": null,
-      "icon": "bell",
+      "icon": "discord",
       "fields": [
         {
           "id": "webhook_url",
@@ -95,6 +95,178 @@
       "values": {
         "thread_id": ""
       },
+      "secret_fields_set": []
+    },
+    {
+      "id": "custom_webhook",
+      "name_key": "notifications.custom_webhook",
+      "description_key": "notifications.custom_webhook_desc",
+      "icon": "send",
+      "fields": [
+        {
+          "id": "endpoint",
+          "label_key": "notifications.webhook_endpoint",
+          "kind": "password",
+          "required": true,
+          "placeholder": "https://example.com/webhook"
+        },
+        {
+          "id": "bearer_token",
+          "label_key": "notifications.bearer_token",
+          "kind": "password",
+          "required": false,
+          "placeholder": null
+        },
+        {
+          "id": "quest_started_title",
+          "label_key": "notifications.template_title",
+          "kind": "text",
+          "required": false,
+          "placeholder": null,
+          "template": {
+            "event": "quest_started",
+            "part": "title",
+            "default_key": "notifications.webhook_started_title"
+          }
+        },
+        {
+          "id": "quest_started_content",
+          "label_key": "notifications.template_content",
+          "kind": "textarea",
+          "required": false,
+          "placeholder": null,
+          "template": {
+            "event": "quest_started",
+            "part": "content",
+            "default_key": "notifications.webhook_started_content"
+          }
+        },
+        {
+          "id": "quest_completed_title",
+          "label_key": "notifications.template_title",
+          "kind": "text",
+          "required": false,
+          "placeholder": null,
+          "template": {
+            "event": "quest_completed",
+            "part": "title",
+            "default_key": "notifications.webhook_completed_title"
+          }
+        },
+        {
+          "id": "quest_completed_content",
+          "label_key": "notifications.template_content",
+          "kind": "textarea",
+          "required": false,
+          "placeholder": null,
+          "template": {
+            "event": "quest_completed",
+            "part": "content",
+            "default_key": "notifications.webhook_completed_content"
+          }
+        },
+        {
+          "id": "queue_completed_title",
+          "label_key": "notifications.template_title",
+          "kind": "text",
+          "required": false,
+          "placeholder": null,
+          "template": {
+            "event": "queue_completed",
+            "part": "title",
+            "default_key": "notifications.webhook_queue_title"
+          }
+        },
+        {
+          "id": "queue_completed_content",
+          "label_key": "notifications.template_content",
+          "kind": "textarea",
+          "required": false,
+          "placeholder": null,
+          "template": {
+            "event": "queue_completed",
+            "part": "content",
+            "default_key": "notifications.webhook_queue_content"
+          }
+        }
+      ],
+      "help_links": [],
+      "template_variables": [
+        {
+          "name": "quest-name",
+          "description_key": "notifications.variable_quest_name",
+          "events": [
+            "quest_started",
+            "quest_completed"
+          ]
+        },
+        {
+          "name": "event-type",
+          "description_key": "notifications.variable_event_type",
+          "events": [
+            "quest_started",
+            "quest_completed",
+            "queue_completed"
+          ]
+        },
+        {
+          "name": "event-id",
+          "description_key": "notifications.variable_event_id",
+          "events": [
+            "quest_started",
+            "quest_completed",
+            "queue_completed"
+          ]
+        },
+        {
+          "name": "timestamp",
+          "description_key": "notifications.variable_timestamp",
+          "events": [
+            "quest_started",
+            "quest_completed",
+            "queue_completed"
+          ]
+        },
+        {
+          "name": "estimated-complete-at",
+          "description_key": "notifications.variable_estimate",
+          "events": [
+            "quest_started"
+          ]
+        },
+        {
+          "name": "reward-image",
+          "description_key": "notifications.variable_reward_image",
+          "events": [
+            "quest_started",
+            "quest_completed"
+          ]
+        },
+        {
+          "name": "succeeded",
+          "description_key": "notifications.succeeded",
+          "events": [
+            "queue_completed"
+          ]
+        },
+        {
+          "name": "failed",
+          "description_key": "notifications.failed",
+          "events": [
+            "queue_completed"
+          ]
+        },
+        {
+          "name": "skipped",
+          "description_key": "notifications.skipped",
+          "events": [
+            "queue_completed"
+          ]
+        }
+      ],
+      "enabled": false,
+      "configured": false,
+      "values": {},
       "secret_fields_set": []
     },
     {

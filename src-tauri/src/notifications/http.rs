@@ -20,6 +20,8 @@ pub fn client() -> Result<reqwest::Client> {
     reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
         .redirect(reqwest::redirect::Policy::none())
+        // Disable reqwest's protocol-level retries as well as application retries.
+        .retry(reqwest::retry::never())
         .build()
         .map_err(|_| Code::Network.into())
 }

@@ -76,11 +76,12 @@ impl NotificationChannel for ExampleChannel {
             description_key: None,
             icon: None,
             enabled_by_default: false,
+            template_variables: &[],
             fields: &[
                 Field { id: "token", label_key: "notifications.example_token",
-                    kind: InputKind::Password, required: true, placeholder: None },
+                    kind: InputKind::Password, required: true, placeholder: None, template: None },
                 Field { id: "recipient", label_key: "notifications.example_recipient",
-                    kind: InputKind::Text, required: true, placeholder: None },
+                    kind: InputKind::Text, required: true, placeholder: None, template: None },
             ],
             help_links: &[],
         }
@@ -118,19 +119,33 @@ for new channels. Do not rename released IDs without a configuration migration.
 ## Fields, credentials and UI
 
 Descriptors are the source of truth for frontend forms. Input kinds are `Text`,
-`Password`, `Url` and `Numeric`. Numeric inputs remain strings, including long
+`Password`, `Url`, `Numeric` and `Textarea`. Numeric inputs remain strings, including long
 recipient IDs. Password fields may contain URLs (Discord's webhook is a secret).
 Every secret must be declared `Password`; regular fields are stored in JSON.
 Use static translation keys in all 16 locales. Optional description/help links
-are supported; icons are `monitor`, `send`, `bell`, or `None` for the fallback.
+are supported; icons are `monitor`, `send`, `bell`, `discord`, `telegram`, or `None`
+for the fallback. The Discord and Telegram logos are bundled SVG components.
 
 The command contract is `draft: { fields: Record<string, string> }`.
+An optional `reset_fields: string[]` restores individual template defaults or
+removes optional passwords. Unknown, duplicate, required-password and ordinary
+non-template resets are rejected. A field cannot appear in both collections.
 Unknown draft fields are rejected. Missing ordinary fields keep the saved value;
 an explicit empty ordinary value clears it. Empty or absent passwords keep the
 saved credential; use clear-channel to remove credentials. Required fields are
 checked centrally, then adapter-specific validation runs. Return
 `Error::new(Code::InvalidConfig).at("field_id")` for ordinary validation errors.
 Never include the input value in errors. Success returns `Sent` or `Submitted`.
+
+Template fields add optional metadata `{ event, part, default_key }`. Their
+values are sparse overrides: an absent key follows the current language, while
+an explicit empty string stays empty. Whitespace is preserved only for template
+fields. Channel descriptors can advertise `template_variables`, with each
+variable's name, description translation key and applicable events. Old
+descriptors omit these additions and keep their existing serialization and
+formatting. The Custom Webhook adapter is the first consumer; it needs these
+shared, additive form/configuration extensions but does not change existing
+adapters' message rendering. See [Custom Webhook protocol](custom-webhook.md).
 
 The settings response is `{ events, channels, results }`. Each channel combines
 its descriptor, enabled/configured flags, ordinary `values` and
@@ -167,7 +182,7 @@ tests. Helpers in `notifications::testing` provide resolved fields, sample event
 and responses. Use fake credentials only; do not perform real account deliveries
 in automated tests or print request URLs, bodies, secrets or raw network errors.
 
-The shared fourth-channel fixture exercises URL/numeric fields, multiple secrets,
+The shared fixture adds a test channel covering URL/numeric fields, multiple secrets,
 save/test/enable/dispatch, rollback, failure isolation and dynamic frontend forms.
 `tests/fixtures/notification-channels.json` is asserted by Rust and consumed by
 frontend tests, so changing the public schema requires updating both sides.
@@ -197,16 +212,20 @@ desktop notification and is skipped in normal automated test runs.
 
 For a repeatable browser check, start `pnpm dev` and open
 `/tests/browser/notification-channels.html` on that server. This development-only
-harness mounts the actual settings component with the shared fourth-channel
-fixture and a mock Tauri bridge. It cannot send real notifications.
+harness mounts the actual settings component with the shared channel fixture
+and a mock Tauri bridge. It cannot send real notifications.
 With Playwright CLI available, replay its scenarios from PowerShell:
 
 ```powershell
 npx --yes --package @playwright/cli playwright-cli -s=channels open http://localhost:5173/tests/browser/notification-channels.html
 npx --yes --package @playwright/cli playwright-cli -s=channels run-code --filename=tests/browser/notification-channels.js
+npx --yes --package @playwright/cli playwright-cli -s=channels run-code --filename=tests/browser/custom-webhook.js
 ```
 
 The replay checks generated fields, password cleanup, save/clear/enable,
 field-level errors, required inputs, four preview types, keyboard focus, a narrow
 dark-theme layout and the existing Telegram/Discord forms. It runs against the
 development server; the harness is not included in the production build.
+The Webhook replay additionally checks sparse defaults, language changes, empty
+overrides, independent reset/token removal, non-debug event tests and readable
+light/dark narrow layouts. Screenshots are written to `output/playwright/`.

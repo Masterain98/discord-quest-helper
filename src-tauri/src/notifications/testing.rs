@@ -84,6 +84,7 @@ const FIELDS: &[Field] = &[
         kind: InputKind::Url,
         required: true,
         placeholder: Some("https://example.invalid/push"),
+        template: None,
     },
     Field {
         id: "api_key",
@@ -91,6 +92,7 @@ const FIELDS: &[Field] = &[
         kind: InputKind::Password,
         required: true,
         placeholder: None,
+        template: None,
     },
     Field {
         id: "signing_key",
@@ -98,6 +100,7 @@ const FIELDS: &[Field] = &[
         kind: InputKind::Password,
         required: true,
         placeholder: None,
+        template: None,
     },
     Field {
         id: "recipient",
@@ -105,6 +108,7 @@ const FIELDS: &[Field] = &[
         kind: InputKind::Numeric,
         required: false,
         placeholder: None,
+        template: None,
     },
 ];
 impl FakeChannel {
@@ -128,6 +132,7 @@ impl NotificationChannel for FakeChannel {
     fn descriptor(&self) -> Descriptor {
         let system = self.id == "system";
         Descriptor {
+            template_variables: &[],
             id: self.id,
             name_key: if system {
                 "notifications.system"
@@ -207,6 +212,7 @@ impl Drop for Fixture {
 }
 fn draft(fields: &[(&str, &str)]) -> Draft {
     Draft {
+        reset_fields: Vec::new(),
         fields: fields
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))
@@ -269,6 +275,7 @@ fn registry_rejects_duplicate_channel_and_field_ids() {
             kind: InputKind::Text,
             required: false,
             placeholder: None,
+            template: None,
         },
         Field {
             id: "same",
@@ -276,6 +283,7 @@ fn registry_rejects_duplicate_channel_and_field_ids() {
             kind: InputKind::Text,
             required: false,
             placeholder: None,
+            template: None,
         },
     ];
     assert!(Registry::new(vec![Arc::new(invalid)]).is_err());
@@ -294,6 +302,18 @@ fn registered_descriptors_have_translations_in_every_supported_locale() {
             let keys = std::iter::once(descriptor.name_key)
                 .chain(descriptor.description_key)
                 .chain(descriptor.fields.iter().map(|f| f.label_key))
+                .chain(
+                    descriptor
+                        .fields
+                        .iter()
+                        .filter_map(|f| f.template.as_ref().map(|t| t.default_key)),
+                )
+                .chain(
+                    descriptor
+                        .template_variables
+                        .iter()
+                        .map(|v| v.description_key),
+                )
                 .chain(descriptor.help_links.iter().map(|link| link.label_key));
             for key in keys {
                 let key = key
