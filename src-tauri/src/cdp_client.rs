@@ -20,18 +20,22 @@ pub use discord_cdp_launch_core::DEFAULT_CDP_PORT;
 /// Gate automation separately from read-only CDP connectivity. Discord's web
 /// modules also exist inside unsupported wrappers such as Equibop.
 pub async fn ensure_supported_automation_client(port: u16) -> Result<(), String> {
-    use discord_cdp_launch_core::CdpPortOwner;
     let owner = tauri::async_runtime::spawn_blocking(move || {
         discord_cdp_launch_core::inspect_cdp_port_owner(port)
     })
     .await
     .map_err(|_| "Could not identify the CDP client".to_string())?;
-    if matches!(owner, CdpPortOwner::Official | CdpPortOwner::Vesktop) {
-        return Ok(());
-    }
+    ensure_supported_automation_endpoint(port, owner).await
+}
 
-    // OS process metadata can be unavailable in sandboxed installations. Use
-    // the browser product as a fallback, without evaluating renderer code.
+async fn ensure_supported_automation_endpoint(
+    port: u16,
+    owner: discord_cdp_launch_core::CdpPortOwner,
+) -> Result<(), String> {
+    use discord_cdp_launch_core::CdpPortOwner;
+    // A port argument is not proof that the process owns the listening socket:
+    // Discord and an unsupported wrapper can both request the same port. Always
+    // identify the responding endpoint, including for recognized process names.
     let metadata = reqwest::Client::builder()
         .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
@@ -59,7 +63,7 @@ pub async fn ensure_supported_automation_client(port: u16) -> Result<(), String>
     if products.iter().any(|name| name == "equibop") {
         return Err(format!("Equibop is not currently supported for CDP quest automation (port {port}). Use official Discord or Vesktop. No quest code was injected."));
     }
-    if owner == CdpPortOwner::None
+    if owner != CdpPortOwner::Other
         && products
             .iter()
             .any(|name| name == "discord" || name == "vesktop")
@@ -1442,6 +1446,24 @@ pub async fn execute_js_on_target(
     execute_js_via_ws(ws_url, js_code, await_promise, timeout_secs).await
 }
 
+fn cdp_evaluation_socket_error(error: tokio_tungstenite::tungstenite::Error) -> anyhow::Error {
+    use tokio_tungstenite::tungstenite::{error::ProtocolError, Error};
+    let disconnected = matches!(
+        &error,
+        Error::ConnectionClosed
+            | Error::AlreadyClosed
+            | Error::Protocol(ProtocolError::ResetWithoutClosingHandshake)
+    ) || matches!(&error, Error::Io(io) if matches!(io.kind(),
+        std::io::ErrorKind::UnexpectedEof | std::io::ErrorKind::ConnectionReset
+        | std::io::ErrorKind::ConnectionAborted | std::io::ErrorKind::BrokenPipe));
+    let error = anyhow::Error::new(error);
+    if disconnected {
+        error.context("cdp_target_invalidated: WebSocket disconnected during evaluation")
+    } else {
+        error.context("CDP WebSocket error")
+    }
+}
+
 async fn execute_js_via_ws(
     ws_url: &str,
     js_code: &str,
@@ -1473,6 +1495,7 @@ async fn execute_js_via_ws(
     )
     .await
     .context("CDP request send timed out")?
+    .map_err(cdp_evaluation_socket_error)
     .context("Failed to send CDP request")?;
 
     let response = tokio::time::timeout(Duration::from_secs(timeout_secs), async {
@@ -1486,7 +1509,10 @@ async fn execute_js_via_ws(
                     }
                 }
                 Ok(Message::Ping(payload)) => {
-                    write.send(Message::Pong(payload)).await?;
+                    write
+                        .send(Message::Pong(payload))
+                        .await
+                        .map_err(cdp_evaluation_socket_error)?;
                 }
                 Ok(Message::Close(_)) => {
                     return Err(anyhow::anyhow!(
@@ -1494,10 +1520,12 @@ async fn execute_js_via_ws(
                     ))
                 }
                 Ok(_) => continue,
-                Err(e) => return Err(anyhow::anyhow!("WebSocket error: {}", e)),
+                Err(e) => return Err(cdp_evaluation_socket_error(e)),
             }
         }
-        Err(anyhow::anyhow!("WebSocket closed unexpectedly"))
+        Err(anyhow::anyhow!(
+            "cdp_target_invalidated: WebSocket stream ended during evaluation"
+        ))
     })
     .await
     .context(format!("CDP request timed out ({}s)", timeout_secs))??;
@@ -1658,43 +1686,97 @@ mod tests {
 
     #[tokio::test]
     async fn automation_preflight_identifies_wrappers_without_renderer_injection() {
+        use discord_cdp_launch_core::CdpPortOwner;
         use std::io::Write;
-        for (agent, expected_error) in [
-            (
-                "Mozilla/5.0 equibop/3.3.2 Chrome/150 Electron/44",
-                Some("Equibop is not currently supported"),
-            ),
-            (
-                "Mozilla/5.0 Chrome/150 Electron/44",
-                Some("Unsupported CDP client"),
-            ),
-            ("Mozilla/5.0 Vesktop/1.6.0 Chrome/150", None),
-            ("Mozilla/5.0 discord/0.0.100 Chrome/150", None),
+        // Recognized port arguments must not bypass metadata from an Equibop
+        // endpoint; an explicitly ambiguous owner must remain unsupported.
+        for owner in [
+            CdpPortOwner::None,
+            CdpPortOwner::Official,
+            CdpPortOwner::Vesktop,
+            CdpPortOwner::Other,
         ] {
-            let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
-            let port = listener.local_addr().unwrap().port();
-            let server = std::thread::spawn(move || {
-                let (mut stream, _) = listener.accept().unwrap();
-                stream
-                    .set_read_timeout(Some(Duration::from_secs(3)))
+            for (agent, expected_error) in [
+                (
+                    "Mozilla/5.0 equibop/3.3.2 Chrome/150 Electron/44",
+                    Some("Equibop is not currently supported"),
+                ),
+                (
+                    "Mozilla/5.0 Chrome/150 Electron/44",
+                    Some("Unsupported CDP client"),
+                ),
+                ("Mozilla/5.0 Vesktop/1.6.0 Chrome/150", None),
+                ("Mozilla/5.0 discord/0.0.100 Chrome/150", None),
+            ] {
+                let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+                let port = listener.local_addr().unwrap().port();
+                let server = std::thread::spawn(move || {
+                    let (mut stream, _) = listener.accept().unwrap();
+                    stream
+                        .set_read_timeout(Some(Duration::from_secs(3)))
+                        .unwrap();
+                    let request = read_fixture_http_request(&mut stream);
+                    assert!(
+                        String::from_utf8_lossy(&request).starts_with("GET /json/version HTTP/1.1")
+                    );
+                    let body = serde_json::json!({"User-Agent": agent}).to_string();
+                    write!(
+                        stream,
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    )
                     .unwrap();
-                let request = read_fixture_http_request(&mut stream);
-                assert!(String::from_utf8_lossy(&request).starts_with("GET /json/version HTTP/1.1"));
-                let body = serde_json::json!({"User-Agent": agent}).to_string();
-                write!(
-                    stream,
-                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                    body.len()
-                )
-                .unwrap();
-            });
-            let result = ensure_supported_automation_client(port).await;
-            server.join().unwrap();
-            match expected_error {
-                Some(message) => assert!(result.unwrap_err().contains(message)),
-                None => result.unwrap(),
+                });
+                let result = ensure_supported_automation_endpoint(port, owner).await;
+                server.join().unwrap();
+                let expected_error = expected_error
+                    .or((owner == CdpPortOwner::Other).then_some("Unsupported CDP client"));
+                match expected_error {
+                    Some(message) => assert!(result.unwrap_err().contains(message)),
+                    None => result.unwrap(),
+                }
             }
         }
+    }
+
+    #[tokio::test]
+    async fn abrupt_evaluation_disconnect_produces_reconnect_guidance() {
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            let mut socket = tokio_tungstenite::tungstenite::accept(stream).unwrap();
+            let request: serde_json::Value =
+                serde_json::from_str(&socket.read().unwrap().into_text().unwrap()).unwrap();
+            assert_eq!(request["method"], "Runtime.evaluate");
+            // Simulate a renderer/process dying without a WebSocket Close frame.
+            drop(socket);
+        });
+        let error = execute_js_via_ws(&format!("ws://127.0.0.1:{port}"), "1", false, 3)
+            .await
+            .unwrap_err();
+        server.join().unwrap();
+        assert!(error_is_target_invalidated(&error));
+        let payload = crate::cdp_quest::quest_error_payload(
+            &error.context("game evaluation failed"),
+            "CDP quest failed",
+        );
+        assert!(payload
+            .as_str()
+            .unwrap()
+            .contains("reconnect before retrying"));
+    }
+
+    #[test]
+    fn unrelated_websocket_protocol_errors_keep_their_diagnostics() {
+        use tokio_tungstenite::tungstenite::{error::ProtocolError, Error};
+        let error = cdp_evaluation_socket_error(Error::Protocol(ProtocolError::InvalidOpcode(15)));
+        assert!(!error_is_target_invalidated(&error));
+        let payload = crate::cdp_quest::quest_error_payload(&error, "CDP quest failed");
+        assert!(payload.as_str().unwrap().contains("invalid opcode"));
     }
 
     fn mk_target(target_type: &str, title: &str, url: &str) -> CdpTarget {
