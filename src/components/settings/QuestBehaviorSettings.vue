@@ -9,6 +9,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
+import DurationSettingInput from '@/components/DurationSettingInput.vue'
 import { useQuestsStore } from '@/stores/quests'
 import AdvancedDisclosure from './AdvancedDisclosure.vue'
 import SettingRow from './SettingRow.vue'
@@ -186,6 +188,32 @@ onMounted(() => {
               </Badge>
             </div>
           </SettingRow>
+        </div>
+      </div>
+
+      <div class="grid gap-3" data-settings-search :data-search-label="t('settings.keep_alive_after_quest')" :data-search-description="t('settings.keep_alive_desc')">
+        <h3 class="text-sm font-medium leading-snug">{{ t('settings.keep_alive_after_quest') }}</h3>
+        <SettingsStatusPanel v-if="questsStore.gameQuestMode !== 'simulate'" tone="info" :icon="AlertTriangle">
+          {{ t('settings.keep_alive_simulate_only') }}
+        </SettingsStatusPanel>
+        <div class="ui-recess rounded-xl border border-border/60 px-4">
+          <SettingRow
+            :label="t('settings.keep_alive_enabled')"
+            :description="t('settings.keep_alive_desc')"
+          >
+            <Switch
+              v-model="questsStore.postQuestKeepAliveEnabled"
+              :aria-label="t('settings.keep_alive_enabled')"
+            />
+          </SettingRow>
+          <DurationSettingInput
+            v-if="questsStore.postQuestKeepAliveEnabled"
+            v-model="questsStore.postQuestKeepAlive"
+            :label="t('settings.keep_alive_duration')"
+            unit="minutes"
+            :min-allowed="1"
+            class="py-4"
+          />
         </div>
       </div>
 

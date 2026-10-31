@@ -29,6 +29,8 @@
 
 > [!WARNING]
 > **This tool is for educational purposes only.** Using this tool may violate Discord's Terms of Service. The authors are not responsible for any consequences resulting from the use of this software. Use at your own risk.
+>
+> **🛡️ Security & Anti-Fraud Audit:** See [`SECURITY_AUDIT_AND_REVERSE_ANALYSIS.md`](./SECURITY_AUDIT_AND_REVERSE_ANALYSIS.md) for the full binary reverse-engineering analysis of `discord_utils.node` (`sub_a3990` -> `sub_a4120` -> `sub_1350`), why unpatched dummy PE binaries and `executableFingerprint: undefined` trigger `Quest Activity Notice`, and how this build synthesizes valid 196-character `executableFingerprint` payloads.
 
 ### Download & Run
 
@@ -73,7 +75,7 @@ If an older AppImage becomes blank after login and logs `GStreamer element autoa
 3. **Manual Input** — enter a token directly when the other methods are unavailable.
 
 > [!TIP]
-> Vesktop is supported through CDP only; it is not scanned as a local token source. You can select a detected installation or add a custom/portable `vesktop.exe` in Settings.
+> Local token detection supports standard Discord, Canary, PTB, Equibop, Legcord, Vesktop, ArmCord, and WebCord profiles on Windows, Linux, and macOS, including supported Linux Flatpak profiles. CDP installation discovery still supports official Discord and Vesktop. Portable installations and custom data directories may require CDP or manual login. See [local token extraction](docs/token-extraction.md) for storage layouts and limits.
 
 ### Complete Quests
 

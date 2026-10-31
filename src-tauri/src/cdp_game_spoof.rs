@@ -13,9 +13,184 @@
 //! Simulation mode on macOS still uses win32 executable names; these helpers
 //! are for CDP store spoofing only.
 
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use once_cell::sync::Lazy;
 use rand::RngExt;
 use serde::Serialize;
+use sha2::{Digest, Sha256};
+
+/// Discord `discord_utils.node` (`sub_a3990` -> `sub_a4120` -> `sub_1350`)
+/// binary fingerprint size (146 bytes = `0x92`) and Base64 length (196 chars).
+pub const EXECUTABLE_FINGERPRINT_BYTE_LEN: usize = 0x92;
+pub const EXECUTABLE_FINGERPRINT_BASE64_LEN: usize = 196;
+pub const EXECUTABLE_FINGERPRINT_SALT: &str = "https://discord.com/careers";
+
+/// Format `exe_path` identically to Discord webpack `Module 973522` (`o.Ic`):
+/// lowercase, normalize `\` to `/`, strip empty segments, and join the last 2 segments.
+pub fn format_quest_executable_path(exe_path: &str) -> String {
+    let normalized = exe_path.trim().to_lowercase().replace('\\', "/");
+    let parts: Vec<&str> = normalized.split('/').filter(|s| !s.is_empty()).collect();
+    if parts.len() >= 2 {
+        format!("{}/{}", parts[parts.len() - 2], parts[parts.len() - 1])
+    } else {
+        parts.first().copied().unwrap_or_default().to_string()
+    }
+}
+
+/// Compute a 32-byte SHA-256 digest of `data`.
+fn sha256_bytes(data: &[u8]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(data);
+    hasher.finalize().into()
+}
+
+/// Read the local Windows `MachineGuid` from `HKLM\SOFTWARE\Microsoft\Cryptography`
+/// (`sub_a3f60` at `0x1800a3f60` in `discord_utils.node`).
+pub fn local_machine_guid() -> Option<String> {
+    #[cfg(windows)]
+    {
+        let guid = windows_registry::LOCAL_MACHINE
+            .open("SOFTWARE\\Microsoft\\Cryptography")
+            .and_then(|key| key.get_string("MachineGuid"))
+            .unwrap_or_default();
+        let trimmed = guid.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+    }
+    None
+}
+
+/// Return the cached local machine hardware prefix used in trusted Rust code to derive `hw_sha256`
+/// (`MachineGuid` on Windows when available, or `"hw:{os_tag}:{arch}:{cores}:"` fallback).
+fn local_machine_hw_prefix() -> &'static str {
+    static LOCAL_MACHINE_HW_PREFIX: Lazy<String> = Lazy::new(|| {
+        if let Some(guid) = local_machine_guid() {
+            return guid;
+        }
+        let cores = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(8);
+        format!(
+            "hw:{}:{}:{}:",
+            DetectableOs::from_host().as_api_tag(),
+            std::env::consts::ARCH,
+            cores
+        )
+    });
+    LOCAL_MACHINE_HW_PREFIX.as_str()
+}
+
+/// Return a one-way SHA-256 hex digest of the local machine hardware prefix for renderer scripts,
+/// ensuring the raw Windows `MachineGuid` is never exposed to the Discord renderer JS context.
+pub fn local_machine_renderer_hw_token() -> &'static str {
+    static RENDERER_HW_TOKEN: Lazy<String> = Lazy::new(|| {
+        let digest =
+            sha256_bytes(format!("dqh-renderer-hw-v1:{}", local_machine_hw_prefix()).as_bytes());
+        digest.iter().map(|b| format!("{b:02x}")).collect()
+    });
+    RENDERER_HW_TOKEN.as_str()
+}
+
+/// Derive the 32-byte hardware + user fingerprint (`SHA-256("{renderer_hw_token}:{user_id}")`),
+/// matching the CDP renderer script's no-harvest fallback so both direct HTTP heartbeats and
+/// CDP-injected game objects produce identical `hw_sha256` bytes without exposing `MachineGuid`.
+pub fn local_machine_hw_sha256(user_id: &str) -> [u8; 32] {
+    sha256_bytes(format!("{}:{user_id}", local_machine_renderer_hw_token()).as_bytes())
+}
+
+/// Synthesize a valid 196-character Base64 `executableFingerprint` matching
+/// `discord_utils.node` (`sub_a3990` -> `sub_a4120` -> `sub_1350`).
+///
+/// Binary layout (`0x92` = 146 bytes before XOR):
+/// - `[0x00]`: `0x01` (struct version, un-XORed in `sub_1350`)
+/// - `[0x01]`: `0x03` (`is_signed (0x01) | is_pe64 (0x02)`) or `0x01` (`is_signed` only)
+/// - `[0x02..0x09]`: `file_size` (`u64 LE`, simulated 20..140 MiB game PE size)
+/// - `[0x0A..0x0D]`: `time_date_stamp` (`u32 LE`, PE COFF compile timestamp)
+/// - `[0x0E..0x11]`: `size_of_image` (`u32 LE`, page-aligned PE `SizeOfImage`)
+/// - `[0x12..0x31]`: `pe_headers_sha256` (32 bytes)
+/// - `[0x32..0x51]`: `hw_sha256` (32 bytes, `SHA-256(MachineGuid || userId)`)
+/// - `[0x52..0x71]`: `sections_sha256` (32 bytes)
+/// - `[0x72..0x91]`: `cert_sha256` (32 bytes, `SHA-256(Publisher_CN || SPKI_SHA256)`)
+///
+/// Stream cipher (`sub_1350`): byte `[0x00]` is kept plaintext (`0x01`), while bytes `[0x01..0x91]`
+/// are XORed with `xor_key[(i - 1) & 31]` where `xor_key = SHA256(user_id + "https://discord.com/careers")`.
+pub fn synthesize_signed_executable_fingerprint(
+    user_id: &str,
+    app_id: &str,
+    exe_path: &str,
+    harvested_hw: Option<&[u8; 32]>,
+    is_pe64: bool,
+) -> String {
+    let norm_path = format_quest_executable_path(exe_path);
+    let seed = format!("{app_id}:{norm_path}");
+    let seed_hash = sha256_bytes(format!("seed:{seed}").as_bytes());
+
+    let base_mb =
+        20u64 + (u32::from_le_bytes(seed_hash[0..4].try_into().unwrap_or([0; 4])) as u64 % 120);
+    let extra_bytes =
+        (u32::from_le_bytes(seed_hash[4..8].try_into().unwrap_or([0; 4])) as u64 % 1024) * 512;
+    let file_size: u64 = base_mb * 1024 * 1024 + extra_bytes;
+
+    let time_date_stamp: u32 = 1_704_067_200u32.wrapping_add(
+        u32::from_le_bytes(seed_hash[8..12].try_into().unwrap_or([0; 4])) % 55_000_000,
+    );
+    let pages: u32 = 0x3800u32
+        + (u16::from_le_bytes(seed_hash[12..14].try_into().unwrap_or([0; 2])) as u32 % 0x4000);
+    let size_of_image: u32 = pages.wrapping_mul(0x1000);
+
+    let h_headers =
+        sha256_bytes(format!("PE_HEADERS_V1:{seed}:{time_date_stamp}:{size_of_image}").as_bytes());
+    let h_sections = sha256_bytes(format!("PE_SECTIONS_V1:{seed}:{size_of_image}").as_bytes());
+    let h_cert = sha256_bytes(format!("AUTHENTICODE_CERT_V1:{seed}").as_bytes());
+
+    let mut plain = [0u8; EXECUTABLE_FINGERPRINT_BYTE_LEN];
+    plain[0x00] = 0x01; // version = 1 (un-XORed in sub_1350)
+    plain[0x01] = if is_pe64 { 0x03 } else { 0x01 };
+    plain[0x02..0x0A].copy_from_slice(&file_size.to_le_bytes());
+    plain[0x0A..0x0E].copy_from_slice(&time_date_stamp.to_le_bytes());
+    plain[0x0E..0x12].copy_from_slice(&size_of_image.to_le_bytes());
+    plain[0x12..0x32].copy_from_slice(&h_headers);
+    if let Some(hw) = harvested_hw {
+        plain[0x32..0x52].copy_from_slice(hw);
+    } else {
+        let h_hw = local_machine_hw_sha256(user_id);
+        plain[0x32..0x52].copy_from_slice(&h_hw);
+    }
+    plain[0x52..0x72].copy_from_slice(&h_sections);
+    plain[0x72..0x92].copy_from_slice(&h_cert);
+
+    let xor_key = sha256_bytes(format!("{user_id}{EXECUTABLE_FINGERPRINT_SALT}").as_bytes());
+    let mut cipher = [0u8; EXECUTABLE_FINGERPRINT_BYTE_LEN];
+    cipher[0] = plain[0];
+    for i in 1..EXECUTABLE_FINGERPRINT_BYTE_LEN {
+        cipher[i] = plain[i] ^ xor_key[(i - 1) & 31];
+    }
+    BASE64.encode(cipher)
+}
+
+/// Decrypt a 196-character Base64 `executableFingerprint` back into its raw 146-byte (`0x92`) struct.
+#[cfg_attr(not(test), allow(dead_code))]
+pub fn decrypt_executable_fingerprint(
+    fingerprint_b64: &str,
+    user_id: &str,
+) -> Option<[u8; EXECUTABLE_FINGERPRINT_BYTE_LEN]> {
+    let trimmed = fingerprint_b64.trim();
+    if trimmed.len() != EXECUTABLE_FINGERPRINT_BASE64_LEN {
+        return None;
+    }
+    let raw = BASE64.decode(trimmed).ok()?;
+    if raw.len() != EXECUTABLE_FINGERPRINT_BYTE_LEN || raw[0] != 0x01 {
+        return None;
+    }
+    let xor_key = sha256_bytes(format!("{user_id}{EXECUTABLE_FINGERPRINT_SALT}").as_bytes());
+    let mut plain = [0u8; EXECUTABLE_FINGERPRINT_BYTE_LEN];
+    plain[0] = raw[0];
+    for i in 1..EXECUTABLE_FINGERPRINT_BYTE_LEN {
+        plain[i] = raw[i] ^ xor_key[(i - 1) & 31];
+    }
+    Some(plain)
+}
 
 /// Discord detectable-game OS tags used by `/applications/public`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,6 +201,7 @@ pub enum DetectableOs {
 }
 
 impl DetectableOs {
+    /// Detect the current host operating system tag for Discord detectable applications.
     pub fn from_host() -> Self {
         match std::env::consts::OS {
             "macos" => Self::Darwin,
@@ -34,6 +210,7 @@ impl DetectableOs {
         }
     }
 
+    /// Return the lowercase OS identifier used by Discord's `/applications/public` API.
     pub fn as_api_tag(self) -> &'static str {
         match self {
             Self::Win32 => "win32",
@@ -58,8 +235,7 @@ impl DetectableOs {
     }
 }
 
-#[cfg(test)]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
 pub struct ApplicationExecutable {
     pub os: String,
     pub name: String,
@@ -71,7 +247,6 @@ pub struct FakeGamePathTemplates {
     pub exe_path: &'static str,
 }
 
-#[cfg(test)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FakeGamePaths {
     pub cmd_line: String,
@@ -147,6 +322,7 @@ pub const RUNNING_GAME_SCHEMA_KEYS: &[&str] = &[
     "windowHandle",
 ];
 
+/// Generate and return a randomized process-scoped `window` bridge property name.
 pub fn cdp_bridge_name() -> &'static str {
     static NAME: Lazy<String> = Lazy::new(|| {
         let mut rng = rand::rng();
@@ -163,6 +339,7 @@ pub fn with_bridge(js: &str) -> String {
     js.replace("__dqh_cdp", cdp_bridge_name())
 }
 
+/// Return the OS-specific `cmd_line` and `exe_path` templates for `os`.
 pub fn path_templates(os: DetectableOs) -> FakeGamePathTemplates {
     match os {
         DetectableOs::Win32 => FakeGamePathTemplates {
@@ -180,11 +357,9 @@ pub fn path_templates(os: DetectableOs) -> FakeGamePathTemplates {
     }
 }
 
-/// Test-only mirrors of the injected JavaScript helpers `sanitizeApp`,
-/// `normalizeExe`, `appSlug`, and `render` in `cdp_quest.rs`. Keep both
-/// implementations in lockstep.
-#[cfg(test)]
-fn sanitize_app_name(app_name: &str) -> String {
+/// Sanitize an application display name for filesystem path construction,
+/// mirroring `sanitizeApp` in `cdp_quest.rs`.
+pub fn sanitize_app_name(app_name: &str) -> String {
     app_name
         .chars()
         .map(|ch| match ch {
@@ -197,8 +372,9 @@ fn sanitize_app_name(app_name: &str) -> String {
         .join(" ")
 }
 
-#[cfg(test)]
-fn normalize_exe_name(os: DetectableOs, raw: &str) -> String {
+/// Normalize a raw executable name from Discord's detectable catalog for `os`,
+/// mirroring `normalizeExe` in `cdp_quest.rs`.
+pub fn normalize_exe_name(os: DetectableOs, raw: &str) -> String {
     let trimmed = raw.trim().trim_start_matches('>');
     let file = trimmed.rsplit(['/', '\\']).next().unwrap_or(trimmed).trim();
     if os.is_unix() {
@@ -216,16 +392,18 @@ fn normalize_exe_name(os: DetectableOs, raw: &str) -> String {
     }
 }
 
-#[cfg(test)]
-fn app_slug(app: &str) -> String {
+/// Convert a sanitized application name into a hyphenated lowercase slug,
+/// mirroring `appSlug` in `cdp_quest.rs`.
+pub fn app_slug(app: &str) -> String {
     app.to_lowercase()
         .split_whitespace()
         .collect::<Vec<_>>()
         .join("-")
 }
 
-#[cfg(test)]
-fn render_template(template: &str, app: &str, exe: &str) -> String {
+/// Render a path/command template with `{app}`, `{app_lower}`, `{app_slug}`, and `{exe}`,
+/// mirroring `render` in `cdp_quest.rs`.
+pub fn render_template(template: &str, app: &str, exe: &str) -> String {
     template
         .replace("{app}", app)
         .replace("{app_lower}", &app.to_lowercase())
@@ -233,8 +411,8 @@ fn render_template(template: &str, app: &str, exe: &str) -> String {
         .replace("{exe}", exe)
 }
 
-#[cfg(test)]
-fn build_fake_game_paths(os: DetectableOs, app_name: &str, exe_name: &str) -> FakeGamePaths {
+/// Build realistic OS-specific `cmd_line`, `exe_path`, and `exe_name` values for a spoofed game.
+pub fn build_fake_game_paths(os: DetectableOs, app_name: &str, exe_name: &str) -> FakeGamePaths {
     let app = sanitize_app_name(app_name);
     let exe = normalize_exe_name(os, exe_name);
     let templates = path_templates(os);
@@ -245,8 +423,9 @@ fn build_fake_game_paths(os: DetectableOs, app_name: &str, exe_name: &str) -> Fa
     }
 }
 
+/// Select the highest-priority executable entry matching `priority`, falling back to the first entry.
 #[cfg(test)]
-fn select_executable<'a>(
+pub fn select_executable<'a>(
     executables: &'a [ApplicationExecutable],
     priority: &[&str],
 ) -> Option<&'a ApplicationExecutable> {
@@ -258,6 +437,7 @@ fn select_executable<'a>(
     executables.first()
 }
 
+/// Merge a synthetic running game entry into `real` without duplicating `id` or `pid`.
 #[cfg(test)]
 fn merge_running_games<'a>(
     real: &[RunningGameIdentity<'a>],
@@ -274,8 +454,8 @@ fn merge_running_games<'a>(
     merged
 }
 
-#[cfg(test)]
-fn match_process_hint<'a>(
+/// Find a simulated process hint matching `exe_name` by name or path basename.
+pub fn match_process_hint<'a>(
     hints: &'a [SimulatedProcessHint],
     exe_name: &str,
 ) -> Option<&'a SimulatedProcessHint> {
@@ -289,6 +469,64 @@ fn match_process_hint<'a>(
     })
 }
 
+/// Resolve the realistic host-OS executable path and PE64 bitness (`(exe_path, is_pe64)`)
+/// for an application from its `/applications/public` metadata (`name` + `executables`) and optional
+/// simulated process hints.
+pub fn resolve_application_exe_metadata(
+    host_os: DetectableOs,
+    app_name: &str,
+    executables: &[ApplicationExecutable],
+    hints: &[SimulatedProcessHint],
+) -> Option<(String, bool)> {
+    let sanitized = sanitize_app_name(app_name);
+    let default_exe = if host_os.is_unix() {
+        sanitized
+    } else {
+        format!("{sanitized}.exe")
+    };
+    let priority = host_os.cdp_executable_os_priority();
+    let (selected_name, is_pe64) = if executables.is_empty() {
+        (default_exe.as_str(), !host_os.is_unix())
+    } else {
+        let selected = priority.iter().find_map(|os| {
+            executables
+                .iter()
+                .find(|item| item.os == *os && !item.name.trim().is_empty())
+        })?;
+        let is_pe =
+            selected.os == "win32" || selected.name.trim().to_ascii_lowercase().ends_with(".exe");
+        (selected.name.as_str(), is_pe)
+    };
+    let paths = build_fake_game_paths(host_os, app_name, selected_name);
+    if let Some(hint) = match_process_hint(hints, &paths.exe_name) {
+        if !hint.exe_path.trim().is_empty() {
+            let hint_is_pe = is_pe64 || hint.exe_path.trim().to_ascii_lowercase().ends_with(".exe");
+            return Some((hint.exe_path.clone(), hint_is_pe));
+        }
+    }
+    if paths.exe_path.is_empty() {
+        None
+    } else {
+        Some((paths.exe_path, is_pe64))
+    }
+}
+
+/// Resolve the realistic host-OS executable path for an application from its
+/// `/applications/public` metadata (`name` + `executables`) and optional
+/// simulated process hints.
+#[cfg(test)]
+pub fn resolve_application_exe_path(
+    host_os: DetectableOs,
+    app_name: &str,
+    executables: &[ApplicationExecutable],
+    hints: &[SimulatedProcessHint],
+) -> String {
+    resolve_application_exe_metadata(host_os, app_name, executables, hints)
+        .map(|(path, _)| path)
+        .unwrap_or_default()
+}
+
+/// Return the real-time 1x video quest progress timing parameters.
 pub fn cdp_video_timing() -> CdpVideoTiming {
     CdpVideoTiming {
         speed: 10,
@@ -297,6 +535,7 @@ pub fn cdp_video_timing() -> CdpVideoTiming {
     }
 }
 
+/// Compute a generous upper-bound timeout in seconds for a CDP video quest run.
 pub fn cdp_video_timeout_secs(seconds_needed: u32, initial_progress: f64) -> u64 {
     let remaining = (seconds_needed as f64 - initial_progress).max(0.0);
     let timing = cdp_video_timing();
@@ -304,10 +543,12 @@ pub fn cdp_video_timeout_secs(seconds_needed: u32, initial_progress: f64) -> u64
     (wall * 2.0).ceil() as u64 + 300
 }
 
+/// Clamp the requested `PLAY_ACTIVITY` heartbeat interval to at least `OFFICIAL_GAME_HEARTBEAT_SECS`.
 pub fn align_play_activity_heartbeat_secs(requested: u64) -> u64 {
     requested.max(OFFICIAL_GAME_HEARTBEAT_SECS)
 }
 
+/// Verify that all CDP spoof state flags in `verify` are completely clean.
 pub fn cleanup_verify_is_clean(verify: &CleanupVerify) -> bool {
     !verify.dqh_present
         && !verify.spoof_active
@@ -319,6 +560,7 @@ pub fn cleanup_verify_is_clean(verify: &CleanupVerify) -> bool {
         && !verify.debug_game_present
 }
 
+/// Parse a `CleanupVerify` struct from the JSON returned by `JS_VERIFY_CLEANUP_STATE`.
 pub fn cleanup_verify_from_json(parsed: &serde_json::Value) -> Option<CleanupVerify> {
     if parsed.get("success") != Some(&serde_json::json!(true)) {
         return None;
@@ -631,11 +873,122 @@ mod tests {
         assert!(cleanup_verify_from_json(&serde_json::json!({ "success": false })).is_none());
     }
 
+    /// Verify that `with_bridge` replaces the `__dqh_cdp` placeholder with the per-process bridge token.
     #[test]
     fn with_bridge_strips_stable_dqh_identifier() {
         let rewritten = with_bridge("window.__dqh_cdp = 1; delete window.__dqh_cdp;");
         assert!(!rewritten.contains("__dqh_cdp"));
         assert!(rewritten.contains(cdp_bridge_name()));
         assert!(cdp_bridge_name().starts_with("__n"));
+    }
+
+    /// Verify that `format_quest_executable_path` matches Discord's `Module 973522` (`o.Ic`) 2-segment normalization.
+    #[test]
+    fn format_quest_executable_path_matches_module_973522() {
+        assert_eq!(
+            format_quest_executable_path(r"C:\Program Files\Cool Game\Win64\Game.exe"),
+            "win64/game.exe"
+        );
+        assert_eq!(
+            format_quest_executable_path("c:/program files/cool game/Game.exe"),
+            "cool game/game.exe"
+        );
+    }
+
+    /// Verify that `synthesize_signed_executable_fingerprint` and `decrypt_executable_fingerprint` round-trip all 146 bytes.
+    #[test]
+    fn synthesize_and_decrypt_executable_fingerprint_roundtrip() {
+        let user_id = "257900031351193600";
+        let app_id = "1158877933042143272";
+        let exe_path = r"C:\Program Files\Counter-Strike 2\win64\cs2.exe";
+        let fp = synthesize_signed_executable_fingerprint(user_id, app_id, exe_path, None, true);
+        assert_eq!(fp.len(), EXECUTABLE_FINGERPRINT_BASE64_LEN);
+
+        let raw = BASE64.decode(&fp).expect("base64 decode");
+        assert_eq!(raw[0], 0x01, "byte 0 must remain plaintext version 0x01");
+
+        let plain = decrypt_executable_fingerprint(&fp, user_id).expect("decrypt");
+        assert_eq!(plain[0x00], 0x01, "version must be 1");
+        assert_eq!(plain[0x01], 0x03, "flags must set is_signed | is_pe64");
+        let file_size = u64::from_le_bytes(plain[0x02..0x0A].try_into().unwrap());
+        assert!(
+            (20 * 1024 * 1024..140 * 1024 * 1024).contains(&file_size),
+            "unexpected file_size: {file_size}"
+        );
+        let time_date_stamp = u32::from_le_bytes(plain[0x0A..0x0E].try_into().unwrap());
+        assert!(time_date_stamp >= 1_704_067_200);
+        let size_of_image = u32::from_le_bytes(plain[0x0E..0x12].try_into().unwrap());
+        assert_eq!(
+            size_of_image & 0xFFF,
+            0,
+            "size_of_image must be page-aligned"
+        );
+        assert!(plain[0x12..0x32].iter().any(|&b| b != 0));
+        assert!(plain[0x32..0x52].iter().any(|&b| b != 0));
+        assert!(plain[0x52..0x72].iter().any(|&b| b != 0));
+        assert!(plain[0x72..0x92].iter().any(|&b| b != 0));
+
+        let fp_pe32 =
+            synthesize_signed_executable_fingerprint(user_id, app_id, exe_path, None, false);
+        let plain_pe32 = decrypt_executable_fingerprint(&fp_pe32, user_id).expect("decrypt pe32");
+        assert_eq!(plain_pe32[0x01], 0x01, "flags must set is_signed only");
+    }
+
+    /// Verify that `synthesize_signed_executable_fingerprint` embeds a caller-provided `hw_sha256` block at `[0x32..0x52)`.
+    #[test]
+    fn synthesize_uses_harvested_hw_tail() {
+        let hw = [0xABu8; 32];
+        let fp = synthesize_signed_executable_fingerprint("1", "2", "a/b.exe", Some(&hw), true);
+        let plain = decrypt_executable_fingerprint(&fp, "1").expect("decrypt");
+        assert_eq!(&plain[0x32..0x52], &hw[..]);
+    }
+
+    /// Verify that `decrypt_executable_fingerprint` rejects malformed or wrong-length Base64 strings.
+    #[test]
+    fn decrypt_rejects_malformed_input() {
+        assert!(decrypt_executable_fingerprint("not base64!", "1").is_none());
+        assert!(decrypt_executable_fingerprint("AAAA", "1").is_none());
+        let bad_b64 = "!".repeat(EXECUTABLE_FINGERPRINT_BASE64_LEN);
+        assert!(decrypt_executable_fingerprint(&bad_b64, "1").is_none());
+    }
+
+    /// Verify that `resolve_application_exe_path` ignores foreign-OS or blank entries and preserves PE bitness on Unix `win32` fallbacks.
+    #[test]
+    fn resolve_application_exe_path_rejects_foreign_platform_executables() {
+        let foreign = [ApplicationExecutable {
+            os: "darwin".into(),
+            name: "Game.app/Contents/MacOS/Game".into(),
+        }];
+        assert_eq!(
+            resolve_application_exe_path(DetectableOs::Win32, "Cool Game", &foreign, &[]),
+            ""
+        );
+        let matching = [ApplicationExecutable {
+            os: "win32".into(),
+            name: "win64/game.exe".into(),
+        }];
+        assert_eq!(
+            resolve_application_exe_path(DetectableOs::Win32, "Cool Game", &matching, &[]),
+            "c:/program files/cool game/game.exe"
+        );
+        let blank_linux_then_win32 = [
+            ApplicationExecutable {
+                os: "linux".into(),
+                name: "   ".into(),
+            },
+            ApplicationExecutable {
+                os: "win32".into(),
+                name: "win64/game.exe".into(),
+            },
+        ];
+        assert_eq!(
+            resolve_application_exe_metadata(
+                DetectableOs::Linux,
+                "Cool Game",
+                &blank_linux_then_win32,
+                &[],
+            ),
+            Some(("/opt/cool-game/game".to_string(), true))
+        );
     }
 }

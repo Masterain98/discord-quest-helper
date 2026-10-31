@@ -66,5 +66,23 @@ fn macos_discovery_supports_all_channels_and_fallback_executable() {
         ]
     );
 
+    use discord_cdp_launch_core::{
+        custom_executable_installation, refresh_automatic_installation, DiscoverySource,
+        LaunchTarget, ProviderId,
+    };
+    let old = root.join("Discord PTB.app/Contents/MacOS/Discord PTB");
+    let mut saved =
+        custom_executable_installation(&ProviderId::official_discord(), old.clone()).unwrap();
+    saved.source = DiscoverySource::StandardPath;
+    let saved = refresh_automatic_installation(&saved).unwrap().unwrap();
+    fs::remove_file(old).unwrap();
+    let fallback = root.join("Discord PTB.app/Contents/MacOS/Discord");
+    fs::write(&fallback, []).unwrap();
+    let updated = refresh_automatic_installation(&saved).unwrap().unwrap();
+    assert_eq!(updated.id, saved.id);
+    assert!(
+        matches!(updated.launch_target, LaunchTarget::Executable { path, .. } if path == fallback)
+    );
+
     fs::remove_dir_all(root).unwrap();
 }

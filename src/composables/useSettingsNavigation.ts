@@ -4,6 +4,7 @@ const SETTINGS_SECTION_STORAGE_KEY = 'questHelper_lastSettingsSection'
 export const settingsSections = [
   'account',
   'quest_behavior',
+  'notifications',
   'discord_integration',
   'appearance',
   'diagnostics',

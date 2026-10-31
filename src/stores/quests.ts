@@ -1,10 +1,13 @@
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
-import type { Quest, DetectableGame, DesktopClientArg, ExcludedQuest, GameQuestMode, PlatformCapabilities } from '@/api/tauri'
+import type { Quest, DetectableGame, DesktopClientArg, ExcludedQuest, GameIdleDuration, GameQuestMode, PlatformCapabilities } from '@/api/tauri'
 import { firstProgressValue, firstStartableTask, getQuestKind, isVideoTask, playActivityProgressPercentage } from '@/utils/questTasks'
 import { canQueueGroupMember } from '@/utils/questGroups'
+import { clampGameIdleDuration, loadGameIdleDuration, resolveGameIdleDuration } from '@/utils/durationSetting'
 import { resolveSimulationExecutable } from '@/utils/executables'
 import { commandErrorMessage } from '@/utils/commandError'
+import { QuestNotifications, notificationRewardImage, estimatedCompletionAt } from '@/utils/questNotifications'
+import { dispatchNotification } from '@/api/notifications'
 
 /** Quest with optional pre-selected executable name for batch game quest processing */
 interface QueueItem extends Quest {
@@ -70,6 +73,21 @@ const STORAGE_SPEED_KEY = 'questHelper_speedMultiplier'
 const STORAGE_SIMULATION_PATH_KEY = 'questHelper_simulationPath'
 
 export const useQuestsStore = defineStore('quests', () => {
+  const notifications = new QuestNotifications(event => {
+    // Delivery is independent of task execution. Never surface native errors (or URLs)
+    // through the quest error/log path; the notification settings own delivery status.
+    void dispatchNotification(event).catch(() => undefined)
+  })
+  let notificationGeneration = 0
+  function notifyStarted(questId: string, generation: number, remainingSeconds: number, speed = 1, source?: Quest) {
+    if (generation !== notificationGeneration || activeQuestId.value !== questId) return
+    const quest = source ?? quests.value.find(item => item.id === questId)
+    if (isQueueRunning.value) notifications.beginQueue()
+    notifications.started(questId, quest?.config.messages.quest_name || quest?.config.messages.game_title || questId, {
+      reward_image: quest ? notificationRewardImage(quest) : null,
+      estimated_complete_at: estimatedCompletionAt(remainingSeconds, speed),
+    })
+  }
   const quests = ref<Quest[]>([])
   const excludedQuests = ref<ExcludedQuest[]>([])
   const questEnrollmentBlockedUntil = ref<string | null>(null)
@@ -366,6 +384,25 @@ export const useQuestsStore = defineStore('quests', () => {
     }
   }, { flush: 'sync' })
 
+  // Post-quest keep-alive: after a simulated game quest completes, keep the
+  // game process connected for a while before tearing it down. CDP quests are
+  // excluded — the backend drops the spoofed presence before the completion
+  // event reaches this store, so there is no connection left to hold.
+  const STORAGE_KEEP_ALIVE_ENABLED_KEY = 'questHelper_postQuestKeepAliveEnabled'
+  const STORAGE_KEEP_ALIVE_KEY = 'questHelper_postQuestKeepAlive'
+  const DEFAULT_KEEP_ALIVE_DURATION: GameIdleDuration = { mode: 'random', fixed: 10, min: 5, max: 15 }
+  const postQuestKeepAliveEnabled = ref(localStorage.getItem(STORAGE_KEEP_ALIVE_ENABLED_KEY) === 'true')
+  const postQuestKeepAlive = ref(loadGameIdleDuration(STORAGE_KEEP_ALIVE_KEY, DEFAULT_KEEP_ALIVE_DURATION, 1))
+
+  watch(postQuestKeepAliveEnabled, (enabled) => {
+    localStorage.setItem(STORAGE_KEEP_ALIVE_ENABLED_KEY, String(enabled))
+  }, { flush: 'sync' })
+  watch(postQuestKeepAlive, (value) => {
+    const next = clampGameIdleDuration(value, 1)
+    if (next !== value) postQuestKeepAlive.value = next
+    localStorage.setItem(STORAGE_KEEP_ALIVE_KEY, JSON.stringify(next))
+  }, { flush: 'sync' })
+
   let progressUnlisten: (() => void) | null = null
   let completeUnlisten: (() => void) | null = null
   let errorUnlisten: (() => void) | null = null
@@ -393,6 +430,9 @@ export const useQuestsStore = defineStore('quests', () => {
   // Account changes invalidate both cached rows and requests from the old session.
   function setQuestAccount(accountId: string | null) {
     if (questAccountId.value === accountId) return
+    notificationGeneration++
+    notifications.reset()
+    void cancelKeepAliveAndStopGame()
     resetOrbsState()
     questAccountId.value = accountId
     queueStartRevision++
@@ -546,25 +586,139 @@ export const useQuestsStore = defineStore('quests', () => {
     orbsTotalRedeemedError.value = null
   }
 
-  async function finishQueuedQuest(questId: string) {
-    if (stopping.value) return
-    if (!isQueueRunning.value || questQueue.value[0]?.id !== questId || activeQuestId.value !== questId) return
-    if (completionClaimedFor === questId) return
-    completionClaimedFor = questId
+  // Post-quest keep-alive machinery. A scheduled teardown keeps the quest ID
+  // claimed (`activeQuestId`, `completionClaimedFor`) so neither polling nor a
+  // late completion event can run cleanup twice, and a user Stop stays
+  // functional: `stop()` cancels the pending timer and tears down immediately.
+  let keepAliveTimer: ReturnType<typeof setTimeout> | null = null
+  let keepAliveQuestId: string | null = null
+  let keepAliveGeneration = 0
+  const keepAliveEndsAt = ref<number | null>(null)
+
+  function cancelKeepAlive(): void {
+    if (keepAliveTimer !== null) {
+      clearTimeout(keepAliveTimer)
+      keepAliveTimer = null
+    }
+    keepAliveQuestId = null
+    keepAliveEndsAt.value = null
+    keepAliveGeneration++
+  }
+
+  // Cancels a pending keep-alive and closes the game it was holding open:
+  // with the timer gone, nothing else would ever tear it down. No-op when no
+  // keep-alive is pending, so an in-flight quest is never touched.
+  async function cancelKeepAliveAndStopGame(): Promise<void> {
+    if (keepAliveQuestId === null) {
+      cancelKeepAlive()
+      return
+    }
+    const exe = activeGameExe.value
+    cancelKeepAlive()
+    if (!exe) return
+    try {
+      await stopSimulatedGame(exe)
+    } catch (cleanupError) {
+      console.error('Failed to close the game held open by keep-alive:', cleanupError)
+      return
+    }
+    if (activeGameExe.value === exe) activeGameExe.value = null
+  }
+
+  // Webview timers clamp delays above ~2^31 ms, so long keep-alives wait in
+  // timer-safe chunks and re-check the configured end time before tearing
+  // down (a clamped or early-firing timer must not close the game sooner).
+  const KEEP_ALIVE_MAX_TIMER_MS = 2_147_000_000
+
+  function scheduleKeepAliveTeardown(questId: string, teardown: () => Promise<unknown>): boolean {
+    if (!postQuestKeepAliveEnabled.value || !activeGameExe.value) return false
+    if (keepAliveQuestId === questId) return true
+    cancelKeepAlive()
+    const minutes = resolveGameIdleDuration(postQuestKeepAlive.value)
+    keepAliveQuestId = questId
+    keepAliveEndsAt.value = Date.now() + minutes * 60_000
+    const generation = keepAliveGeneration
+    const wait = (remainingMs: number) => {
+      keepAliveTimer = setTimeout(() => {
+        keepAliveTimer = null
+        if (generation !== keepAliveGeneration) return
+        const leftMs = (keepAliveEndsAt.value ?? 0) - Date.now()
+        if (leftMs > 0) {
+          wait(Math.min(leftMs, KEEP_ALIVE_MAX_TIMER_MS))
+          return
+        }
+        keepAliveQuestId = null
+        keepAliveEndsAt.value = null
+        // A single quest can become the queue head during the wait. Resolve
+        // its completion path now so newly queued tasks survive and advance.
+        if (isQueueRunning.value && questQueue.value[0]?.id === questId) {
+          void completeQueuedQuest(questId)
+        } else {
+          void teardown()
+        }
+      }, Math.min(remainingMs, KEEP_ALIVE_MAX_TIMER_MS))
+    }
+    wait(minutes * 60_000)
+    return true
+  }
+
+  /** Closes a completed quest's native game connection, returning the failure detail instead of throwing. */
+  async function stopQuestGameConnection(): Promise<string | null> {
     const completedExecutable = activeGameExe.value
-    completingQuestId.value = questId
-    activeQuestId.value = null
     try {
       if (completedExecutable && gameQuestMode.value === 'simulate') {
         await stopSimulatedGame(completedExecutable)
         await emit('event_disconnect')
       }
       await stopGameSimulationUsage()
+      return null
     } catch (cleanupError) {
+      return cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
+    }
+  }
+
+  async function completeActiveQuest(questId: string) {
+    // Claim completion and null the active ID before the awaited cleanup:
+    // stop() relies on `completingQuestId && !activeQuestId` to skip
+    // already-owned cleanup, and the completed head must not look startable
+    // while history finishes.
+    completingQuestId.value = questId
+    activeQuestId.value = null
+    const cleanupError = await stopQuestGameConnection()
+    if (cleanupError !== null) {
+      activeQuestId.value = questId
+      error.value = cleanupError
+      stopProgressSimulation()
+      cleanupListeners()
+      stopPolling()
+      completingQuestId.value = null
+      return
+    }
+    // Normal single quest completion
+    activeQuestType.value = null
+    activeQuestProgress.value = 0
+    activeQuestTargetDuration.value = 0
+    activeGameExe.value = null
+    localProgress.value = 0
+    stopProgressSimulation()
+    completingQuestId.value = null
+
+    void fetchQuests(true, true)
+    cleanupListeners()
+    stopPolling()
+  }
+
+  async function completeQueuedQuest(questId: string) {
+    completingQuestId.value = questId
+    // Same ordering contract as completeActiveQuest: null the ID before the
+    // awaited cleanup.
+    activeQuestId.value = null
+    const cleanupError = await stopQuestGameConnection()
+    if (cleanupError !== null) {
       // Keep the queue in place until both native activity and its history
       // segment have been finalized. The user can retry cleanup with Stop.
       activeQuestId.value = questId
-      error.value = cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
+      error.value = cleanupError
       isQueueRunning.value = false
       stopProgressSimulation()
       cleanupListeners()
@@ -588,6 +742,18 @@ export const useQuestsStore = defineStore('quests', () => {
     if (isQueueRunning.value) scheduleNextQueuedQuest()
   }
 
+  async function finishQueuedQuest(questId: string) {
+    if (stopping.value) return
+    if (!isQueueRunning.value || questQueue.value[0]?.id !== questId || activeQuestId.value !== questId) return
+    if (completionClaimedFor === questId) return
+    completionClaimedFor = questId
+    notifications.completed(questId)
+    // While keep-alive holds the game open the quest stays the locked queue
+    // head; the queue advances only after the delayed teardown closes it.
+    if (scheduleKeepAliveTeardown(questId, () => completeQueuedQuest(questId))) return
+    await completeQueuedQuest(questId)
+  }
+
   async function checkActiveQuestStatus() {
     if (stopping.value) return
     if (!activeQuestId.value) return
@@ -603,9 +769,15 @@ export const useQuestsStore = defineStore('quests', () => {
         return
       }
 
-      console.log('Quest completed detected via polling, stopping game.')
+      console.log('Quest completed detected via polling.')
       if (completionClaimedFor === quest.id) return
       completionClaimedFor = quest.id
+      notifications.completed(quest.id)
+      activeQuestProgress.value = 100
+      // Polling stays alive during keep-alive: the claim plus the scheduled
+      // quest ID make repeated ticks no-ops, and stop() remains the
+      // user-facing immediate exit.
+      if (scheduleKeepAliveTeardown(quest.id, () => stop('all'))) return
       await stop()
       stopPolling()
       return
@@ -722,6 +894,7 @@ export const useQuestsStore = defineStore('quests', () => {
   }
 
   async function startVideo(questId: string, secondsNeeded: number, initialProgress: number) {
+    const notificationEpoch = notificationGeneration
     startingQuestId.value = questId
     try {
       const progressPct = (secondsNeeded > 0) ? (initialProgress / secondsNeeded) * 100 : 0
@@ -742,6 +915,7 @@ export const useQuestsStore = defineStore('quests', () => {
       // CDP video progress is server-enforced real-time; don't inflate local simulation
       startProgressSimulation(gameQuestMode.value === 'cdp' ? 1.0 : speedMultiplier.value)
       setupListeners()
+      notifyStarted(questId, notificationEpoch, secondsNeeded - initialProgress, gameQuestMode.value === 'cdp' ? 1 : speedMultiplier.value)
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
       throw e
@@ -751,6 +925,7 @@ export const useQuestsStore = defineStore('quests', () => {
   }
 
   async function startStream(questId: string, streamKey: string, secondsNeeded: number, initialProgress: number) {
+    const notificationEpoch = notificationGeneration
     startingQuestId.value = questId
     try {
       const progressPct = (secondsNeeded > 0) ? (initialProgress / secondsNeeded) * 100 : 0
@@ -762,6 +937,7 @@ export const useQuestsStore = defineStore('quests', () => {
 
       startProgressSimulation(1.0)
       setupListeners()
+      notifyStarted(questId, notificationEpoch, secondsNeeded - initialProgress)
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
       throw e
@@ -771,6 +947,7 @@ export const useQuestsStore = defineStore('quests', () => {
   }
 
   async function startPlay(quest: Quest, secondsNeeded: number, initialProgress: number, selectedExeName?: string) {
+    const notificationEpoch = notificationGeneration
     startingQuestId.value = quest.id
     error.value = null
     // Remember the request so a soft error can offer "switch to CDP and retry".
@@ -922,6 +1099,7 @@ export const useQuestsStore = defineStore('quests', () => {
         const detail = historyError instanceof Error ? historyError.message : String(historyError)
         throw new Error(`Failed to start game simulation history: ${detail}`)
       }
+      notifyStarted(quest.id, notificationEpoch, secondsNeeded - initialProgress, 1, quest)
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
       // Clean up if started (only for simulate mode)
@@ -942,6 +1120,7 @@ export const useQuestsStore = defineStore('quests', () => {
   }
 
   async function startActivity(quest: Quest) {
+    const notificationEpoch = notificationGeneration
     startingQuestId.value = quest.id
     error.value = null
     try {
@@ -1011,6 +1190,7 @@ export const useQuestsStore = defineStore('quests', () => {
       startProgressSimulation(1.0)
       setupListeners()
 
+      notifyStarted(quest.id, notificationEpoch, remainingSeconds, 1, quest)
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
       throw e
@@ -1020,6 +1200,7 @@ export const useQuestsStore = defineStore('quests', () => {
   }
 
   async function startPlayActivity(quest: Quest, secondsNeeded: number, initialProgress: number) {
+    const notificationEpoch = notificationGeneration
     startingQuestId.value = quest.id
     error.value = null
     let preserveActiveState = false
@@ -1071,6 +1252,7 @@ export const useQuestsStore = defineStore('quests', () => {
         }
         throw new Error(`Failed to start activity simulation history: ${detail}`)
       }
+      notifyStarted(quest.id, notificationEpoch, secondsNeeded - initialProgress, 1, quest)
     } catch (e) {
       if (!preserveActiveState && activeQuestId.value === quest.id) {
         activeQuestId.value = null
@@ -1137,7 +1319,12 @@ export const useQuestsStore = defineStore('quests', () => {
 
   async function stop(scope: 'current' | 'all' = 'all'): Promise<boolean> {
     if (stopping.value || (scope === 'current' && !activeQuestId.value)) return false
+    // Stop during keep-alive means "close it now": cancel the pending delayed
+    // teardown and let this function do the immediate cleanup.
+    cancelKeepAlive()
     const stoppedQuestId = activeQuestId.value
+    notificationGeneration++
+    notifications.abandonQueue()
     cancelQueueAdvance()
     queueStartRevision++
     preparingQueuedQuestId.value = null
@@ -1237,6 +1424,7 @@ export const useQuestsStore = defineStore('quests', () => {
       localProgress.value = 0
 
       cleanupListeners()
+      notifications.cancelActive()
       stoppedSuccessfully = true
 
       // Refresh quests to get latest status
@@ -1280,33 +1468,9 @@ export const useQuestsStore = defineStore('quests', () => {
       } else {
         if (completionClaimedFor === listenedQuestId) return
         completionClaimedFor = listenedQuestId
-        const completedExecutable = activeGameExe.value
-        activeQuestId.value = null
-        try {
-          if (completedExecutable && gameQuestMode.value === 'simulate') {
-            await stopSimulatedGame(completedExecutable)
-            await emit('event_disconnect')
-          }
-          await stopGameSimulationUsage()
-        } catch (cleanupError) {
-          activeQuestId.value = listenedQuestId
-          error.value = cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
-          stopProgressSimulation()
-          cleanupListeners()
-          stopPolling()
-          return
-        }
-        // Normal single quest completion
-        activeQuestType.value = null
-        activeQuestProgress.value = 0
-        activeQuestTargetDuration.value = 0
-        activeGameExe.value = null
-        localProgress.value = 0
-        stopProgressSimulation()
-
-        void fetchQuests(true, true)
-        cleanupListeners()
-        stopPolling()
+        notifications.completed(listenedQuestId)
+        if (scheduleKeepAliveTeardown(listenedQuestId, () => completeActiveQuest(listenedQuestId))) return
+        await completeActiveQuest(listenedQuestId)
       }
     }).then((unlisten) => {
       completeUnlisten = unlisten
@@ -1314,7 +1478,11 @@ export const useQuestsStore = defineStore('quests', () => {
     })
 
     onQuestError(async (err) => {
+      if (!listenedQuestId || activeQuestId.value !== listenedQuestId) return
+      notifications.failed()
       console.log('Received quest-error event:', err)
+      // An errored quest is not a completed one; drop any pending keep-alive.
+      cancelKeepAlive()
       const failedExecutable = activeGameExe.value
       if (failedExecutable && gameQuestMode.value === 'simulate') {
         await stopSimulatedGame(failedExecutable).catch(() => undefined)
@@ -1439,6 +1607,7 @@ export const useQuestsStore = defineStore('quests', () => {
     if (index < 0) return false
     questQueue.value.splice(index, 1)
     if (questQueue.value.length === 0) {
+      notifications.abandonQueue()
       isQueueRunning.value = false
       cancelQueueAdvance()
     }
@@ -1474,6 +1643,7 @@ export const useQuestsStore = defineStore('quests', () => {
 
   function clearUpcomingQueue() {
     if (queueEditingDisabled.value) return
+    notifications.abandonQueue()
     questQueue.value = questQueue.value.filter(item => item.id === lockedQueueQuestId.value)
     if (questQueue.value.length === 0) {
       isQueueRunning.value = false
@@ -1485,10 +1655,12 @@ export const useQuestsStore = defineStore('quests', () => {
     if (stopping.value || lockedQueueQuestId.value) return
     cancelQueueAdvance()
     if (questQueue.value.length === 0) {
+      notifications.drained()
       isQueueRunning.value = false
       return
     }
 
+    notifications.beginQueue()
     const revision = ++queueStartRevision
     isQueueRunning.value = true
     queuePauseReason.value = null
@@ -1512,6 +1684,7 @@ export const useQuestsStore = defineStore('quests', () => {
         preparingQueuedQuestId.value = queued.id
         const latest = quests.value.find(quest => quest.id === queued.id)
         if (!latest || !canQueueGroupMember(latest)) {
+          notifications.skipped()
           questQueue.value.shift()
           continue
         }
@@ -1528,9 +1701,11 @@ export const useQuestsStore = defineStore('quests', () => {
         }
         return // Existing completion handlers advance the serial queue.
       }
+      notifications.drained()
       isQueueRunning.value = false
     } catch (e) {
       if (revision !== queueStartRevision) return
+      notifications.failed()
       error.value = e instanceof Error ? e.message : String(e)
       questQueue.value.shift()
       if (isQueueRunning.value) scheduleNextQueuedQuest()
@@ -1561,6 +1736,7 @@ export const useQuestsStore = defineStore('quests', () => {
     const members = new Set(ids)
     questQueue.value = questQueue.value.filter(item => item.id === lockedQueueQuestId.value || !members.has(item.id))
     if (!questQueue.value.length) {
+      notifications.abandonQueue()
       isQueueRunning.value = false
       cancelQueueAdvance()
     }
@@ -1596,6 +1772,7 @@ export const useQuestsStore = defineStore('quests', () => {
     }
 
     questQueue.value.push(q)
+    notifications.beginQueue()
     isQueueRunning.value = true
     return true
   }
@@ -1636,9 +1813,12 @@ export const useQuestsStore = defineStore('quests', () => {
   }
 
   function resetForLogout() {
+    notificationGeneration++
+    notifications.reset()
     queueStartRevision++
     preparingQueuedQuestId.value = null
     cancelQueueAdvance()
+    void cancelKeepAliveAndStopGame()
     stopDialogOpen.value = false
     stopDialogQuestId.value = null
     completingQuestId.value = null
@@ -1744,6 +1924,7 @@ export const useQuestsStore = defineStore('quests', () => {
     queuePauseReason.value = null
 
     if (wasSimIncompatible && isQueueRunning.value && questQueue.value.length > 0) {
+      notifications.skipped()
       questQueue.value.shift()
       void processQueue()
     }
@@ -1782,6 +1963,9 @@ export const useQuestsStore = defineStore('quests', () => {
     resetSimulationPath,
     activityCheckpointMin,
     activityCheckpointMax,
+    postQuestKeepAliveEnabled,
+    postQuestKeepAlive,
+    keepAliveEndsAt,
     activeQuestId,
     activeQuestType,
     activeQuestProgress,

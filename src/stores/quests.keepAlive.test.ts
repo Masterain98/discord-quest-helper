@@ -1,0 +1,304 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import type { Quest } from '@/api/tauri'
+import { useQuestsStore } from './quests'
+
+const mocks = vi.hoisted(() => ({
+  getPlatformCapabilities: vi.fn(),
+  getQuestsFull: vi.fn(),
+  startVideoQuest: vi.fn(),
+  stopQuest: vi.fn(),
+  stopSimulatedGame: vi.fn(),
+  fetchDetectableGames: vi.fn(),
+  createSimulatedGame: vi.fn().mockResolvedValue(undefined),
+  runSimulatedGame: vi.fn().mockResolvedValue(undefined),
+  connectToDiscordRpc: vi.fn().mockResolvedValue(undefined),
+  startGameSimulationUsage: vi.fn().mockResolvedValue(undefined),
+  stopGameSimulationUsage: vi.fn(),
+  onQuestComplete: vi.fn(),
+  dispatchNotification: vi.fn().mockResolvedValue(undefined),
+}))
+
+vi.mock('@/api/notifications', () => ({ dispatchNotification: mocks.dispatchNotification }))
+
+vi.mock('@/api/tauri', () => ({
+  getPlatformCapabilities: mocks.getPlatformCapabilities,
+  getQuestsFull: mocks.getQuestsFull,
+  startVideoQuest: mocks.startVideoQuest,
+  stopQuest: mocks.stopQuest,
+  stopSimulatedGame: mocks.stopSimulatedGame,
+  fetchDetectableGames: mocks.fetchDetectableGames,
+  createSimulatedGame: mocks.createSimulatedGame,
+  runSimulatedGame: mocks.runSimulatedGame,
+  connectToDiscordRpc: mocks.connectToDiscordRpc,
+  startGameSimulationUsage: mocks.startGameSimulationUsage,
+  stopGameSimulationUsage: mocks.stopGameSimulationUsage,
+  onQuestProgress: vi.fn().mockResolvedValue(() => undefined),
+  onQuestComplete: mocks.onQuestComplete,
+  onQuestError: vi.fn().mockResolvedValue(() => undefined),
+}))
+
+vi.mock('@tauri-apps/api/event', () => ({ emit: vi.fn() }))
+
+function storage(): Storage {
+  const values = new Map<string, string>()
+  return {
+    get length() { return values.size },
+    clear: () => values.clear(),
+    getItem: key => values.get(key) ?? null,
+    key: index => [...values.keys()][index] ?? null,
+    removeItem: key => values.delete(key),
+    setItem: (key, value) => values.set(key, String(value)),
+  }
+}
+
+function quest(id: string, taskType = 'PLAY'): Quest {
+  return {
+    id,
+    config: {
+      messages: { quest_name: id, game_title: id },
+      application: { id, name: id },
+      task_config: { tasks: { [taskType]: { type: taskType, target: 60 } } },
+    },
+    user_status: { enrolled_at: '2026-10-10T00:00:00Z', progress: {} },
+  } as Quest
+}
+
+describe('post-quest keep-alive', () => {
+  let complete!: () => Promise<void>
+
+  beforeEach(() => {
+    vi.stubGlobal('localStorage', storage())
+    vi.stubGlobal('requestAnimationFrame', vi.fn())
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
+    setActivePinia(createPinia())
+    vi.useFakeTimers()
+    vi.clearAllMocks()
+    mocks.getPlatformCapabilities.mockResolvedValue({
+      os: 'windows', defaultGameQuestMode: 'simulate', executableOsPriority: ['win32'],
+    })
+    mocks.getQuestsFull.mockImplementation(async () => ({ quests: [quest('first'), quest('second')], excluded_quests: [] }))
+    mocks.startVideoQuest.mockResolvedValue(undefined)
+    mocks.stopQuest.mockResolvedValue(undefined)
+    mocks.stopSimulatedGame.mockResolvedValue(undefined)
+    mocks.stopGameSimulationUsage.mockResolvedValue(undefined)
+    mocks.onQuestComplete.mockImplementation(async (callback: () => Promise<void>) => {
+      complete = callback
+      return () => undefined
+    })
+  })
+
+  afterEach(() => {
+    useQuestsStore().resetForLogout()
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
+  // startVideo is the lightest path that arms the completion listeners; the
+  // test then swaps in the state a finished simulate-mode game quest would have.
+  async function runningStore() {
+    const store = useQuestsStore()
+    store.quests = [quest('first'), quest('second')]
+    store.addToQueue(quest('first'))
+    store.addToQueue(quest('second'))
+    store.isQueueRunning = true
+    await store.startVideo('first', 60, 0)
+    store.activeQuestType = 'game'
+    store.activeGameExe = 'first.exe'
+    return store
+  }
+
+  it('delays the teardown while the game stays connected, then closes it and advances the queue', async () => {
+    const store = await runningStore()
+    store.postQuestKeepAliveEnabled = true
+    store.postQuestKeepAlive = { mode: 'fixed', fixed: 1, min: 1, max: 1 }
+
+    await complete()
+
+    expect(store.keepAliveEndsAt).toBe(Date.now() + 60_000)
+    expect(mocks.stopSimulatedGame).not.toHaveBeenCalled()
+    expect(store.questQueue.map(item => item.id)).toEqual(['first', 'second'])
+    expect(mocks.dispatchNotification.mock.calls.filter(([event]) => event.kind === 'quest_completed')).toHaveLength(1)
+
+    await complete()
+    expect(mocks.dispatchNotification.mock.calls.filter(([event]) => event.kind === 'quest_completed')).toHaveLength(1)
+
+    await vi.advanceTimersByTimeAsync(60_000)
+
+    expect(mocks.stopSimulatedGame).toHaveBeenCalledTimes(1)
+    expect(mocks.stopSimulatedGame).toHaveBeenCalledWith('first.exe')
+    expect(mocks.stopGameSimulationUsage).toHaveBeenCalledTimes(1)
+    expect(store.questQueue.map(item => item.id)).toEqual(['second'])
+    expect(store.activeQuestId).toBeNull()
+    expect(store.keepAliveEndsAt).toBeNull()
+    expect(mocks.dispatchNotification.mock.calls.filter(([event]) => event.kind === 'quest_completed')).toHaveLength(1)
+  })
+
+  it('notifies single-quest completion once before its delayed teardown', async () => {
+    const store = await runningStore()
+    store.isQueueRunning = false
+    store.postQuestKeepAliveEnabled = true
+    store.postQuestKeepAlive = { mode: 'fixed', fixed: 1, min: 1, max: 1 }
+
+    await complete()
+    await complete()
+
+    expect(mocks.dispatchNotification.mock.calls.filter(([event]) => event.kind === 'quest_completed')).toHaveLength(1)
+    expect(mocks.stopSimulatedGame).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(60_000)
+
+    expect(mocks.stopSimulatedGame).toHaveBeenCalledTimes(1)
+    expect(store.activeQuestId).toBeNull()
+    expect(mocks.dispatchNotification.mock.calls.filter(([event]) => event.kind === 'quest_completed')).toHaveLength(1)
+  })
+
+  it.each(['event', 'polling'])('advances tasks added during a single quest keep-alive after %s completion', async source => {
+    const first = quest('first', 'PLAY_ON_DESKTOP')
+    const second = quest('second', 'WATCH_VIDEO')
+    mocks.getQuestsFull.mockImplementation(async () => ({ quests: [first, second], excluded_quests: [] }))
+    mocks.fetchDetectableGames.mockResolvedValue([
+      { id: 'first', name: 'first', executables: [{ os: 'win32', name: 'first.exe' }] },
+    ])
+    const store = useQuestsStore()
+    store.quests = [first, second]
+    store.setSimulationPath('C:\\QuestHelper\\GameRuntime')
+    store.gamePollingInterval = 30
+    store.postQuestKeepAliveEnabled = true
+    store.postQuestKeepAlive = { mode: 'fixed', fixed: 1, min: 1, max: 1 }
+    await store.startPlay(first, 60, 0)
+    expect(store.questQueue).toEqual([])
+    expect(store.isQueueRunning).toBe(false)
+
+    first.user_status!.completed_at = new Date().toISOString()
+    if (source === 'event') await complete()
+    else await vi.advanceTimersByTimeAsync(30_000)
+    const endsAt = Date.now() + 60_000
+    expect(store.keepAliveEndsAt).toBe(endsAt)
+
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(store.addToQueueBehindActive(second)).toBe(true)
+    expect(store.isQueueRunning).toBe(true)
+    expect(store.questQueue.map(item => item.id)).toEqual(['first', 'second'])
+    expect(store.keepAliveEndsAt).toBe(endsAt)
+    // A duplicate event after queueing must not reclaim completion or reset the wait.
+    await complete()
+    await vi.advanceTimersByTimeAsync(29_999)
+    expect(mocks.stopSimulatedGame).not.toHaveBeenCalled()
+    expect(store.activeQuestId).toBe('first')
+    expect(store.keepAliveEndsAt).toBe(endsAt)
+
+    await vi.advanceTimersByTimeAsync(1)
+    expect(mocks.stopSimulatedGame).toHaveBeenCalledExactlyOnceWith('first.exe')
+    expect(mocks.stopGameSimulationUsage).toHaveBeenCalledTimes(1)
+    expect(store.questQueue.map(item => item.id)).toEqual(['second'])
+    expect(store.activeQuestId).toBeNull()
+    expect(store.isQueueRunning).toBe(true)
+    expect(store.keepAliveEndsAt).toBeNull()
+
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(store.activeQuestId).toBe('second')
+    expect(mocks.startVideoQuest).toHaveBeenCalledTimes(1)
+    expect(mocks.startVideoQuest.mock.calls[0][0]).toBe('second')
+    expect(mocks.dispatchNotification.mock.calls.filter(([event]) => event.kind === 'quest_completed')).toHaveLength(1)
+  })
+
+  it('stops immediately when requested during keep-alive and never repeats the teardown', async () => {
+    const store = await runningStore()
+    store.postQuestKeepAliveEnabled = true
+    store.postQuestKeepAlive = { mode: 'fixed', fixed: 1, min: 1, max: 1 }
+    await complete()
+    expect(store.keepAliveEndsAt).not.toBeNull()
+
+    await store.stop('all')
+
+    expect(mocks.stopSimulatedGame).toHaveBeenCalledTimes(1)
+    expect(mocks.stopGameSimulationUsage).toHaveBeenCalledTimes(1)
+    expect(store.keepAliveEndsAt).toBeNull()
+    expect(store.questQueue).toEqual([])
+
+    await vi.advanceTimersByTimeAsync(120_000)
+
+    expect(mocks.stopSimulatedGame).toHaveBeenCalledTimes(1)
+    expect(mocks.stopGameSimulationUsage).toHaveBeenCalledTimes(1)
+  })
+
+  it('tears down immediately when keep-alive is disabled', async () => {
+    const store = await runningStore()
+
+    await complete()
+
+    expect(mocks.stopSimulatedGame).toHaveBeenCalledTimes(1)
+    expect(store.keepAliveEndsAt).toBeNull()
+    expect(store.questQueue.map(item => item.id)).toEqual(['second'])
+  })
+
+  it('never schedules keep-alive without a simulated game process', async () => {
+    const store = await runningStore()
+    store.postQuestKeepAliveEnabled = true
+    store.activeGameExe = null
+
+    await complete()
+
+    expect(store.keepAliveEndsAt).toBeNull()
+    expect(mocks.stopSimulatedGame).not.toHaveBeenCalled()
+    expect(store.questQueue.map(item => item.id)).toEqual(['second'])
+  })
+
+  it('does not repeat the native teardown when Stop lands during completion cleanup', async () => {
+    const store = await runningStore()
+    store.postQuestKeepAliveEnabled = true
+    store.postQuestKeepAlive = { mode: 'fixed', fixed: 1, min: 1, max: 1 }
+    await complete()
+    mocks.stopSimulatedGame.mockReturnValueOnce(new Promise<void>(() => undefined))
+
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(store.queueEditingDisabled).toBe(true)
+    expect(store.activeQuestId).toBeNull()
+
+    await store.stop('all')
+
+    expect(mocks.stopSimulatedGame).toHaveBeenCalledTimes(1)
+    // The in-flight teardown still owns the history finalization; Stop must
+    // not start a second one while it waits.
+    expect(mocks.stopGameSimulationUsage).toHaveBeenCalledTimes(0)
+    expect(store.questQueue).toEqual([])
+  })
+
+  it('closes the kept-alive game when the account changes during keep-alive', async () => {
+    const store = await runningStore()
+    store.postQuestKeepAliveEnabled = true
+    store.postQuestKeepAlive = { mode: 'fixed', fixed: 1, min: 1, max: 1 }
+    await complete()
+    expect(store.keepAliveEndsAt).not.toBeNull()
+
+    store.setQuestAccount('account-2')
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(mocks.stopSimulatedGame).toHaveBeenCalledTimes(1)
+    expect(store.keepAliveEndsAt).toBeNull()
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(mocks.stopSimulatedGame).toHaveBeenCalledTimes(1)
+  })
+
+  it('schedules waits longer than the webview timer limit in chunks', async () => {
+    // Re-fake without rAF: the fake rAF machinery keeps a ~16ms internal
+    // timer alive, which a multi-billion-ms tick would fire 100M+ times. The
+    // store uses no animation frames on this path (the global is stubbed).
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] })
+    vi.setSystemTime(0)
+    const store = await runningStore()
+    store.postQuestKeepAliveEnabled = true
+    store.postQuestKeepAlive = { mode: 'fixed', fixed: 43_200, min: 43_200, max: 43_200 }
+    await complete()
+    expect(store.keepAliveEndsAt).toBe(2_592_000_000)
+
+    await vi.advanceTimersByTimeAsync(2_147_000_000)
+    expect(mocks.stopSimulatedGame).not.toHaveBeenCalled()
+    expect(store.keepAliveEndsAt).not.toBeNull()
+
+    await vi.advanceTimersByTimeAsync(600_000_000)
+    expect(mocks.stopSimulatedGame).toHaveBeenCalledTimes(1)
+    expect(store.keepAliveEndsAt).toBeNull()
+  })
+})

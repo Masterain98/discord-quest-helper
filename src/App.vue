@@ -43,6 +43,12 @@ import { isDebugModeEnabled } from '@/utils/debugMode'
 
 const { t, locale } = useI18n()
 const currentTab = ref<AppTab>('home')
+const gameSimulator = ref<InstanceType<typeof GameSimulator> | null>(null)
+async function openGameIdle() {
+  currentTab.value = 'game'
+  await nextTick()
+  gameSimulator.value?.openIdle()
+}
 const authStore = useAuthStore()
 const versionStore = useVersionStore()
 const questsStore = useQuestsStore()
@@ -325,7 +331,7 @@ watch(
             </AppNavigation>
             <AppRailSequence class="app-rail-account-control">
               <div v-if="authStore.user" key="account" class="app-rail-sequence-item">
-                <AccountMenu compact :suspended="immersiveGameIdle" @logout="authStore.logout" />
+                <AccountMenu compact :suspended="immersiveGameIdle" @logout="authStore.logout" @farm="openGameIdle" />
               </div>
               <div v-else key="login" class="app-rail-sequence-item">
                 <IconTooltip :label="t('auth.login')" :disabled="immersiveGameIdle">
@@ -366,14 +372,14 @@ watch(
                       <p class="text-sm text-muted-foreground">{{ t('version.update_desc', { version: versionStore.latestRelease.tag_name, current: versionStore.currentVersion }) }}</p>
                     </div>
                   </div>
-                  <Button @click="openUpdatePage" class="shrink-0 gap-2"><ExternalLink class="h-4 w-4" />{{ t('version.download') }}</Button>
+                  <Button as="a" :href="versionStore.latestRelease.html_url" @click.prevent="openUpdatePage" class="shrink-0 gap-2"><ExternalLink class="h-4 w-4" />{{ t('version.download') }}</Button>
                 </div>
                 <template v-if="currentTab === 'home'">
                   <Home v-if="authStore.user" :debug-mode-enabled="debugModeEnabled" />
                   <LoginPanel v-else />
                 </template>
                 <GlobalQuests v-else-if="currentTab === 'global'" />
-                <GameSimulator v-else-if="currentTab === 'game'" />
+                <GameSimulator v-else-if="currentTab === 'game'" ref="gameSimulator" />
                 <Settings v-else-if="currentTab === 'settings'" :selected-section="selectedSection" :navigation-request="navigationRequest" :navigation-target="navigationTarget" :search-query="settingsQuery" @search-results="settingsResults = $event" @update:selected-section="selectedSection = $event" @navigate-to-home="currentTab = 'home'" @debug-unlocked="debugModeEnabled = true; currentTab = 'debug'" @debug-disabled="handleDebugDisabled" />
                 <Debug v-else-if="currentTab === 'debug'" />
                 <DiscordConsole v-if="consoleAvailable" v-show="currentTab === 'console'" :active="currentTab === 'console'" :enabled="consoleEnabled" :port="questsStore.cdpPort" @enable="setConsoleFeatureEnabled(true)" @disable="setConsoleFeatureEnabled(false)" />

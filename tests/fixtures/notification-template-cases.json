@@ -1,0 +1,10 @@
+[
+  { "text": "  {quest-name}\n{quest-name}  ", "expected": "  Quest {timestamp}\nQuest {timestamp}  ", "unknown": [] },
+  { "text": "{{quest-name}} {quest-name}", "expected": "{quest-name} Quest {timestamp}", "unknown": [] },
+  { "text": "{my-text} {MY_TEXT} {{literal}}", "expected": "{my-text} {MY_TEXT} {literal}", "unknown": ["my-text", "MY_TEXT"] },
+  { "text": "", "expected": "", "unknown": [] },
+  { "text": "{succeeded}/{failed}/{skipped}", "expected": "2/0/", "unknown": [] },
+  { "text": "{\"name\":\"{quest-name}\",\"unknown\":\"{other}\"}", "expected": "{\"name\":\"Quest {timestamp}\",\"unknown\":\"{other}\"}", "unknown": ["other"] },
+  { "text": "{timestamp} {other} {other}", "expected": "2026-10-31T08:00:00.000Z {other} {other}", "unknown": ["other"] },
+  { "text": "固定文字 🐾 {quest-name} {1} {foo bar}", "expected": "固定文字 🐾 Quest {timestamp} {1} {foo bar}", "unknown": [] }
+]

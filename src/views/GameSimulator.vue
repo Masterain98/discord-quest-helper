@@ -108,6 +108,9 @@ onMounted(async () => {
     historyFinalizationOwner.value = 'recovered'
     success.value = t('game_sim.stopped')
   }
+  // A shortcut can open Idle before asynchronous session recovery finishes.
+  // Keep an existing manual session's Stop controls reachable after recovery.
+  if (activeSimulationMode.value !== null && mode.value === 'idle') mode.value = 'select'
 })
 
 watch(
@@ -200,6 +203,8 @@ function switchMode(m: 'select' | 'custom' | 'idle') {
   error.value = null
   success.value = null
 }
+
+defineExpose({ openIdle: () => switchMode('idle') })
 
 const selectedHistoryDuration = computed(() => {
   const seconds = selectedGame.value ? idleStore.history[selectedGame.value.id]?.totalSeconds ?? 0 : 0

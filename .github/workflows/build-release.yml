@@ -444,6 +444,77 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
 
+  publish-issue-updates:
+    name: Notify issues after stable release
+    needs:
+      - release_policy
+      - release
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      needs.release_policy.outputs.should_release == 'true' &&
+      needs.release_policy.outputs.prerelease == 'false' &&
+      needs.release.result == 'success'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: publish-issue-updates
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Update labels and comment on published issues
+        uses: actions/github-script@v8
+        env:
+          RELEASE_VERSION: ${{ needs.release_policy.outputs.version }}
+        with:
+          script: |
+            const repo = context.repo;
+            const { data: release } = await github.rest.repos.getReleaseByTag({
+              ...repo,
+              tag: process.env.RELEASE_VERSION,
+            });
+            if (release.draft || release.prerelease) {
+              core.info('Skipping issue updates: the release is not a published stable release.');
+              return;
+            }
+
+            // Fetch every page before removing labels so pagination stays stable.
+            const issues = (await github.paginate(github.rest.issues.listForRepo, {
+              ...repo,
+              state: 'all',
+              labels: 'waiting-publish',
+              per_page: 100,
+            })).filter(issue => !issue.pull_request);
+            if (issues.length === 0) return;
+
+            try {
+              await github.rest.issues.getLabel({ ...repo, name: 'published' });
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              await github.rest.issues.createLabel({
+                ...repo,
+                name: 'published',
+                color: '0e8a16',
+                description: 'The solution is available in a published stable release.',
+              });
+            }
+
+            const body = `New version [${release.tag_name}](${release.html_url}) with solution for this issue has been published.`;
+            for (const issue of issues) {
+              const params = { ...repo, issue_number: issue.number };
+              await github.rest.issues.addLabels({ ...params, labels: ['published'] });
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                ...params,
+                per_page: 100,
+              });
+              if (!comments.some(comment => comment.body === body)) {
+                await github.rest.issues.createComment({ ...params, body });
+              }
+              // Remove the retry marker only after both updates have succeeded.
+              await github.rest.issues.removeLabel({ ...params, name: 'waiting-publish' });
+              core.info(`Updated issue #${issue.number} for ${release.tag_name}.`);
+            }
+
   reset-develop:
     name: Reset develop after stable release
     needs:

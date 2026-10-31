@@ -16,9 +16,10 @@ import {
 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import AnimatedSegmentedControl from '@/components/AnimatedSegmentedControl.vue'
+import DurationSettingInput from '@/components/DurationSettingInput.vue'
 import GameIdlePlaylistEditor from '@/components/GameIdlePlaylistEditor.vue'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { useAuthStore } from '@/stores/auth'
 import { useGameIdleStore, formatSimulationDuration } from '@/stores/gameIdle'
 import { useQuestsStore } from '@/stores/quests'
@@ -199,34 +200,22 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="flex flex-wrap items-end gap-3">
-        <div class="space-y-1.5">
-          <Label for="idle-play-minutes" class="text-xs">{{ t('game_idle.play_minutes') }}</Label>
-          <Input
-            id="idle-play-minutes"
-            v-model.number="idle.playMinutes"
-            type="number"
-            inputmode="numeric"
-            min="1"
-            step="1"
-            class="w-28 tabular-nums"
-            :disabled="active"
-            :aria-invalid="configError === 'play_minutes'"
-          />
-        </div>
-        <div class="space-y-1.5">
-          <Label for="idle-rest-minutes" class="text-xs">{{ t('game_idle.rest_minutes') }}</Label>
-          <Input
-            id="idle-rest-minutes"
-            v-model.number="idle.restMinutes"
-            type="number"
-            inputmode="numeric"
-            min="0"
-            step="1"
-            class="w-28 tabular-nums"
-            :disabled="active"
-            :aria-invalid="configError === 'rest_minutes'"
-          />
-        </div>
+        <DurationSettingInput
+          v-model="idle.playDuration"
+          :label="t('game_idle.play_minutes')"
+          unit="minutes"
+          :min-allowed="1"
+          :disabled="active"
+          :invalid="configError === 'play_minutes'"
+        />
+        <DurationSettingInput
+          v-model="idle.restDuration"
+          :label="t('game_idle.rest_minutes')"
+          unit="minutes"
+          :min-allowed="0"
+          :disabled="active"
+          :invalid="configError === 'rest_minutes'"
+        />
         <div class="space-y-1.5">
           <Label class="text-xs">{{ t('game_idle.simulation_mode') }}</Label>
           <AnimatedSegmentedControl :value="idle.mode" class="flex h-10 rounded-md border bg-background p-1" style="--segment-radius: 0.28rem" :aria-label="t('game_idle.simulation_mode')">
@@ -292,6 +281,34 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <GameIdlePlaylistEditor v-if="idle.selectionMode === 'manual'" />
+    </div>
+
+    <div v-if="!immersive" class="space-y-3">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="max-w-xl space-y-1">
+          <Label class="text-xs">{{ t('game_idle.crash_simulation') }}</Label>
+          <p class="text-xs text-muted-foreground">{{ t('game_idle.crash_simulation_desc') }}</p>
+        </div>
+        <Switch v-model="idle.crashEnabled" :disabled="active" :aria-label="t('game_idle.crash_simulation')" />
+      </div>
+      <div v-if="idle.crashEnabled" class="flex flex-wrap items-end gap-3">
+        <DurationSettingInput
+          v-model="idle.crashAfterMinutes"
+          :label="t('game_idle.crash_after')"
+          unit="minutes"
+          :min-allowed="1"
+          :disabled="active"
+          :invalid="configError === 'crash_simulation'"
+        />
+        <DurationSettingInput
+          v-model="idle.reopenDelaySeconds"
+          :label="t('game_idle.reopen_delay')"
+          unit="seconds"
+          :min-allowed="0"
+          :disabled="active"
+          :invalid="configError === 'crash_simulation'"
+        />
+      </div>
     </div>
 
     <div v-if="!immersive" class="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-muted-foreground">

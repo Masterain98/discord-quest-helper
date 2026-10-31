@@ -1,0 +1,54 @@
+[
+  {
+    "channel": "system",
+    "draft": {
+      "fields": {}
+    },
+    "locale": "en",
+    "event": null
+  },
+  {
+    "channel": "system",
+    "draft": {
+      "fields": {}
+    },
+    "locale": "en",
+    "event": {
+      "id": "preview-started",
+      "kind": "quest_started",
+      "locale": "en",
+      "quest_name": "Sample quest",
+      "reward_image": "/icons/orbs.png",
+      "estimated_complete_at": "2026-10-18T15:05:00Z"
+    }
+  },
+  {
+    "channel": "system",
+    "draft": {
+      "fields": {}
+    },
+    "locale": "zh",
+    "event": {
+      "id": "preview-completed",
+      "kind": "quest_completed",
+      "locale": "zh",
+      "quest_name": "示例任务",
+      "reward_image": "/icons/orbs.png"
+    }
+  },
+  {
+    "channel": "system",
+    "draft": {
+      "fields": {}
+    },
+    "locale": "en",
+    "event": {
+      "id": "preview-queue",
+      "kind": "queue_completed",
+      "locale": "en",
+      "succeeded": 2,
+      "failed": 1,
+      "skipped": 1
+    }
+  }
+]

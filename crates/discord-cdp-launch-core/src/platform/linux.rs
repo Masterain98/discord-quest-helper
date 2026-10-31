@@ -87,7 +87,8 @@ pub(crate) fn find_installs() -> Result<Vec<DiscordInstall>, LaunchError> {
 /// Exposed (hidden) so unit tests can inject temporary directories instead of
 /// depending on a real Discord install on the CI runner. `bin_names` are probed
 /// directly under every root and every `$PATH` entry; `opt_subpaths` are probed
-/// under every root. Results are canonicalized, de-duplicated across channels,
+/// under every root. Canonical targets are de-duplicated across channels,
+/// while launch paths retain stable symlinks across package upgrades,
 /// and returned in Stable, PTB, Canary order.
 #[doc(hidden)]
 pub fn discover_linux_installs_in(
@@ -115,14 +116,16 @@ pub fn discover_linux_installs_in(
         }
 
         if let Some(executable_path) = candidates.into_iter().find_map(resolve_executable) {
-            if used.contains(&executable_path) {
+            let resolved =
+                std::fs::canonicalize(&executable_path).unwrap_or_else(|_| executable_path.clone());
+            if used.contains(&resolved) {
                 continue;
             }
-            let working_dir = executable_path
+            let working_dir = resolved
                 .parent()
                 .map(Path::to_path_buf)
                 .unwrap_or_else(|| executable_path.clone());
-            used.push(executable_path.clone());
+            used.push(resolved);
             installs.push(DiscordInstall {
                 channel: spec.channel,
                 executable_path,
@@ -134,8 +137,8 @@ pub fn discover_linux_installs_in(
     installs
 }
 
-/// Return the canonicalized path if `candidate` resolves to an executable
-/// regular file (following symlinks), otherwise `None`.
+/// Return an absolute launch path without resolving symlinks if `candidate`
+/// resolves to an executable regular file, otherwise `None`.
 fn resolve_executable(candidate: PathBuf) -> Option<PathBuf> {
     let metadata = std::fs::metadata(&candidate).ok()?; // follows symlinks
     if !metadata.is_file() {
@@ -144,7 +147,7 @@ fn resolve_executable(candidate: PathBuf) -> Option<PathBuf> {
     if metadata.permissions().mode() & 0o111 == 0 {
         return None;
     }
-    Some(std::fs::canonicalize(&candidate).unwrap_or(candidate))
+    std::path::absolute(candidate).ok()
 }
 
 /// Snapshot of a `/proc/<pid>` entry used for Discord process matching.
@@ -235,11 +238,8 @@ pub fn classify_linux_process(
 
     // 1 & 2: executable path match against discovered installs.
     if let Some(exe) = process.executable.as_deref() {
-        let canonical = std::fs::canonicalize(exe).ok();
         for install in installs {
-            if exe == install.executable_path
-                || canonical.as_deref() == Some(install.executable_path.as_path())
-            {
+            if crate::same_executable_path(exe, &install.executable_path) {
                 return Some(install.channel);
             }
         }

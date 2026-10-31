@@ -8,6 +8,7 @@ import {
   autoFetchSuperProperties,
   getProgramRewards,
   stopAllGameSimulations,
+  clearAuthenticatedSession,
 } from '@/api/tauri'
 import { useQuestsStore } from './quests'
 import { useGameIdleStore } from './gameIdle'
@@ -198,6 +199,13 @@ export const useAuthStore = defineStore('auth', () => {
       await questsStore.stop()
     } catch (e) {
       console.warn('Failed to stop quest during logout:', e)
+    }
+
+    try {
+      await clearAuthenticatedSession()
+    } catch (cause) {
+      error.value = commandErrorMessage(cause)
+      return
     }
 
     // Clear the idle status and per-account simulation history for the account

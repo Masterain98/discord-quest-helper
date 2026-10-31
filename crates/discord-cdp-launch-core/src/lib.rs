@@ -47,8 +47,8 @@ pub use processes::{
 pub use provider::parse_desktop_exec_arguments;
 pub use provider::{
     custom_executable_installation, discover_client_installations, installation_as_official,
-    installation_as_vesktop, provider_registry, refresh_installation_validation,
-    DesktopClientProvider,
+    installation_as_vesktop, provider_registry, refresh_automatic_installation,
+    refresh_installation_validation, same_executable_path, DesktopClientProvider,
 };
 pub use supervisor::ProcessSupervisor;
 /// Validate discovery-provided debugger URLs without DNS, proxies, or credentials.
@@ -71,7 +71,10 @@ pub use vesktop::{
 
 #[cfg(target_os = "windows")]
 #[doc(hidden)]
-pub use platform::windows::discover_windows_installs_in;
+pub use platform::windows::{
+    discover_windows_installs_in, refresh_windows_official_installation,
+    windows_legacy_installation_id_matches, windows_official_installation_id,
+};
 
 #[cfg(target_os = "macos")]
 #[doc(hidden)]

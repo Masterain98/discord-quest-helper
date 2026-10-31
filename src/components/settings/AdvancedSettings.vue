@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useQuestsStore } from '@/stores/quests'
-import { getSuperPropertiesMode, retrySuperProperties, type SuperPropertiesModeInfo } from '@/api/tauri'
+import { useSuperPropertiesDiagnostics } from '@/composables/superPropertiesDiagnostics'
 import SettingRow from './SettingRow.vue'
 import SettingsSectionCard from './SettingsSectionCard.vue'
 import { cn } from '@/lib/utils'
@@ -26,7 +26,7 @@ function commitCdpPort(event: FocusEvent) {
   input.value = String(questsStore.cdpPort)
 }
 
-const superPropsMode = ref<SuperPropertiesModeInfo | null>(null)
+const { superPropsMode, loadSuperPropsMode: readSuperPropsMode, retrySuperPropsMode } = useSuperPropertiesDiagnostics()
 const retryingMode = ref(false)
 const debugModeEnabled = ref(isDebugModeEnabled())
 watch(() => props.debugModeEnabled, enabled => {
@@ -43,7 +43,7 @@ const developerModeTone = computed<SettingsTone>(() => debugModeEnabled.value ? 
 
 async function loadSuperPropsMode() {
   try {
-    superPropsMode.value = await getSuperPropertiesMode()
+    await readSuperPropsMode()
   } catch (e) {
     console.error('Failed to get SuperProperties mode:', e)
   }
@@ -52,8 +52,7 @@ async function loadSuperPropsMode() {
 async function retrySuperProps() {
   retryingMode.value = true
   try {
-    await retrySuperProperties(questsStore.cdpPort)
-    await loadSuperPropsMode()
+    await retrySuperPropsMode(questsStore.cdpPort)
   } catch (e) {
     console.error('Retry failed:', e)
   } finally {

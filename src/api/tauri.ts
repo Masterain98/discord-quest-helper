@@ -408,14 +408,30 @@ export type GameIdleMode = 'process' | 'cdp'
 export type GameIdleSelectionMode = 'random' | 'manual'
 export type GameIdleCandidateType = 'all' | 'game' | 'app'
 export type GameIdlePhase = 'starting' | 'playing' | 'resting' | 'stopping' | 'error' | 'stopped'
+export type GameIdleDurationMode = 'fixed' | 'random'
+
+/** Fixed minutes/seconds or an inclusive random range; the unit is implied by the field carrying it. */
+export interface GameIdleDuration {
+  mode: GameIdleDurationMode
+  fixed: number
+  min: number
+  max: number
+}
+
+export interface GameIdleCrashConfig {
+  enabled: boolean
+  crashAfterMinutes: GameIdleDuration
+  reopenDelaySeconds: GameIdleDuration
+}
 
 export interface GameIdleConfig {
   mode: GameIdleMode
   selectionMode: GameIdleSelectionMode
   candidateType: GameIdleCandidateType
   selectedAppIds: string[]
-  playMinutes: number
-  restMinutes: number
+  playDuration: GameIdleDuration
+  restDuration: GameIdleDuration
+  crashSimulation: GameIdleCrashConfig
   cdpPort: number
   simulationPath: string
 }
@@ -435,8 +451,12 @@ export interface GameIdleStatus {
   candidateType: GameIdleCandidateType
   selectedAppIds: string[]
   phase: GameIdlePhase
+  /** Resolved duration of the current cycle; playDuration/restDuration carry the configured spec. */
   playMinutes: number
   restMinutes: number
+  playDuration: GameIdleDuration
+  restDuration: GameIdleDuration
+  crashSimulation: GameIdleCrashConfig
   current: GameIdleItem | null
   recent: GameIdleItem[]
   upcoming: GameIdleItem[]
@@ -549,33 +569,38 @@ export async function forceVideoProgress(questId: string, timestamp: number): Pr
 
 // Debug info types
 export interface SuperProperties {
-  os: string
-  browser: string
-  release_channel: string
-  client_version?: string
-  os_version: string
-  os_arch?: string
-  app_arch?: string
-  system_locale: string
-  has_client_mods: boolean
-  browser_user_agent: string
-  browser_version: string
-  os_sdk_version?: string
-  client_build_number: number
-  native_build_number?: number
+  [key: string]: unknown
+  os?: string | null
+  browser?: string | null
+  release_channel?: string | null
+  client_version?: string | null
+  os_version?: string | null
+  os_arch?: string | null
+  app_arch?: string | null
+  system_locale?: string | null
+  has_client_mods?: boolean | null
+  browser_user_agent?: string | null
+  browser_version?: string | null
+  os_sdk_version?: string | null
+  client_build_number?: number | null
+  native_build_number?: number | null
   client_event_source: string | null
-  launch_signature?: string
-  client_launch_id?: string
-  client_heartbeat_session_id?: string
-  client_app_state?: string
+  launch_signature?: string | null
+  client_launch_id?: string | null
+  client_heartbeat_session_id?: string | null
+  client_app_state?: string | null
 }
 
 export interface DebugInfo {
   x_super_properties_base64?: string
   super_properties?: SuperProperties
-  client_launch_id?: string
-  client_heartbeat_session_id?: string
-  launch_signature?: string
+  client_launch_id?: string | null
+  client_heartbeat_session_id?: string | null
+  launch_signature?: string | null
+  field_sources?: Record<string, string>
+  degradation_reason?: string | null
+  heartbeat_storage_error?: boolean
+  identity_status?: Record<string, 'reused' | 'generated' | 'omitted' | 'null'>
   source?: string  // "Auto-Generated" or "Discord Client (Extracted)"
   client_identity?: ClientIdentitySnapshot
   header_profile?: HeaderProfilePreview
@@ -718,6 +743,7 @@ export interface CdpStatus {
 export interface CdpSuperProperties {
   base64: string
   decoded: SuperProperties
+  debug_info: DebugInfo
 }
 
 export async function checkCdpStatus(port?: number): Promise<CdpStatus> {
@@ -967,10 +993,8 @@ export interface SuperPropertiesModeInfo {
   build_number: number | null
 }
 
-export interface AutoFetchResult {
+export interface AutoFetchResult extends SuperPropertiesModeInfo {
   success: boolean
-  mode: SuperPropertiesMode
-  build_number: number | null
 }
 
 export async function getSuperPropertiesMode(): Promise<SuperPropertiesModeInfo> {
@@ -1103,4 +1127,8 @@ export async function prepareAppExit(): Promise<void> {
 
 export async function exitAppNow(): Promise<void> {
   return await invoke('exit_app_now')
+}
+
+export async function clearAuthenticatedSession(): Promise<void> {
+  await invoke('clear_authenticated_session')
 }

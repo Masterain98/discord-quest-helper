@@ -164,9 +164,9 @@ async function refresh() {
         <p class="max-w-3xl text-sm leading-relaxed text-muted-foreground">{{ t('global_quests.description') }}</p>
       </div>
       <div class="flex min-w-0 flex-col items-end gap-2">
-        <button type="button" class="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary" @click="openSource">
+        <a href="https://discordquest.com/" class="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary" @click.prevent="openSource">
           {{ t('global_quests.source_label') }} <ExternalLink class="h-3 w-3" />
-        </button>
+        </a>
         <div class="inline-flex max-w-full items-center gap-2 rounded-md border border-border/70 bg-card px-3 py-1 text-xs text-muted-foreground" role="status" aria-live="polite" :aria-label="`${t('global_quests.location_label')}: ${ipInfo ? regionNames.of(ipInfo.countryCode) ?? ipInfo.country : ipInfoFailed ? t('global_quests.location_unavailable') : t('general.loading')}`">
           <Globe2 class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           <span class="shrink-0">{{ t('global_quests.location_label') }}:</span>

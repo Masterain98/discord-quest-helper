@@ -145,6 +145,23 @@ const JS_INIT_QUEST_MODULES: &str = r#"
         modules.api = apiMatches.length === 1 ? apiMatches[0] : null;
         const missing = required.filter(([name, method]) => typeof modules[name]?.[method] !== "function")
             .map(([name, method]) => name + "." + method);
+        // Web wrappers can expose the same JS methods while discord_utils is
+        // unavailable. RUNNING_GAMES_CHANGE then throws asynchronously inside
+        // Discord's session/overlay subscribers, after injection reports success.
+        if (required.some(([name]) => name === "RunningGameStore")) {
+            try {
+                const native = modules.NativeUtils?.getDiscordUtils?.();
+                if (!native || !["object", "function"].includes(typeof native)) {
+                    missing.push("NativeUtils.discord_utils");
+                } else if (typeof native.setGameCandidateOverrides !== "function") {
+                    // This wrapper calls the native method unconditionally.
+                    // Window/fullscreen and global-lock methods are optional.
+                    missing.push("NativeUtils.discord_utils.setGameCandidateOverrides");
+                }
+            } catch (_) {
+                missing.push("NativeUtils.discord_utils");
+            }
+        }
         if (missing.length) return JSON.stringify({success:false, code:"cdp_capability_missing", missing});
         if (discoverOnly) return JSON.stringify({success:true});
         const previous = window.__dqh_cdp;
@@ -197,6 +214,8 @@ const JS_INIT_QUEST_MODULES: &str = r#"
 })()
 "#;
 
+/// Build the JavaScript payload that sends an activity quest heartbeat (`POST /quests/{id}/heartbeat`)
+/// via Discord's internal API client and parses `PLAY_ACTIVITY`, `ACHIEVEMENT_IN_ACTIVITY`, or `ACHIEVEMENT_IN_GAME` progress.
 fn js_play_activity_heartbeat(
     quest_id: &str,
     application_id: Option<&str>,
@@ -234,7 +253,11 @@ fn js_play_activity_heartbeat(
             ))
         ]);
         const body = response?.body;
-        const progress = Number(body?.progress?.PLAY_ACTIVITY?.value);
+        const progress = Number(
+            body?.progress?.PLAY_ACTIVITY?.value
+                ?? body?.progress?.ACHIEVEMENT_IN_ACTIVITY?.value
+                ?? body?.progress?.ACHIEVEMENT_IN_GAME?.value
+        );
         if (!body || !Number.isFinite(progress)) {{
             return JSON.stringify({{
                 success: false,
@@ -247,6 +270,8 @@ fn js_play_activity_heartbeat(
             progress,
             completed: body.completed_at != null
                 || body?.progress?.PLAY_ACTIVITY?.completed_at != null
+                || body?.progress?.ACHIEVEMENT_IN_ACTIVITY?.completed_at != null
+                || body?.progress?.ACHIEVEMENT_IN_GAME?.completed_at != null
         }});
     }} catch (error) {{
         return JSON.stringify({{ success: false, error: String(error) }});
@@ -256,6 +281,8 @@ fn js_play_activity_heartbeat(
     )
 }
 
+/// Build the JavaScript payload that fetches `/quests/@me` via Discord's internal API client
+/// and extracts current `PLAY_ACTIVITY`, `ACHIEVEMENT_IN_ACTIVITY`, or `ACHIEVEMENT_IN_GAME` progress and completion status.
 fn js_play_activity_status(quest_id: &str) -> String {
     let quest_id_json = serde_json::to_string(quest_id).unwrap_or_else(|_| "\"\"".to_string());
     format!(
@@ -287,7 +314,10 @@ fn js_play_activity_status(quest_id: &str) -> String {
         }}
         const userStatus = quest.user_status ?? quest.userStatus;
         const progress = Number(
-            userStatus?.progress?.PLAY_ACTIVITY?.value ?? 0
+            userStatus?.progress?.PLAY_ACTIVITY?.value
+                ?? userStatus?.progress?.ACHIEVEMENT_IN_ACTIVITY?.value
+                ?? userStatus?.progress?.ACHIEVEMENT_IN_GAME?.value
+                ?? 0
         );
         const completedAt = userStatus?.completed_at ?? userStatus?.completedAt ?? null;
 
@@ -320,6 +350,8 @@ fn js_spoof_play_game(app_id: &str, app_name: &str) -> String {
     )
 }
 
+/// Build the JavaScript payload that injects a spoofed running game entry for `host_os`
+/// and optional `process_hints` into `RunningGameStore`.
 fn js_spoof_play_game_for(
     app_id: &str,
     app_name: &str,
@@ -339,6 +371,9 @@ fn js_spoof_play_game_for(
     })
     .to_string();
     let hints_json = serde_json::to_string(&process_hints).unwrap_or_else(|_| "[]".to_string());
+    let host_hw_token_json =
+        serde_json::to_string(crate::cdp_game_spoof::local_machine_renderer_hw_token())
+            .unwrap_or_else(|_| "\"\"".to_string());
     let unix_host = if host_os.is_unix() { "true" } else { "false" };
 
     format!(
@@ -352,6 +387,7 @@ fn js_spoof_play_game_for(
         const osPriority = {os_priority_json};
         const pathTemplates = {path_templates_json};
         const processHints = {hints_json};
+        const hostHwToken = {host_hw_token_json};
         const unixHost = {unix_host};
 
         function sanitizeApp(name) {{
@@ -443,10 +479,10 @@ fn js_spoof_play_game_for(
                 allExeNames = allExes.map(x => x && x.name).filter(Boolean);
                 let selected = null;
                 for (const os of osPriority) {{
-                    selected = allExes.find(x => x && x.os === os && x.name);
+                    selected = allExes.find(x => x && x.os === os && typeof x.name === "string" && x.name.trim().length > 0);
                     if (selected) {{ selectedOs = os; break; }}
                 }}
-                if (!selected && allExes[0] && allExes[0].name) {{
+                if (!selected && allExes[0] && typeof allExes[0].name === "string" && allExes[0].name.trim().length > 0) {{
                     selected = allExes[0];
                     selectedOs = allExes[0].os || null;
                 }}
@@ -466,11 +502,13 @@ fn js_spoof_play_game_for(
         const builtPath = render(pathTemplates.exePath, sanitizeApp(applicationName), exeName);
 
         let seenMatch = null;
+        let seenGames = [];
         try {{
             const seen = typeof dqh.RunningGameStore.getGamesSeen === "function"
                 ? dqh.RunningGameStore.getGamesSeen(false)
                 : [];
             if (Array.isArray(seen)) {{
+                seenGames = seen;
                 seenMatch = seen.find(g => g && String(g.id) === String(applicationId)) || null;
             }}
         }} catch(e) {{}}
@@ -519,10 +557,15 @@ fn js_spoof_play_game_for(
         }}
 
         let realGames = [];
-        try {{ realGames = dqh._origGetRunningGames.call(dqh.RunningGameStore); }} catch(e) {{
-            try {{ realGames = dqh._origGetRunningGames(); }} catch(e2) {{ realGames = []; }}
+        try {{
+            const rawReal = dqh._origGetRunningGames.call(dqh.RunningGameStore);
+            if (Array.isArray(rawReal)) realGames.push(...rawReal);
+        }} catch(e) {{
+            try {{
+                const rawReal = dqh._origGetRunningGames();
+                if (Array.isArray(rawReal)) realGames.push(...rawReal);
+            }} catch(e2) {{}}
         }}
-        if (!Array.isArray(realGames)) realGames = [];
         if (!(hint && hint.pid)) {{
             // Discord's native game/session subscribers call PID APIs before
             // QuestProgressManager. They accept a positive integer even when
@@ -530,6 +573,107 @@ fn js_spoof_play_game_for(
             // Use a high synthetic value instead of monitoring an unrelated
             // real process; avoid collisions with games already in the store.
             fakeGame.pid = allocateSyntheticPid(realGames);
+        }}
+
+        // Synthesize a valid 196-char Base64 executableFingerprint matching
+        // discord_utils.node (sub_a3990 -> sub_a4120 -> sub_1350, 0x92 = 146 bytes)
+        let fingerprintError = null;
+        dqh._lastFingerprintError = null;
+        try {{
+            if (typeof crypto !== "undefined" && crypto.subtle && typeof crypto.subtle.digest === "function") {{
+                const enc = new TextEncoder();
+                const sha256 = async (text) => new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(text)));
+                let currentUserId = "";
+                try {{
+                    const wpReq = webpackChunkdiscord_app.push([[Symbol()], {{}}, r => r]);
+                    webpackChunkdiscord_app.pop();
+                    for (const m of Object.values(wpReq.c)) {{
+                        try {{
+                            const exp = m?.exports;
+                            const u = exp?.default?.getCurrentUser?.() || exp?.Ay?.getCurrentUser?.();
+                            if (u && u.id) {{ currentUserId = String(u.id); break; }}
+                            const authId = exp?.default?.getId?.() || exp?.Ay?.getId?.();
+                            if (typeof authId === "string" && /^\d+$/.test(authId)) {{ currentUserId = authId; break; }}
+                        }} catch(_) {{}}
+                    }}
+                }} catch(_) {{}}
+                if (!currentUserId) {{
+                    fingerprintError = "missing_current_user_id";
+                    dqh._lastFingerprintError = fingerprintError;
+                }} else {{
+                    const xorKey = await sha256(currentUserId + "https://discord.com/careers");
+                    let harvestedHw = null;
+                    for (const cand of realGames) {{
+                        if (!cand || typeof cand.executableFingerprint !== "string" || cand.executableFingerprint.length !== 196) continue;
+                        try {{
+                            const raw = Uint8Array.from(atob(cand.executableFingerprint), c => c.charCodeAt(0));
+                            if (raw.length === 0x92 && raw[0] === 0x01) {{
+                                const plain = new Uint8Array(0x92);
+                                plain[0] = raw[0];
+                                for (let i = 1; i < 0x92; i++) plain[i] = raw[i] ^ xorKey[(i - 1) & 31];
+                                const plainView = new DataView(plain.buffer);
+                                const flags = plain[1];
+                                const fileSizeLow = plainView.getUint32(0x02, true);
+                                const fileSizeHigh = plainView.getUint32(0x06, true);
+                                const tds = plainView.getUint32(0x0A, true);
+                                const imgSize = plainView.getUint32(0x0E, true);
+                                // File signing status does not determine the machine/user hash.
+                                if ((flags & 0xFC) === 0
+                                    && fileSizeHigh === 0 && fileSizeLow >= 4096
+                                    && tds >= 0x386D4380 && tds <= 0x7FFFFFFF
+                                    && imgSize >= 0x1000 && (imgSize & 0xFFF) === 0) {{
+                                    harvestedHw = plain.slice(0x32, 0x52);
+                                    break;
+                                }}
+                            }}
+                        }} catch(_) {{}}
+                    }}
+                    const normPath = String(fakeGame.exePath || "").toLowerCase().replace(/\\/g, "/").split("/").filter(Boolean).slice(-2).join("/");
+                    const seed = applicationId + ":" + normPath;
+                    const seedHash = await sha256("seed:" + seed);
+                    const seedView = new DataView(seedHash.buffer);
+                    const baseMb = 20 + (seedView.getUint32(0, true) % 120);
+                    const extraBytes = (seedView.getUint32(4, true) % 1024) * 512;
+                    const fileSize = BigInt(baseMb * 1024 * 1024 + extraBytes);
+                    const timeDateStamp = (1704067200 + (seedView.getUint32(8, true) % 55000000)) >>> 0;
+                    const pages = 0x3800 + (seedView.getUint16(12, true) % 0x4000);
+                    const sizeOfImage = (pages * 0x1000) >>> 0;
+                    const hPeHeaders = await sha256("PE_HEADERS_V1:" + seed + ":" + timeDateStamp + ":" + sizeOfImage);
+                    const hSections = await sha256("PE_SECTIONS_V1:" + seed + ":" + sizeOfImage);
+                    const hCert = await sha256("AUTHENTICODE_CERT_V1:" + seed);
+                    const buf = new Uint8Array(0x92);
+                    const pktView = new DataView(buf.buffer);
+                    const isPe64 = selectedOs === "win32" || normPath.endsWith(".exe");
+                    buf[0x00] = 0x01; // version = 1 (un-XORed in sub_1350)
+                    buf[0x01] = isPe64 ? 0x03 : 0x01; // flags = is_signed (0x01) | is_pe64 (0x02 for Windows PE64)
+                    pktView.setBigUint64(0x02, fileSize, true);
+                    pktView.setUint32(0x0A, timeDateStamp, true);
+                    pktView.setUint32(0x0E, sizeOfImage, true);
+                    buf.set(hPeHeaders, 0x12);
+                    if (harvestedHw && harvestedHw.length === 32) {{
+                        buf.set(harvestedHw, 0x32);
+                    }} else {{
+                        const hHw = (typeof hostHwToken === "string" && hostHwToken.length > 0)
+                            ? await sha256(hostHwToken + ":" + currentUserId)
+                            : await sha256("hw:" + hostOs + ":" + (navigator.hardwareConcurrency || 8) + ":" + currentUserId);
+                        buf.set(hHw, 0x32);
+                    }}
+                    buf.set(hSections, 0x52);
+                    buf.set(hCert, 0x72);
+                    const out = new Uint8Array(0x92);
+                    out[0] = buf[0];
+                    for (let i = 1; i < 0x92; i++) out[i] = buf[i] ^ xorKey[(i - 1) & 31];
+                    let bin = "";
+                    for (let i = 0; i < out.length; i++) bin += String.fromCharCode(out[i]);
+                    fakeGame.executableFingerprint = btoa(bin);
+                }}
+            }} else {{
+                fingerprintError = "webcrypto_subtle_unavailable";
+                dqh._lastFingerprintError = fingerprintError;
+            }}
+        }} catch(fpErr) {{
+            fingerprintError = String(fpErr);
+            dqh._lastFingerprintError = fingerprintError;
         }}
 
         dqh._spoofActive = true;
@@ -701,7 +845,7 @@ fn js_spoof_play_game_for(
         subscribeHeartbeats();
         dqh.FluxDispatcher.dispatch({{ type: "RUNNING_GAMES_CHANGE", removed: [], added: [fakeGame], games: mergedGames }});
 
-        return JSON.stringify({{ success: true, wrappedObserver, pid: fakeGame.pid || null, patchCount: patchCount, exeName: exeName, allExeNames: allExeNames, appDataName: appDataDebug, realGamesCount: realGames.length, mergedCount: mergedGames.length, hostOs: hostOs, selectedOs: selectedOs, usedHint: !!hint }});
+        return JSON.stringify({{ success: true, wrappedObserver, pid: fakeGame.pid || null, patchCount: patchCount, exeName: exeName, allExeNames: allExeNames, appDataName: appDataDebug, realGamesCount: realGames.length, mergedCount: mergedGames.length, hostOs: hostOs, selectedOs: selectedOs, usedHint: !!hint, hasFingerprint: typeof fakeGame.executableFingerprint === "string", fingerprintError: fingerprintError }});
     }} catch (e) {{
         return JSON.stringify({{ success: false, error: String(e) }});
     }}
@@ -1538,7 +1682,7 @@ fn module_script(operation: &str, discover_only: bool) -> String {
 
 async fn initialize_modules(port: u16, operation: &str) -> Result<()> {
     initialize_modules_with(
-        cdp_client::verify_primary_discord_target(port),
+        cdp_client::verify_primary_automation_target(port),
         operation,
         async |verified, script| {
             cdp_client::execute_js_on_verified_discord_target(verified, &script, true, 2).await
@@ -1621,16 +1765,25 @@ fn capability_error(operation: &str, result: &serde_json::Value) -> CdpCapabilit
     CdpCapabilityError {
         code: "cdp_capability_missing",
         params: serde_json::json!({"operation":operation,"missingCapabilities":missing}),
-        message: format!(
-            "CDP capability missing for {operation}: {}",
-            missing.join(", ")
-        ),
+        message: if missing
+            .iter()
+            .any(|name| name.starts_with("NativeUtils.discord_utils"))
+        {
+            format!("This client does not provide Discord's native game-monitoring module required for {operation}. Use official Discord for game or stream automation.")
+        } else {
+            format!(
+                "CDP capability missing for {operation}: {}",
+                missing.join(", ")
+            )
+        },
     }
 }
 
 pub(crate) fn quest_error_payload(error: &anyhow::Error, prefix: &str) -> serde_json::Value {
     if let Some(capability) = error.downcast_ref::<CdpCapabilityError>() {
         serde_json::to_value(capability).expect("capability error is serializable")
+    } else if cdp_client::error_is_target_invalidated(error) {
+        serde_json::json!(format!("{prefix}: The desktop client closed, reloaded, or disconnected. Reopen Discord or Vesktop and reconnect before retrying."))
     } else {
         serde_json::json!(format!("{prefix}: {error:#}"))
     }
@@ -1929,6 +2082,10 @@ async fn cdp_cleanup_with_attempts(port: u16, max_attempts: u32) -> Result<()> {
 pub async fn start_manual_game_spoof(port: u16, app_id: &str, app_name: &str) -> Result<()> {
     use crate::logger::{log, LogCategory, LogLevel};
 
+    cdp_client::ensure_supported_automation_client(port)
+        .await
+        .map_err(anyhow::Error::msg)?;
+
     // Always begin from a verified clean state. This also recovers a spoof
     // left behind by an earlier app process that exited unexpectedly.
     cdp_cleanup_with_attempts(port, CDP_CLEANUP_ATTEMPTS)
@@ -1961,6 +2118,24 @@ pub async fn start_manual_game_spoof(port: u16, app_id: &str, app_name: &str) ->
         }
     };
     log_partial_target_failures("manual game simulation", &summary.target_failures);
+    if let Some(first) = summary.successful_results.first() {
+        let has_fp = first
+            .get("hasFingerprint")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let fp_err = first.get("fingerprintError").and_then(|v| v.as_str());
+        if !has_fp || fp_err.is_some() {
+            log(
+                LogLevel::Warn,
+                LogCategory::TokenExtraction,
+                &format!(
+                    "CDP manual game simulation: executableFingerprint missing or errored (hasFingerprint={}, error={:?})",
+                    has_fp, fp_err
+                ),
+                None,
+            );
+        }
+    }
 
     log(
         LogLevel::Info,
@@ -2190,14 +2365,31 @@ pub async fn complete_play_quest_via_cdp(
                 .join(", ")
         })
         .unwrap_or_default();
+    let has_fingerprint = parsed
+        .get("hasFingerprint")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let fingerprint_error = parsed.get("fingerprintError").and_then(|v| v.as_str());
+    if !has_fingerprint || fingerprint_error.is_some() {
+        log(
+            LogLevel::Warn,
+            LogCategory::TokenExtraction,
+            &format!(
+                "CDP: Spoofed game missing executableFingerprint (hasFingerprint={}, fingerprintError={:?})",
+                has_fingerprint, fingerprint_error
+            ),
+            None,
+        );
+    }
     log(LogLevel::Info, LogCategory::TokenExtraction,
         &format!(
-            "CDP: Game spoofed successfully on {}/{} target(s) (max {} RunningGameStore patches, exe={}, allExes=[{}], dispatch interceptor active). Polling progress...",
+            "CDP: Game spoofed successfully on {}/{} target(s) (max {} RunningGameStore patches, exe={}, allExes=[{}], hasFingerprint={}, dispatch interceptor active). Polling progress...",
             spoof_summary.successful_results.len(),
             spoof_summary.total_targets,
             patch_count,
             exe_name,
-            all_exes
+            all_exes,
+            has_fingerprint
         ),
         None,
     );
@@ -2301,6 +2493,7 @@ pub async fn complete_play_quest_via_cdp(
     }
 }
 
+/// Initialize CDP quest modules and start both stream metadata spoofing and companion running-game spoofing.
 async fn cdp_start_stream_spoof(port: u16, app_id: &str) -> Result<CdpJsonExecutionSummary> {
     let result = async {
         cdp_prepare_quest_modules(port, "stream quest").await?;
@@ -2322,6 +2515,24 @@ async fn cdp_start_stream_spoof(port: u16, app_id: &str) -> Result<CdpJsonExecut
         )
         .await?;
         log_partial_target_failures("stream companion game spoof", &game.target_failures);
+        if let Some(first) = game.successful_results.first() {
+            let has_fp = first
+                .get("hasFingerprint")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let fp_err = first.get("fingerprintError").and_then(|v| v.as_str());
+            if !has_fp || fp_err.is_some() {
+                crate::logger::log(
+                    crate::logger::LogLevel::Warn,
+                    crate::logger::LogCategory::TokenExtraction,
+                    &format!(
+                        "CDP stream companion game spoof: executableFingerprint missing or errored (hasFingerprint={}, error={:?})",
+                        has_fp, fp_err
+                    ),
+                    None,
+                );
+            }
+        }
         Ok(stream)
     }
     .await;
@@ -3876,6 +4087,16 @@ pub async fn complete_activity_quest_via_cdp(
 #[cfg(test)]
 mod tests {
     #[test]
+    fn closed_client_errors_explain_recovery_in_quest_events() {
+        let error = anyhow::anyhow!("cdp_target_invalidated: target closed during evaluation")
+            .context("game spoof failed");
+        let payload = quest_error_payload(&error, "CDP quest failed");
+        let message = payload.as_str().unwrap();
+        assert!(message.contains("closed, reloaded, or disconnected"));
+        assert!(message.contains("reconnect before retrying"));
+    }
+
+    #[test]
     fn capability_errors_keep_their_details_through_context_and_events() {
         let error = anyhow::Error::from(capability_error(
             "stream quest",
@@ -3909,7 +4130,14 @@ mod tests {
     }
 
     impl FakeQuestCdp {
-        fn start(mut evaluate: impl FnMut(&str) -> serde_json::Value + Send + 'static) -> Self {
+        fn start(evaluate: impl FnMut(&str) -> serde_json::Value + Send + 'static) -> Self {
+            Self::with_browser_ids(evaluate, vec!["fixture"])
+        }
+
+        fn with_browser_ids(
+            mut evaluate: impl FnMut(&str) -> serde_json::Value + Send + 'static,
+            mut browser_ids: Vec<&'static str>,
+        ) -> Self {
             use std::io::Write;
             let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
             listener.set_nonblocking(true).unwrap();
@@ -3929,10 +4157,22 @@ mod tests {
                     let mut request = [0u8; 1024];
                     let size = stream.peek(&mut request).unwrap();
                     if String::from_utf8_lossy(&request[..size]).starts_with("GET /json") {
+                        let version_request = String::from_utf8_lossy(&request[..size])
+                            .starts_with("GET /json/version");
                         cdp_client::read_fixture_http_request(&mut stream);
-                        let body = serde_json::json!([{"id":"quest", "type":"page", "title":"Discord",
+                        let body = if version_request {
+                            let id = if browser_ids.len() > 1 {
+                                browser_ids.remove(0)
+                            } else {
+                                browser_ids[0]
+                            };
+                            serde_json::json!({"User-Agent":"discord/0.0.100",
+                                "webSocketDebuggerUrl":format!("ws://127.0.0.1:{port}/devtools/browser/{id}")}).to_string()
+                        } else {
+                            serde_json::json!([{"id":"quest", "type":"page", "title":"Discord",
                             "url":"https://discord.com/channels/@me",
-                            "webSocketDebuggerUrl":format!("ws://127.0.0.1:{port}/devtools/page/quest")}]).to_string();
+                            "webSocketDebuggerUrl":format!("ws://127.0.0.1:{port}/devtools/page/quest")}]).to_string()
+                        };
                         stream
                             .write_all(
                                 format!(
@@ -3985,6 +4225,25 @@ mod tests {
         serde_json::json!({"id":1,"result":{"result":{"value":{
             "appRootPresent":true,"moduleLoaderPresent":true,"loading":false,
             "nativeBridgePresent":false,"focused":false,"documentGeneration":"100"}}}})
+    }
+
+    #[tokio::test]
+    async fn browser_replacement_during_preflight_never_receives_module_code() {
+        let server = FakeQuestCdp::with_browser_ids(
+            |expression| {
+                assert!(
+                    expression.contains("moduleLoaderPresent:"),
+                    "module code reached a replacement browser"
+                );
+                fake_runtime_reply()
+            },
+            vec!["original", "replacement"],
+        );
+        let error = initialize_modules(server.port, "video quest")
+            .await
+            .unwrap_err();
+        assert!(cdp_client::error_is_target_invalidated(&error));
+        assert!(error.to_string().contains("browser endpoint changed"));
     }
 
     fn fake_script_reply(value: serde_json::Value) -> serde_json::Value {
@@ -4544,6 +4803,56 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires a live Equibop CDP session on the default debugging port"]
+    async fn live_equibop_preflights_reject_without_installing_game_patches() {
+        let port = crate::cdp_client::DEFAULT_CDP_PORT;
+        let client_error = crate::cdp_client::ensure_supported_automation_client(port)
+            .await
+            .expect_err("Equibop should be identified as unsupported");
+        assert!(client_error.contains("Equibop is not currently supported"));
+
+        // Exercise the operation preflight too: it must protect any client
+        // missing discord_utils, even if its process name is recognized.
+        // Bypass only the product policy to exercise the read-only native
+        // discovery against the real unsupported client as a separate layer.
+        let error = initialize_modules_with(
+            cdp_client::verify_primary_discord_target(port),
+            "manual game simulation",
+            async |verified, script| {
+                cdp_client::execute_js_on_verified_discord_target(verified, &script, true, 2).await
+            },
+        )
+        .await
+        .expect_err("Equibop has no native Discord game-monitoring bridge");
+        let payload = quest_error_payload(&error, "CDP quest failed");
+        assert_eq!(payload["code"], "cdp_capability_missing");
+        assert!(payload["params"]["missingCapabilities"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("NativeUtils.discord_utils")));
+        let error = start_manual_game_spoof(port, "363445589247131668", "Roblox")
+            .await
+            .expect_err("scheduled/manual injections must run their own client preflight");
+        assert!(error
+            .to_string()
+            .contains("Equibop is not currently supported"));
+        let raw = crate::cdp_client::execute_js_via_primary_discord_target(
+            port,
+            &with_bridge(JS_VERIFY_CLEANUP_STATE),
+            false,
+            CDP_CLEANUP_VERIFY_TIMEOUT_SECS,
+        )
+        .await
+        .expect("Equibop must remain reachable");
+        let parsed = serde_json::from_str(&raw).unwrap();
+        let state = cleanup_verify_from_json(&parsed).unwrap();
+        assert!(
+            cleanup_verify_is_clean(&state),
+            "preflight installed game patches: {raw}"
+        );
+    }
+
+    #[tokio::test]
     #[ignore = "requires a live Discord CDP session on the default debugging port"]
     async fn live_cdp_running_game_spoof_ab() {
         let port = crate::cdp_client::DEFAULT_CDP_PORT;
@@ -4552,8 +4861,15 @@ mod tests {
             .expect("Discord CDP snapshot should be reachable");
         assert!(before.store_found, "RunningGameStore should be loaded");
 
-        let app_id = "1158877933042143272".to_string();
-        let app_name = "Counter-Strike 2".to_string();
+        let app_id = std::env::var("DQH_LIVE_CDP_APP_ID")
+            .unwrap_or_else(|_| "1158877933042143272".to_string());
+        let app_name = std::env::var("DQH_LIVE_CDP_APP_NAME")
+            .unwrap_or_else(|_| "Counter-Strike 2".to_string());
+        let hold_secs = std::env::var("DQH_LIVE_CDP_HOLD_SECS")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(0)
+            .min(120);
 
         let init = cdp_init_modules(port).await;
         if init.is_err() {
@@ -4570,6 +4886,12 @@ mod tests {
         let spoof_raw =
             crate::cdp_client::execute_js_via_primary_discord_target(port, &spoof_js, true, 30)
                 .await;
+        // Opt-in dwell lets native scanner and heartbeat subscribers run before
+        // cleanup. It also exposes asynchronous failures missed by an immediate snapshot.
+        if spoof_raw.is_ok() && hold_secs > 0 {
+            println!("Observing live CDP game state for {hold_secs}s before cleanup");
+            sleep(Duration::from_secs(hold_secs)).await;
+        }
         let during = crate::cdp_client::fetch_running_games_via_cdp(port).await;
         let cleanup = cdp_cleanup_with_attempts(port, CDP_CLEANUP_ATTEMPTS).await;
         let after = crate::cdp_client::fetch_running_games_via_cdp(port).await;
