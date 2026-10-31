@@ -1,53 +1,40 @@
-## What's New in 0.11.0
+## What's New in 0.12.0
 
-### Discover more quests
+### Flexible quest completion notifications
 
-1. Added Global Quests, where you can browse unexpired quests from different regions and preview upcoming quests.
-2. Search by quest or game name, and filter by eligible country or region, task type, reward type, and age restrictions. View rewards, requirements, and start and end times, or open a quest directly in Discord.
-3. See your current network region and which quests your account has accepted or completed. The catalog loads in the background, and your last loaded results remain available if a refresh fails.
+1. Get quest completion notifications through System, Telegram, or Discord. Each channel reports delivery independently, and notification previews are localized.
+2. Send notifications to a Custom Webhook using versioned JSON with task and queue details. Configure Bearer authentication and separate title and content templates for each event, use placeholders, test unsaved templates, and restore localized defaults available in all 16 languages.
 
-The global quest catalog is provided by discordquest.com. Check the quest in Discord to confirm whether your account is eligible.
+### More control over Game Idle
 
-### Manage similar quests together and take control of your queue
+Contributed by @klaus-2 (#221, #224).
 
-4. My Tasks now groups quests with the same name, game, and task types. See their combined rewards, completed count, and average progress at a glance, or expand a group to view each quest.
-5. Accept, start, queue, remove, stop, or claim rewards for a whole group with fewer clicks. When claiming group rewards through a connected Discord client, the app opens each quest in turn and guides you through claiming and confirming its reward.
-6. Add more quests while one is running. Drag waiting quests or use the arrow buttons to change their order, remove individual quests, or clear the waiting list.
-7. Choose Stop current task to continue with the remaining queue, or Stop entire queue to end the run. Before starting the next quest, the app checks its latest status and skips quests that are completed, expired, or no longer eligible to run. If that check fails, the queue pauses until you choose to resume.
+3. Choose fixed or randomized ranges for play and rest durations.
+4. Optionally simulate a game closing and reopening during a play cycle, with configurable timing and restart delay.
+5. Keep a simulated game running for a chosen interval after a quest completes before the queue advances.
+6. Improved simulated-game stop reliability. The app retries and verifies process termination, and keeps tracking a game when it is still running so cleanup can try again.
 
-### Build your own idle playlist
+### Smoother Discord integration
 
-8. Random idle rotation can now include games only, apps only, or both.
-9. Added Custom playlist: search for games and apps, add them to your list, arrange their order, and cycle through them in sequence. Your playlist and selection preferences are saved on this device for next time.
-10. Right-click a waiting item and choose Skip this occurrence to skip it once while keeping it in your saved playlist. Incompatible or unavailable items are clearly marked so you can adjust the list before starting.
+7. Detect local Discord tokens across Windows, Linux, and macOS for Discord Stable, Canary, PTB, Equibop, Legcord, Vesktop, ArmCord, and WebCord. Detection now checks both common Local Storage and sessionData layouts (contributed by @Qyzom, #222).
+8. Recover Discord API connections after network changes. Safe GET requests can retry once on a new connection, while other requests are not repeated (contributed by @ari92p, #211).
+9. Improved Discord client discovery across updates and platforms, reducing stale entries while preserving manually selected clients when they are temporarily unavailable.
+10. Improved CDP activity reporting by aligning client identity and heartbeat metadata with the current desktop client (contributed by @ccsimplyspolit, #218).
+11. Check CDP clients and required native capabilities before injecting game or stream quest support. Unsupported clients such as Equibop are rejected before injection, and connection interruptions provide clearer reconnect guidance.
 
-### Easier navigation, progress tracking, and settings
+### Account details and interface improvements
 
-11. Redesigned the left sidebar to bring My Tasks, Global Quests, Game Simulator, and common tools together. Switch themes, languages, and task modes directly, and check your Discord connection status.
-12. The sidebar task icon shows progress and the total task count. Hover to see the current or next task, or click to open the floating progress panel and manage your queue. You can drag, collapse, or hide the panel.
-13. Settings are now on one scrollable page, with keyword search, category shortcuts, and a collapsible category sidebar to help you find options faster.
-14. Updated quest cards, dialogs, and the Game Simulator layout to improve text and button placement in narrower windows.
-15. Software update notification will now be displayed before Discord login.
+12. View supported Discord account badges in the account menu, including games played, quests completed, and hours played. Use the shortcut beside eligible badges to open Game Simulator.
+13. The floating Quest Progress panel stays within the app workspace when moved or resized.
+14. Fixed external links so they open and copy their intended web addresses.
 
-### Orbs details and update reminders
+### Updates and maintenance
 
-16. Check your Orbs balance, total redeemed Orbs, and the countdown to your next Nitro Orbs drop from the sidebar, with a manual refresh option.
-17. Update reminders now appear before sign-in and on other main pages, making new releases easier to spot when you open the app.
+15. Bumped default client config:
+    - build number to `657850`
+    - native build number to `97026`
+    - client version to `1.0.9266`
+    - Chrome version to `152.0.7977.167`
+    - Electron version to `44.9.3`
 
-### Discord Console for advanced troubleshooting
-
-18. When connected to Discord in CDP mode, you can enable Discord Console to view live client logs and search or filter the output while investigating issues.
-19. Run JavaScript, inspect and copy results, and expand object properties. The editor includes syntax highlighting, command history, and an adjustable height.
-
-### Fixes and reliability improvements
-
-20. Fixed stale Discord icons that could remain in the Windows system tray after the app restarted Discord.
-21. Added a cancel option to the Discord exit prompt, so you can return to the app if you clicked close by mistake.
-22. Improved quest and Orbs data refreshes when switching accounts, preventing results from the previous account from remaining on screen.
-23. Incomplete game and app catalog loads now show an error and allow a retry, helping prevent missing entries from being mistaken for a complete list.
-24. Updated dependency package for potential security vulnerability.
-25. Bumped default client config:
-    - default client build number to `641004`
-    - default native build number to `94186`
-    - default client version to `1.0.9262`
-    - default Electron version to `42.11.11`
+16. Updated Vite to `7.3.7`.
