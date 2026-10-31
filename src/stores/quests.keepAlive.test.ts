@@ -9,6 +9,11 @@ const mocks = vi.hoisted(() => ({
   startVideoQuest: vi.fn(),
   stopQuest: vi.fn(),
   stopSimulatedGame: vi.fn(),
+  fetchDetectableGames: vi.fn(),
+  createSimulatedGame: vi.fn().mockResolvedValue(undefined),
+  runSimulatedGame: vi.fn().mockResolvedValue(undefined),
+  connectToDiscordRpc: vi.fn().mockResolvedValue(undefined),
+  startGameSimulationUsage: vi.fn().mockResolvedValue(undefined),
   stopGameSimulationUsage: vi.fn(),
   onQuestComplete: vi.fn(),
   dispatchNotification: vi.fn().mockResolvedValue(undefined),
@@ -22,6 +27,11 @@ vi.mock('@/api/tauri', () => ({
   startVideoQuest: mocks.startVideoQuest,
   stopQuest: mocks.stopQuest,
   stopSimulatedGame: mocks.stopSimulatedGame,
+  fetchDetectableGames: mocks.fetchDetectableGames,
+  createSimulatedGame: mocks.createSimulatedGame,
+  runSimulatedGame: mocks.runSimulatedGame,
+  connectToDiscordRpc: mocks.connectToDiscordRpc,
+  startGameSimulationUsage: mocks.startGameSimulationUsage,
   stopGameSimulationUsage: mocks.stopGameSimulationUsage,
   onQuestProgress: vi.fn().mockResolvedValue(() => undefined),
   onQuestComplete: mocks.onQuestComplete,
@@ -42,12 +52,13 @@ function storage(): Storage {
   }
 }
 
-function quest(id: string): Quest {
+function quest(id: string, taskType = 'PLAY'): Quest {
   return {
     id,
     config: {
       messages: { quest_name: id, game_title: id },
-      task_config: { tasks: { PLAY: { type: 'PLAY', target: 60 } } },
+      application: { id, name: id },
+      task_config: { tasks: { [taskType]: { type: taskType, target: 60 } } },
     },
     user_status: { enrolled_at: '2026-10-10T00:00:00Z', progress: {} },
   } as Quest
@@ -139,6 +150,56 @@ describe('post-quest keep-alive', () => {
 
     expect(mocks.stopSimulatedGame).toHaveBeenCalledTimes(1)
     expect(store.activeQuestId).toBeNull()
+    expect(mocks.dispatchNotification.mock.calls.filter(([event]) => event.kind === 'quest_completed')).toHaveLength(1)
+  })
+
+  it.each(['event', 'polling'])('advances tasks added during a single quest keep-alive after %s completion', async source => {
+    const first = quest('first', 'PLAY_ON_DESKTOP')
+    const second = quest('second', 'WATCH_VIDEO')
+    mocks.getQuestsFull.mockImplementation(async () => ({ quests: [first, second], excluded_quests: [] }))
+    mocks.fetchDetectableGames.mockResolvedValue([
+      { id: 'first', name: 'first', executables: [{ os: 'win32', name: 'first.exe' }] },
+    ])
+    const store = useQuestsStore()
+    store.quests = [first, second]
+    store.setSimulationPath('C:\\QuestHelper\\GameRuntime')
+    store.gamePollingInterval = 30
+    store.postQuestKeepAliveEnabled = true
+    store.postQuestKeepAlive = { mode: 'fixed', fixed: 1, min: 1, max: 1 }
+    await store.startPlay(first, 60, 0)
+    expect(store.questQueue).toEqual([])
+    expect(store.isQueueRunning).toBe(false)
+
+    first.user_status!.completed_at = new Date().toISOString()
+    if (source === 'event') await complete()
+    else await vi.advanceTimersByTimeAsync(30_000)
+    const endsAt = Date.now() + 60_000
+    expect(store.keepAliveEndsAt).toBe(endsAt)
+
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(store.addToQueueBehindActive(second)).toBe(true)
+    expect(store.isQueueRunning).toBe(true)
+    expect(store.questQueue.map(item => item.id)).toEqual(['first', 'second'])
+    expect(store.keepAliveEndsAt).toBe(endsAt)
+    // A duplicate event after queueing must not reclaim completion or reset the wait.
+    await complete()
+    await vi.advanceTimersByTimeAsync(29_999)
+    expect(mocks.stopSimulatedGame).not.toHaveBeenCalled()
+    expect(store.activeQuestId).toBe('first')
+    expect(store.keepAliveEndsAt).toBe(endsAt)
+
+    await vi.advanceTimersByTimeAsync(1)
+    expect(mocks.stopSimulatedGame).toHaveBeenCalledExactlyOnceWith('first.exe')
+    expect(mocks.stopGameSimulationUsage).toHaveBeenCalledTimes(1)
+    expect(store.questQueue.map(item => item.id)).toEqual(['second'])
+    expect(store.activeQuestId).toBeNull()
+    expect(store.isQueueRunning).toBe(true)
+    expect(store.keepAliveEndsAt).toBeNull()
+
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(store.activeQuestId).toBe('second')
+    expect(mocks.startVideoQuest).toHaveBeenCalledTimes(1)
+    expect(mocks.startVideoQuest.mock.calls[0][0]).toBe('second')
     expect(mocks.dispatchNotification.mock.calls.filter(([event]) => event.kind === 'quest_completed')).toHaveLength(1)
   })
 

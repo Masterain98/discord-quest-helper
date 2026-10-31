@@ -649,7 +649,13 @@ export const useQuestsStore = defineStore('quests', () => {
         }
         keepAliveQuestId = null
         keepAliveEndsAt.value = null
-        void teardown()
+        // A single quest can become the queue head during the wait. Resolve
+        // its completion path now so newly queued tasks survive and advance.
+        if (isQueueRunning.value && questQueue.value[0]?.id === questId) {
+          void completeQueuedQuest(questId)
+        } else {
+          void teardown()
+        }
       }, Math.min(remainingMs, KEEP_ALIVE_MAX_TIMER_MS))
     }
     wait(minutes * 60_000)
