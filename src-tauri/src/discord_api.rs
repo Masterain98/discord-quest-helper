@@ -1225,36 +1225,6 @@ impl DiscordApiClient {
         serde_json::from_str(&body).context("Failed to parse program rewards")
     }
 
-    pub async fn claim_quest_reward(
-        &self,
-        quest_id: &str,
-        platform: Option<String>,
-    ) -> Result<serde_json::Value> {
-        let url = format!("{}/quests/{}/claim-reward", DISCORD_API_BASE, quest_id);
-        let payload = match platform {
-            Some(platform) if !platform.trim().is_empty() => {
-                serde_json::json!({ "platform": platform })
-            }
-            _ => serde_json::json!({}),
-        };
-
-        let response = self
-            .request(Method::POST, &url)
-            .await?
-            .json(&payload)
-            .send_reconnecting(self)
-            .await
-            .context("Request to claim quest reward failed")?;
-
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        if !status.is_success() {
-            anyhow::bail!("Failed to claim quest reward: {} - {}", status, body);
-        }
-
-        serde_json::from_str(&body).context("Failed to parse claim reward response")
-    }
-
     /// Update video watch progress
     pub async fn update_video_progress(&self, quest_id: &str, timestamp: f64) -> Result<bool> {
         let url = format!("{}/quests/{}/video-progress", DISCORD_API_BASE, quest_id);
