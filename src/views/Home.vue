@@ -578,7 +578,6 @@ import QuestQueueAction from '@/components/QuestQueueAction.vue'
 import type { DetectableGame, PlatformCapabilities, Quest } from '@/api/tauri'
 import {
   acceptQuest as acceptQuestApi,
-  claimQuestReward,
   navigateDiscordSpa,
 } from '@/api/tauri'
 import { Button } from '@/components/ui/button'
@@ -621,6 +620,7 @@ import { getQuestRewardCategory } from '@/utils/questRewards'
 import { getSimulationExecutables } from '@/utils/executables'
 import { useToastStore } from '@/stores/toast'
 import { navigateToTab } from '@/utils/navigate'
+import { discordIntegrationAction, manualRewardClaimNotice, openRewardQuest } from '@/utils/questRewardNavigation'
 import {
   emptyAdvancedQuestFilters,
   getRecommendedQuests,
@@ -1541,24 +1541,28 @@ function cancelActivityLaunch() {
 async function claimReward(quest: Quest) {
   if (groupBusy.value || claimingQuest.value) return
   claimingQuest.value = quest.id
+  if (claimedNoticeTimer) clearTimeout(claimedNoticeTimer)
+  claimedNoticeQuestId.value = null
 
   try {
-    if (questsStore.cdpAvailable) {
-      // Navigate to the quest page in Discord client so user can claim there
-      const questPath = `/quest-home#${encodeURIComponent(quest.id)}`
-      await navigateDiscordSpa(questPath, questsStore.cdpPort)
-      // Show brief inline notice near the button
-      if (claimedNoticeTimer) clearTimeout(claimedNoticeTimer)
+    const result = await openRewardQuest(quest.id, {
+      cdpAvailable: questsStore.cdpAvailable,
+      cdpPort: questsStore.cdpPort,
+      navigate: navigateDiscordSpa,
+    })
+    if (result === 'navigated') {
       claimedNoticeQuestId.value = quest.id
       claimedNoticeTimer = setTimeout(() => { claimedNoticeQuestId.value = null }, 4000)
     } else {
-      // Fallback: try API claim when CDP is not available
-      await claimQuestReward(quest.id)
-      await questsStore.fetchQuests(true, true)
+      toast.info(manualRewardClaimNotice(t))
     }
   } catch (error) {
-    console.error('Failed to claim quest reward:', error)
-    toast.error({ title: t('toast.failed_claim'), description: String(error) })
+    console.error('Failed to open Discord quest page:', error)
+    toast.error({
+      title: t('toast.failed_open_quest'),
+      description: String(error),
+      actions: [discordIntegrationAction(t)],
+    })
   } finally {
     claimingQuest.value = null
   }

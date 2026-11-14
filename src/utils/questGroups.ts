@@ -14,14 +14,20 @@ export function questGroupKey(quest: Quest): string | null {
   return JSON.stringify([name, game, types])
 }
 
-/** Group only the supplied (already filtered and sorted) members. Never reorder input. */
+/** Completed quests always render individually, including unclaimed rewards. */
+export function questDisplayGroupKey(quest: Quest): string {
+  if (quest.user_status?.completed_at || quest.user_status?.claimed_at) return `id:${quest.id}`
+  return questGroupKey(quest) ?? `id:${quest.id}`
+}
+
+/** Stack only unfinished supplied members (already filtered and sorted). Never reorder input. */
 export function groupQuests(quests: Quest[]): QuestDisplayGroup[] {
   const groups = new Map<string, QuestDisplayGroup>()
   const seen = new Set<string>()
   for (const quest of quests) {
     if (seen.has(quest.id)) continue
     seen.add(quest.id)
-    const key = questGroupKey(quest) ?? `id:${quest.id}`
+    const key = questDisplayGroupKey(quest)
     const group = groups.get(key)
     if (group) group.quests.push(quest)
     else groups.set(key, { key, quests: [quest] })

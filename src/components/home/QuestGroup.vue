@@ -5,7 +5,7 @@ import { ChevronDown, Clock, Gift, Link2 } from 'lucide-vue-next'
 import QuestTaskBadges from '@/components/QuestTaskBadges.vue'
 import { useQuestsStore } from '@/stores/quests'
 import { useAuthStore } from '@/stores/auth'
-import { groupProgress, groupStats, hasLinkedQuestProgress, questGroupKey, type QuestDisplayGroup } from '@/utils/questGroups'
+import { groupProgress, groupStats, hasLinkedQuestProgress, questDisplayGroupKey, type QuestDisplayGroup } from '@/utils/questGroups'
 import { getQuestGroupRewardViews, type QuestRewardView } from '@/utils/questRewards'
 
 const props = defineProps<{ group: QuestDisplayGroup, expanded: boolean, compact?: boolean }>()
@@ -25,13 +25,13 @@ const heroImage = computed(() => {
 function rewardKey(reward: QuestRewardView): string {
   return `${reward.skuId}-${reward.type}-${reward.name}`
 }
-// Progress describes the entire account group, even when a tab hides members.
+// Summaries include unfinished account members, even when a tab hides them.
 // Action slots still receive only the filtered, visible members.
 const allMembers = computed(() => {
-  const key = questGroupKey(first.value)
+  const key = questDisplayGroupKey(first.value)
   const members = new Map(props.group.quests.map(quest => [quest.id, quest]))
-  if (key) for (const quest of store.quests) {
-    if (questGroupKey(quest) === key) members.set(quest.id, quest)
+  for (const quest of store.quests) {
+    if (questDisplayGroupKey(quest) === key) members.set(quest.id, quest)
   }
   return [...members.values()]
 })

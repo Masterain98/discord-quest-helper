@@ -1,9 +1,10 @@
 import { computed, onScopeDispose, ref } from 'vue'
 import type { Quest } from '@/api/tauri'
-import { acceptQuest, claimQuestReward, navigateDiscordSpa } from '@/api/tauri'
+import { acceptQuest, navigateDiscordSpa } from '@/api/tauri'
 import { useQuestsStore } from '@/stores/quests'
 import { useToastStore } from '@/stores/toast'
 import { canAcceptGroupMember, canClaimGroupMember, canQueueGroupMember } from '@/utils/questGroups'
+import { manualRewardClaimNotice, openRewardQuest } from '@/utils/questRewardNavigation'
 
 type Options = {
   blocked: () => boolean
@@ -36,8 +37,8 @@ export function useQuestGroupActions(options: Options) {
     busyIds.value = new Set()
   }
   function release(token: number) { if (token === revision) cancel() }
-  function report(action: 'accept' | 'claim', success: number, fail: number) {
-    toast[fail ? 'warning' : 'success']({ title: options.t(`quest_group.${action}_result`, { success, fail }) })
+  function reportAccept(success: number, fail: number) {
+    toast[fail ? 'warning' : 'success']({ title: options.t('quest_group.accept_result', { success, fail }) })
   }
   function reportError(error: unknown) {
     toast.error({ title: options.t('quest_group.operation_failed'), description: String(error) })
@@ -60,7 +61,7 @@ export function useQuestGroupActions(options: Options) {
         } catch { fail++ }
         await new Promise(resolve => setTimeout(resolve, 500))
       }
-      if (token === revision) report('accept', success, fail)
+      if (token === revision) reportAccept(success, fail)
     } finally { release(token) }
   }
 
@@ -100,11 +101,15 @@ export function useQuestGroupActions(options: Options) {
     // Members already claimed while the guide was open need no further navigation.
     while (state.index < state.ids.length && current(state.ids[state.index])?.user_status?.claimed_at) state.index++
     if (state.index >= state.ids.length) { release(token); return }
-    if (!store.cdpAvailable) {
+    const result = await openRewardQuest(state.ids[state.index], {
+      cdpAvailable: store.cdpAvailable,
+      cdpPort: store.cdpPort,
+      navigate: navigateDiscordSpa,
+    })
+    if (token !== revision) return
+    if (result === 'manual') {
       guideMessage.value = options.t('quest_group.guide_disconnected')
-      return
     }
-    await navigateDiscordSpa(`/quest-home#${encodeURIComponent(state.ids[state.index])}`, store.cdpPort)
   }
 
   async function claim(quests: Quest[]) {
@@ -114,26 +119,16 @@ export function useQuestGroupActions(options: Options) {
     try {
       const members = quests.map(q => current(q.id)).filter((q): q is Quest => !!q && canClaimGroupMember(q))
       if (!members.length) return
-      if (store.cdpAvailable) {
-        guide.value = { ids: members.map(q => q.id), index: 0 }
-        keepGuide = true
-        guideBusy.value = true
-        try { await openGuideMember(token) }
-        catch (error) { if (token === revision) guideMessage.value = String(error) }
-        finally { if (token === revision) guideBusy.value = false }
+      if (!store.cdpAvailable) {
+        toast.info(manualRewardClaimNotice(options.t))
         return
       }
-      let success = 0; let fail = 0
-      for (const member of members) {
-        if (token !== revision) return
-        const latest = current(member.id)
-        if (!latest || !canClaimGroupMember(latest)) continue
-        try { await claimQuestReward(member.id); success++ }
-        catch { fail++ }
-      }
-      if (token !== revision) return
-      await store.fetchQuests(true, true)
-      if (token === revision) report('claim', success, fail)
+      guide.value = { ids: members.map(q => q.id), index: 0 }
+      keepGuide = true
+      guideBusy.value = true
+      try { await openGuideMember(token) }
+      catch (error) { if (token === revision) guideMessage.value = `${options.t('toast.failed_open_quest')}: ${String(error)}` }
+      finally { if (token === revision) guideBusy.value = false }
     } finally { if (!keepGuide) release(token) }
   }
 
@@ -153,7 +148,7 @@ export function useQuestGroupActions(options: Options) {
       }
       guide.value.index++
       await openGuideMember(token)
-    } catch (error) { if (token === revision) guideMessage.value = String(error) }
+    } catch (error) { if (token === revision) guideMessage.value = `${options.t('toast.failed_open_quest')}: ${String(error)}` }
     finally { if (token === revision) guideBusy.value = false }
   }
 
@@ -163,7 +158,7 @@ export function useQuestGroupActions(options: Options) {
     guideBusy.value = true
     guideMessage.value = ''
     try { await openGuideMember(token) }
-    catch (error) { if (token === revision) guideMessage.value = String(error) }
+    catch (error) { if (token === revision) guideMessage.value = `${options.t('toast.failed_open_quest')}: ${String(error)}` }
     finally { if (token === revision) guideBusy.value = false }
   }
 
