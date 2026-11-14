@@ -43,6 +43,37 @@ describe('quest display groups', () => {
     expect(questGroupKey(quest('no-tasks', 'Name', []))).toBeNull()
   })
 
+  it('stacks only unfinished quests and keeps completed quests as individual cards', () => {
+    const ready = quest('ready')
+    const claimable = quest('claimable'); claimable.user_status!.completed_at = 'confirmed'
+    const claimed = quest('claimed'); claimed.user_status!.completed_at = 'confirmed'; claimed.user_status!.claimed_at = 'claimed'
+    const claimedOnly = quest('claimed-only'); claimedOnly.user_status!.claimed_at = 'claimed'
+    const unaccepted = quest('unaccepted'); unaccepted.user_status = null
+    const input = [claimable, ready, claimed, unaccepted, claimedOnly]
+    const before = JSON.stringify(input)
+
+    expect(groupQuests(input).map(group => group.quests.map(q => q.id))).toEqual([
+      ['claimable'], ['ready', 'unaccepted'], ['claimed'], ['claimed-only'],
+    ])
+    expect(JSON.stringify(input)).toBe(before)
+    expect(groupQuests([claimable, claimed, claimedOnly])).toHaveLength(3)
+    expect(groupQuests([ready, claimed, claimedOnly]).every(group => group.quests.length === 1)).toBe(true)
+  })
+
+  it('removes completed members from the stack when refreshed server states change', () => {
+    const members = [quest('a'), quest('b'), quest('c')]
+    // Reaching the target alone does not confirm completion.
+    members[0].user_status!.progress = { PLAY_ON_DESKTOP: { value: 900 } }
+    expect(groupQuests(members).map(group => group.quests.map(q => q.id))).toEqual([['a', 'b', 'c']])
+
+    members[0].user_status!.completed_at = 'confirmed'
+    expect(groupQuests(members).map(group => group.quests.map(q => q.id))).toEqual([['a'], ['b', 'c']])
+    members[0].user_status!.claimed_at = 'claimed'
+    members[1].user_status!.completed_at = 'confirmed'
+    members[1].user_status!.claimed_at = 'claimed'
+    expect(groupQuests(members).map(group => group.quests.map(q => q.id))).toEqual([['a'], ['b'], ['c']])
+  })
+
   it('links only eligible members without changing server progress or target', () => {
     const active = quest('active'); const member = quest('member')
     member.config.task_config_v2!.tasks!.PLAY_ON_DESKTOP.target = 1800
