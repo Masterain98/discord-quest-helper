@@ -47,6 +47,23 @@ export function canClaimGroupMember(quest: Quest): boolean {
   return !!quest.user_status?.completed_at && !quest.user_status.claimed_at && !questIsExpired(quest)
 }
 
+/** Group eligible rewards from the visible list, keeping its order for the guide. */
+export function groupClaimableQuests(quests: Quest[]): Quest[][] {
+  const groups = new Map<string, Map<string, Quest>>()
+  for (const quest of quests) {
+    if (!canClaimGroupMember(quest)) continue
+    const key = questGroupKey(quest)
+    if (key === null) continue
+    let members = groups.get(key)
+    if (!members) {
+      members = new Map()
+      groups.set(key, members)
+    }
+    members.set(quest.id, quest)
+  }
+  return [...groups.values()].filter(members => members.size > 1).map(members => [...members.values()])
+}
+
 export function canQueueGroupMember(quest: Quest): boolean {
   if (!quest.user_status?.enrolled_at || quest.user_status.completed_at || quest.user_status.claimed_at || questIsExpired(quest)) return false
   if (getQuestKind(quest) === 'activity') return false

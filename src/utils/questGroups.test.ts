@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Quest } from '@/api/tauri'
-import { canQueueGroupMember, groupProgress, groupQuests, groupStats, hasLinkedQuestProgress, questGroupKey } from './questGroups'
+import { canQueueGroupMember, groupClaimableQuests, groupProgress, groupQuests, groupStats, hasLinkedQuestProgress, questGroupKey } from './questGroups'
 
 function quest(id: string, name = 'Clean Crew', types = ['PLAY_ON_DESKTOP']): Quest {
   return {
@@ -72,6 +72,27 @@ describe('quest display groups', () => {
     members[1].user_status!.completed_at = 'confirmed'
     members[1].user_status!.claimed_at = 'claimed'
     expect(groupQuests(members).map(group => group.quests.map(q => q.id))).toEqual([['a'], ['b'], ['c']])
+  })
+
+  it('guides only related visible rewards that are still claimable, in list order', () => {
+    const first = quest('first')
+    const second = quest('second')
+    const claimed = quest('claimed')
+    const expired = quest('expired')
+    const unrelated = quest('unrelated', 'Other')
+    const unfinished = quest('unfinished')
+    const missingIdentity = quest('missing-identity', '')
+    for (const member of [first, second, claimed, expired, unrelated, missingIdentity]) {
+      member.user_status!.completed_at = 'confirmed'
+    }
+    claimed.user_status!.claimed_at = 'claimed'
+    expired.config.expires_at = '2020-01-01'
+    const visible = [first, unrelated, claimed, expired, unfinished, second, first, missingIdentity]
+
+    expect(groupClaimableQuests(visible)).toEqual([[first, second]])
+    expect(groupClaimableQuests(visible.filter(member => member.id !== second.id))).toEqual([])
+    second.user_status!.claimed_at = 'claimed'
+    expect(groupClaimableQuests(visible)).toEqual([])
   })
 
   it('links only eligible members without changing server progress or target', () => {

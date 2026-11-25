@@ -54,10 +54,11 @@ jobs:
           node-version: lts/*
           cache: 'pnpm'
 
-      - name: Install Rust stable
+      - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
+          # Rust 1.100 breaks objc2 0.4.1 on macOS (rust-lang/rust#166229).
+          toolchain: ${{ matrix.platform == 'macos-15' && '1.99.1' || 'stable' }}
           components: clippy, rustfmt
           targets: ${{ matrix.platform == 'macos-15' && 'aarch64-apple-darwin' || '' }}
 

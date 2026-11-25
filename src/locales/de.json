@@ -538,7 +538,7 @@
     "failed_open_quest": "Die Discord-Quest-Seite konnte nicht geöffnet werden",
     "manual_claim": "Belohnungen in Discord abholen",
     "manual_claim_hint": "Bitte hole deine Belohnungen manuell in Discord ab. Verbinde CDP, um von hier zur jeweiligen Quest zu springen.",
-    "open_discord_settings": "Client-Integrationseinstellungen öffnen",
+    "open_discord_settings": "Einstellungen für die Discord-Integration öffnen",
     "error": "Fehler",
     "warning": "Warnung",
     "info": "Hinweis",
