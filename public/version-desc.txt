@@ -1,40 +1,23 @@
-## What's New in 0.12.0
+## What's New in 0.12.1
 
-### Flexible quest completion notifications
+### Claim rewards in Discord
 
-1. Get quest completion notifications through System, Telegram, or Discord. Each channel reports delivery independently, and notification previews are localized.
-2. Send notifications to a Custom Webhook using versioned JSON with task and queue details. Configure Bearer authentication and separate title and content templates for each event, use placeholders, test unsaved templates, and restore localized defaults available in all 16 languages.
+1. Quest rewards now always require manual claiming in Discord. With CDP connected, choose Claim in Discord to open the corresponding quest. For group rewards, the app guides you through opening each quest and checking its claimed status before continuing.
+2. Without a CDP connection, reward actions show a reminder to claim manually in Discord, with a shortcut to client integration settings. Updated reward labels, guidance, and navigation error messages.
 
-### More control over Game Idle
+### Quest display and Discord connection fixes
 
-Contributed by @klaus-2 (#221, #224).
-
-3. Choose fixed or randomized ranges for play and rest durations.
-4. Optionally simulate a game closing and reopening during a play cycle, with configurable timing and restart delay.
-5. Keep a simulated game running for a chosen interval after a quest completes before the queue advances.
-6. Improved simulated-game stop reliability. The app retries and verifies process termination, and keeps tracking a game when it is still running so cleanup can try again.
-
-### Smoother Discord integration
-
-7. Detect local Discord tokens across Windows, Linux, and macOS for Discord Stable, Canary, PTB, Equibop, Legcord, Vesktop, ArmCord, and WebCord. Detection now checks both common Local Storage and sessionData layouts (contributed by @Qyzom, #222).
-8. Recover Discord API connections after network changes. Safe GET requests can retry once on a new connection, while other requests are not repeated (contributed by @ari92p, #211).
-9. Improved Discord client discovery across updates and platforms, reducing stale entries while preserving manually selected clients when they are temporarily unavailable.
-10. Improved CDP activity reporting by aligning client identity and heartbeat metadata with the current desktop client (contributed by @ccsimplyspolit, #218).
-11. Check CDP clients and required native capabilities before injecting game or stream quest support. Unsupported clients such as Equibop are rejected before injection, and connection interruptions provide clearer reconnect guidance.
-
-### Account details and interface improvements
-
-12. View supported Discord account badges in the account menu, including games played, quests completed, and hours played. Use the shortcut beside eligible badges to open Game Simulator.
-13. The floating Quest Progress panel stays within the app workspace when moved or resized.
-14. Fixed external links so they open and copy their intended web addresses.
+3. Completed quests now appear as individual cards, including rewards that have not been claimed yet. Only unfinished quests remain stacked, and refreshed completion states automatically update the groups.
+4. Group summaries now exclude completed quests from progress, reward totals, counts, and expiry information, while still including unfinished members hidden by the current tab.
+5. Fixed CDP startup when the launcher detects a running Discord client that the initial client scan missed. The app now shows the restart confirmation dialog when that client needs to restart.
 
 ### Updates and maintenance
 
-15. Bumped default client config:
-    - build number to `657850`
-    - native build number to `97026`
-    - client version to `1.0.9266`
-    - Chrome version to `152.0.7977.167`
-    - Electron version to `44.9.3`
+6. Bumped default client config:
+    - build number to `679963`
+    - native build number to `99581`
+    - client version to `1.0.9270`
+    - Chrome version to `152.0.7977.169`
+    - Electron version to `44.11.4`
 
-16. Updated Vite to `7.3.7`.
+7. Updated Vue to `3.5.44`, vue-i18n to `11.4.14`, Tauri API and CLI to `2.12.4`, the Tauri shell plugin to `2.4.1`, and rustls to `0.23.46`, along with build, test, and other supporting dependencies.
