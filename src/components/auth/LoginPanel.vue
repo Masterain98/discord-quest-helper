@@ -41,7 +41,7 @@ import {
 } from '@/api/tauri'
 import { desktopClientArgForProvider, useDesktopClientState } from '@/composables/desktopClientState'
 import { clearCdpLaunchError, recordCdpLaunchError } from '@/composables/cdpDiagnostics'
-import { commandErrorMessage as errorDetail } from '@/utils/commandError'
+import { commandErrorMessage as errorDetail, parseCommandError } from '@/utils/commandError'
 import {
   classifyCdpAvailability,
   cdpLoginEndpointError,
@@ -405,6 +405,12 @@ async function launchOrRestartSelectedTarget(target: CdpLaunchTarget | null) {
     launchCompleted = true
     await refreshCdpStatus()
   } catch (launchError) {
+    // The launcher can detect a running client that the inventory scan missed.
+    // Its explicit restart requirement must still reach the confirmation dialog.
+    if (parseCommandError(launchError).code === 'restart_required') {
+      requestCdpRestart(target)
+      return
+    }
     const latest = await clients.refresh(questsStore.cdpPort)
     if (!latest) {
       if (!launchCompleted) recordCdpLaunchError(launchError)
