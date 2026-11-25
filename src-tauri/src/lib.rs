@@ -1820,26 +1820,6 @@ async fn get_quest_decisions_debug(
         .map_err(|e| format!("Failed to get quest placement decisions: {:#}", e))
 }
 
-#[tauri::command]
-async fn claim_quest_reward(
-    quest_id: String,
-    platform: Option<String>,
-    state: State<'_, AppState>,
-) -> Result<serde_json::Value, String> {
-    let client = {
-        let guard = state.client.lock().unwrap();
-        guard
-            .as_ref()
-            .ok_or_else(|| "Not logged in".to_string())?
-            .clone()
-    };
-
-    client
-        .claim_quest_reward(&quest_id, platform)
-        .await
-        .map_err(|e| format!("Failed to claim quest reward: {:#}", e))
-}
-
 mod rpc;
 mod runner;
 
@@ -2330,7 +2310,6 @@ pub fn run() {
             get_current_user_badges,
             get_quest_decision_debug,
             get_quest_decisions_debug,
-            claim_quest_reward,
             connect_to_discord_rpc,
             disconnect_from_discord_rpc,
             open_in_explorer,

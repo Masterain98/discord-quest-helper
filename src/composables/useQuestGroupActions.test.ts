@@ -7,12 +7,13 @@ import { useToastStore } from '@/stores/toast'
 import { useQuestGroupActions } from './useQuestGroupActions'
 
 const mocks = vi.hoisted(() => ({
-  accept: vi.fn(), claim: vi.fn(), navigate: vi.fn(), fetch: vi.fn(), prepare: vi.fn(),
+  accept: vi.fn(), navigate: vi.fn(), fetch: vi.fn(), prepare: vi.fn(), settings: vi.fn(),
 }))
 vi.mock('@/api/tauri', () => ({
-  acceptQuest: mocks.accept, claimQuestReward: mocks.claim, navigateDiscordSpa: mocks.navigate,
+  acceptQuest: mocks.accept, navigateDiscordSpa: mocks.navigate,
   getQuestsFull: mocks.fetch, getPlatformCapabilities: vi.fn(async () => ({ os: 'windows', defaultGameQuestMode: 'simulate', executableOsPriority: ['win32'] })),
 }))
+vi.mock('@/utils/navigate', () => ({ navigateToTab: mocks.settings }))
 
 function quest(id: string, status: 'accept' | 'run' | 'claim' = 'run'): Quest {
   return {
@@ -42,7 +43,6 @@ beforeEach(() => {
   setActivePinia(createPinia())
   activeScope = scope()
   mocks.accept.mockResolvedValue(undefined)
-  mocks.claim.mockResolvedValue(undefined)
   mocks.navigate.mockResolvedValue(undefined)
   mocks.prepare.mockResolvedValue(new Map())
 })
@@ -109,31 +109,38 @@ describe('group actions', () => {
     expect(start).toHaveBeenCalledOnce()
   })
 
-  it('claims through the API without changing failed or hidden members', async () => {
+  it('offers manual claiming without CDP, refreshes or changes to any member', async () => {
     const members = [quest('a', 'claim'), quest('b', 'claim'), quest('hidden', 'claim')]
     const { store, actions } = setup(members)
-    mocks.claim.mockImplementation(async id => {
-      if (id === 'b') throw new Error('failed')
-      store.quests.find(q => q.id === id)!.user_status!.claimed_at = '2026-01-03'
-    })
+    store.gameQuestMode = 'cdp'
     await actions.claim(members.slice(0, 2))
-    expect(mocks.claim.mock.calls.map(args => args[0])).toEqual(['a', 'b'])
-    expect(store.quests[1].user_status?.claimed_at).toBeFalsy()
-    expect(store.quests[2].user_status?.claimed_at).toBeFalsy()
+    expect(mocks.navigate).not.toHaveBeenCalled()
+    expect(mocks.fetch).not.toHaveBeenCalled()
+    expect(store.quests.every(q => !q.user_status?.claimed_at)).toBe(true)
     expect(actions.busy.value).toBe(false)
-    expect(useToastStore().toasts[0].title).toContain('"success":1,"fail":1')
+    expect(actions.busyIds.value.size).toBe(0)
+    expect(actions.guide.value).toBeNull()
+    const notice = useToastStore().toasts[0]
+    expect(notice.type).toBe('info')
+    expect(notice.title).toContain('toast.manual_claim')
+    expect(notice.description).toContain('toast.manual_claim_hint')
+    notice.actions![0].onClick()
+    expect(mocks.settings).toHaveBeenCalledWith('settings', 'discord_integration')
   })
 
   it('opens one Discord member at a time and advances only after confirmed claim', async () => {
     const members = [quest('a', 'claim'), quest('b', 'claim')]
     const { store, actions } = setup(members)
     store.cdpAvailable = true
+    store.gameQuestMode = 'simulate'
+    store.cdpPort = 9333
     await actions.claim(members)
     expect(mocks.navigate.mock.calls.map(args => args[0])).toEqual(['/quest-home#a'])
+    expect(mocks.navigate).toHaveBeenCalledWith('/quest-home#a', 9333)
     expect(actions.busy.value).toBe(true)
     await actions.checkAndContinue()
     expect(actions.guide.value?.index).toBe(0)
-    expect(actions.guideMessage.value).toContain('guide_unclaimed')
+    expect(actions.guideFeedback.value?.message).toContain('guide_unclaimed')
     expect(mocks.navigate).toHaveBeenCalledTimes(1)
     store.quests[0].user_status!.claimed_at = '2026-01-03'
     await actions.checkAndContinue()
@@ -142,7 +149,6 @@ describe('group actions', () => {
     await actions.checkAndContinue()
     expect(actions.guide.value).toBeNull()
     expect(actions.busy.value).toBe(false)
-    expect(mocks.claim).not.toHaveBeenCalled()
   })
 
   it('keeps the guide on its current member when refresh fails and supports cancel', async () => {
@@ -152,7 +158,7 @@ describe('group actions', () => {
     mocks.fetch.mockRejectedValueOnce(new Error('offline'))
     await actions.checkAndContinue()
     expect(actions.guide.value?.index).toBe(0)
-    expect(actions.guideMessage.value).toBe('offline')
+    expect(actions.guideFeedback.value?.message).toBe('offline')
     actions.cancel()
     expect(actions.guide.value).toBeNull()
     expect(actions.busy.value).toBe(false)
@@ -174,16 +180,56 @@ describe('group actions', () => {
     expect(actions.guide.value).toBeNull()
   })
 
-  it('offers navigation retry after a disconnect without claiming automatically', async () => {
+  it('offers integration settings and navigation retry after a disconnect', async () => {
     const { store, actions } = setup([quest('a', 'claim'), quest('b', 'claim')])
     store.cdpAvailable = true
     await actions.claim(store.quests)
     store.cdpAvailable = false
     await actions.reopenGuideMember()
-    expect(actions.guideMessage.value).toContain('guide_disconnected')
-    expect(mocks.claim).not.toHaveBeenCalled()
+    expect(actions.guideFeedback.value?.message).toContain('guide_disconnected')
+    const settingsAction = actions.guideFeedback.value?.action
+    expect(settingsAction?.label).toContain('toast.open_discord_settings')
+    settingsAction!.onClick()
+    expect(mocks.settings).toHaveBeenCalledWith('settings', 'discord_integration')
+    expect(mocks.navigate).toHaveBeenCalledTimes(1)
     store.cdpAvailable = true
     await actions.reopenGuideMember()
     expect(mocks.navigate).toHaveBeenCalledTimes(2)
+    expect(actions.guideFeedback.value).toBeNull()
+  })
+
+  it('retains the failed navigation step and supports retry and cancellation', async () => {
+    const { store, actions } = setup([quest('a', 'claim'), quest('b', 'claim')])
+    store.cdpAvailable = true
+    mocks.navigate.mockRejectedValueOnce(new Error('target closed'))
+    await actions.claim(store.quests)
+    expect(actions.guide.value?.index).toBe(0)
+    expect(actions.guideFeedback.value?.message).toContain('toast.failed_open_quest')
+    expect(actions.guideFeedback.value?.message).toContain('target closed')
+    expect(actions.guideBusy.value).toBe(false)
+    expect(actions.busy.value).toBe(true)
+    expect(mocks.fetch).not.toHaveBeenCalled()
+    await actions.reopenGuideMember()
+    expect(mocks.navigate).toHaveBeenLastCalledWith('/quest-home#a', store.cdpPort)
+    expect(actions.guideFeedback.value).toBeNull()
+    expect(store.quests.every(q => !q.user_status?.claimed_at)).toBe(true)
+    actions.cancel()
+    expect(actions.busy.value).toBe(false)
+    expect(actions.guide.value).toBeNull()
+  })
+
+  it('ignores a navigation failure after the guide was cancelled', async () => {
+    const { store, actions } = setup([quest('a', 'claim')])
+    store.cdpAvailable = true
+    let reject!: (error: Error) => void
+    mocks.navigate.mockReturnValueOnce(new Promise<void>((_, fail) => { reject = fail }))
+    const opening = actions.claim(store.quests)
+    actions.cancel()
+    reject(new Error('closed'))
+    await opening
+    expect(actions.guide.value).toBeNull()
+    expect(actions.guideFeedback.value).toBeNull()
+    expect(actions.guideBusy.value).toBe(false)
+    expect(actions.busy.value).toBe(false)
   })
 })

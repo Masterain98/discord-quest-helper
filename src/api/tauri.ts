@@ -271,10 +271,6 @@ export async function getQuestDecisionsDebug(placement: number, num: number): Pr
   return await invoke('get_quest_decisions_debug', { placement, num })
 }
 
-export async function claimQuestReward(questId: string, platform?: string): Promise<unknown> {
-  return await invoke('claim_quest_reward', { questId, platform })
-}
-
 export async function startVideoQuest(
   questId: string,
   secondsNeeded: number,

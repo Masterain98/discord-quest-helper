@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Quest } from '@/api/tauri'
-import { canQueueGroupMember, groupProgress, groupQuests, groupStats, hasLinkedQuestProgress, questGroupKey } from './questGroups'
+import { canQueueGroupMember, groupClaimableQuests, groupProgress, groupQuests, groupStats, hasLinkedQuestProgress, questGroupKey } from './questGroups'
 
 function quest(id: string, name = 'Clean Crew', types = ['PLAY_ON_DESKTOP']): Quest {
   return {
@@ -41,6 +41,58 @@ describe('quest display groups', () => {
     expect(groupQuests([a, b])).toHaveLength(2)
     expect(questGroupKey(quest('empty', ''))).toBeNull()
     expect(questGroupKey(quest('no-tasks', 'Name', []))).toBeNull()
+  })
+
+  it('stacks only unfinished quests and keeps completed quests as individual cards', () => {
+    const ready = quest('ready')
+    const claimable = quest('claimable'); claimable.user_status!.completed_at = 'confirmed'
+    const claimed = quest('claimed'); claimed.user_status!.completed_at = 'confirmed'; claimed.user_status!.claimed_at = 'claimed'
+    const claimedOnly = quest('claimed-only'); claimedOnly.user_status!.claimed_at = 'claimed'
+    const unaccepted = quest('unaccepted'); unaccepted.user_status = null
+    const input = [claimable, ready, claimed, unaccepted, claimedOnly]
+    const before = JSON.stringify(input)
+
+    expect(groupQuests(input).map(group => group.quests.map(q => q.id))).toEqual([
+      ['claimable'], ['ready', 'unaccepted'], ['claimed'], ['claimed-only'],
+    ])
+    expect(JSON.stringify(input)).toBe(before)
+    expect(groupQuests([claimable, claimed, claimedOnly])).toHaveLength(3)
+    expect(groupQuests([ready, claimed, claimedOnly]).every(group => group.quests.length === 1)).toBe(true)
+  })
+
+  it('removes completed members from the stack when refreshed server states change', () => {
+    const members = [quest('a'), quest('b'), quest('c')]
+    // Reaching the target alone does not confirm completion.
+    members[0].user_status!.progress = { PLAY_ON_DESKTOP: { value: 900 } }
+    expect(groupQuests(members).map(group => group.quests.map(q => q.id))).toEqual([['a', 'b', 'c']])
+
+    members[0].user_status!.completed_at = 'confirmed'
+    expect(groupQuests(members).map(group => group.quests.map(q => q.id))).toEqual([['a'], ['b', 'c']])
+    members[0].user_status!.claimed_at = 'claimed'
+    members[1].user_status!.completed_at = 'confirmed'
+    members[1].user_status!.claimed_at = 'claimed'
+    expect(groupQuests(members).map(group => group.quests.map(q => q.id))).toEqual([['a'], ['b'], ['c']])
+  })
+
+  it('guides only related visible rewards that are still claimable, in list order', () => {
+    const first = quest('first')
+    const second = quest('second')
+    const claimed = quest('claimed')
+    const expired = quest('expired')
+    const unrelated = quest('unrelated', 'Other')
+    const unfinished = quest('unfinished')
+    const missingIdentity = quest('missing-identity', '')
+    for (const member of [first, second, claimed, expired, unrelated, missingIdentity]) {
+      member.user_status!.completed_at = 'confirmed'
+    }
+    claimed.user_status!.claimed_at = 'claimed'
+    expired.config.expires_at = '2020-01-01'
+    const visible = [first, unrelated, claimed, expired, unfinished, second, first, missingIdentity]
+
+    expect(groupClaimableQuests(visible)).toEqual([[first, second]])
+    expect(groupClaimableQuests(visible.filter(member => member.id !== second.id))).toEqual([])
+    second.user_status!.claimed_at = 'claimed'
+    expect(groupClaimableQuests(visible)).toEqual([])
   })
 
   it('links only eligible members without changing server progress or target', () => {

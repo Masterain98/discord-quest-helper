@@ -174,7 +174,6 @@
                   @run="runGroup(group.quests)"
                   @stop="stopGroup(group.quests)"
                   @remove="removeGroup(group.quests)"
-                  @claim="claimGroup(group.quests)"
                 />
               </template>
               <template #default="{ quest }">
@@ -223,9 +222,17 @@
                         {{ getStartButtonText(quest) }}
                       </Button>
 
-                      <div v-else-if="quest.user_status?.completed_at && !quest.user_status?.claimed_at" class="relative -mt-1 mb-1">
+                      <div v-else-if="quest.user_status?.completed_at && !quest.user_status?.claimed_at" class="relative -mt-1 mb-1 flex flex-wrap justify-end gap-2">
                         <Button
-                          :disabled="claimingQuest === quest.id || isBatchAccepting"
+                          v-if="claimGuideGroups.has(quest.id)"
+                          variant="outline"
+                          :disabled="groupOperationBlocked || groupBusy"
+                          @click="claimGroup(claimGuideGroups.get(quest.id) ?? [])"
+                        >
+                          {{ t('quest_group.claim', { count: claimGuideGroups.get(quest.id)?.length }) }}
+                        </Button>
+                        <Button
+                          :disabled="groupBusy || claimingQuest !== null || isBatchAccepting"
                           class="bg-green-600 hover:bg-green-700 text-white gap-1.5"
                           @click="claimReward(quest)"
                         >
@@ -492,7 +499,12 @@
           <p class="break-words font-medium">{{ currentGuideQuest?.config.messages.quest_name }}</p>
           <p class="text-xs text-muted-foreground">ID: {{ claimGuide.ids[claimGuide.index] }}</p>
         </div>
-        <p v-if="claimGuideMessage" role="status" class="break-words text-sm text-muted-foreground">{{ claimGuideMessage }}</p>
+        <div v-if="claimGuideFeedback" class="space-y-2 text-sm text-muted-foreground">
+          <p role="status" class="break-words">{{ claimGuideFeedback.message }}</p>
+          <Button v-if="claimGuideFeedback.action" variant="outline" size="sm" @click="claimGuideFeedback.action.onClick">
+            {{ claimGuideFeedback.action.label }}
+          </Button>
+        </div>
         <DialogFooter class="flex-wrap gap-2">
           <Button variant="ghost" @click="cancelGroupAction()">{{ t('dialog.cancel') }}</Button>
           <Button variant="outline" :disabled="claimGuideBusy" @click="reopenGuideMember">{{ t('quest_group.guide_open') }}</Button>
@@ -571,14 +583,13 @@ import QuestListHeader from '@/components/home/QuestListHeader.vue'
 import QuestViewTabs from '@/components/home/QuestViewTabs.vue'
 import QuestGroup from '@/components/home/QuestGroup.vue'
 import QuestGroupActions from '@/components/home/QuestGroupActions.vue'
-import { groupQuests } from '@/utils/questGroups'
+import { groupClaimableQuests, groupQuests } from '@/utils/questGroups'
 import { useQuestGroupActions } from '@/composables/useQuestGroupActions'
 import QuestCard from '@/components/QuestCard.vue'
 import QuestQueueAction from '@/components/QuestQueueAction.vue'
 import type { DetectableGame, PlatformCapabilities, Quest } from '@/api/tauri'
 import {
   acceptQuest as acceptQuestApi,
-  claimQuestReward,
   navigateDiscordSpa,
 } from '@/api/tauri'
 import { Button } from '@/components/ui/button'
@@ -621,6 +632,7 @@ import { getQuestRewardCategory } from '@/utils/questRewards'
 import { getSimulationExecutables } from '@/utils/executables'
 import { useToastStore } from '@/stores/toast'
 import { navigateToTab } from '@/utils/navigate'
+import { discordIntegrationAction, manualRewardClaimNotice, openRewardQuest } from '@/utils/questRewardNavigation'
 import {
   emptyAdvancedQuestFilters,
   getRecommendedQuests,
@@ -785,7 +797,7 @@ function setBatchGroupExpanded(key: string, expanded: boolean) {
 const groupOperationBlocked = computed(() => !authStore.user || !!acceptingQuest.value || !!claimingQuest.value || !!startingQuestId.value || acceptingAllQuestIds.value.size > 0 || questsStore.queueEditingDisabled)
 const {
   busyIds: groupBusyIds, busy: groupBusy, guide: claimGuide, guideBusy: claimGuideBusy,
-  guideMessage: claimGuideMessage, currentGuideQuest, accept: acceptGroup, run: runGroup,
+  guideFeedback: claimGuideFeedback, currentGuideQuest, accept: acceptGroup, run: runGroup,
   stop: stopGroup, remove: removeGroup, claim: claimGroup, cancel: cancelGroupAction,
   checkAndContinue, reopenGuideMember,
 } = useQuestGroupActions({
@@ -975,6 +987,9 @@ const filteredQuests = computed(() => {
 })
 
 const displayGroups = computed(() => groupQuests(filteredQuests.value))
+const claimGuideGroups = computed(() => new Map(
+  groupClaimableQuests(filteredQuests.value).map(quests => [quests[0].id, quests]),
+))
 
 const unenrolledCount = computed(() => {
   return filteredQuests.value.filter(q => !q.user_status?.enrolled_at && !isQuestExpired(q)).length
@@ -1541,24 +1556,28 @@ function cancelActivityLaunch() {
 async function claimReward(quest: Quest) {
   if (groupBusy.value || claimingQuest.value) return
   claimingQuest.value = quest.id
+  if (claimedNoticeTimer) clearTimeout(claimedNoticeTimer)
+  claimedNoticeQuestId.value = null
 
   try {
-    if (questsStore.cdpAvailable) {
-      // Navigate to the quest page in Discord client so user can claim there
-      const questPath = `/quest-home#${encodeURIComponent(quest.id)}`
-      await navigateDiscordSpa(questPath, questsStore.cdpPort)
-      // Show brief inline notice near the button
-      if (claimedNoticeTimer) clearTimeout(claimedNoticeTimer)
+    const result = await openRewardQuest(quest.id, {
+      cdpAvailable: questsStore.cdpAvailable,
+      cdpPort: questsStore.cdpPort,
+      navigate: navigateDiscordSpa,
+    })
+    if (result === 'navigated') {
       claimedNoticeQuestId.value = quest.id
       claimedNoticeTimer = setTimeout(() => { claimedNoticeQuestId.value = null }, 4000)
     } else {
-      // Fallback: try API claim when CDP is not available
-      await claimQuestReward(quest.id)
-      await questsStore.fetchQuests(true, true)
+      toast.info(manualRewardClaimNotice(t))
     }
   } catch (error) {
-    console.error('Failed to claim quest reward:', error)
-    toast.error({ title: t('toast.failed_claim'), description: String(error) })
+    console.error('Failed to open Discord quest page:', error)
+    toast.error({
+      title: t('toast.failed_open_quest'),
+      description: String(error),
+      actions: [discordIntegrationAction(t)],
+    })
   } finally {
     claimingQuest.value = null
   }
