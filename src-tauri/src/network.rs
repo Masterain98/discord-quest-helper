@@ -1730,11 +1730,10 @@ mod tests {
         state
             .save(manual(&proxy_address), Edit::Remove, &NativeVault)
             .unwrap();
-        let state = Mutex::new(state);
         let pool = HttpClient::new();
 
         let proxied = pool
-            .client(state.lock().unwrap().route().unwrap(), no_redirect, false)
+            .client(state.route().unwrap(), no_redirect, false)
             .await
             .unwrap();
         let (response, (observed, _peer)) = tokio::join!(
@@ -1755,7 +1754,7 @@ mod tests {
         // An unreachable configured proxy must leave the origin untouched.
         drop(proxy);
         assert!(pool
-            .client(state.lock().unwrap().route().unwrap(), no_redirect, true)
+            .client(state.route().unwrap(), no_redirect, true)
             .await
             .unwrap()
             .get(&target)
@@ -1769,13 +1768,11 @@ mod tests {
         );
 
         state
-            .lock()
-            .unwrap()
             .save(settings(Mode::Direct, None), Edit::Remove, &NativeVault)
             .unwrap();
         let direct = pool
             .client(
-                state.lock().unwrap().route().unwrap(),
+                state.route().unwrap(),
                 move |builder| no_redirect(builder).proxy(Proxy::all(proxy_address).unwrap()),
                 false,
             )
