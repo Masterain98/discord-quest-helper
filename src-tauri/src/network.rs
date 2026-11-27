@@ -43,6 +43,10 @@ struct StoredSettings {
 }
 
 impl StoredSettings {
+    fn route_identity(&self) -> (&Settings, Option<&str>) {
+        (&self.settings, self.credential_ref.as_deref())
+    }
+
     fn validated(mut self) -> CommandResult<Self> {
         self.settings = self.settings.validated()?;
         if self.settings.mode != Mode::Manual {
@@ -389,19 +393,44 @@ impl Default for NetworkState {
 
 impl NetworkState {
     fn load(&mut self, path: PathBuf) {
-        self.settings = match std::fs::read(&path) {
-            Ok(bytes) => serde_json::from_slice::<StoredSettings>(&bytes)
-                .ok()
-                .and_then(|settings| settings.validated().ok()),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                Some(StoredSettings::default())
-            }
-            Err(_) => None,
-        };
+        self.settings = read_settings(&path);
         self.path = Some(path);
         self.credentials = None;
         self.system = None;
         self.revision += 1;
+    }
+
+    fn update_settings(
+        &mut self,
+        settings: Option<StoredSettings>,
+        credentials: Option<Arc<Credentials>>,
+    ) {
+        if self.settings.as_ref().map(StoredSettings::route_identity)
+            != settings.as_ref().map(StoredSettings::route_identity)
+        {
+            self.revision += 1;
+            self.system = None;
+            self.credentials = credentials;
+        }
+        self.settings = settings;
+    }
+
+    fn save_with_cleanup(
+        &mut self,
+        settings: Settings,
+        edit: Edit,
+        vault: &impl Vault,
+        on_saved: impl FnOnce(&Self),
+    ) -> CommandResult<()> {
+        let path = self.path.as_deref().ok_or("storage_error")?;
+        // Serialize every read-modify-write of network.json, including the
+        // cleanup write, across app copies sharing this profile.
+        let _file_lock = lock_settings(path).map_err(|_| "storage_error")?;
+        self.update_settings(read_settings(path), None);
+        self.save(settings, edit, vault)?;
+        on_saved(self);
+        self.finish_credential_cleanup(vault);
+        Ok(())
     }
 
     fn retained_reference(&self, settings: &Settings) -> CommandResult<Option<&str>> {
@@ -644,6 +673,35 @@ fn display_endpoint(raw: &str) -> Option<String> {
     Some(format!("{}:{}", url.host()?, proxy_port(&url)?))
 }
 
+fn read_settings(path: &Path) -> Option<StoredSettings> {
+    match std::fs::read(path) {
+        Ok(bytes) => serde_json::from_slice::<StoredSettings>(&bytes)
+            .ok()
+            .and_then(|settings| settings.validated().ok()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            Some(StoredSettings::default())
+        }
+        Err(_) => None,
+    }
+}
+
+fn open_settings_lock(path: &Path) -> std::io::Result<std::fs::File> {
+    let parent = path.parent().ok_or(std::io::ErrorKind::InvalidInput)?;
+    std::fs::create_dir_all(parent)?;
+    std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(path.with_extension("lock"))
+}
+
+fn lock_settings(path: &Path) -> std::io::Result<std::fs::File> {
+    let file = open_settings_lock(path)?;
+    file.lock()?;
+    Ok(file)
+}
+
 fn write_settings(path: &Path, settings: &StoredSettings) -> std::io::Result<()> {
     let parent = path.parent().ok_or(std::io::ErrorKind::InvalidInput)?;
     std::fs::create_dir_all(parent)?;
@@ -876,28 +934,23 @@ pub(crate) async fn save_network_settings(
     credentials: Option<Edit>,
 ) -> CommandResult<Status> {
     tauri::async_runtime::spawn_blocking(move || {
-        let _save = SETTINGS_SAVE.lock().unwrap();
+        let save = SETTINGS_SAVE.lock().unwrap();
         let mut snapshot = STATE.lock().unwrap().clone();
-        let previous = snapshot.settings.clone();
-        snapshot.save(settings, credentials.unwrap_or(Edit::Keep), &NativeVault)?;
-        {
-            let mut state = STATE.lock().unwrap();
-            if snapshot
-                .settings
-                .as_ref()
-                .map(|saved| (&saved.settings, &saved.credential_ref))
-                != previous
-                    .as_ref()
-                    .map(|saved| (&saved.settings, &saved.credential_ref))
-            {
-                state.revision += 1;
-                state.system = None;
-                state.credentials = snapshot.credentials.clone();
-            }
-            state.settings = snapshot.settings.clone();
-        }
-        snapshot.finish_credential_cleanup(&NativeVault);
-        STATE.lock().unwrap().settings = snapshot.settings;
+        let publish = |snapshot: &NetworkState| {
+            STATE
+                .lock()
+                .unwrap()
+                .update_settings(snapshot.settings.clone(), snapshot.credentials.clone());
+        };
+        let result = snapshot.save_with_cleanup(
+            settings,
+            credentials.unwrap_or(Edit::Keep),
+            &NativeVault,
+            publish,
+        );
+        publish(&snapshot);
+        result?;
+        drop(save);
         let _ = refresh_route(true);
         let snapshot = STATE.lock().unwrap().clone();
         Ok(snapshot.status())
@@ -1304,6 +1357,42 @@ mod tests {
             .contains("credential_ref"));
         // A previously accepted request keeps its own immutable credential snapshot.
         assert_eq!(route.credentials.as_ref().unwrap().password, "new-password");
+    }
+
+    #[test]
+    fn stale_app_copy_reloads_before_saving_and_cleanup_holds_the_file_lock() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("network.json");
+        let vault = MemoryVault::default();
+        let mut first = NetworkState::default();
+        let mut second = NetworkState::default();
+        first.load(path.clone());
+        second.load(path.clone());
+
+        let other_handle = open_settings_lock(&path).unwrap();
+        first
+            .save_with_cleanup(
+                manual("http://127.0.0.1:7890"),
+                replace_credentials("dummy", "secret"),
+                &vault,
+                |saved| {
+                    assert!(saved.status().has_credentials);
+                    assert!(other_handle.try_lock().is_err());
+                },
+            )
+            .unwrap();
+        assert!(other_handle.try_lock().is_ok());
+        drop(other_handle);
+        assert_eq!(vault.0.borrow().len(), 1);
+
+        second
+            .save_with_cleanup(settings(Mode::Direct, None), Edit::Remove, &vault, |_| {})
+            .unwrap();
+        let saved = read_settings(&path).unwrap();
+        assert!(saved.settings.mode == Mode::Direct);
+        assert!(saved.credential_ref.is_none());
+        assert!(saved.retired_credentials.is_empty());
+        assert!(vault.0.borrow().is_empty());
     }
 
     #[test]
