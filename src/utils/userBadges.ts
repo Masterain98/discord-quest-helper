@@ -20,8 +20,10 @@ export function badgeCount(badge: UserBadge | undefined, unit: string | null): n
   return Number.isSafeInteger(count) ? count : null
 }
 
-export function badgeIcon(badge: UserBadge | undefined): string | null {
-  for (const value of [badge?.complex_icon_static_url, badge?.simple_icon_raster_url]) {
+export function badgeIcon(badge: UserBadge | undefined, preferRaster = false): string | null {
+  const complex = badge?.complex_icon_static_url
+  const raster = badge?.simple_icon_raster_url
+  for (const value of preferRaster ? [raster, complex] : [complex, raster]) {
     if (typeof value !== 'string') continue
     try {
       const url = new URL(value)

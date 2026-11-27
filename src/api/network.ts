@@ -12,6 +12,7 @@ export interface NetworkStatus {
   pac_configured: boolean
   storage_invalid: boolean
   has_credentials: boolean
+  credential_cleanup_pending: boolean
 }
 export interface NetworkConnectionTest { ip: string; elapsed_ms: number }
 

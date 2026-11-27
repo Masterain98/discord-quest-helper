@@ -223,6 +223,8 @@
         "username": "Nama pengguna proksi",
         "password": "Kata sandi proksi",
         "credentials_optional": "Kosongkan kedua kolom jika proksi tidak memerlukan kredensial.",
+        "unencrypted_credentials": "Kredensial dikirim ke proksi ini melalui koneksi yang tidak terenkripsi.",
+        "credential_cleanup_pending": "Sebagian kredensial tidak dapat dihapus dari penyimpanan sistem. Pilih Simpan untuk mencoba lagi.",
         "credentials_saved": "Kredensial proksi disimpan",
         "credentials_remove_help": "Kosongkan kedua kolom lalu simpan untuk menghapus kredensial yang tersimpan.",
         "credentials_keep": "Gunakan kredensial tersimpan",
@@ -230,7 +232,7 @@
         "error_invalid_http_credentials": "Kredensial proksi HTTP tidak boleh berisi karakter kontrol dan nama pengguna tidak boleh berisi tanda titik dua.",
         "error_invalid_socks_credentials": "SOCKS5 memerlukan nama pengguna dan kata sandi, masing-masing sepanjang 1 hingga 255 bita.",
         "error_credential_store_error": "Penyimpanan kredensial sistem tidak dapat diakses.",
-        "error_credential_endpoint_changed": "Masukkan kredensial baru untuk alamat proksi yang diubah atau kosongkan kedua kolom.",
+        "error_credential_endpoint_changed": "Masukkan kredensial proksi baru, atau pilih Edit kredensial untuk menghapus kredensial tersimpan.",
         "error_client_error": "Klien jaringan gagal diinisialisasi."
     },
   "settings": {

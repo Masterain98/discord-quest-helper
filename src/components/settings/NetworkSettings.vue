@@ -33,18 +33,38 @@ const draft = computed<NetworkSettings>(() => ({
   mode: mode.value,
   address: mode.value === 'manual' ? address.value.trim() : null,
 }))
-const credentialsForAddress = computed(() => mode.value === 'manual'
-  && status.value?.has_credentials === true
-  && status.value.settings.address === draft.value.address)
+function proxyAddressKey(raw: string | null): string | null {
+  if (!raw) return null
+  try {
+    const url = new URL(raw)
+    if (url.protocol === 'socks5:' || url.protocol === 'socks5h:') {
+      url.port ||= '1080'
+      if (url.pathname === '/') url.pathname = ''
+    }
+    return url.href
+  } catch {
+    return raw
+  }
+}
+
+const hasSavedCredentials = computed(() => mode.value === 'manual' && status.value?.has_credentials === true)
+const credentialsForAddress = computed(() => hasSavedCredentials.value
+  && proxyAddressKey(status.value?.settings.address ?? null) === proxyAddressKey(draft.value.address))
 const usingSavedCredentials = computed(() => credentialsForAddress.value && !editingCredentials.value)
 const credentials = computed<ProxyCredentialEdit>(() => {
-  if (usingSavedCredentials.value) return { action: 'keep' }
-  if (mode.value === 'manual' && (username.value || password.value)) {
-    return { action: 'replace', username: username.value, password: password.value }
+  if (mode.value === 'manual') {
+    if (!usingSavedCredentials.value && (username.value || password.value)) {
+      return { action: 'replace', username: username.value, password: password.value }
+    }
+    if (hasSavedCredentials.value && !editingCredentials.value) return { action: 'keep' }
   }
   return { action: 'remove' }
 })
+const usesUnencryptedCredentials = computed(() => mode.value === 'manual'
+  && (credentials.value.action === 'replace' || usingSavedCredentials.value)
+  && /^(http|socks5h?):\/\//i.test(draft.value.address ?? ''))
 const dirty = computed(() => !status.value || status.value.storage_invalid
+  || status.value.credential_cleanup_pending
   || status.value.settings.mode !== draft.value.mode
   || status.value.settings.address !== draft.value.address
   || credentials.value.action === 'replace'
@@ -155,7 +175,7 @@ async function submit(action: 'saving' | 'testing') {
     </SettingRow>
 
     <SettingRow
-      v-if="credentialsForAddress"
+      v-if="hasSavedCredentials"
       id="settings-network-credentials"
       :label="t('network.credentials_saved')"
       :description="editingCredentials ? t('network.credentials_remove_help') : undefined"
@@ -190,6 +210,10 @@ async function submit(action: 'saving' | 'testing') {
       </SettingRow>
     </template>
 
+    <p v-if="usesUnencryptedCredentials" class="text-sm text-muted-foreground">
+      {{ t('network.unencrypted_credentials') }}
+    </p>
+
     <SettingRow
       id="settings-network-status"
       :label="t('network.active_route')"
@@ -211,6 +235,9 @@ async function submit(action: 'saving' | 'testing') {
         {{ busy === 'saving' ? t('general.loading') : t('network.save') }}
       </Button>
     </div>
+    <p v-if="status?.credential_cleanup_pending" role="alert" class="text-sm text-muted-foreground">
+      {{ t('network.credential_cleanup_pending') }}
+    </p>
     <p v-if="error" role="alert" class="text-sm text-destructive">{{ t(`network.error_${error}`) }}</p>
     <p v-else-if="status?.storage_invalid" role="alert" class="text-sm text-destructive">{{ t('network.error_storage_error') }}</p>
     <p v-if="result" role="status" class="text-sm text-muted-foreground">

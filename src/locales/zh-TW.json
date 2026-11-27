@@ -223,6 +223,8 @@
         "username": "代理使用者名稱",
         "password": "代理密碼",
         "credentials_optional": "代理伺服器無需驗證時，請將兩個欄位留空。",
+        "unencrypted_credentials": "憑證會透過未加密的連線傳送至此代理伺服器。",
+        "credential_cleanup_pending": "部分已儲存的憑證無法從系統憑證存放區移除。請選擇「儲存」再試一次。",
         "credentials_saved": "已儲存代理憑證",
         "credentials_remove_help": "將兩個欄位留空後儲存，即可移除已儲存的憑證。",
         "credentials_keep": "使用已儲存的憑證",
@@ -230,7 +232,7 @@
         "error_invalid_http_credentials": "HTTP 代理憑證不能包含控制字元，使用者名稱不能含有冒號。",
         "error_invalid_socks_credentials": "SOCKS5 需要同時填寫使用者名稱與密碼，每項須為 1 到 255 位元組。",
         "error_credential_store_error": "無法存取系統憑證存放區。",
-        "error_credential_endpoint_changed": "代理位址已變更，請填寫新的憑證，或將兩個欄位留空。",
+        "error_credential_endpoint_changed": "請為新代理伺服器填寫憑證，或選擇「編輯憑證」以移除已儲存的憑證。",
         "error_client_error": "無法初始化網路用戶端。"
     },
   "settings": {

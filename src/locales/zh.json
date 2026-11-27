@@ -225,6 +225,8 @@
         "username": "代理用户名",
         "password": "代理密码",
         "credentials_optional": "代理无需认证时，请将两个字段都留空。",
+        "unencrypted_credentials": "凭据会通过未加密的连接发送到此代理。",
+        "credential_cleanup_pending": "部分已保存的凭据无法从系统凭据存储中移除。请选择「保存」重试。",
         "credentials_saved": "已保存代理凭据",
         "credentials_remove_help": "将两个字段留空后保存，即可移除已保存的凭据。",
         "credentials_keep": "使用已保存的凭据",
@@ -232,7 +234,7 @@
         "error_invalid_http_credentials": "HTTP 代理凭据不能包含控制字符，用户名不能含有冒号。",
         "error_invalid_socks_credentials": "SOCKS5 需要同时填写用户名和密码，每项须为 1 到 255 字节。",
         "error_credential_store_error": "无法访问系统凭据存储。",
-        "error_credential_endpoint_changed": "代理地址已更改，请填写新的凭据，或将两个字段留空。",
+        "error_credential_endpoint_changed": "请为新代理填写凭据，或选择「编辑凭据」以移除已保存的凭据。",
         "error_client_error": "无法初始化网络客户端。"
     },
   "settings": {

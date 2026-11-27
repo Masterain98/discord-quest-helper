@@ -434,16 +434,8 @@ pub async fn fetch_build_number_from_discord() -> Result<u64> {
         None,
     );
 
-    let client = crate::network::builder(reqwest::Client::builder())
-        .map_err(|code| anyhow::anyhow!("Could not configure HTTP client ({code})"))?
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-        .connect_timeout(std::time::Duration::from_secs(8))
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .context("Failed to create HTTP client")?;
-
-    // Request Discord login page
-    let login_page = client
+    let login_page = build_metadata_client()
+        .await?
         .get("https://discord.com/login")
         .send()
         .await
@@ -482,16 +474,22 @@ pub async fn fetch_build_number_from_discord() -> Result<u64> {
             anyhow::bail!("Could not find any JavaScript files in Discord login page");
         }
 
-        return fetch_build_number_from_scripts(&client, &alt_urls).await;
+        return fetch_build_number_from_scripts(&alt_urls).await;
     }
 
-    fetch_build_number_from_scripts(&client, &script_urls).await
+    fetch_build_number_from_scripts(&script_urls).await
 }
 
-async fn fetch_build_number_from_scripts(
-    client: &reqwest::Client,
-    script_urls: &[String],
-) -> Result<u64> {
+async fn build_metadata_client() -> Result<reqwest::Client> {
+    static CLIENT: crate::network::HttpClient = crate::network::HttpClient::new();
+    CLIENT.get(|builder| builder
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .connect_timeout(std::time::Duration::from_secs(8))
+        .timeout(std::time::Duration::from_secs(10))
+    ).await.map_err(|code| anyhow::anyhow!("Could not configure HTTP client ({code})"))
+}
+
+async fn fetch_build_number_from_scripts(script_urls: &[String]) -> Result<u64> {
     use crate::logger::{log, LogCategory, LogLevel};
 
     // Multiple possible buildNumber patterns
@@ -513,7 +511,7 @@ async fn fetch_build_number_from_scripts(
             None,
         );
 
-        match client.get(url).send().await {
+        match build_metadata_client().await?.get(url).send().await {
             Ok(response) => {
                 if let Ok(js_content) = response.text().await {
                     // Try all patterns
@@ -588,13 +586,16 @@ pub async fn fetch_discord_client_info() -> Result<DiscordClientInfo> {
         None,
     );
 
-    let client = crate::network::builder(reqwest::Client::builder())
-        .map_err(|code| anyhow::anyhow!("Could not configure HTTP client ({code})"))?
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-        .connect_timeout(std::time::Duration::from_secs(8))
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .context("Failed to create HTTP client")?;
+    static MANIFEST: crate::network::HttpClient = crate::network::HttpClient::new();
+    let client = MANIFEST
+        .get(|builder| {
+            builder
+                .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .connect_timeout(std::time::Duration::from_secs(8))
+                .timeout(std::time::Duration::from_secs(10))
+        })
+        .await
+        .map_err(|code| anyhow::anyhow!("Could not configure HTTP client ({code})"))?;
 
     // Request Discord update manifest
     let platform = if cfg!(windows) {

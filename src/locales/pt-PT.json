@@ -223,6 +223,8 @@
         "username": "Utilizador do proxy",
         "password": "Palavra-passe do proxy",
         "credentials_optional": "Deixe ambos os campos em branco se o proxy não exigir credenciais.",
+        "unencrypted_credentials": "As credenciais são enviadas para este proxy através de uma ligação não encriptada.",
+        "credential_cleanup_pending": "Não foi possível remover algumas credenciais do armazenamento do sistema. Selecione Guardar para tentar novamente.",
         "credentials_saved": "Credenciais do proxy guardadas",
         "credentials_remove_help": "Deixe os dois campos em branco e guarde para remover as credenciais guardadas.",
         "credentials_keep": "Usar credenciais guardadas",
@@ -230,7 +232,7 @@
         "error_invalid_http_credentials": "As credenciais do proxy HTTP não podem conter caracteres de controlo e o nome de utilizador não pode conter dois pontos.",
         "error_invalid_socks_credentials": "O SOCKS5 exige um utilizador e uma palavra-passe com 1 a 255 bytes cada.",
         "error_credential_store_error": "Não foi possível aceder ao armazenamento de credenciais do sistema.",
-        "error_credential_endpoint_changed": "Introduza novas credenciais para o novo endereço do proxy ou deixe ambos os campos em branco.",
+        "error_credential_endpoint_changed": "Introduza as credenciais do novo proxy ou selecione Editar credenciais para remover as credenciais guardadas.",
         "error_client_error": "Não foi possível inicializar o cliente de rede."
     },
   "settings": {

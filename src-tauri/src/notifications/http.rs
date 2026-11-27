@@ -9,17 +9,23 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn get(&self) -> Result<reqwest::Client> {
+    pub async fn get(&self) -> Result<reqwest::Client> {
         #[cfg(test)]
         if self.unavailable {
             return Err(Code::Network.into());
         }
-        self.http.get(configure).map_err(|_| Code::Network.into())
+        self.http
+            .get(configure)
+            .await
+            .map_err(|_| Code::Network.into())
     }
 
     #[cfg(test)]
     pub(super) fn unavailable() -> Self {
-        Self { unavailable: true, ..Self::default() }
+        Self {
+            unavailable: true,
+            ..Self::default()
+        }
     }
 }
 
@@ -30,9 +36,12 @@ fn configure(builder: reqwest::ClientBuilder) -> reqwest::ClientBuilder {
         .retry(reqwest::retry::never())
 }
 
-pub fn client() -> Result<reqwest::Client> {
+pub async fn client() -> Result<reqwest::Client> {
     static ARTWORK: crate::network::HttpClient = crate::network::HttpClient::new();
-    ARTWORK.get(configure).map_err(|_| Code::Network.into())
+    ARTWORK
+        .get(configure)
+        .await
+        .map_err(|_| Code::Network.into())
 }
 
 pub async fn submit(request: reqwest::RequestBuilder) -> Result<reqwest::Response> {

@@ -47,13 +47,14 @@ fn is_connection_error(error: &reqwest::Error) -> bool {
 /// Execute `request`; after a connection error, ask `reconnect` for a fresh
 /// client and retry GET requests once. Other methods are not retried, since
 /// Discord may already have processed them.
-async fn execute_reconnecting<F>(
+async fn execute_reconnecting<F, Fut>(
     client: reqwest::Client,
     request: reqwest::Request,
     reconnect: F,
 ) -> reqwest::Result<reqwest::Response>
 where
-    F: FnOnce(&reqwest::Error) -> Option<reqwest::Client>,
+    F: FnOnce(&reqwest::Error) -> Fut,
+    Fut: std::future::Future<Output = Option<reqwest::Client>>,
 {
     let retry = if request.method() == Method::GET {
         request.try_clone()
@@ -63,7 +64,7 @@ where
 
     match client.execute(request).await {
         Err(error) if is_connection_error(&error) => {
-            let client = reconnect(&error);
+            let client = reconnect(&error).await;
             match (client, retry) {
                 (Some(client), Some(request)) => client.execute(request).await,
                 _ => Err(error),
@@ -81,7 +82,10 @@ trait SendReconnecting {
 impl SendReconnecting for RequestBuilder {
     async fn send_reconnecting(self, api: &DiscordApiClient) -> reqwest::Result<reqwest::Response> {
         let (client, request) = self.build_split();
-        execute_reconnecting(client, request?, |error| api.reset_connections(error)).await
+        execute_reconnecting(client, request?, |error| {
+            api.reset_connections(DiscordApiClient::error_chain(error))
+        })
+        .await
     }
 }
 
@@ -170,10 +174,13 @@ impl DiscordApiClient {
         Ok(headers)
     }
 
-    fn configure_http(&self, builder: reqwest::ClientBuilder) -> reqwest::ClientBuilder {
+    fn configure_http(
+        headers: HeaderMap,
+        builder: reqwest::ClientBuilder,
+    ) -> reqwest::ClientBuilder {
         // Keep-alive pings retire connections whose network route disappeared.
         builder
-            .default_headers(self.headers.clone())
+            .default_headers(headers)
             .connect_timeout(Duration::from_secs(8))
             .timeout(Duration::from_secs(20))
             .pool_idle_timeout(Duration::from_secs(30))
@@ -291,10 +298,10 @@ impl DiscordApiClient {
     /// Resolve dynamic state once, then use the same snapshot throughout a request.
     async fn request(&self, method: Method, url: &str) -> Result<RequestBuilder> {
         let identity = self.prepare_identity().await?;
-        self.request_with_identity(method, url, &identity)
+        self.request_with_identity(method, url, &identity).await
     }
 
-    fn request_with_identity(
+    async fn request_with_identity(
         &self,
         method: Method,
         url: &str,
@@ -305,9 +312,11 @@ impl DiscordApiClient {
             .is_none_or(|ua| ua == identity.user_agent));
         let user_agent = &identity.user_agent;
         let header_profile = &identity.header_profile;
+        let headers = self.headers.clone();
         let mut request = self
             .client
-            .get(|builder| self.configure_http(builder))
+            .get(move |builder| Self::configure_http(headers, builder))
+            .await
             .map_err(|code| anyhow::anyhow!("Could not create Discord HTTP client ({code})"))?
             .request(method, url)
             .header("x-super-properties", &identity.base64);
@@ -339,16 +348,20 @@ impl DiscordApiClient {
 
     /// Replace the HTTP client so no pooled connection from a previous network
     /// route is reused, returning the client to use from now on.
-    fn reset_connections(&self, reason: &reqwest::Error) -> Option<reqwest::Client> {
+    async fn reset_connections(&self, reason: String) -> Option<reqwest::Client> {
         use crate::logger::{log, LogCategory, LogLevel};
 
-        let result = self.client.reconnect(|builder| self.configure_http(builder));
+        let headers = self.headers.clone();
+        let result = self
+            .client
+            .reconnect(move |builder| Self::configure_http(headers, builder))
+            .await;
         let message = if result.is_ok() {
             "Connection error, replaced Discord HTTP client"
         } else {
             "Connection error, could not replace Discord HTTP client"
         };
-        log(LogLevel::Warn, LogCategory::Api, message, Some(&Self::error_chain(reason)));
+        log(LogLevel::Warn, LogCategory::Api, message, Some(&reason));
         result.ok()
     }
 
@@ -752,7 +765,7 @@ impl DiscordApiClient {
         Ok(data)
     }
 
-    fn decision_request(
+    async fn decision_request(
         &self,
         endpoint: &str,
         placement: u64,
@@ -773,13 +786,15 @@ impl DiscordApiClient {
                 .append_pair("client_heartbeat_session_id", id);
         }
         self.request_with_identity(Method::GET, url.as_str(), identity)
+            .await
     }
 
     pub async fn get_quest_decision_debug(&self, placement: u64) -> Result<serde_json::Value> {
         let identity = self.prepare_identity().await?;
 
         let response = self
-            .decision_request("decision", placement, None, &identity)?
+            .decision_request("decision", placement, None, &identity)
+            .await?
             .send_reconnecting(self)
             .await
             .context("Request for quest placement decision failed")?;
@@ -805,7 +820,8 @@ impl DiscordApiClient {
         let identity = self.prepare_identity().await?;
 
         let response = self
-            .decision_request("get-decisions", placement, Some(num), &identity)?
+            .decision_request("get-decisions", placement, Some(num), &identity)
+            .await?
             .send_reconnecting(self)
             .await
             .context("Request for quest placement decisions failed")?;
@@ -1380,7 +1396,7 @@ mod tests {
 
         let response = execute_reconnecting(client, request, |_| {
             reconnects += 1;
-            Some(replacement_client())
+            std::future::ready(Some(replacement_client()))
         })
         .await;
         server.abort();
@@ -1404,7 +1420,7 @@ mod tests {
 
         let error = execute_reconnecting(client, request, |_| {
             reconnects += 1;
-            Some(replacement_client())
+            std::future::ready(Some(replacement_client()))
         })
         .await
         .unwrap_err();
@@ -1426,7 +1442,7 @@ mod tests {
 
         let response = execute_reconnecting(client, request, |_| {
             reconnects += 1;
-            Some(replacement_client())
+            std::future::ready(Some(replacement_client()))
         })
         .await;
         server.abort();
@@ -1697,6 +1713,7 @@ mod tests {
         for (endpoint, num) in [("decision", None), ("get-decisions", Some(2))] {
             let request = client
                 .decision_request(endpoint, 1, num, &snapshot)
+                .await
                 .unwrap()
                 .build()
                 .unwrap();
@@ -1726,6 +1743,7 @@ mod tests {
             .unwrap();
         let request = client
             .decision_request("decision", 1, None, &anonymous)
+            .await
             .unwrap()
             .build()
             .unwrap();

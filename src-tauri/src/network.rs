@@ -38,18 +38,23 @@ struct StoredSettings {
     settings: Settings,
     #[serde(skip_serializing_if = "Option::is_none")]
     credential_ref: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    retired_credentials: Vec<String>,
 }
 
 impl StoredSettings {
     fn validated(mut self) -> CommandResult<Self> {
         self.settings = self.settings.validated()?;
         if self.settings.mode != Mode::Manual {
-            self.credential_ref = None;
+            self.retired_credentials.extend(self.credential_ref.take());
         }
+        self.retired_credentials
+            .retain(|reference| Some(reference) != self.credential_ref.as_ref());
         if self
             .credential_ref
-            .as_deref()
-            .is_some_and(|reference| uuid::Uuid::parse_str(reference).is_err())
+            .iter()
+            .chain(&self.retired_credentials)
+            .any(|reference| uuid::Uuid::parse_str(reference).is_err())
         {
             return Err("storage_error");
         }
@@ -74,7 +79,7 @@ impl Settings {
         }
 
         let raw = self.address.as_deref().unwrap_or("").trim();
-        let address = Url::parse(raw).map_err(|_| "invalid_address")?;
+        let mut address = Url::parse(raw).map_err(|_| "invalid_address")?;
         let authority = raw.split_once("://").map(|(_, rest)| rest).unwrap_or("");
         let authority = authority.strip_suffix('/').unwrap_or(authority);
         if !matches!(address.scheme(), "http" | "https" | "socks5" | "socks5h")
@@ -92,6 +97,12 @@ impl Settings {
             return Err("invalid_address");
         }
 
+        if matches!(address.scheme(), "socks5" | "socks5h") {
+            address
+                .set_port(proxy_port(&address))
+                .map_err(|_| "invalid_address")?;
+            address.set_path("");
+        }
         self.address = Some(address.to_string());
         Ok(self)
     }
@@ -159,36 +170,53 @@ fn desktop_rules(
     environment: &Environment,
     desktop: &discord_cdp_launch_core::LinuxDesktopProxySettings,
 ) -> Environment {
+    let select = |candidates: [Option<&String>; 4]| {
+        let probe = "http://discord.com".parse().expect("static proxy probe");
+        candidates
+            .into_iter()
+            .flatten()
+            .find(|address| {
+                Proxy::http(address.as_str()).is_ok()
+                    && Matcher::builder()
+                        .http(address.as_str())
+                        .build()
+                        .intercept(&probe)
+                        .is_some()
+            })
+            .cloned()
+    };
     Environment {
-        http: environment
-            .http
-            .clone()
-            .or_else(|| environment.all.clone())
-            .or_else(|| desktop.http.clone())
-            .or_else(|| desktop.all.clone()),
-        https: environment
-            .https
-            .clone()
-            .or_else(|| environment.all.clone())
-            .or_else(|| desktop.https.clone())
-            .or_else(|| desktop.all.clone()),
+        http: select([
+            environment.http.as_ref(),
+            environment.all.as_ref(),
+            desktop.http.as_ref(),
+            desktop.all.as_ref(),
+        ]),
+        https: select([
+            environment.https.as_ref(),
+            environment.all.as_ref(),
+            desktop.https.as_ref(),
+            desktop.all.as_ref(),
+        ]),
         all: None,
         no: environment.no.clone().or_else(|| desktop.no_proxy.clone()),
     }
 }
 
 impl SystemProxy {
-    fn detect() -> Self {
+    fn detect() -> CommandResult<Self> {
         let environment = Environment::current();
         #[cfg(target_os = "linux")]
-        let desktop = discord_cdp_launch_core::linux_desktop_proxy_settings();
+        let (desktop, pac_configured) =
+            discord_cdp_launch_core::linux_desktop_proxy_config().map_err(|_| "client_error")?;
         #[cfg(not(target_os = "linux"))]
         let desktop: Option<discord_cdp_launch_core::LinuxDesktopProxySettings> = None;
 
         let mut hasher = DefaultHasher::new();
         environment.hash(&mut hasher);
         desktop.hash(&mut hasher);
-        let pac_configured = platform_fingerprint(&mut hasher);
+        #[cfg(not(target_os = "linux"))]
+        let pac_configured = platform_fingerprint(&mut hasher)?;
         let explicit = desktop
             .as_ref()
             .map(|desktop| desktop_rules(&environment, desktop));
@@ -229,21 +257,22 @@ impl SystemProxy {
                 .map(|proxy| proxy.uri().to_string())
                 .hash(&mut hasher);
         }
-        Self {
+        pac_configured.hash(&mut hasher);
+        Ok(Self {
             fingerprint: hasher.finish(),
             explicit,
             discord,
             pac_configured,
-        }
+        })
     }
 }
 
 #[cfg(windows)]
-fn platform_fingerprint(hasher: &mut DefaultHasher) -> bool {
+fn platform_fingerprint(hasher: &mut DefaultHasher) -> CommandResult<bool> {
     let Ok(settings) = windows_registry::CURRENT_USER
         .open("Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings")
     else {
-        return false;
+        return Ok(false);
     };
     for key in ["ProxyServer", "ProxyOverride", "AutoConfigURL"] {
         settings.get_string(key).ok().hash(hasher);
@@ -251,46 +280,35 @@ fn platform_fingerprint(hasher: &mut DefaultHasher) -> bool {
     for key in ["ProxyEnable", "AutoDetect"] {
         settings.get_u32(key).ok().hash(hasher);
     }
-    settings
+    Ok(settings
         .get_string("AutoConfigURL")
         .is_ok_and(|url| !url.trim().is_empty())
-        || settings.get_u32("AutoDetect").unwrap_or(0) == 1
+        || settings.get_u32("AutoDetect").unwrap_or(0) == 1)
 }
 
 #[cfg(target_os = "macos")]
-fn platform_fingerprint(_: &mut DefaultHasher) -> bool {
-    std::process::Command::new("/usr/sbin/scutil")
-        .arg("--proxy")
-        .output()
-        .ok()
-        .filter(|output| output.status.success())
-        .is_some_and(|output| {
-            String::from_utf8_lossy(&output.stdout).lines().any(|line| {
-                let Some((name, value)) = line.trim().split_once(':') else {
-                    return false;
-                };
+fn platform_fingerprint(hasher: &mut DefaultHasher) -> CommandResult<bool> {
+    let output = discord_cdp_launch_core::proxy_command_output(
+        std::process::Command::new("/usr/sbin/scutil").arg("--proxy"),
+    )
+    .map_err(|_| "client_error")?;
+    output.hash(hasher);
+    Ok(output.as_deref().is_some_and(|bytes| {
+        String::from_utf8_lossy(bytes)
+            .lines()
+            .filter_map(|line| line.split_once(':'))
+            .any(|(name, value)| {
                 matches!(
                     name.trim(),
                     "ProxyAutoConfigEnable" | "ProxyAutoDiscoveryEnable"
                 ) && value.trim() == "1"
             })
-        })
-}
-
-#[cfg(target_os = "linux")]
-fn platform_fingerprint(_: &mut DefaultHasher) -> bool {
-    discord_cdp_launch_core::linux_host_command("gsettings")
-        .args(["get", "org.gnome.system.proxy", "mode"])
-        .output()
-        .ok()
-        .is_some_and(|output| {
-            output.status.success() && String::from_utf8_lossy(&output.stdout).trim() == "'auto'"
-        })
+    }))
 }
 
 #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
-fn platform_fingerprint(_: &mut DefaultHasher) -> bool {
-    false
+fn platform_fingerprint(_: &mut DefaultHasher) -> CommandResult<bool> {
+    Ok(false)
 }
 
 #[derive(Clone)]
@@ -348,6 +366,7 @@ impl Route {
     }
 }
 
+#[derive(Clone)]
 struct NetworkState {
     path: Option<PathBuf>,
     settings: Option<StoredSettings>,
@@ -428,24 +447,51 @@ impl NetworkState {
         } else {
             Edit::Remove
         };
-        let (credential_ref, replacement) = match edit {
-            Edit::Keep => (self.retained_reference(&settings)?.map(str::to_owned), None),
-            Edit::Remove => (None, None),
+        let (credential_ref, replacement, reservation) = match edit {
+            Edit::Keep => (
+                self.retained_reference(&settings)?.map(str::to_owned),
+                None,
+                None,
+            ),
+            Edit::Remove => (None, None, None),
             Edit::Replace { credentials } => {
                 settings.validate_credentials(&credentials)?;
                 let reference = uuid::Uuid::new_v4().to_string();
-                vault.write(&reference, &credentials)?;
-                (Some(reference), Some(Arc::new(credentials)))
+                // Record the reference before creating a secret. A failed save or a
+                // crash can then be recovered without inspecting the credential store.
+                let reservation =
+                    reserve_credential(path, &reference).map_err(|_| "storage_error")?;
+                if let Err(error) = vault.write(&reference, &credentials) {
+                    drop(reservation);
+                    cleanup_reservation(path, &reference, false, vault);
+                    return Err(error);
+                }
+                (
+                    Some(reference),
+                    Some(Arc::new(credentials)),
+                    Some(reservation),
+                )
             }
         };
+        let changed = previous_ref != credential_ref;
+        let mut retired_credentials = self
+            .settings
+            .as_ref()
+            .map(|stored| stored.retired_credentials.clone())
+            .unwrap_or_default();
+        if changed {
+            retired_credentials.extend(previous_ref);
+        }
         let next = StoredSettings {
             settings,
             credential_ref,
+            retired_credentials,
         };
-        let changed = previous_ref != next.credential_ref;
-        if write_settings(path, &next).is_err() {
+        let written = write_settings(path, &next);
+        drop(reservation);
+        if written.is_err() {
             if let (Some(_), Some(reference)) = (&replacement, &next.credential_ref) {
-                vault.remove(reference);
+                cleanup_reservation(path, reference, false, vault);
             }
             return Err("storage_error");
         }
@@ -457,13 +503,26 @@ impl NetworkState {
             self.revision += 1;
             self.settings = Some(next);
         }
-        // Retire the old entry only after the file and active route point elsewhere.
-        if changed {
-            if let Some(reference) = previous_ref {
-                vault.remove(&reference);
-            }
-        }
         Ok(())
+    }
+
+    fn finish_credential_cleanup(&mut self, vault: &impl Vault) {
+        let (Some(path), Some(stored)) = (&self.path, &self.settings) else {
+            return;
+        };
+        for reference in credential_reservations(path) {
+            let active = stored.credential_ref.as_deref() == Some(reference.as_str());
+            cleanup_reservation(path, &reference, active, vault);
+        }
+        let mut updated = stored.clone();
+        updated
+            .retired_credentials
+            .retain(|reference| vault.remove(reference).is_err());
+        if updated.retired_credentials != stored.retired_credentials
+            && write_settings(path, &updated).is_ok()
+        {
+            self.settings = Some(updated);
+        }
     }
 
     fn draft_route(
@@ -485,27 +544,43 @@ impl NetworkState {
                 }
             }
         };
-        Ok(self.route_for(settings, credentials))
+        self.route_for(settings, credentials)
     }
 
-    fn route_for(&mut self, settings: Settings, credentials: Option<Arc<Credentials>>) -> Route {
+    fn route_for(
+        &mut self,
+        settings: Settings,
+        credentials: Option<Arc<Credentials>>,
+    ) -> CommandResult<Route> {
         let system = (settings.mode == Mode::System)
-            .then(|| self.system_proxy(Instant::now(), SystemProxy::detect));
-        Route {
+            .then(|| self.system_proxy(Instant::now(), SystemProxy::detect))
+            .transpose()?;
+        Ok(Route {
             settings,
             credentials,
             system,
             revision: self.revision,
-        }
+        })
     }
 
-    fn system_proxy(&mut self, now: Instant, detect: impl FnOnce() -> SystemProxy) -> SystemProxy {
+    fn system_proxy(
+        &mut self,
+        now: Instant,
+        detect: impl FnOnce() -> CommandResult<SystemProxy>,
+    ) -> CommandResult<SystemProxy> {
         if let Some((checked_at, system)) = &self.system {
             if now.saturating_duration_since(*checked_at) < SYSTEM_REFRESH {
-                return system.clone();
+                return Ok(system.clone());
             }
         }
-        let system = detect();
+        let system = match detect() {
+            Ok(system) => system,
+            Err(error) => self
+                .system
+                .as_ref()
+                .map(|(_, system)| system.clone())
+                .ok_or(error)?,
+        };
         if self
             .system
             .as_ref()
@@ -514,7 +589,7 @@ impl NetworkState {
             self.revision += 1;
         }
         self.system = Some((now, system.clone()));
-        system
+        Ok(system)
     }
 
     fn route(&mut self) -> CommandResult<Route> {
@@ -525,14 +600,13 @@ impl NetworkState {
             .settings
             .clone();
         let credentials = self.saved_credentials(&settings, &NativeVault)?;
-        Ok(self.route_for(settings, credentials))
+        self.route_for(settings, credentials)
     }
 
-    fn status(&mut self) -> Status {
+    fn status(&self) -> Status {
         let stored = self.settings.clone().unwrap_or_default();
         let settings = stored.settings;
-        let system = (settings.mode == Mode::System && self.settings.is_some())
-            .then(|| self.system_proxy(Instant::now(), SystemProxy::detect));
+        let system = self.system.as_ref().map(|(_, system)| system);
         let discord = match settings.mode {
             Mode::System => system.as_ref().map(|system| system.discord.clone()),
             Mode::Direct => Some(RouteStatus {
@@ -550,6 +624,12 @@ impl NetworkState {
             pac_configured: system.is_some_and(|system| system.pac_configured),
             storage_invalid: self.settings.is_none(),
             has_credentials: stored.credential_ref.is_some(),
+            credential_cleanup_pending: !stored.retired_credentials.is_empty()
+                || self.path.as_ref().is_some_and(|path| {
+                    credential_reservations(path).any(|reference| {
+                        stored.credential_ref.as_deref() != Some(reference.as_str())
+                    })
+                }),
         }
     }
 }
@@ -574,10 +654,150 @@ fn write_settings(path: &Path, settings: &StoredSettings) -> std::io::Result<()>
     Ok(())
 }
 
+const CREDENTIAL_RESERVATION_PREFIX: &str = "network-credential-";
+const CREDENTIAL_RESERVATION_SUFFIX: &str = ".pending";
+
+fn reservation_path(path: &Path, reference: &str) -> PathBuf {
+    path.with_file_name(format!(
+        "{CREDENTIAL_RESERVATION_PREFIX}{reference}{CREDENTIAL_RESERVATION_SUFFIX}"
+    ))
+}
+
+fn reserve_credential(path: &Path, reference: &str) -> std::io::Result<std::fs::File> {
+    let parent = path.parent().ok_or(std::io::ErrorKind::InvalidInput)?;
+    std::fs::create_dir_all(parent)?;
+    let file = tempfile::NamedTempFile::new_in(parent)?;
+    file.as_file().lock()?;
+    file.as_file().sync_all()?;
+    Ok(file.persist_noclobber(reservation_path(path, reference))?)
+}
+
+fn credential_reservations(path: &Path) -> impl Iterator<Item = String> {
+    path.parent()
+        .and_then(|parent| std::fs::read_dir(parent).ok())
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| {
+            let name = entry.ok()?.file_name();
+            let reference = name
+                .to_str()?
+                .strip_prefix(CREDENTIAL_RESERVATION_PREFIX)?
+                .strip_suffix(CREDENTIAL_RESERVATION_SUFFIX)?;
+            uuid::Uuid::parse_str(reference).ok()?;
+            Some(reference.to_owned())
+        })
+}
+
+fn cleanup_reservation(path: &Path, reference: &str, active: bool, vault: &impl Vault) {
+    let reservation = reservation_path(path, reference);
+    let Ok(file) = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&reservation)
+    else {
+        return;
+    };
+    if file.try_lock().is_err() {
+        return;
+    }
+    // Another instance may have saved the reference after this instance loaded its settings.
+    let active_on_disk = std::fs::read(path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<StoredSettings>(&bytes).ok())
+        .is_some_and(|stored| stored.credential_ref.as_deref() == Some(reference));
+    if active || active_on_disk || vault.remove(reference).is_ok() {
+        drop(file);
+        let _ = std::fs::remove_file(&reservation);
+    }
+}
+
 static STATE: LazyLock<Mutex<NetworkState>> = LazyLock::new(|| Mutex::new(NetworkState::default()));
 
 pub(crate) fn initialize(path: PathBuf) {
     STATE.lock().unwrap().load(path);
+}
+
+static SYSTEM_PROBE: Mutex<()> = Mutex::new(());
+static CREDENTIAL_READ: Mutex<()> = Mutex::new(());
+static SETTINGS_SAVE: Mutex<()> = Mutex::new(());
+
+impl NetworkState {
+    fn mode(&self) -> Option<Mode> {
+        self.settings.as_ref().map(|stored| stored.settings.mode)
+    }
+
+    fn cached_route(&self) -> CommandResult<Option<Route>> {
+        let stored = self.settings.as_ref().ok_or("storage_error")?;
+        let system = if stored.settings.mode == Mode::System {
+            let Some((updated, system)) = &self.system else {
+                return Ok(None);
+            };
+            if updated.elapsed() >= SYSTEM_REFRESH {
+                return Ok(None);
+            }
+            Some(system.clone())
+        } else {
+            None
+        };
+        if stored.credential_ref.is_some() && self.credentials.is_none() {
+            return Ok(None);
+        }
+        Ok(Some(Route {
+            settings: stored.settings.clone(),
+            credentials: self.credentials.clone(),
+            system,
+            revision: self.revision,
+        }))
+    }
+}
+
+fn refresh_route(status_only: bool) -> CommandResult<Option<Route>> {
+    loop {
+        let mode = STATE.lock().unwrap().mode();
+        if status_only && mode != Some(Mode::System) {
+            return Ok(None);
+        }
+        let _probe = match mode {
+            Some(Mode::System) => Some(SYSTEM_PROBE.lock().unwrap()),
+            Some(Mode::Manual) => Some(CREDENTIAL_READ.lock().unwrap()),
+            _ => None,
+        };
+        let mut snapshot = STATE.lock().unwrap().clone();
+        if snapshot.mode() != mode {
+            continue;
+        }
+        let revision = snapshot.revision;
+        let route = if status_only {
+            snapshot
+                .system_proxy(Instant::now(), SystemProxy::detect)
+                .map(|_| None)
+        } else {
+            match snapshot.cached_route()? {
+                Some(route) => Ok(Some(route)),
+                None => snapshot.route().map(Some),
+            }
+        };
+        let mut state = STATE.lock().unwrap();
+        if state.revision != revision {
+            continue;
+        }
+        state.system = snapshot.system;
+        state.credentials = snapshot.credentials;
+        state.revision = snapshot.revision;
+        return route;
+    }
+}
+
+async fn active_route() -> CommandResult<Route> {
+    if let Ok(state) = STATE.try_lock() {
+        if let Some(route) = state.cached_route()? {
+            return Ok(route);
+        }
+    }
+    tauri::async_runtime::spawn_blocking(|| refresh_route(false))
+        .await
+        .map_err(|_| "client_error")??
+        .ok_or("client_error")
 }
 
 #[derive(Default)]
@@ -588,41 +808,45 @@ impl HttpClient {
         Self(Mutex::new(None))
     }
 
-    pub(crate) fn get(
+    pub(crate) async fn get(
         &self,
-        configure: impl FnOnce(ClientBuilder) -> ClientBuilder,
+        configure: impl FnOnce(ClientBuilder) -> ClientBuilder + Send + 'static,
     ) -> CommandResult<Client> {
-        self.client(&STATE, configure, false)
+        self.client(active_route().await?, configure, false).await
     }
 
-    pub(crate) fn reconnect(
+    pub(crate) async fn reconnect(
         &self,
-        configure: impl FnOnce(ClientBuilder) -> ClientBuilder,
+        configure: impl FnOnce(ClientBuilder) -> ClientBuilder + Send + 'static,
     ) -> CommandResult<Client> {
-        self.client(&STATE, configure, true)
+        self.client(active_route().await?, configure, true).await
     }
 
-    fn client(
+    async fn client(
         &self,
-        state: &Mutex<NetworkState>,
-        configure: impl FnOnce(ClientBuilder) -> ClientBuilder,
+        route: Route,
+        configure: impl FnOnce(ClientBuilder) -> ClientBuilder + Send + 'static,
         reconnect: bool,
     ) -> CommandResult<Client> {
-        let mut cached = self.0.lock().unwrap();
-        let route = state.lock().unwrap().route()?;
-        if let Some((revision, client)) = &*cached {
-            if !reconnect && *revision == route.revision {
+        let revision = route.revision;
+        if let Some((cached_revision, client)) = &*self.0.lock().unwrap() {
+            if *cached_revision > revision || (!reconnect && *cached_revision == revision) {
                 return Ok(client.clone());
             }
         }
-        let client = route.build(configure(Client::builder()))?;
-        *cached = Some((route.revision, client.clone()));
+        let client =
+            tauri::async_runtime::spawn_blocking(move || route.build(configure(Client::builder())))
+                .await
+                .map_err(|_| "client_error")??;
+        let mut cached = self.0.lock().unwrap();
+        if let Some((cached_revision, current)) = &*cached {
+            if *cached_revision > revision || (!reconnect && *cached_revision == revision) {
+                return Ok(current.clone());
+            }
+        }
+        *cached = Some((revision, client.clone()));
         Ok(client)
     }
-}
-
-pub(crate) fn builder(builder: ClientBuilder) -> CommandResult<ClientBuilder> {
-    STATE.lock().unwrap().route()?.apply(builder)
 }
 
 #[derive(Serialize)]
@@ -632,11 +856,18 @@ pub(crate) struct Status {
     pac_configured: bool,
     storage_invalid: bool,
     has_credentials: bool,
+    credential_cleanup_pending: bool,
 }
 
 #[tauri::command]
-pub(crate) async fn get_network_settings() -> Status {
-    STATE.lock().unwrap().status()
+pub(crate) async fn get_network_settings() -> CommandResult<Status> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let _ = refresh_route(true);
+        let snapshot = STATE.lock().unwrap().clone();
+        Ok(snapshot.status())
+    })
+    .await
+    .map_err(|_| "storage_error")?
 }
 
 #[tauri::command]
@@ -645,9 +876,31 @@ pub(crate) async fn save_network_settings(
     credentials: Option<Edit>,
 ) -> CommandResult<Status> {
     tauri::async_runtime::spawn_blocking(move || {
-        let mut state = STATE.lock().unwrap();
-        state.save(settings, credentials.unwrap_or(Edit::Keep), &NativeVault)?;
-        Ok(state.status())
+        let _save = SETTINGS_SAVE.lock().unwrap();
+        let mut snapshot = STATE.lock().unwrap().clone();
+        let previous = snapshot.settings.clone();
+        snapshot.save(settings, credentials.unwrap_or(Edit::Keep), &NativeVault)?;
+        {
+            let mut state = STATE.lock().unwrap();
+            if snapshot
+                .settings
+                .as_ref()
+                .map(|saved| (&saved.settings, &saved.credential_ref))
+                != previous
+                    .as_ref()
+                    .map(|saved| (&saved.settings, &saved.credential_ref))
+            {
+                state.revision += 1;
+                state.system = None;
+                state.credentials = snapshot.credentials.clone();
+            }
+            state.settings = snapshot.settings.clone();
+        }
+        snapshot.finish_credential_cleanup(&NativeVault);
+        STATE.lock().unwrap().settings = snapshot.settings;
+        let _ = refresh_route(true);
+        let snapshot = STATE.lock().unwrap().clone();
+        Ok(snapshot.status())
     })
     .await
     .map_err(|_| "storage_error")?
@@ -741,11 +994,13 @@ pub(crate) async fn fetch_github_releases(prerelease: bool) -> CommandResult<ser
 
 async fn fetch_public_json(url: &str, accept: &str) -> CommandResult<serde_json::Value> {
     static PUBLIC_API: HttpClient = HttpClient::new();
-    let client = PUBLIC_API.get(|builder| {
-        builder
-            .timeout(Duration::from_secs(20))
-            .user_agent("Discord-Quest-Helper")
-    })?;
+    let client = PUBLIC_API
+        .get(|builder| {
+            builder
+                .timeout(Duration::from_secs(20))
+                .user_agent("Discord-Quest-Helper")
+        })
+        .await?;
     let response = client
         .get(url)
         .header(reqwest::header::ACCEPT, accept)
@@ -899,7 +1154,10 @@ mod tests {
     }
 
     #[derive(Default)]
-    struct MemoryVault(std::cell::RefCell<std::collections::HashMap<String, (String, String)>>);
+    struct MemoryVault(
+        std::cell::RefCell<std::collections::HashMap<String, (String, String)>>,
+        std::cell::Cell<bool>,
+    );
 
     impl Vault for MemoryVault {
         fn read(&self, reference: &str) -> CommandResult<Credentials> {
@@ -921,8 +1179,12 @@ mod tests {
             Ok(())
         }
 
-        fn remove(&self, reference: &str) {
+        fn remove(&self, reference: &str) -> CommandResult<()> {
+            if self.1.get() {
+                return Err("credential_store_error");
+            }
             self.0.borrow_mut().remove(reference);
+            Ok(())
         }
     }
 
@@ -972,6 +1234,7 @@ mod tests {
             )
             .unwrap();
         assert!(state.revision > revision);
+        state.finish_credential_cleanup(&vault);
         assert_eq!(vault.0.borrow().len(), 1);
 
         let mut relaunched = NetworkState::default();
@@ -1033,6 +1296,7 @@ mod tests {
 
         relaunched.path = Some(path.clone());
         relaunched.save(settings, Edit::Remove, &vault).unwrap();
+        relaunched.finish_credential_cleanup(&vault);
         assert!(vault.0.borrow().is_empty());
         assert!(!relaunched.status().has_credentials);
         assert!(!std::fs::read_to_string(path)
@@ -1040,6 +1304,115 @@ mod tests {
             .contains("credential_ref"));
         // A previously accepted request keeps its own immutable credential snapshot.
         assert_eq!(route.credentials.as_ref().unwrap().password, "new-password");
+    }
+
+    #[test]
+    fn failed_credential_cleanup_survives_restart_without_changing_the_new_route() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("network.json");
+        let vault = MemoryVault::default();
+        let mut state = NetworkState::default();
+        state.load(path.clone());
+        state
+            .save(
+                manual("http://127.0.0.1:7890"),
+                replace_credentials("dummy", "secret"),
+                &vault,
+            )
+            .unwrap();
+
+        vault.1.set(true);
+        state
+            .save(settings(Mode::Direct, None), Edit::Remove, &vault)
+            .unwrap();
+        state.finish_credential_cleanup(&vault);
+        assert_eq!(vault.0.borrow().len(), 1);
+        assert!(state.status().credential_cleanup_pending);
+        assert!(state.status().settings.mode == Mode::Direct);
+
+        let mut reloaded = NetworkState::default();
+        reloaded.load(path);
+        assert!(!reloaded.status().has_credentials);
+        assert!(reloaded.status().credential_cleanup_pending);
+        vault.1.set(false);
+        reloaded.finish_credential_cleanup(&vault);
+        assert!(vault.0.borrow().is_empty());
+        assert!(!reloaded.status().credential_cleanup_pending);
+    }
+
+    #[test]
+    fn failed_save_and_failed_rollback_leave_a_retryable_reservation() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("network.json");
+        std::fs::create_dir(&path).unwrap();
+        let vault = MemoryVault::default();
+        vault.1.set(true);
+        let mut state = NetworkState::default();
+        state.load(path.clone());
+        assert_eq!(
+            state.save(
+                manual("http://127.0.0.1:7890"),
+                replace_credentials("dummy", "secret"),
+                &vault
+            ),
+            Err("storage_error")
+        );
+        assert!(state.status().credential_cleanup_pending);
+        assert_eq!(vault.0.borrow().len(), 1);
+
+        std::fs::remove_dir(&path).unwrap();
+        let mut reloaded = NetworkState::default();
+        reloaded.load(path);
+        assert!(reloaded.status().credential_cleanup_pending);
+        vault.1.set(false);
+        reloaded.finish_credential_cleanup(&vault);
+        assert!(vault.0.borrow().is_empty());
+        assert!(!reloaded.status().credential_cleanup_pending);
+    }
+
+    #[test]
+    fn equivalent_reentered_proxy_addresses_keep_credentials() {
+        let directory = tempfile::tempdir().unwrap();
+        let vault = MemoryVault::default();
+        let mut state = NetworkState::default();
+        state.load(directory.path().join("network.json"));
+        for (stored, draft) in [
+            ("http://127.0.0.1:7890/", "http://127.0.0.1:7890"),
+            ("socks5h://proxy:1080", "socks5h://proxy/"),
+        ] {
+            state
+                .save(
+                    manual(stored),
+                    replace_credentials("dummy", "secret"),
+                    &vault,
+                )
+                .unwrap();
+            state.save(manual(draft), Edit::Keep, &vault).unwrap();
+            assert!(state.status().has_credentials);
+            assert!(state
+                .draft_route(manual(draft), Edit::Keep, &vault)
+                .unwrap()
+                .credentials
+                .is_some());
+        }
+    }
+
+    #[test]
+    fn malformed_environment_proxy_falls_back_to_valid_desktop_rules() {
+        let desktop = discord_cdp_launch_core::LinuxDesktopProxySettings {
+            https: Some("http://127.0.0.1:7890".into()),
+            ..Default::default()
+        };
+        let rules = desktop_rules(
+            &Environment {
+                https: Some("http://".into()),
+                all: Some("ftp://invalid".into()),
+                ..Default::default()
+            },
+            &desktop,
+        );
+        assert_eq!(rules.https, desktop.https);
+        assert!(rules.http.is_none());
     }
 
     #[test]
@@ -1208,21 +1581,51 @@ mod tests {
             pac_configured: false,
         };
         let mut state = NetworkState::default();
-        assert_eq!(state.system_proxy(first, || detector(1)).fingerprint, 1);
+        assert_eq!(
+            state
+                .system_proxy(first, || Ok(detector(1)))
+                .unwrap()
+                .fingerprint,
+            1
+        );
         assert_eq!(
             state
                 .system_proxy(first + Duration::from_secs(1), || panic!("cached"))
+                .unwrap()
                 .fingerprint,
             1
         );
         assert_eq!(state.revision, 0);
         assert_eq!(
             state
-                .system_proxy(first + SYSTEM_REFRESH, || detector(2))
+                .system_proxy(first + SYSTEM_REFRESH, || Ok(detector(2)))
+                .unwrap()
                 .fingerprint,
             2
         );
         assert_eq!(state.revision, 1);
+    }
+
+    #[test]
+    fn failed_system_detection_preserves_the_last_known_route() {
+        let now = Instant::now();
+        let mut state = NetworkState::default();
+        assert!(state.system_proxy(now, || Err("client_error")).is_err());
+        let known = SystemProxy {
+            fingerprint: 12,
+            explicit: None,
+            discord: RouteStatus {
+                source: Source::System,
+                endpoint: Some("proxy:7890".into()),
+            },
+            pac_configured: false,
+        };
+        state.system_proxy(now, || Ok(known)).unwrap();
+        let retained = state
+            .system_proxy(now + SYSTEM_REFRESH, || Err("client_error"))
+            .unwrap();
+        assert_eq!(retained.fingerprint, 12);
+        assert_eq!(state.revision, 0);
     }
 
     #[tokio::test]
@@ -1330,7 +1733,10 @@ mod tests {
         let state = Mutex::new(state);
         let pool = HttpClient::new();
 
-        let proxied = pool.client(&state, no_redirect, false).unwrap();
+        let proxied = pool
+            .client(state.lock().unwrap().route().unwrap(), no_redirect, false)
+            .await
+            .unwrap();
         let (response, (observed, _peer)) = tokio::join!(
             async { proxied.get(&target).send().await?.text().await },
             async {
@@ -1349,7 +1755,8 @@ mod tests {
         // An unreachable configured proxy must leave the origin untouched.
         drop(proxy);
         assert!(pool
-            .client(&state, no_redirect, true)
+            .client(state.lock().unwrap().route().unwrap(), no_redirect, true)
+            .await
             .unwrap()
             .get(&target)
             .send()
@@ -1368,10 +1775,11 @@ mod tests {
             .unwrap();
         let direct = pool
             .client(
-                &state,
-                |builder| no_redirect(builder).proxy(Proxy::all(proxy_address).unwrap()),
+                state.lock().unwrap().route().unwrap(),
+                move |builder| no_redirect(builder).proxy(Proxy::all(proxy_address).unwrap()),
                 false,
             )
+            .await
             .unwrap();
         let (response, (observed, _peer)) = tokio::join!(
             async { direct.get(&target).send().await?.text().await },

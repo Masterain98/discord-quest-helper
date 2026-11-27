@@ -223,6 +223,8 @@
         "username": "Proxy kullanıcı adı",
         "password": "Proxy parolası",
         "credentials_optional": "Proxy kimlik bilgisi gerektirmiyorsa her iki alanı da boş bırakın.",
+        "unencrypted_credentials": "Kimlik bilgileri bu proxy’ye şifrelenmemiş bir bağlantı üzerinden gönderilir.",
+        "credential_cleanup_pending": "Bazı kimlik bilgileri sistem deposundan kaldırılamadı. Tekrar denemek için Kaydet’i seçin.",
         "credentials_saved": "Proxy kimlik bilgileri kaydedildi",
         "credentials_remove_help": "Kayıtlı kimlik bilgilerini kaldırmak için her iki alanı da boş bırakıp kaydedin.",
         "credentials_keep": "Kayıtlı kimlik bilgilerini kullan",
@@ -230,7 +232,7 @@
         "error_invalid_http_credentials": "HTTP proxy kimlik bilgileri denetim karakteri, kullanıcı adı ise iki nokta üst üste içeremez.",
         "error_invalid_socks_credentials": "SOCKS5, her biri 1 ila 255 bayt uzunluğunda bir kullanıcı adı ve parola gerektirir.",
         "error_credential_store_error": "Sistem kimlik bilgileri deposuna erişilemedi.",
-        "error_credential_endpoint_changed": "Değişen proxy adresi için yeni kimlik bilgileri girin veya her iki alanı da boş bırakın.",
+        "error_credential_endpoint_changed": "Yeni proxy için kimlik bilgilerini girin veya kayıtlı bilgileri kaldırmak için Kimlik bilgilerini düzenle’yi seçin.",
         "error_client_error": "Ağ istemcisi başlatılamadı."
     },
   "settings": {

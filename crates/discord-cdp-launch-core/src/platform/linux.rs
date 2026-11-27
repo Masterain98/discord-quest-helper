@@ -528,41 +528,48 @@ fn proxy_env_missing(upper: &str, lower: &str) -> bool {
 /// requires a resolver rather than a single proxy URL and must not be treated
 /// as if it were a manual endpoint.
 pub fn linux_desktop_proxy_settings() -> Option<LinuxDesktopProxySettings> {
-    if gsettings_string("org.gnome.system.proxy", "mode").as_deref() != Some("manual") {
-        return None;
+    linux_desktop_proxy_config().ok()?.0
+}
+
+/// Return the manual proxy settings and whether automatic configuration is enabled.
+pub fn linux_desktop_proxy_config() -> std::io::Result<(Option<LinuxDesktopProxySettings>, bool)> {
+    match gsettings_string("org.gnome.system.proxy", "mode")?.as_deref() {
+        Some("auto") => return Ok((None, true)),
+        Some("manual") => {}
+        _ => return Ok((None, false)),
     }
 
     let settings = LinuxDesktopProxySettings {
-        http: gsettings_proxy_url("http", "http"),
-        https: gsettings_proxy_url("https", "http"),
-        all: gsettings_proxy_url("socks", "socks5"),
-        no_proxy: gsettings_string_list("org.gnome.system.proxy", "ignore-hosts"),
+        http: gsettings_proxy_url("http", "http")?,
+        https: gsettings_proxy_url("https", "http")?,
+        all: gsettings_proxy_url("socks", "socks5")?,
+        no_proxy: gsettings_string_list("org.gnome.system.proxy", "ignore-hosts")?,
     };
 
-    settings.has_proxy().then_some(settings)
+    Ok((settings.has_proxy().then_some(settings), false))
 }
 
-fn gsettings_proxy_url(section: &str, scheme: &str) -> Option<String> {
+fn gsettings_proxy_url(section: &str, scheme: &str) -> std::io::Result<Option<String>> {
     let schema = format!("org.gnome.system.proxy.{section}");
-    let host = gsettings_string(&schema, "host")?;
-    if host.is_empty() {
-        return None;
-    }
-    let port = gsettings_raw(&schema, "port")?.parse::<u16>().ok()?;
-    if port == 0 {
-        return None;
-    }
-    Some(format!("{scheme}://{host}:{port}"))
+    let Some(host) = gsettings_string(&schema, "host")?.filter(|host| !host.is_empty()) else {
+        return Ok(None);
+    };
+    let port = gsettings_raw(&schema, "port")?
+        .and_then(|value| value.parse::<u16>().ok())
+        .filter(|port| *port != 0);
+    Ok(port.map(|port| format!("{scheme}://{host}:{port}")))
 }
 
-fn gsettings_string(schema: &str, key: &str) -> Option<String> {
-    let value = gsettings_raw(schema, key)?;
-    parse_gvariant_string(&value)
+fn gsettings_string(schema: &str, key: &str) -> std::io::Result<Option<String>> {
+    Ok(gsettings_raw(schema, key)?
+        .as_deref()
+        .and_then(parse_gvariant_string))
 }
 
-fn gsettings_string_list(schema: &str, key: &str) -> Option<String> {
-    let value = gsettings_raw(schema, key)?;
-    parse_gvariant_string_list(&value)
+fn gsettings_string_list(schema: &str, key: &str) -> std::io::Result<Option<String>> {
+    Ok(gsettings_raw(schema, key)?
+        .as_deref()
+        .and_then(parse_gvariant_string_list))
 }
 
 fn parse_gvariant_string_list(value: &str) -> Option<String> {
@@ -575,15 +582,11 @@ fn parse_gvariant_string_list(value: &str) -> Option<String> {
     (!values.is_empty()).then(|| values.join(","))
 }
 
-fn gsettings_raw(schema: &str, key: &str) -> Option<String> {
-    let output = crate::linux_host_command("gsettings")
-        .args(["get", schema, key])
-        .output()
-        .ok()?;
-    output
-        .status
-        .success()
-        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
+fn gsettings_raw(schema: &str, key: &str) -> std::io::Result<Option<String>> {
+    let output = crate::proxy_command_output(
+        crate::linux_host_command("gsettings").args(["get", schema, key]),
+    )?;
+    Ok(output.map(|bytes| String::from_utf8_lossy(&bytes).trim().to_string()))
 }
 
 fn parse_gvariant_string(value: &str) -> Option<String> {

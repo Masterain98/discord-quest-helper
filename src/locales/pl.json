@@ -223,6 +223,8 @@
         "username": "Nazwa użytkownika proxy",
         "password": "Hasło proxy",
         "credentials_optional": "Pozostaw oba pola puste, jeśli serwer proxy nie wymaga uwierzytelnienia.",
+        "unencrypted_credentials": "Dane logowania są wysyłane do tego serwera proxy przez nieszyfrowane połączenie.",
+        "credential_cleanup_pending": "Nie udało się usunąć części danych logowania z magazynu systemowego. Wybierz Zapisz, aby ponowić próbę.",
         "credentials_saved": "Zapisano dane logowania proxy",
         "credentials_remove_help": "Pozostaw oba pola puste i zapisz, aby usunąć zapisane dane logowania.",
         "credentials_keep": "Użyj zapisanych danych logowania",
@@ -230,7 +232,7 @@
         "error_invalid_http_credentials": "Dane logowania do proxy HTTP nie mogą zawierać znaków sterujących, a nazwa użytkownika nie może zawierać dwukropka.",
         "error_invalid_socks_credentials": "SOCKS5 wymaga nazwy użytkownika i hasła o długości od 1 do 255 bajtów każde.",
         "error_credential_store_error": "Nie udało się uzyskać dostępu do systemowego magazynu poświadczeń.",
-        "error_credential_endpoint_changed": "Wpisz nowe dane logowania dla zmienionego adresu proxy lub pozostaw oba pola puste.",
+        "error_credential_endpoint_changed": "Wpisz dane logowania nowego proxy lub wybierz Edytuj dane logowania, aby usunąć zapisane dane.",
         "error_client_error": "Nie udało się zainicjować klienta sieciowego."
     },
   "settings": {

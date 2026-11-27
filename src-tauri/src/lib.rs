@@ -1632,13 +1632,17 @@ async fn fetch_detectable_games(state: State<'_, AppState>) -> Result<Vec<Detect
     }
 
     // ── Unauthenticated fallback ──────────────────────────────────────────
-    let http = network::builder(reqwest::Client::builder())?
-        .user_agent(super_properties::discord_user_agent(
-            super_properties::DEFAULT_CLIENT_VERSION,
-        ))
-        .connect_timeout(std::time::Duration::from_secs(8))
-        .timeout(std::time::Duration::from_secs(20))
-        .build()
+    static DETECTABLE_GAMES: network::HttpClient = network::HttpClient::new();
+    let http = DETECTABLE_GAMES
+        .get(|builder| {
+            builder
+                .user_agent(super_properties::discord_user_agent(
+                    super_properties::DEFAULT_CLIENT_VERSION,
+                ))
+                .connect_timeout(std::time::Duration::from_secs(8))
+                .timeout(std::time::Duration::from_secs(20))
+        })
+        .await
         .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
 
     const API_BASE: &str = "https://discord.com/api/v9";
@@ -2192,11 +2196,14 @@ pub fn run() {
         .manage(std::sync::Arc::new(
             discord_console::ConsoleManager::default(),
         ))
-        .register_asynchronous_uri_scheme_protocol("network-media", |_context, request, responder| {
-            tauri::async_runtime::spawn(async move {
-                responder.respond(network_media::respond(request).await);
-            });
-        })
+        .register_asynchronous_uri_scheme_protocol(
+            "network-media",
+            |_context, request, responder| {
+                tauri::async_runtime::spawn(async move {
+                    responder.respond(network_media::respond(request).await);
+                });
+            },
+        )
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
@@ -2634,9 +2641,10 @@ async fn get_ip_info() -> Result<IpInfo, String> {
         Some(ENDPOINT),
     );
 
-    let client = network::builder(reqwest::Client::builder())?
-        .timeout(TIMEOUT)
-        .build()
+    static IP_INFO: network::HttpClient = network::HttpClient::new();
+    let client = IP_INFO
+        .get(|builder| builder.timeout(TIMEOUT))
+        .await
         .map_err(|error| {
             let message = format!("[IPInfo] failed to create HTTP client: {error}");
             logger::log(

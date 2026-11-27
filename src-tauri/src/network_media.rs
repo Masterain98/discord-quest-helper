@@ -49,6 +49,7 @@ async fn download(request: Request<Vec<u8>>) -> Result<Response<Vec<u8>>, Status
                 .connect_timeout(Duration::from_secs(8))
                 .timeout(Duration::from_secs(25))
         })
+        .await
         .map_err(|_| StatusCode::BAD_GATEWAY)?;
     let head = request.method() == Method::HEAD;
     let mut upstream = client.request(request.method().clone(), url);

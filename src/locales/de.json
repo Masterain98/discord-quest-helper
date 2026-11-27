@@ -223,6 +223,8 @@
         "username": "Proxy-Benutzername",
         "password": "Proxy-Passwort",
         "credentials_optional": "Lasse beide Felder leer, wenn der Proxy keine Zugangsdaten erfordert.",
+        "unencrypted_credentials": "Die Zugangsdaten werden über eine unverschlüsselte Verbindung an diesen Proxy gesendet.",
+        "credential_cleanup_pending": "Einige Zugangsdaten konnten nicht aus dem Anmeldedatenspeicher entfernt werden. Wähle Speichern, um es erneut zu versuchen.",
         "credentials_saved": "Proxy-Zugangsdaten gespeichert",
         "credentials_remove_help": "Lasse beide Felder leer und speichere, um die gespeicherten Zugangsdaten zu entfernen.",
         "credentials_keep": "Gespeicherte Zugangsdaten verwenden",
@@ -230,7 +232,7 @@
         "error_invalid_http_credentials": "HTTP-Proxy-Zugangsdaten dürfen keine Steuerzeichen enthalten. Der Benutzername darf keinen Doppelpunkt enthalten.",
         "error_invalid_socks_credentials": "Bei SOCKS5 müssen Benutzername und Passwort jeweils 1 bis 255 Byte lang sein.",
         "error_credential_store_error": "Auf den Anmeldedatenspeicher des Systems konnte nicht zugegriffen werden.",
-        "error_credential_endpoint_changed": "Gib für die geänderte Proxy-Adresse neue Zugangsdaten ein oder lasse beide Felder leer.",
+        "error_credential_endpoint_changed": "Gib Zugangsdaten für den neuen Proxy ein oder wähle Zugangsdaten bearbeiten, um die gespeicherten Zugangsdaten zu entfernen.",
         "error_client_error": "Der Netzwerkclient konnte nicht initialisiert werden."
     },
   "settings": {

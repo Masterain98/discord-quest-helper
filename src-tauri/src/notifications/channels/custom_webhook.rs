@@ -220,13 +220,13 @@ impl NotificationChannel for CustomWebhookChannel {
         message: &'a Message,
     ) -> BoxFuture<'a, Result<Receipt>> {
         Box::pin(async move {
-            let response = http::submit(self.request(config, message)?).await?;
+            let response = http::submit(self.request(config, message).await?).await?;
             check_response(response)
         })
     }
 }
 impl CustomWebhookChannel {
-    fn request(
+    async fn request(
         &self,
         values: &ResolvedConfig,
         message: &Message,
@@ -234,7 +234,8 @@ impl CustomWebhookChannel {
         let config = WebhookConfig::parse(values)?;
         let mut request = self
             .client
-            .get()?
+            .get()
+            .await?
             .post(config.endpoint.clone())
             .json(&payload(config.values, message));
         if let Some(header) = config.authorization {

@@ -223,6 +223,8 @@
         "username": "プロキシのユーザー名",
         "password": "プロキシのパスワード",
         "credentials_optional": "プロキシに認証が不要な場合は、両方の欄を空欄にしてください。",
+        "unencrypted_credentials": "認証情報は暗号化されていない接続でこのプロキシに送信されます。",
+        "credential_cleanup_pending": "システムの認証情報ストアから一部の認証情報を削除できませんでした。「保存」で再試行してください。",
         "credentials_saved": "プロキシの認証情報を保存済み",
         "credentials_remove_help": "両方の欄を空欄にして保存すると、保存済みの認証情報を削除できます。",
         "credentials_keep": "保存済みの認証情報を使用",
@@ -230,7 +232,7 @@
         "error_invalid_http_credentials": "HTTP プロキシの認証情報には制御文字を使用できません。ユーザー名にコロンは使用できません。",
         "error_invalid_socks_credentials": "SOCKS5 では、ユーザー名とパスワードがそれぞれ 1～255 バイト必要です。",
         "error_credential_store_error": "システムの認証情報ストアにアクセスできませんでした。",
-        "error_credential_endpoint_changed": "変更後のプロキシアドレスに対応する認証情報を入力するか、両方の欄を空欄にしてください。",
+        "error_credential_endpoint_changed": "新しいプロキシの認証情報を入力するか、「認証情報を編集」で保存済みの認証情報を削除してください。",
         "error_client_error": "ネットワーククライアントを初期化できませんでした。"
     },
   "settings": {

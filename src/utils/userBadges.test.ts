@@ -21,6 +21,8 @@ describe('Discord badge metrics', () => {
   it('uses returned Discord CDN icons and handles missing or malformed resources', () => {
     expect(badgeIcon({ badge_id: 20, complex_icon_static_url: 'https://cdn.discordapp.com/complex.svg', simple_icon_raster_url: 'https://cdn.discordapp.com/badge.png' }))
       .toBe('https://cdn.discordapp.com/complex.svg')
+    expect(badgeIcon({ badge_id: 20, complex_icon_static_url: 'https://cdn.discordapp.com/complex.svg', simple_icon_raster_url: 'https://cdn.discordapp.com/badge.png' }, true))
+      .toBe('https://cdn.discordapp.com/badge.png')
     expect(badgeIcon({ badge_id: 14, complex_icon_static_url: 'broken', simple_icon_raster_url: 'https://cdn.discordapp.com/badge.png' }))
       .toBe('https://cdn.discordapp.com/badge.png')
     expect(badgeIcon({ badge_id: 14, simple_icon_raster_url: 'https://cdn.discordapp.com/badge.png' }))

@@ -225,6 +225,8 @@
         "username": "Proxy username",
         "password": "Proxy password",
         "credentials_optional": "Leave both fields blank if the proxy requires no credentials.",
+        "unencrypted_credentials": "Credentials are sent to this proxy over an unencrypted connection.",
+        "credential_cleanup_pending": "Some saved credentials could not be removed from the system credential store. Select Save to retry.",
         "credentials_saved": "Proxy credentials saved",
         "credentials_remove_help": "Leave both fields blank and save to remove the saved credentials.",
         "credentials_keep": "Use saved credentials",
@@ -232,7 +234,7 @@
         "error_invalid_http_credentials": "HTTP proxy credentials cannot contain control characters. The username cannot contain a colon.",
         "error_invalid_socks_credentials": "SOCKS5 requires a username and password of 1 to 255 bytes each.",
         "error_credential_store_error": "Could not access the system credential store.",
-        "error_credential_endpoint_changed": "Enter new credentials for the changed proxy address or leave both fields blank.",
+        "error_credential_endpoint_changed": "Enter credentials for the new proxy, or select Edit credentials to remove the saved credentials.",
         "error_client_error": "Could not initialize the network client."
     },
   "settings": {

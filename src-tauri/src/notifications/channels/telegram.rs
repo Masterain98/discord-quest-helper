@@ -121,14 +121,14 @@ impl NotificationChannel for TelegramChannel {
         message: &'a Message,
     ) -> BoxFuture<'a, Result<Receipt>> {
         Box::pin(async move {
-            let response = http::submit(self.request(config, message)?).await?;
+            let response = http::submit(self.request(config, message).await?).await?;
             check_response(response).await?;
             Ok(Receipt::Sent)
         })
     }
 }
 impl TelegramChannel {
-    fn request(
+    async fn request(
         &self,
         config: &ResolvedConfig,
         message: &Message,
@@ -140,7 +140,8 @@ impl TelegramChannel {
         }
         Ok(self
             .client
-            .get()?
+            .get()
+            .await?
             .post(format!(
                 "https://api.telegram.org/bot{}/sendMessage",
                 config.token
@@ -200,8 +201,8 @@ mod tests {
         testing::{event, resolved, response},
     };
     use super::*;
-    #[test]
-    fn validates_token_chat_and_topic_and_preserves_formatted_messages() {
+    #[tokio::test]
+    async fn validates_token_chat_and_topic_and_preserves_formatted_messages() {
         let channel = TelegramChannel::new(http::Client::default());
         let config = resolved(&[
             ("token", "123456:dummy-test-token"),
@@ -209,7 +210,12 @@ mod tests {
             ("topic_id", "42"),
         ]);
         let message = message::render(&event(EventKind::QuestStarted), false);
-        let request = channel.request(&config, &message).unwrap().build().unwrap();
+        let request = channel
+            .request(&config, &message)
+            .await
+            .unwrap()
+            .build()
+            .unwrap();
         let json: serde_json::Value =
             serde_json::from_slice(request.body().unwrap().as_bytes().unwrap()).unwrap();
         assert_eq!(json["chat_id"], "-100123456");

@@ -223,6 +223,8 @@
         "username": "Tên người dùng proxy",
         "password": "Mật khẩu proxy",
         "credentials_optional": "Để trống cả hai trường nếu proxy không yêu cầu thông tin đăng nhập.",
+        "unencrypted_credentials": "Thông tin đăng nhập được gửi đến proxy này qua kết nối không mã hóa.",
+        "credential_cleanup_pending": "Không thể xóa một số thông tin đăng nhập khỏi kho hệ thống. Chọn Lưu để thử lại.",
         "credentials_saved": "Đã lưu thông tin đăng nhập proxy",
         "credentials_remove_help": "Để trống cả hai trường rồi lưu để xóa thông tin đăng nhập đã lưu.",
         "credentials_keep": "Dùng thông tin đăng nhập đã lưu",
@@ -230,7 +232,7 @@
         "error_invalid_http_credentials": "Thông tin đăng nhập proxy HTTP không được chứa ký tự điều khiển và tên người dùng không được chứa dấu hai chấm.",
         "error_invalid_socks_credentials": "SOCKS5 yêu cầu tên người dùng và mật khẩu, mỗi mục dài từ 1 đến 255 byte.",
         "error_credential_store_error": "Không thể truy cập kho thông tin đăng nhập của hệ thống.",
-        "error_credential_endpoint_changed": "Nhập thông tin đăng nhập cho địa chỉ proxy mới hoặc để trống cả hai trường.",
+        "error_credential_endpoint_changed": "Nhập thông tin đăng nhập của proxy mới hoặc chọn Sửa thông tin đăng nhập để xóa thông tin đã lưu.",
         "error_client_error": "Không thể khởi tạo trình khách mạng."
     },
   "settings": {

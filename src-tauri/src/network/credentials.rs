@@ -59,7 +59,7 @@ impl Credentials {
 pub(super) trait Vault {
     fn read(&self, reference: &str) -> CommandResult<Credentials>;
     fn write(&self, reference: &str, credentials: &Credentials) -> CommandResult<()>;
-    fn remove(&self, reference: &str);
+    fn remove(&self, reference: &str) -> CommandResult<()>;
 }
 
 pub(super) struct NativeVault;
@@ -80,7 +80,7 @@ impl Vault for NativeVault {
             .map_err(|_| "credential_store_error")
     }
 
-    fn remove(&self, reference: &str) {
-        let _ = crate::credential_store::remove(SERVICE, reference);
+    fn remove(&self, reference: &str) -> CommandResult<()> {
+        crate::credential_store::remove(SERVICE, reference).map_err(|_| "credential_store_error")
     }
 }

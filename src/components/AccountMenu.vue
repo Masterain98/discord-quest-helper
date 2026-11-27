@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { isTauri } from '@tauri-apps/api/core'
 import { networkMediaUrl } from '@/utils/networkMedia'
 import { ref, computed, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
@@ -25,7 +26,7 @@ const badgeRows = computed(() => ACCOUNT_BADGES.flatMap(definition => {
   const count = badgeCount(badge, definition.unit)
   return [{
     ...definition,
-    icon: badgeIcon(badge),
+    icon: badgeIcon(badge, isTauri()),
     fallbackIcon: { games: Gamepad2, quests: Trophy, hours: Swords }[definition.kind],
     text: count === null && typeof badge?.info_label === 'string' && badge.info_label
       ? badge.info_label
