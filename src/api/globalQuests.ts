@@ -1,9 +1,13 @@
+import { invoke, isTauri } from '@tauri-apps/api/core'
 import { parseGlobalQuests, parseGlobalRegions } from '@/utils/globalQuests'
 
 const BASE_URL = 'https://api.discordquest.com'
 export const GLOBAL_QUEST_TIMEOUT = 20_000
 
 async function getDataset(path: '/api/quests' | '/api/regions'): Promise<unknown> {
+  if (isTauri()) {
+    return invoke('fetch_global_quest_dataset', { dataset: path === '/api/quests' ? 'quests' : 'regions' })
+  }
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), GLOBAL_QUEST_TIMEOUT)
   try {

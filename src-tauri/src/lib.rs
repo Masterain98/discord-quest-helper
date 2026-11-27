@@ -4,6 +4,7 @@
 mod cdp_client;
 mod cdp_game_spoof;
 mod cdp_quest;
+mod credential_store;
 mod discord_api;
 mod discord_cdp_commands;
 mod discord_console;
@@ -12,6 +13,8 @@ mod game_idle;
 mod game_simulator;
 mod logger;
 mod models;
+mod network;
+mod network_media;
 mod notifications;
 mod platform_capabilities;
 mod quest_completer;
@@ -1629,7 +1632,7 @@ async fn fetch_detectable_games(state: State<'_, AppState>) -> Result<Vec<Detect
     }
 
     // ── Unauthenticated fallback ──────────────────────────────────────────
-    let http = reqwest::Client::builder()
+    let http = network::builder(reqwest::Client::builder())?
         .user_agent(super_properties::discord_user_agent(
             super_properties::DEFAULT_CLIENT_VERSION,
         ))
@@ -2189,6 +2192,11 @@ pub fn run() {
         .manage(std::sync::Arc::new(
             discord_console::ConsoleManager::default(),
         ))
+        .register_asynchronous_uri_scheme_protocol("network-media", |_context, request, responder| {
+            tauri::async_runtime::spawn(async move {
+                responder.respond(network_media::respond(request).await);
+            });
+        })
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
@@ -2205,6 +2213,7 @@ pub fn run() {
             activity_gate: tokio::sync::Mutex::new(()),
         })
         .setup(|app| {
+            network::initialize(app.path().app_config_dir()?.join("network.json"));
             {
                 let mut identity = SUPER_PROPERTIES_MANAGER
                     .lock()
@@ -2261,6 +2270,11 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            network::get_network_settings,
+            network::save_network_settings,
+            network::test_network_connection,
+            network::fetch_global_quest_dataset,
+            network::fetch_github_releases,
             notifications::get_notification_settings,
             notifications::save_notification_events,
             notifications::set_notification_channel_enabled,
@@ -2610,7 +2624,7 @@ struct IpInfo {
 /// Resolve the current public IP's country without exposing the lookup to WebView CORS.
 #[tauri::command]
 async fn get_ip_info() -> Result<IpInfo, String> {
-    const ENDPOINT: &str = "https://my.ippure.com/v1/info";
+    const ENDPOINT: &str = network::IP_ENDPOINT;
     const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
     logger::log(
@@ -2620,7 +2634,7 @@ async fn get_ip_info() -> Result<IpInfo, String> {
         Some(ENDPOINT),
     );
 
-    let client = reqwest::Client::builder()
+    let client = network::builder(reqwest::Client::builder())?
         .timeout(TIMEOUT)
         .build()
         .map_err(|error| {

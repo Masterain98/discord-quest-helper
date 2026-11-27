@@ -21,17 +21,7 @@ pub(super) fn reward_source(raw: &str) -> Option<String> {
     if raw == "/icons/orbs.png" {
         return Some(raw.into());
     }
-    let url = url::Url::parse(raw).ok()?;
-    (url.scheme() == "https"
-        && matches!(
-            url.host_str(),
-            Some("cdn.discordapp.com" | "media.discordapp.net")
-        )
-        && url.username().is_empty()
-        && url.password().is_none()
-        && url.port().is_none()
-        && url.fragment().is_none())
-    .then(|| url.into())
+    crate::network_media::discord_asset(raw).map(Into::into)
 }
 
 pub(super) fn render(event: &NotificationEvent, generic_test: bool) -> Message {

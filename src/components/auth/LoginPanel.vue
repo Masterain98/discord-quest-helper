@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { networkMediaUrl } from '@/utils/networkMedia'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
@@ -672,7 +673,7 @@ watch(() => questsStore.cdpPort, () => {
             <Loader2 v-if="selectedAccountId === account.user.id" class="mr-3 h-5 w-5 shrink-0 animate-spin" />
             <img
               v-else-if="account.user.avatar"
-              :src="`https://cdn.discordapp.com/avatars/${account.user.id}/${account.user.avatar}.png`"
+              :src="networkMediaUrl(`https://cdn.discordapp.com/avatars/${account.user.id}/${account.user.avatar}.png`)"
               :alt="account.user.username"
               class="mr-3 h-9 w-9 shrink-0 rounded-lg"
             />

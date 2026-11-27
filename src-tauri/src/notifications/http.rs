@@ -1,30 +1,40 @@
 use super::error::{Code, Result};
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
-/// Shared and lazy: TLS/proxy setup failures affect network deliveries, never app startup.
 #[derive(Clone, Default)]
-pub struct Client(Arc<OnceLock<Result<reqwest::Client>>>);
+pub struct Client {
+    http: Arc<crate::network::HttpClient>,
+    #[cfg(test)]
+    unavailable: bool,
+}
+
 impl Client {
-    pub fn get(&self) -> Result<&reqwest::Client> {
-        self.0.get_or_init(client).as_ref().map_err(Clone::clone)
+    pub fn get(&self) -> Result<reqwest::Client> {
+        #[cfg(test)]
+        if self.unavailable {
+            return Err(Code::Network.into());
+        }
+        self.http.get(configure).map_err(|_| Code::Network.into())
     }
+
     #[cfg(test)]
     pub(super) fn unavailable() -> Self {
-        let value = OnceLock::new();
-        let _ = value.set(Err(Code::Network.into()));
-        Self(Arc::new(value))
+        Self { unavailable: true, ..Self::default() }
     }
+}
+
+fn configure(builder: reqwest::ClientBuilder) -> reqwest::ClientBuilder {
+    builder
+        .timeout(std::time::Duration::from_secs(10))
+        .redirect(reqwest::redirect::Policy::none())
+        .retry(reqwest::retry::never())
 }
 
 pub fn client() -> Result<reqwest::Client> {
-    reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .redirect(reqwest::redirect::Policy::none())
-        // Disable reqwest's protocol-level retries as well as application retries.
-        .retry(reqwest::retry::never())
-        .build()
-        .map_err(|_| Code::Network.into())
+    static ARTWORK: crate::network::HttpClient = crate::network::HttpClient::new();
+    ARTWORK.get(configure).map_err(|_| Code::Network.into())
 }
+
 pub async fn submit(request: reqwest::RequestBuilder) -> Result<reqwest::Response> {
     // reqwest errors may contain credential-bearing URLs. Never format them.
     request.send().await.map_err(|e| {

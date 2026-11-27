@@ -6,6 +6,7 @@ export const settingsSections = [
   'quest_behavior',
   'notifications',
   'discord_integration',
+  'network',
   'appearance',
   'diagnostics',
   'advanced',

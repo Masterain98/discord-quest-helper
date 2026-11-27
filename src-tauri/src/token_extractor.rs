@@ -434,7 +434,8 @@ pub async fn fetch_build_number_from_discord() -> Result<u64> {
         None,
     );
 
-    let client = reqwest::Client::builder()
+    let client = crate::network::builder(reqwest::Client::builder())
+        .map_err(|code| anyhow::anyhow!("Could not configure HTTP client ({code})"))?
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         .connect_timeout(std::time::Duration::from_secs(8))
         .timeout(std::time::Duration::from_secs(10))
@@ -587,7 +588,8 @@ pub async fn fetch_discord_client_info() -> Result<DiscordClientInfo> {
         None,
     );
 
-    let client = reqwest::Client::builder()
+    let client = crate::network::builder(reqwest::Client::builder())
+        .map_err(|code| anyhow::anyhow!("Could not configure HTTP client ({code})"))?
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
         .connect_timeout(std::time::Duration::from_secs(8))
         .timeout(std::time::Duration::from_secs(10))

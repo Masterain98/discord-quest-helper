@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { networkMediaUrl } from '@/utils/networkMedia'
 import { computed, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { onClickOutside, useNow } from '@vueuse/core'
@@ -313,7 +314,7 @@ async function refresh() {
       <li v-for="quest in visible" :key="quest.id" class="ui-panel overflow-hidden rounded-xl border bg-card" :data-quest-id="quest.id" :data-completed="completed.has(quest.id)" :data-accepted="accepted.has(quest.id)">
         <div class="global-quest-row" :class="completed.has(quest.id) && 'global-quest-row--completed'">
           <div class="flex h-10 w-14 shrink-0 items-center justify-center overflow-hidden rounded bg-muted">
-            <img v-if="quest.thumbnailUrl && !failedImages.has(quest.id)" :src="quest.thumbnailUrl" alt="" loading="lazy" class="h-full w-full object-cover" @error="failedImages.add(quest.id)">
+            <img v-if="quest.thumbnailUrl && !failedImages.has(quest.id)" :src="networkMediaUrl(quest.thumbnailUrl)" alt="" loading="lazy" class="h-full w-full object-cover" @error="failedImages.add(quest.id)">
             <ImageOff v-else class="h-5 w-5 text-muted-foreground" />
           </div>
           <div class="min-w-0 space-y-1">

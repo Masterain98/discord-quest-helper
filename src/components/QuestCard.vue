@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { networkMediaUrl } from '@/utils/networkMedia'
 import { computed, ref, watch, onUnmounted } from 'vue'
 import type { Quest } from '@/api/tauri'
 import { useQuestsStore } from '@/stores/quests'
@@ -247,7 +248,7 @@ const activeTimeText = computed(() => {
     <div
       v-if="heroImageUrl"
       :class="density === 'compact' ? 'relative h-16 bg-cover bg-center sm:h-20' : 'relative h-24 bg-cover bg-center'"
-      :style="{ backgroundImage: `url(${heroImageUrl})` }"
+      :style="{ backgroundImage: `url(${JSON.stringify(networkMediaUrl(heroImageUrl))})` }"
     >
       <div class="absolute inset-0 bg-gradient-to-t from-card to-transparent" />
     </div>
@@ -258,7 +259,7 @@ const activeTimeText = computed(() => {
           <!-- Application Icon -->
           <img 
             v-if="quest.config.application?.icon"
-            :src="`https://cdn.discordapp.com/app-icons/${quest.config.application.id}/${quest.config.application.icon}.png?size=64`"
+            :src="networkMediaUrl(`https://cdn.discordapp.com/app-icons/${quest.config.application.id}/${quest.config.application.icon}.png?size=64`)"
             :alt="quest.config.application?.name"
             :class="density === 'compact' ? 'w-10 h-10 rounded-md flex-shrink-0' : 'w-12 h-12 rounded-lg flex-shrink-0'"
           />
@@ -315,7 +316,7 @@ const activeTimeText = computed(() => {
             >
               <video
                 v-if="reward.asset && reward.asset.endsWith('.mp4')"
-                :src="`https://cdn.discordapp.com/${reward.asset}`"
+                :src="networkMediaUrl(`https://cdn.discordapp.com/${reward.asset}`)"
                 class="h-full w-full object-contain"
                 autoplay
                 loop
@@ -324,7 +325,7 @@ const activeTimeText = computed(() => {
               />
               <img
                 v-else-if="reward.asset"
-                :src="`https://cdn.discordapp.com/${reward.asset}`"
+                :src="networkMediaUrl(`https://cdn.discordapp.com/${reward.asset}`)"
                 :alt="reward.name"
                 class="h-full w-full object-contain"
               />
@@ -393,7 +394,7 @@ const activeTimeText = computed(() => {
           <!-- Video asset (.mp4) -->
           <video 
             v-if="reward.asset?.endsWith('.mp4')"
-            :src="`https://cdn.discordapp.com/${reward.asset}`"
+            :src="networkMediaUrl(`https://cdn.discordapp.com/${reward.asset}`)"
             class="w-14 h-14 object-contain rounded-md flex-shrink-0"
             autoplay
             loop
@@ -403,7 +404,7 @@ const activeTimeText = computed(() => {
           <!-- Image asset -->
           <img 
             v-else
-            :src="`https://cdn.discordapp.com/${reward.asset}`"
+            :src="networkMediaUrl(`https://cdn.discordapp.com/${reward.asset}`)"
             :alt="reward.name"
             class="w-14 h-14 object-contain rounded-md flex-shrink-0"
           />
@@ -422,7 +423,7 @@ const activeTimeText = computed(() => {
           <!-- Video asset (Avatar Decoration .mp4) -->
           <video 
             v-if="reward.asset && reward.asset.endsWith('.mp4')"
-            :src="`https://cdn.discordapp.com/${reward.asset}`"
+            :src="networkMediaUrl(`https://cdn.discordapp.com/${reward.asset}`)"
             class="w-14 h-14 object-contain rounded-md flex-shrink-0"
             autoplay
             loop
@@ -432,7 +433,7 @@ const activeTimeText = computed(() => {
           <!-- Image asset -->
           <img 
             v-else-if="reward.asset"
-            :src="`https://cdn.discordapp.com/${reward.asset}`"
+            :src="networkMediaUrl(`https://cdn.discordapp.com/${reward.asset}`)"
             :alt="reward.name"
             class="w-14 h-14 object-contain rounded-md flex-shrink-0"
           />

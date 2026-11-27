@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { networkMediaUrl } from '@/utils/networkMedia'
 import { computed, nextTick, onMounted, ref, watch, onUnmounted } from 'vue'
 import { useResizeObserver } from '@vueuse/core'
 import { useQuestsStore } from '@/stores/quests'
@@ -560,7 +561,7 @@ const progressBarStyle = computed(() => {
     >
       <video
         v-if="trackedQuest && displayedRewardAsset && displayedRewardIsVideo"
-        :src="displayedRewardAsset"
+        :src="networkMediaUrl(displayedRewardAsset)"
         class="rail-task-progress-image"
         aria-hidden="true"
         autoplay
@@ -571,7 +572,7 @@ const progressBarStyle = computed(() => {
       />
       <img
         v-else-if="trackedQuest && displayedRewardAsset"
-        :src="displayedRewardAsset"
+        :src="networkMediaUrl(displayedRewardAsset)"
         alt=""
         class="rail-task-progress-image"
         aria-hidden="true"
