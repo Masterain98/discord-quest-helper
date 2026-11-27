@@ -234,7 +234,7 @@ impl CustomWebhookChannel {
         let config = WebhookConfig::parse(values)?;
         let mut request = self
             .client
-            .get()
+            .get(config.endpoint.as_str())
             .await?
             .post(config.endpoint.clone())
             .json(&payload(config.values, message));

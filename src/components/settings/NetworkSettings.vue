@@ -221,7 +221,7 @@ async function submit(action: 'saving' | 'testing') {
     >
       <div v-if="status?.discord" class="text-sm sm:text-right">
         <p>{{ t(`network.${status.settings.mode}`) }}</p>
-        <p v-if="status.settings.mode === 'system'" class="text-xs text-muted-foreground">{{ t(`network.source_${status.discord.source}`) }}</p>
+        <p v-if="status.settings.mode === 'system'" class="text-xs text-muted-foreground">{{ t(status.discord.source === 'unavailable' ? 'network.error_client_error' : `network.source_${status.discord.source}`) }}</p>
         <p v-if="status.discord.endpoint" class="break-all font-mono text-xs text-muted-foreground">{{ status.discord.endpoint }}</p>
       </div>
       <p v-else class="text-sm text-muted-foreground">{{ idle ? '—' : t('general.loading') }}</p>

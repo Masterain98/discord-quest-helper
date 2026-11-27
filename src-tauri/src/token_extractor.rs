@@ -434,9 +434,10 @@ pub async fn fetch_build_number_from_discord() -> Result<u64> {
         None,
     );
 
-    let login_page = build_metadata_client()
+    const LOGIN_URL: &str = "https://discord.com/login";
+    let login_page = build_metadata_client(LOGIN_URL)
         .await?
-        .get("https://discord.com/login")
+        .get(LOGIN_URL)
         .send()
         .await
         .context("Failed to fetch Discord login page")?
@@ -480,9 +481,9 @@ pub async fn fetch_build_number_from_discord() -> Result<u64> {
     fetch_build_number_from_scripts(&script_urls).await
 }
 
-async fn build_metadata_client() -> Result<reqwest::Client> {
+async fn build_metadata_client(destination: &str) -> Result<reqwest::Client> {
     static CLIENT: crate::network::HttpClient = crate::network::HttpClient::new();
-    CLIENT.get(|builder| builder
+    CLIENT.get(destination, |builder| builder
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         .connect_timeout(std::time::Duration::from_secs(8))
         .timeout(std::time::Duration::from_secs(10))
@@ -511,7 +512,7 @@ async fn fetch_build_number_from_scripts(script_urls: &[String]) -> Result<u64> 
             None,
         );
 
-        match build_metadata_client().await?.get(url).send().await {
+        match build_metadata_client(url).await?.get(url).send().await {
             Ok(response) => {
                 if let Ok(js_content) = response.text().await {
                     // Try all patterns
@@ -586,17 +587,6 @@ pub async fn fetch_discord_client_info() -> Result<DiscordClientInfo> {
         None,
     );
 
-    static MANIFEST: crate::network::HttpClient = crate::network::HttpClient::new();
-    let client = MANIFEST
-        .get(|builder| {
-            builder
-                .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-                .connect_timeout(std::time::Duration::from_secs(8))
-                .timeout(std::time::Duration::from_secs(10))
-        })
-        .await
-        .map_err(|code| anyhow::anyhow!("Could not configure HTTP client ({code})"))?;
-
     // Request Discord update manifest
     let platform = if cfg!(windows) {
         "win"
@@ -607,6 +597,17 @@ pub async fn fetch_discord_client_info() -> Result<DiscordClientInfo> {
     };
     let arch = crate::super_properties::host_architecture();
     let url = format!("https://updates.discord.com/distributions/app/manifests/latest?channel=stable&platform={platform}&arch={arch}");
+
+    static MANIFEST: crate::network::HttpClient = crate::network::HttpClient::new();
+    let client = MANIFEST
+        .get(&url, |builder| {
+            builder
+                .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .connect_timeout(std::time::Duration::from_secs(8))
+                .timeout(std::time::Duration::from_secs(10))
+        })
+        .await
+        .map_err(|code| anyhow::anyhow!("Could not configure HTTP client ({code})"))?;
 
     let response = client
         .get(&url)

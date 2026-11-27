@@ -140,7 +140,7 @@ impl TelegramChannel {
         }
         Ok(self
             .client
-            .get()
+            .get("https://api.telegram.org")
             .await?
             .post(format!(
                 "https://api.telegram.org/bot{}/sendMessage",

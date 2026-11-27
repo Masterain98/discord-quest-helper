@@ -153,6 +153,7 @@ enum Source {
     Environment,
     System,
     Manual,
+    Unavailable,
 }
 
 #[derive(Clone, Serialize)]
@@ -164,17 +165,23 @@ struct RouteStatus {
 #[derive(Clone)]
 struct SystemProxy {
     fingerprint: u64,
-    // Explicit combined rules are needed only on Linux when GNOME provides a proxy.
-    explicit: Option<Environment>,
+    rules: Environment,
+    desktop_unavailable: bool,
     discord: RouteStatus,
     pac_configured: bool,
 }
 
-fn desktop_rules(
+fn effective_rules(
     environment: &Environment,
-    desktop: &discord_cdp_launch_core::LinuxDesktopProxySettings,
+    desktop: &Environment,
+    environment_all_first: bool,
 ) -> Environment {
-    let select = |candidates: [Option<&String>; 4]| {
+    let select = |specific: Option<&String>, platform: Option<&String>| {
+        let all = environment.all.as_ref();
+        let mut candidates = [specific, platform, all, desktop.all.as_ref()];
+        if environment_all_first {
+            candidates.swap(1, 2);
+        }
         let probe = "http://discord.com".parse().expect("static proxy probe");
         candidates
             .into_iter()
@@ -190,55 +197,49 @@ fn desktop_rules(
             .cloned()
     };
     Environment {
-        http: select([
-            environment.http.as_ref(),
-            environment.all.as_ref(),
-            desktop.http.as_ref(),
-            desktop.all.as_ref(),
-        ]),
-        https: select([
-            environment.https.as_ref(),
-            environment.all.as_ref(),
-            desktop.https.as_ref(),
-            desktop.all.as_ref(),
-        ]),
+        http: select(environment.http.as_ref(), desktop.http.as_ref()),
+        https: select(environment.https.as_ref(), desktop.https.as_ref()),
         all: None,
-        no: environment.no.clone().or_else(|| desktop.no_proxy.clone()),
+        no: environment.no.clone().or_else(|| desktop.no.clone()),
     }
+}
+
+fn matcher_for_rules(rules: &Environment) -> Matcher {
+    Matcher::builder()
+        .http(rules.http.as_deref().unwrap_or(""))
+        .https(rules.https.as_deref().unwrap_or(""))
+        .no(rules.no.as_deref().unwrap_or(""))
+        .build()
 }
 
 impl SystemProxy {
     fn detect() -> CommandResult<Self> {
         let environment = Environment::current();
-        #[cfg(target_os = "linux")]
-        let (desktop, pac_configured) =
-            discord_cdp_launch_core::linux_desktop_proxy_config().map_err(|_| "client_error")?;
-        #[cfg(not(target_os = "linux"))]
-        let desktop: Option<discord_cdp_launch_core::LinuxDesktopProxySettings> = None;
-
         let mut hasher = DefaultHasher::new();
-        environment.hash(&mut hasher);
-        desktop.hash(&mut hasher);
-        #[cfg(not(target_os = "linux"))]
-        let pac_configured = platform_fingerprint(&mut hasher)?;
-        let explicit = desktop
-            .as_ref()
-            .map(|desktop| desktop_rules(&environment, desktop));
-        let matcher = if let Some(rules) = &explicit {
-            Matcher::builder()
-                .http(rules.http.as_deref().unwrap_or(""))
-                .https(rules.https.as_deref().unwrap_or(""))
-                .no(rules.no.as_deref().unwrap_or(""))
-                .build()
-        } else {
-            Matcher::from_system()
-        };
-        let environment_matcher = Matcher::from_env();
+        Self::capture(environment, platform_proxy(&mut hasher), hasher)
+    }
+
+    fn capture(
+        environment: Environment,
+        platform: CommandResult<(Environment, bool)>,
+        mut hasher: DefaultHasher,
+    ) -> CommandResult<Self> {
+        let desktop_unavailable = platform.is_err();
+        let (desktop, pac_configured) = platform.unwrap_or_default();
+        let environment_rules = effective_rules(&environment, &Environment::default(), true);
+        let rules = effective_rules(&environment, &desktop, cfg!(target_os = "linux"));
+        if desktop_unavailable && rules.http.is_none() && rules.https.is_none() {
+            return Err("client_error");
+        }
+
+        rules.hash(&mut hasher);
+        pac_configured.hash(&mut hasher);
+        desktop_unavailable.hash(&mut hasher);
         let target = "https://discord.com".parse().expect("static Discord URI");
-        let route = matcher.intercept(&target);
-        let discord = match route {
+        let proxy = matcher_for_rules(&rules).intercept(&target);
+        let discord = match proxy {
             Some(proxy) => RouteStatus {
-                source: if environment_matcher
+                source: if matcher_for_rules(&environment_rules)
                     .intercept(&target)
                     .is_some_and(|environment_proxy| environment_proxy.uri() == proxy.uri())
                 {
@@ -249,22 +250,19 @@ impl SystemProxy {
                 endpoint: display_endpoint(&proxy.uri().to_string()),
             },
             None => RouteStatus {
-                source: Source::Direct,
+                source: if desktop_unavailable && rules.https.is_none() {
+                    Source::Unavailable
+                } else {
+                    Source::Direct
+                },
                 endpoint: None,
             },
         };
 
-        for destination in ["http://discord.com", "https://discord.com"] {
-            let target = destination.parse().expect("static Discord URI");
-            matcher
-                .intercept(&target)
-                .map(|proxy| proxy.uri().to_string())
-                .hash(&mut hasher);
-        }
-        pac_configured.hash(&mut hasher);
         Ok(Self {
             fingerprint: hasher.finish(),
-            explicit,
+            rules,
+            desktop_unavailable,
             discord,
             pac_configured,
         })
@@ -272,47 +270,148 @@ impl SystemProxy {
 }
 
 #[cfg(windows)]
-fn platform_fingerprint(hasher: &mut DefaultHasher) -> CommandResult<bool> {
-    let Ok(settings) = windows_registry::CURRENT_USER
-        .open("Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings")
-    else {
-        return Ok(false);
+fn platform_proxy(hasher: &mut DefaultHasher) -> CommandResult<(Environment, bool)> {
+    let settings = match windows_registry::CURRENT_USER
+        .open(r"Software\Microsoft\Windows\CurrentVersion\Internet Settings")
+    {
+        Ok(settings) => settings,
+        Err(error) if error.code().0 as u32 == 0x8007_0002 => {
+            return Ok((Environment::default(), false))
+        }
+        Err(_) => return Err("client_error"),
     };
-    for key in ["ProxyServer", "ProxyOverride", "AutoConfigURL"] {
-        settings.get_string(key).ok().hash(hasher);
-    }
-    for key in ["ProxyEnable", "AutoDetect"] {
-        settings.get_u32(key).ok().hash(hasher);
-    }
-    Ok(settings
-        .get_string("AutoConfigURL")
-        .is_ok_and(|url| !url.trim().is_empty())
-        || settings.get_u32("AutoDetect").unwrap_or(0) == 1)
+    let server = settings.get_string("ProxyServer").ok();
+    let exceptions = settings.get_string("ProxyOverride").ok();
+    let pac_url = settings.get_string("AutoConfigURL").ok();
+    let enabled = settings.get_u32("ProxyEnable").unwrap_or(0);
+    let auto_detect = settings.get_u32("AutoDetect").unwrap_or(0);
+    (&server, &exceptions, &pac_url, enabled, auto_detect).hash(hasher);
+    let proxy = if enabled != 0 {
+        let mut rules = Environment::default();
+        if let Some(server) = server {
+            if server.split(';').any(|entry| {
+                entry
+                    .split_once('=')
+                    .is_some_and(|(scheme, _)| matches!(scheme.trim(), "http" | "https" | "socks"))
+            }) {
+                for (scheme, proxy) in server.split(';').filter_map(|entry| entry.split_once('=')) {
+                    match scheme.trim() {
+                        "http" => rules.http = Some(proxy.trim().to_owned()),
+                        "https" => rules.https = Some(proxy.trim().to_owned()),
+                        _ => {}
+                    }
+                }
+            } else {
+                rules.http = Some(server.clone());
+                rules.https = Some(server);
+            }
+        }
+        rules.no = exceptions.map(|value| value.replace(';', ",").replace("*.", ""));
+        rules
+    } else {
+        Environment::default()
+    };
+    Ok((
+        proxy,
+        pac_url.is_some_and(|url| !url.trim().is_empty()) || auto_detect == 1,
+    ))
 }
 
 #[cfg(target_os = "macos")]
-fn platform_fingerprint(hasher: &mut DefaultHasher) -> CommandResult<bool> {
+fn platform_proxy(hasher: &mut DefaultHasher) -> CommandResult<(Environment, bool)> {
     let output = discord_cdp_launch_core::proxy_command_output(
         std::process::Command::new("/usr/sbin/scutil").arg("--proxy"),
     )
     .map_err(|_| "client_error")?;
     output.hash(hasher);
-    Ok(output.as_deref().is_some_and(|bytes| {
-        String::from_utf8_lossy(bytes)
-            .lines()
-            .filter_map(|line| line.split_once(':'))
-            .any(|(name, value)| {
-                matches!(
-                    name.trim(),
-                    "ProxyAutoConfigEnable" | "ProxyAutoDiscoveryEnable"
-                ) && value.trim() == "1"
+    Ok(output.as_deref().map_or_else(
+        || (Environment::default(), false),
+        |bytes| macos_proxy_settings(&String::from_utf8_lossy(bytes)),
+    ))
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn macos_proxy_settings(output: &str) -> (Environment, bool) {
+    let mut entries = std::collections::HashMap::new();
+    let mut exceptions = Vec::new();
+    let mut depth = 0usize;
+    let mut in_exceptions = false;
+    for line in output.lines().map(str::trim) {
+        if line == "}" {
+            depth = depth.saturating_sub(1);
+            if depth < 2 {
+                in_exceptions = false;
+            }
+            continue;
+        }
+        if let Some((name, value)) = line.split_once(':') {
+            let (name, value) = (name.trim(), value.trim());
+            if depth == 1 {
+                in_exceptions = name == "ExceptionsList";
+                entries.insert(name, value);
+            } else if depth == 2 && in_exceptions {
+                exceptions.push(value);
+            }
+        }
+        if line.ends_with('{') {
+            depth += 1;
+        }
+    }
+    let endpoint = |enabled, host, port| {
+        let host = entries.get(host)?;
+        if entries.get(enabled) != Some(&"1") {
+            return None;
+        }
+        Some(http_proxy_endpoint(
+            host,
+            entries.get(port).and_then(|port| port.parse().ok()),
+        ))
+    };
+    let rules = Environment {
+        http: endpoint("HTTPEnable", "HTTPProxy", "HTTPPort"),
+        https: endpoint("HTTPSEnable", "HTTPSProxy", "HTTPSPort"),
+        no: (!exceptions.is_empty()).then(|| exceptions.join(",").replace("*.", "")),
+        ..Environment::default()
+    };
+    let pac = ["ProxyAutoConfigEnable", "ProxyAutoDiscoveryEnable"]
+        .into_iter()
+        .any(|name| entries.get(name) == Some(&"1"));
+    (rules, pac)
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn http_proxy_endpoint(host: &str, port: Option<u16>) -> String {
+    let mut url = match host.parse::<std::net::Ipv6Addr>() {
+        Ok(_) => format!("http://[{host}]"),
+        Err(_) => format!("http://{host}"),
+    };
+    if let Some(port) = port {
+        use std::fmt::Write;
+        let _ = write!(url, ":{port}");
+    }
+    url
+}
+
+#[cfg(target_os = "linux")]
+fn platform_proxy(_: &mut DefaultHasher) -> CommandResult<(Environment, bool)> {
+    let (desktop, pac) =
+        discord_cdp_launch_core::linux_desktop_proxy_config().map_err(|_| "client_error")?;
+    Ok((
+        desktop
+            .map(|settings| Environment {
+                http: settings.http,
+                https: settings.https,
+                all: settings.all,
+                no: settings.no_proxy,
             })
-    }))
+            .unwrap_or_default(),
+        pac,
+    ))
 }
 
 #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
-fn platform_fingerprint(_: &mut DefaultHasher) -> CommandResult<bool> {
-    Ok(false)
+fn platform_proxy(_: &mut DefaultHasher) -> CommandResult<(Environment, bool)> {
+    Ok((Environment::default(), false))
 }
 
 #[derive(Clone)]
@@ -337,15 +436,15 @@ impl Route {
                 Ok(builder.proxy(proxy))
             }
             Mode::System => {
-                let Some(rules) = self
-                    .system
-                    .as_ref()
-                    .and_then(|system| system.explicit.as_ref())
-                else {
-                    return Ok(builder);
-                };
+                let system = self.system.as_ref().ok_or("client_error")?;
+                let rules = &system.rules;
                 let no_proxy = rules.no.as_deref().and_then(reqwest::NoProxy::from_string);
                 let mut builder = builder.no_proxy();
+                if system.desktop_unavailable && (rules.http.is_none() || rules.https.is_none()) {
+                    // The caller validates the initial destination. A redirect
+                    // must not introduce an uncovered destination on this route.
+                    builder = builder.redirect(reqwest::redirect::Policy::none());
+                }
                 if let Some(address) = &rules.http {
                     builder = builder.proxy(
                         Proxy::http(address)
@@ -363,6 +462,23 @@ impl Route {
                 Ok(builder)
             }
         }
+    }
+
+    fn check_destination(&self, destination: &str) -> CommandResult<()> {
+        if let Some(system) = &self.system {
+            if system.desktop_unavailable {
+                let scheme = Url::parse(destination).map_err(|_| "client_error")?;
+                let covered = match scheme.scheme() {
+                    "http" => system.rules.http.is_some(),
+                    "https" => system.rules.https.is_some(),
+                    _ => false,
+                };
+                if !covered {
+                    return Err("client_error");
+                }
+            }
+        }
+        Ok(())
     }
 
     fn build(&self, builder: ClientBuilder) -> CommandResult<Client> {
@@ -603,6 +719,11 @@ impl NetworkState {
             }
         }
         let system = match detect() {
+            Ok(system) if system.desktop_unavailable => self
+                .system
+                .as_ref()
+                .filter(|(_, known)| !known.desktop_unavailable)
+                .map_or(system, |(_, known)| known.clone()),
             Ok(system) => system,
             Err(error) => self
                 .system
@@ -613,7 +734,7 @@ impl NetworkState {
         if self
             .system
             .as_ref()
-            .is_some_and(|(_, previous)| previous.fingerprint != system.fingerprint)
+            .is_none_or(|(_, previous)| previous.fingerprint != system.fingerprint)
         {
             self.revision += 1;
         }
@@ -868,16 +989,22 @@ impl HttpClient {
 
     pub(crate) async fn get(
         &self,
+        destination: &str,
         configure: impl FnOnce(ClientBuilder) -> ClientBuilder + Send + 'static,
     ) -> CommandResult<Client> {
-        self.client(active_route().await?, configure, false).await
+        let route = active_route().await?;
+        route.check_destination(destination)?;
+        self.client(route, configure, false).await
     }
 
     pub(crate) async fn reconnect(
         &self,
+        destination: &str,
         configure: impl FnOnce(ClientBuilder) -> ClientBuilder + Send + 'static,
     ) -> CommandResult<Client> {
-        self.client(active_route().await?, configure, true).await
+        let route = active_route().await?;
+        route.check_destination(destination)?;
+        self.client(route, configure, true).await
     }
 
     async fn client(
@@ -888,7 +1015,7 @@ impl HttpClient {
     ) -> CommandResult<Client> {
         let revision = route.revision;
         if let Some((cached_revision, client)) = &*self.0.lock().unwrap() {
-            if *cached_revision > revision || (!reconnect && *cached_revision == revision) {
+            if !reconnect && *cached_revision == revision {
                 return Ok(client.clone());
             }
         }
@@ -898,11 +1025,16 @@ impl HttpClient {
                 .map_err(|_| "client_error")??;
         let mut cached = self.0.lock().unwrap();
         if let Some((cached_revision, current)) = &*cached {
-            if *cached_revision > revision || (!reconnect && *cached_revision == revision) {
+            if !reconnect && *cached_revision == revision {
                 return Ok(current.clone());
             }
         }
-        *cached = Some((revision, client.clone()));
+        if cached
+            .as_ref()
+            .is_none_or(|(current_revision, _)| *current_revision <= revision)
+        {
+            *cached = Some((revision, client.clone()));
+        }
         Ok(client)
     }
 }
@@ -985,19 +1117,19 @@ pub(crate) async fn test_network_connection(
     settings: Settings,
     credentials: Option<Edit>,
 ) -> CommandResult<ConnectionTest> {
-    let route = tauri::async_runtime::spawn_blocking(move || {
-        STATE
-            .lock()
-            .unwrap()
-            .draft_route(settings, credentials.unwrap_or(Edit::Keep), &NativeVault)
+    let client = tauri::async_runtime::spawn_blocking(move || {
+        let mut snapshot = STATE.lock().unwrap().clone();
+        let route =
+            snapshot.draft_route(settings, credentials.unwrap_or(Edit::Keep), &NativeVault)?;
+        route.check_destination(IP_ENDPOINT)?;
+        route.build(
+            Client::builder()
+                .timeout(Duration::from_secs(10))
+                .redirect(reqwest::redirect::Policy::none()),
+        )
     })
     .await
     .map_err(|_| "client_error")??;
-    let client = route.build(
-        Client::builder()
-            .timeout(Duration::from_secs(10))
-            .redirect(reqwest::redirect::Policy::none()),
-    )?;
     let started = Instant::now();
     let response = client
         .get(IP_ENDPOINT)
@@ -1048,7 +1180,7 @@ pub(crate) async fn fetch_github_releases(prerelease: bool) -> CommandResult<ser
 async fn fetch_public_json(url: &str, accept: &str) -> CommandResult<serde_json::Value> {
     static PUBLIC_API: HttpClient = HttpClient::new();
     let client = PUBLIC_API
-        .get(|builder| {
+        .get(url, |builder| {
             builder
                 .timeout(Duration::from_secs(20))
                 .user_agent("Discord-Quest-Helper")
@@ -1488,17 +1620,18 @@ mod tests {
 
     #[test]
     fn malformed_environment_proxy_falls_back_to_valid_desktop_rules() {
-        let desktop = discord_cdp_launch_core::LinuxDesktopProxySettings {
+        let desktop = Environment {
             https: Some("http://127.0.0.1:7890".into()),
             ..Default::default()
         };
-        let rules = desktop_rules(
+        let rules = effective_rules(
             &Environment {
                 https: Some("http://".into()),
                 all: Some("ftp://invalid".into()),
                 ..Default::default()
             },
             &desktop,
+            true,
         );
         assert_eq!(rules.https, desktop.https);
         assert!(rules.http.is_none());
@@ -1662,7 +1795,8 @@ mod tests {
         let first = Instant::now();
         let detector = |fingerprint| SystemProxy {
             fingerprint,
-            explicit: None,
+            rules: Environment::default(),
+            desktop_unavailable: false,
             discord: RouteStatus {
                 source: Source::Direct,
                 endpoint: None,
@@ -1684,7 +1818,7 @@ mod tests {
                 .fingerprint,
             1
         );
-        assert_eq!(state.revision, 0);
+        assert_eq!(state.revision, 1);
         assert_eq!(
             state
                 .system_proxy(first + SYSTEM_REFRESH, || Ok(detector(2)))
@@ -1692,7 +1826,136 @@ mod tests {
                 .fingerprint,
             2
         );
-        assert_eq!(state.revision, 1);
+        assert_eq!(state.revision, 2);
+    }
+
+    #[test]
+    fn captures_macos_global_endpoints_and_bypass_rules() {
+        let (rules, pac) = macos_proxy_settings(
+            "<dictionary> {
+  ExceptionsList : <array> {
+    0 : *.local
+  }
+  HTTPSProxy : 2001:db8::1
+  HTTPSPort : 8081
+  HTTPSEnable : 1
+  ProxyAutoConfigEnable : 1
+  __SCOPED__ : <dictionary> {
+    HTTPProxy : scoped.invalid
+    HTTPEnable : 1
+  }
+}
+",
+        );
+        assert_eq!(rules.https.as_deref(), Some("http://[2001:db8::1]:8081"));
+        assert!(rules.http.is_none());
+        assert_eq!(rules.no.as_deref(), Some("local"));
+        assert!(pac);
+    }
+
+    #[test]
+    fn a_failed_cold_probe_uses_only_configured_environment_routes() {
+        let restricted = SystemProxy::capture(
+            Environment {
+                https: Some("http://proxy.invalid:7890".into()),
+                ..Default::default()
+            },
+            Err("client_error"),
+            DefaultHasher::new(),
+        )
+        .unwrap();
+        assert!(matches!(restricted.discord.source, Source::Environment));
+        let route = Route {
+            settings: Settings::default(),
+            credentials: None,
+            system: Some(restricted),
+            revision: 1,
+        };
+        assert_eq!(route.check_destination("https://discord.com"), Ok(()));
+        assert_eq!(
+            route.check_destination("http://example.invalid"),
+            Err("client_error")
+        );
+
+        let http_only = SystemProxy::capture(
+            Environment {
+                http: Some("http://proxy.invalid:7890".into()),
+                ..Default::default()
+            },
+            Err("client_error"),
+            DefaultHasher::new(),
+        )
+        .unwrap();
+        assert!(matches!(http_only.discord.source, Source::Unavailable));
+        assert_eq!(
+            SystemProxy::capture(
+                Environment::default(),
+                Err("client_error"),
+                DefaultHasher::new()
+            )
+            .err(),
+            Some("client_error")
+        );
+    }
+
+    #[tokio::test]
+    async fn an_environment_fallback_client_cannot_follow_an_uncovered_redirect() {
+        let proxy = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let origin = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let target = "http://example.invalid/test";
+        let redirect_target = format!("https://{}/", origin.local_addr().unwrap());
+        let fallback = SystemProxy::capture(
+            Environment {
+                http: Some(format!("http://{}", proxy.local_addr().unwrap())),
+                ..Default::default()
+            },
+            Err("client_error"),
+            DefaultHasher::new(),
+        )
+        .unwrap();
+        let route = Route {
+            settings: Settings::default(),
+            credentials: None,
+            system: Some(fallback),
+            revision: 1,
+        };
+        route.check_destination(target).unwrap();
+        let client = route
+            .build(Client::builder().timeout(Duration::from_secs(3)))
+            .unwrap();
+        let (response, _connection) = tokio::join!(client.get(target).send(), async {
+            let (mut stream, _) = tokio::time::timeout(Duration::from_secs(3), proxy.accept())
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(read_headers(&mut stream)
+                .await
+                .starts_with(&format!("GET {target} HTTP/1.1")));
+            stream
+                .write_all(
+                    format!(
+                        "HTTP/1.1 302 Found
+
+Location: {redirect_target}
+
+Content-Length: 0
+
+
+
+"
+                    )
+                    .as_bytes(),
+                )
+                .await
+                .unwrap();
+            stream
+        });
+        assert_eq!(response.unwrap().status(), reqwest::StatusCode::FOUND);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(75), origin.accept())
+                .await
+                .is_err()
+        );
     }
 
     #[test]
@@ -1702,7 +1965,8 @@ mod tests {
         assert!(state.system_proxy(now, || Err("client_error")).is_err());
         let known = SystemProxy {
             fingerprint: 12,
-            explicit: None,
+            rules: Environment::default(),
+            desktop_unavailable: false,
             discord: RouteStatus {
                 source: Source::System,
                 endpoint: Some("proxy:7890".into()),
@@ -1714,7 +1978,7 @@ mod tests {
             .system_proxy(now + SYSTEM_REFRESH, || Err("client_error"))
             .unwrap();
         assert_eq!(retained.fingerprint, 12);
-        assert_eq!(state.revision, 0);
+        assert_eq!(state.revision, 1);
     }
 
     #[tokio::test]
@@ -1728,10 +1992,10 @@ mod tests {
             "https_proxy" => Some("http://unused.invalid".into()),
             _ => None,
         });
-        let desktop = discord_cdp_launch_core::LinuxDesktopProxySettings {
+        let desktop = Environment {
             http: Some(desktop_address),
             https: Some("http://unused.invalid".into()),
-            no_proxy: Some("localhost,127.0.0.1".into()),
+            no: Some("localhost,127.0.0.1".into()),
             ..Default::default()
         };
         let route = Route {
@@ -1739,7 +2003,8 @@ mod tests {
             credentials: None,
             system: Some(SystemProxy {
                 fingerprint: 0,
-                explicit: Some(desktop_rules(&env, &desktop)),
+                rules: effective_rules(&env, &desktop, true),
+                desktop_unavailable: false,
                 discord: RouteStatus {
                     source: Source::Environment,
                     endpoint: None,

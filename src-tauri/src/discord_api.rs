@@ -82,8 +82,10 @@ trait SendReconnecting {
 impl SendReconnecting for RequestBuilder {
     async fn send_reconnecting(self, api: &DiscordApiClient) -> reqwest::Result<reqwest::Response> {
         let (client, request) = self.build_split();
-        execute_reconnecting(client, request?, |error| {
-            api.reset_connections(DiscordApiClient::error_chain(error))
+        let request = request?;
+        let destination = request.url().clone();
+        execute_reconnecting(client, request, |error| {
+            api.reset_connections(destination, DiscordApiClient::error_chain(error))
         })
         .await
     }
@@ -315,7 +317,7 @@ impl DiscordApiClient {
         let headers = self.headers.clone();
         let mut request = self
             .client
-            .get(move |builder| Self::configure_http(headers, builder))
+            .get(url, move |builder| Self::configure_http(headers, builder))
             .await
             .map_err(|code| anyhow::anyhow!("Could not create Discord HTTP client ({code})"))?
             .request(method, url)
@@ -348,13 +350,19 @@ impl DiscordApiClient {
 
     /// Replace the HTTP client so no pooled connection from a previous network
     /// route is reused, returning the client to use from now on.
-    async fn reset_connections(&self, reason: String) -> Option<reqwest::Client> {
+    async fn reset_connections(
+        &self,
+        destination: reqwest::Url,
+        reason: String,
+    ) -> Option<reqwest::Client> {
         use crate::logger::{log, LogCategory, LogLevel};
 
         let headers = self.headers.clone();
         let result = self
             .client
-            .reconnect(move |builder| Self::configure_http(headers, builder))
+            .reconnect(destination.as_str(), move |builder| {
+                Self::configure_http(headers, builder)
+            })
             .await;
         let message = if result.is_ok() {
             "Connection error, replaced Discord HTTP client"

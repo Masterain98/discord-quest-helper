@@ -43,7 +43,7 @@ async fn download(request: Request<Vec<u8>>) -> Result<Response<Vec<u8>>, Status
         .find_map(|(key, value)| (key == "source").then(|| discord_asset(&value)).flatten())
         .ok_or(StatusCode::BAD_REQUEST)?;
     let client = CLIENT
-        .get(|builder| {
+        .get(url.as_str(), |builder| {
             builder
                 .redirect(reqwest::redirect::Policy::none())
                 .connect_timeout(Duration::from_secs(8))

@@ -115,10 +115,17 @@ pub fn proxy_command_output(
     let (send, receive) = mpsc::sync_channel(1);
     std::thread::spawn(move || {
         let mut bytes = Vec::new();
+        const MAX_OUTPUT: usize = 64 * 1024;
         let output = stdout
-            .take(64 * 1024)
+            .take((MAX_OUTPUT + 1) as u64)
             .read_to_end(&mut bytes)
-            .map(|_| bytes);
+            .and_then(|_| {
+                if bytes.len() > MAX_OUTPUT {
+                    Err(std::io::ErrorKind::InvalidData.into())
+                } else {
+                    Ok(bytes)
+                }
+            });
         let _ = send.send(output);
     });
     loop {
@@ -129,7 +136,11 @@ pub fn proxy_command_output(
                     .map_err(|_| std::io::ErrorKind::TimedOut)?
                     .map(Some);
             }
-            Ok(Some(_)) => return Ok(None),
+            Ok(Some(status)) => {
+                return Err(std::io::Error::other(format!(
+                    "Proxy settings query exited with {status}"
+                )));
+            }
             Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(10)),
             _ => {
                 let _ = child.kill();
@@ -155,6 +166,16 @@ mod proxy_command_tests {
     fn reads_the_output_of_a_successful_proxy_query() {
         let output = proxy_command_output(Command::new("/bin/echo").arg("manual")).unwrap();
         assert_eq!(output.as_deref(), Some(&b"manual\n"[..]));
+    }
+
+    #[test]
+    fn distinguishes_an_unavailable_command_from_a_failed_query() {
+        let missing =
+            proxy_command_output(&mut Command::new("/dqh-proxy-query-not-installed")).unwrap();
+        assert!(missing.is_none());
+        let error =
+            proxy_command_output(Command::new("/bin/sh").args(["-c", "exit 1"])).unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::Other);
     }
 
     #[test]

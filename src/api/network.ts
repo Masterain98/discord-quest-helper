@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 
 export type ProxyMode = 'system' | 'direct' | 'manual'
-export type ProxySource = 'direct' | 'environment' | 'system' | 'manual'
+export type ProxySource = 'direct' | 'environment' | 'system' | 'manual' | 'unavailable'
 export interface NetworkSettings { mode: ProxyMode; address: string | null }
 export type ProxyCredentialEdit =
   | { action: 'keep' | 'remove' }

@@ -1632,9 +1632,10 @@ async fn fetch_detectable_games(state: State<'_, AppState>) -> Result<Vec<Detect
     }
 
     // ── Unauthenticated fallback ──────────────────────────────────────────
+    const API_BASE: &str = "https://discord.com/api/v9";
     static DETECTABLE_GAMES: network::HttpClient = network::HttpClient::new();
     let http = DETECTABLE_GAMES
-        .get(|builder| {
+        .get(API_BASE, |builder| {
             builder
                 .user_agent(super_properties::discord_user_agent(
                     super_properties::DEFAULT_CLIENT_VERSION,
@@ -1645,7 +1646,6 @@ async fn fetch_detectable_games(state: State<'_, AppState>) -> Result<Vec<Detect
         .await
         .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
 
-    const API_BASE: &str = "https://discord.com/api/v9";
     let games_url = format!("{}/applications/detectable", API_BASE);
     let apps_url = format!("{}/applications/non-games/detectable", API_BASE);
 
@@ -2643,7 +2643,7 @@ async fn get_ip_info() -> Result<IpInfo, String> {
 
     static IP_INFO: network::HttpClient = network::HttpClient::new();
     let client = IP_INFO
-        .get(|builder| builder.timeout(TIMEOUT))
+        .get(ENDPOINT, |builder| builder.timeout(TIMEOUT))
         .await
         .map_err(|error| {
             let message = format!("[IPInfo] failed to create HTTP client: {error}");

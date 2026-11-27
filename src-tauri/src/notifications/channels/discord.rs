@@ -130,7 +130,7 @@ impl DiscordChannel {
         let config = DiscordConfig::parse(config)?;
         Ok(self
             .client
-            .get()
+            .get(config.webhook.as_str())
             .await?
             .post(config.webhook)
             .json(&format(message)))

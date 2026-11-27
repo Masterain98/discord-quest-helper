@@ -533,10 +533,25 @@ pub fn linux_desktop_proxy_settings() -> Option<LinuxDesktopProxySettings> {
 
 /// Return the manual proxy settings and whether automatic configuration is enabled.
 pub fn linux_desktop_proxy_config() -> std::io::Result<(Option<LinuxDesktopProxySettings>, bool)> {
-    match gsettings_string("org.gnome.system.proxy", "mode")?.as_deref() {
+    let mode = match gsettings_string("org.gnome.system.proxy", "mode") {
+        Ok(mode) => mode,
+        Err(error) if error.kind() == std::io::ErrorKind::Other => {
+            let schemas = crate::proxy_command_output(
+                crate::linux_host_command("gsettings").arg("list-schemas"),
+            );
+            if schemas.is_ok_and(|schemas| schemas.is_some_and(|output| !has_proxy_schema(&output)))
+            {
+                return Ok((None, false));
+            }
+            return Err(error);
+        }
+        Err(error) => return Err(error),
+    };
+    match mode.as_deref() {
         Some("auto") => return Ok((None, true)),
         Some("manual") => {}
-        _ => return Ok((None, false)),
+        Some("none") | None => return Ok((None, false)),
+        Some(_) => return Err(std::io::ErrorKind::InvalidData.into()),
     }
 
     let settings = LinuxDesktopProxySettings {
@@ -549,6 +564,12 @@ pub fn linux_desktop_proxy_config() -> std::io::Result<(Option<LinuxDesktopProxy
     Ok((settings.has_proxy().then_some(settings), false))
 }
 
+fn has_proxy_schema(output: &[u8]) -> bool {
+    String::from_utf8_lossy(output)
+        .lines()
+        .any(|schema| schema == "org.gnome.system.proxy")
+}
+
 fn gsettings_proxy_url(section: &str, scheme: &str) -> std::io::Result<Option<String>> {
     let schema = format!("org.gnome.system.proxy.{section}");
     let Some(host) = gsettings_string(&schema, "host")?.filter(|host| !host.is_empty()) else {
@@ -557,13 +578,21 @@ fn gsettings_proxy_url(section: &str, scheme: &str) -> std::io::Result<Option<St
     let port = gsettings_raw(&schema, "port")?
         .and_then(|value| value.parse::<u16>().ok())
         .filter(|port| *port != 0);
-    Ok(port.map(|port| format!("{scheme}://{host}:{port}")))
+    Ok(port.map(|port| {
+        if host.parse::<std::net::Ipv6Addr>().is_ok() {
+            format!("{scheme}://[{host}]:{port}")
+        } else {
+            format!("{scheme}://{host}:{port}")
+        }
+    }))
 }
 
 fn gsettings_string(schema: &str, key: &str) -> std::io::Result<Option<String>> {
-    Ok(gsettings_raw(schema, key)?
-        .as_deref()
-        .and_then(parse_gvariant_string))
+    gsettings_raw(schema, key)?
+        .map(|value| {
+            parse_gvariant_string(&value).ok_or_else(|| std::io::ErrorKind::InvalidData.into())
+        })
+        .transpose()
 }
 
 fn gsettings_string_list(schema: &str, key: &str) -> std::io::Result<Option<String>> {
