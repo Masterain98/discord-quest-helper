@@ -1934,15 +1934,7 @@ mod tests {
             stream
                 .write_all(
                     format!(
-                        "HTTP/1.1 302 Found
-
-Location: {redirect_target}
-
-Content-Length: 0
-
-
-
-"
+                        "HTTP/1.1 302 Found\r\nLocation: {redirect_target}\r\nContent-Length: 0\r\n\r\n"
                     )
                     .as_bytes(),
                 )
@@ -1950,7 +1942,12 @@ Content-Length: 0
                 .unwrap();
             stream
         });
-        assert_eq!(response.unwrap().status(), reqwest::StatusCode::FOUND);
+        let response = response.unwrap();
+        assert_eq!(response.status(), reqwest::StatusCode::FOUND);
+        assert_eq!(
+            response.headers()[reqwest::header::LOCATION],
+            redirect_target.as_str()
+        );
         assert!(
             tokio::time::timeout(Duration::from_millis(75), origin.accept())
                 .await
