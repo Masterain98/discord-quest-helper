@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { networkMediaUrl } from '@/utils/networkMedia'
 import { ref, onMounted, computed } from 'vue'
 import type { DetectableGame } from '@/api/tauri'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
@@ -134,7 +135,7 @@ onMounted(async () => {
           <div class="relative w-10 h-10 rounded-md overflow-hidden bg-muted/50 shrink-0">
              <img 
                v-if="game.icon"
-               :src="`https://cdn.discordapp.com/app-icons/${game.id}/${game.icon}.png?size=64`"
+               :src="networkMediaUrl(`https://cdn.discordapp.com/app-icons/${game.id}/${game.icon}.png?size=64`)"
                loading="lazy"
                class="w-full h-full object-cover"
                @error="(e) => (e.target as HTMLImageElement).style.display = 'none'"

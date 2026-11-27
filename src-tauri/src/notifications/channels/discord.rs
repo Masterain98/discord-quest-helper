@@ -115,14 +115,14 @@ impl NotificationChannel for DiscordChannel {
         message: &'a Message,
     ) -> BoxFuture<'a, Result<Receipt>> {
         Box::pin(async move {
-            let response = http::submit(self.request(config, message)?).await?;
+            let response = http::submit(self.request(config, message).await?).await?;
             check_response(response).await?;
             Ok(Receipt::Sent)
         })
     }
 }
 impl DiscordChannel {
-    fn request(
+    async fn request(
         &self,
         config: &ResolvedConfig,
         message: &Message,
@@ -130,7 +130,8 @@ impl DiscordChannel {
         let config = DiscordConfig::parse(config)?;
         Ok(self
             .client
-            .get()?
+            .get(config.webhook.as_str())
+            .await?
             .post(config.webhook)
             .json(&format(message)))
     }
@@ -190,8 +191,8 @@ mod tests {
         testing::{event, resolved, response},
     };
     use super::*;
-    #[test]
-    fn accepts_only_official_webhooks_and_valid_threads() {
+    #[tokio::test]
+    async fn accepts_only_official_webhooks_and_valid_threads() {
         for url in [
             "http://discord.com/api/webhooks/123/token",
             "https://discord.com.evil.test/api/webhooks/123/token",
@@ -212,7 +213,12 @@ mod tests {
         ]);
         let channel = DiscordChannel::new(http::Client::default());
         let message = message::render(&event(EventKind::QuestStarted), false);
-        let request = channel.request(&config, &message).unwrap().build().unwrap();
+        let request = channel
+            .request(&config, &message)
+            .await
+            .unwrap()
+            .build()
+            .unwrap();
         assert_eq!(request.url().query(), Some("wait=true&thread_id=42"));
         let json: serde_json::Value =
             serde_json::from_slice(request.body().unwrap().as_bytes().unwrap()).unwrap();

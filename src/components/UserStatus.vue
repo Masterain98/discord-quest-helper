@@ -10,7 +10,7 @@
         <Avatar>
           <AvatarImage 
             v-if="authStore.user.avatar" 
-            :src="`https://cdn.discordapp.com/avatars/${authStore.user.id}/${authStore.user.avatar}.png?size=128`" 
+            :src="networkMediaUrl(`https://cdn.discordapp.com/avatars/${authStore.user.id}/${authStore.user.avatar}.png?size=128`)"
             :alt="authStore.user.username" 
           />
           <AvatarFallback>{{ authStore.user.username[0].toUpperCase() }}</AvatarFallback>
@@ -68,6 +68,7 @@
 </template>
 
 <script setup lang="ts">
+import { networkMediaUrl } from '@/utils/networkMedia'
 import { ref, computed } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useQuestsStore } from '@/stores/quests'

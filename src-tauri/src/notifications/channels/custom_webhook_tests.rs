@@ -398,6 +398,7 @@ async fn timeout_does_not_retry_or_expose_endpoint() {
             &resolved(&[("endpoint", &endpoint)]),
             &message::render(&event(EventKind::QuestCompleted), false),
         )
+        .await
         .unwrap()
         .timeout(Duration::from_millis(100));
     let error = http::submit(request).await.err().unwrap();

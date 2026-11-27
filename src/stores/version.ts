@@ -1,3 +1,4 @@
+import { invoke, isTauri } from '@tauri-apps/api/core'
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 
@@ -28,6 +29,15 @@ function compareSemver(a: string, b: string): -1 | 0 | 1 {
     if (a1 !== b1) return a1 < b1 ? -1 : 1
     if (a2 !== b2) return a2 < b2 ? -1 : 1
     return 0
+}
+
+async function fetchReleasesInBrowser(prerelease: boolean): Promise<ReleaseInfo | ReleaseInfo[]> {
+    const base = 'https://api.github.com/repos/Masterain98/discord-quest-helper/releases'
+    const response = await fetch(prerelease ? base : base + '/latest', {
+        headers: { Accept: 'application/vnd.github.v3+json' }
+    })
+    if (!response.ok) throw new Error(`GitHub API returned ${response.status}`)
+    return response.json()
 }
 
 export const useVersionStore = defineStore('version', () => {
@@ -74,43 +84,22 @@ export const useVersionStore = defineStore('version', () => {
         checkError.value = null
 
         try {
-            const url = checkPreRelease.value
-              ? 'https://api.github.com/repos/Masterain98/discord-quest-helper/releases'
-              : 'https://api.github.com/repos/Masterain98/discord-quest-helper/releases/latest'
+            const prerelease = checkPreRelease.value
+            const data = isTauri()
+                ? await invoke<ReleaseInfo | ReleaseInfo[]>('fetch_github_releases', { prerelease })
+                : await fetchReleasesInBrowser(prerelease)
 
-            const res = await fetch(url, {
-                headers: {
-                    'Accept': 'application/vnd.github.v3+json'
-                }
-            })
-
-            if (!res.ok) {
-                throw new Error(`GitHub API returned ${res.status}`)
-            }
-
-            const data = await res.json()
-
-            if (checkPreRelease.value) {
-                // Array of releases — pick the first one (newest, including pre-releases)
-                const release = Array.isArray(data) ? data[0] : data
-                if (!release) throw new Error('No releases found')
-                latestRelease.value = {
-                    tag_name: release.tag_name,
-                    html_url: release.html_url,
-                    published_at: release.published_at,
-                    name: release.name
-                }
-            } else {
-                latestRelease.value = {
-                    tag_name: data.tag_name,
-                    html_url: data.html_url,
-                    published_at: data.published_at,
-                    name: data.name
-                }
+            const release = Array.isArray(data) ? data[0] : data
+            if (!release) throw new Error('No releases found')
+            latestRelease.value = {
+                tag_name: release.tag_name,
+                html_url: release.html_url,
+                published_at: release.published_at,
+                name: release.name
             }
             hasChecked.value = true
         } catch (e) {
-            checkError.value = e instanceof Error ? e.message : 'Failed to check for updates'
+            checkError.value = e instanceof Error ? e.message : typeof e === 'string' ? e : 'Failed to check for updates'
             console.error('Version check failed:', e)
         } finally {
             isChecking.value = false

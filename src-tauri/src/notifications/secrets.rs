@@ -99,20 +99,14 @@ impl Drop for CredentialLease {
 pub(super) struct NativeSecrets;
 impl Secrets for NativeSecrets {
     fn get(&self, reference: &str) -> Result<String> {
-        keyring::Entry::new(SERVICE, reference)
-            .and_then(|e| e.get_password())
-            .map_err(|_| Code::SecretStore.into())
+        crate::credential_store::read(SERVICE, reference).map_err(|_| Code::SecretStore.into())
     }
     fn set(&self, reference: &str, secret: &str) -> Result<()> {
-        keyring::Entry::new(SERVICE, reference)
-            .and_then(|e| e.set_password(secret))
+        crate::credential_store::write(SERVICE, reference, secret)
             .map_err(|_| Code::SecretStore.into())
     }
     fn delete(&self, reference: &str) -> Result<()> {
-        match keyring::Entry::new(SERVICE, reference).and_then(|e| e.delete_credential()) {
-            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-            _ => Err(Code::SecretStore.into()),
-        }
+        crate::credential_store::remove(SERVICE, reference).map_err(|_| Code::SecretStore.into())
     }
 }
 

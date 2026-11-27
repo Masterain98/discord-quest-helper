@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { isTauri } from '@tauri-apps/api/core'
+import { networkMediaUrl } from '@/utils/networkMedia'
 import { ref, computed, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useUserBadgesStore } from '@/stores/userBadges'
@@ -24,7 +26,7 @@ const badgeRows = computed(() => ACCOUNT_BADGES.flatMap(definition => {
   const count = badgeCount(badge, definition.unit)
   return [{
     ...definition,
-    icon: badgeIcon(badge),
+    icon: badgeIcon(badge, isTauri()),
     fallbackIcon: { games: Gamepad2, quests: Trophy, hours: Swords }[definition.kind],
     text: count === null && typeof badge?.info_label === 'string' && badge.info_label
       ? badge.info_label
@@ -34,7 +36,7 @@ const badgeRows = computed(() => ACCOUNT_BADGES.flatMap(definition => {
 watch(() => badgesStore.badges, () => { failedIcons.value = new Set() })
 watch(open, visible => { if (visible) void badgesStore.refresh() })
 const avatarUrl = computed(() => user.value?.avatar
-  ? `https://cdn.discordapp.com/avatars/${user.value.id}/${user.value.avatar}.png?size=128` : undefined)
+  ? networkMediaUrl(`https://cdn.discordapp.com/avatars/${user.value.id}/${user.value.avatar}.png?size=128`) : undefined)
 function handleLogout() { open.value = false; emit('logout') }
 function handleFarm() { open.value = false; emit('farm') }
 </script>
@@ -68,7 +70,7 @@ function handleFarm() { open.value = false; emit('farm') }
       </div>
       <ul v-if="badgeRows.length" class="account-badges mx-2 mb-2 space-y-2 border-t border-border pt-3 pb-1" :aria-label="t('sidebar.badges')" :aria-busy="badgesStore.loading">
         <li v-for="badge in badgeRows" :key="badge.id" class="flex items-center gap-3 text-xs leading-5">
-          <img v-if="badge.icon && !failedIcons.has(badge.id)" :src="badge.icon" alt="" aria-hidden="true" class="h-5 w-5 shrink-0 object-contain" @error="failedIcons.add(badge.id)" />
+          <img v-if="badge.icon && !failedIcons.has(badge.id)" :src="networkMediaUrl(badge.icon)" alt="" aria-hidden="true" class="h-5 w-5 shrink-0 object-contain" @error="failedIcons.add(badge.id)" />
           <component :is="badge.fallbackIcon" v-else class="h-5 w-5 shrink-0 text-muted-foreground" :stroke-width="1.5" aria-hidden="true" />
           <span class="min-w-0 flex-1 tabular-nums" :class="!badgesStore.badges.length && 'text-muted-foreground'">{{ badge.text }}</span>
           <DropdownMenuItem v-if="badge.kind !== 'quests'" as="button" type="button" class="shrink-0 cursor-pointer px-1.5 py-0.5 text-xs text-primary focus:bg-primary/10 focus:text-primary" @select="handleFarm">

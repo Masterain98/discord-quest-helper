@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, useId } from 'vue'
 import type { Component } from 'vue'
-import { Bell, Gamepad2, Info, Palette, Search, SlidersHorizontal, Stethoscope, User, Wifi, X } from 'lucide-vue-next'
+import { Bell, Gamepad2, Globe, Info, Palette, Search, SlidersHorizontal, Stethoscope, User, Wifi, X } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import type { SettingsSection } from '@/composables/useSettingsNavigation'
 import { cn } from '@/lib/utils'
@@ -40,6 +40,7 @@ const sections = computed<Array<{ key: SettingsSection, label: string, icon: Com
   { key: 'quest_behavior', label: t('settings.nav_quest_behavior'), icon: Gamepad2 },
   { key: 'notifications', label: t('settings.nav_notifications'), icon: Bell },
   { key: 'discord_integration', label: t('settings.nav_discord_integration'), icon: Wifi },
+  { key: 'network', label: t('settings.nav_network'), icon: Globe },
   { key: 'appearance', label: t('settings.nav_appearance'), icon: Palette },
   { key: 'diagnostics', label: t('settings.nav_diagnostics'), icon: Stethoscope },
   { key: 'advanced', label: t('settings.nav_advanced'), icon: SlidersHorizontal },

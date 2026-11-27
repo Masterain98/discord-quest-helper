@@ -83,6 +83,106 @@ pub use platform::macos::discover_macos_installs_in;
 #[cfg(target_os = "linux")]
 #[doc(hidden)]
 pub use platform::linux::{
-    classify_linux_process, discover_linux_installs_in, linux_desktop_proxy_settings,
-    LinuxProcessInfo,
+    classify_linux_process, discover_linux_installs_in, linux_desktop_proxy_config,
+    linux_desktop_proxy_settings, LinuxProcessInfo,
 };
+
+/// Run a platform settings query with bounded output and execution time.
+#[cfg(unix)]
+#[doc(hidden)]
+pub fn proxy_command_output(
+    command: &mut std::process::Command,
+) -> std::io::Result<Option<Vec<u8>>> {
+    use std::{
+        io::Read,
+        process::Stdio,
+        sync::mpsc,
+        time::{Duration, Instant},
+    };
+
+    let deadline = Instant::now() + Duration::from_millis(750);
+    let child = command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn();
+    let mut child = match child {
+        Ok(child) => child,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    let stdout = child.stdout.take().expect("piped stdout");
+    let (send, receive) = mpsc::sync_channel(1);
+    std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        const MAX_OUTPUT: usize = 64 * 1024;
+        let output = stdout
+            .take((MAX_OUTPUT + 1) as u64)
+            .read_to_end(&mut bytes)
+            .and_then(|_| {
+                if bytes.len() > MAX_OUTPUT {
+                    Err(std::io::ErrorKind::InvalidData.into())
+                } else {
+                    Ok(bytes)
+                }
+            });
+        let _ = send.send(output);
+    });
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) if status.success() => {
+                return receive
+                    .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+                    .map_err(|_| std::io::ErrorKind::TimedOut)?
+                    .map(Some);
+            }
+            Ok(Some(status)) => {
+                return Err(std::io::Error::other(format!(
+                    "Proxy settings query exited with {status}"
+                )));
+            }
+            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(10)),
+            _ => {
+                let _ = child.kill();
+                std::thread::spawn(move || {
+                    let _ = child.wait();
+                });
+                return Err(std::io::ErrorKind::TimedOut.into());
+            }
+        }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod proxy_command_tests {
+    use super::proxy_command_output;
+    use std::{
+        io::ErrorKind,
+        process::Command,
+        time::{Duration, Instant},
+    };
+
+    #[test]
+    fn reads_the_output_of_a_successful_proxy_query() {
+        let output = proxy_command_output(Command::new("/bin/echo").arg("manual")).unwrap();
+        assert_eq!(output.as_deref(), Some(&b"manual\n"[..]));
+    }
+
+    #[test]
+    fn distinguishes_an_unavailable_command_from_a_failed_query() {
+        let missing =
+            proxy_command_output(&mut Command::new("/dqh-proxy-query-not-installed")).unwrap();
+        assert!(missing.is_none());
+        let error =
+            proxy_command_output(Command::new("/bin/sh").args(["-c", "exit 1"])).unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::Other);
+    }
+
+    #[test]
+    fn times_out_a_hung_proxy_query() {
+        let start = Instant::now();
+        let error = proxy_command_output(Command::new("/bin/sleep").arg("30")).unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::TimedOut);
+        assert!(start.elapsed() < Duration::from_secs(5));
+    }
+}

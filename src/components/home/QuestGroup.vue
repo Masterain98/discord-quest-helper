@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { networkMediaUrl } from '@/utils/networkMedia'
 import { computed, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ChevronDown, Clock, Gift, Link2 } from 'lucide-vue-next'
@@ -74,7 +75,7 @@ const live = computed(() => {
   <div v-if="group.quests.length === 1" class="min-w-0"><slot :quest="first" /></div>
   <section v-else class="quest-group-stack relative isolate min-w-0" :class="compact ? 'mb-2 mt-0' : 'mb-6 mt-14'" :data-quest-group="group.key" :data-group-completed="progress.isCompleted">
     <div class="relative z-10 overflow-hidden rounded-xl border border-border/50 bg-card shadow-sm">
-      <div v-if="!compact && heroImage" class="relative h-24 bg-cover bg-center" :style="{ backgroundImage: `url(${heroImage})` }">
+      <div v-if="!compact && heroImage" class="relative h-24 bg-cover bg-center" :style="{ backgroundImage: `url(${JSON.stringify(networkMediaUrl(heroImage))})` }">
         <div class="absolute inset-0 bg-gradient-to-t from-card to-transparent" />
       </div>
       <div :class="compact ? 'space-y-2 p-3' : 'space-y-4 p-4 sm:p-5'">
@@ -96,8 +97,8 @@ const live = computed(() => {
         <div class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 pt-1" :aria-label="rewardSummary">
           <div v-if="rewards.length" class="flex shrink-0 items-center gap-1.5">
             <div v-for="reward in rewards.slice(0, 3)" :key="rewardKey(reward)" class="flex h-7 w-7 items-center justify-center overflow-hidden rounded-md border border-border/70 bg-muted/70" :class="compact && 'h-6 w-6'">
-              <video v-if="reward.asset?.endsWith('.mp4')" :src="`https://cdn.discordapp.com/${reward.asset}`" class="h-full w-full object-contain" autoplay loop muted playsinline />
-              <img v-else-if="reward.asset" :src="`https://cdn.discordapp.com/${reward.asset}`" :alt="reward.name" class="h-full w-full object-contain" />
+              <video v-if="reward.asset?.endsWith('.mp4')" :src="networkMediaUrl(`https://cdn.discordapp.com/${reward.asset}`)" class="h-full w-full object-contain" autoplay loop muted playsinline />
+              <img v-else-if="reward.asset" :src="networkMediaUrl(`https://cdn.discordapp.com/${reward.asset}`)" :alt="reward.name" class="h-full w-full object-contain" />
               <img v-else-if="reward.icon === 'orbs'" src="/icons/orbs.png" :alt="reward.name" class="h-5 w-5 object-contain" />
               <Gift v-else class="h-4 w-4 text-pink-400" aria-hidden="true" />
             </div>

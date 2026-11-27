@@ -7,6 +7,7 @@ import AboutSettings from '@/components/settings/AboutSettings.vue'
 import DiagnosticsSettings from '@/components/settings/DiagnosticsSettings.vue'
 import DiscordIntegrationSettings from '@/components/settings/DiscordIntegrationSettings.vue'
 import QuestBehaviorSettings from '@/components/settings/QuestBehaviorSettings.vue'
+import NetworkSettings from '@/components/settings/NetworkSettings.vue'
 import NotificationSettings from '@/components/settings/NotificationSettings.vue'
 import SettingsOverview from '@/components/settings/SettingsOverview.vue'
 import type { SettingsSection } from '@/composables/useSettingsNavigation'
@@ -64,6 +65,9 @@ useSettingsSearch(page, () => props.searchQuery, results => emit('search-results
       </section>
       <section id="settings-section-discord_integration" data-settings-section="discord_integration" :aria-label="t('settings.nav_discord_integration')">
         <DiscordIntegrationSettings />
+      </section>
+      <section id="settings-section-network" data-settings-section="network" :aria-label="t('settings.nav_network')">
+        <NetworkSettings />
       </section>
       <section id="settings-section-appearance" data-settings-section="appearance" :aria-label="t('settings.nav_appearance')">
         <AppearanceSettings />

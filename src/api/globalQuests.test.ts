@@ -14,6 +14,22 @@ describe('public API transport', () => {
     expect(options.headers).toEqual({ Accept: 'application/json' })
     expect(options.signal.aborted).toBe(false)
   })
+  it('uses the native proxy-controlled transport on desktop without browser fallback', async () => {
+    const invoke = vi.fn().mockResolvedValue({ quests: [] })
+    const fetch = vi.fn()
+    vi.stubGlobal('isTauri', true)
+    vi.stubGlobal('window', { __TAURI_INTERNALS__: { invoke } })
+    vi.stubGlobal('fetch', fetch)
+    await fetchGlobalQuestCatalog()
+    await fetchGlobalQuestRegions()
+    expect(invoke.mock.calls.map(call => call.slice(0, 2))).toEqual([
+      ['fetch_global_quest_dataset', { dataset: 'quests' }],
+      ['fetch_global_quest_dataset', { dataset: 'regions' }],
+    ])
+    invoke.mockRejectedValueOnce('connection_error')
+    await expect(fetchGlobalQuestCatalog()).rejects.toBe('connection_error')
+    expect(fetch).not.toHaveBeenCalled()
+  })
   it('rejects HTTP errors and incompatible response shapes', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(new Response('', { status: 403 }))
       .mockResolvedValueOnce(new Response('{"unexpected":true}')))

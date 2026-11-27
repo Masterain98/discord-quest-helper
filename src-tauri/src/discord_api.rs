@@ -1,16 +1,13 @@
-use crate::models::*;
+use crate::{models::*, network::HttpClient};
 use anyhow::{Context, Result};
 use arc_swap::ArcSwap;
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE, REFERER, USER_AGENT};
 use reqwest::{Method, RequestBuilder};
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 const DISCORD_API_BASE: &str = "https://discord.com/api/v9";
-const PROXY_STATE_CHECK_INTERVAL_MS: u64 = 5_000;
 const QUEST_HOME_REFERER: &str = "https://discord.com/quest-home";
 
 pub(crate) fn parse_play_activity_heartbeat_response(
@@ -42,140 +39,6 @@ pub(crate) fn parse_play_activity_heartbeat_response(
     })
 }
 
-#[derive(Clone, Default, Hash, PartialEq, Eq)]
-struct ProxyEnvironment {
-    http: Option<String>,
-    https: Option<String>,
-    all: Option<String>,
-    no_proxy: Option<String>,
-}
-
-impl ProxyEnvironment {
-    fn current() -> Self {
-        Self::from_lookup(|key| std::env::var(key).ok())
-    }
-
-    fn from_lookup<F>(lookup: F) -> Self
-    where
-        F: Fn(&str) -> Option<String>,
-    {
-        Self {
-            http: Self::read_pair(&lookup, "HTTP_PROXY", "http_proxy"),
-            https: Self::read_pair(&lookup, "HTTPS_PROXY", "https_proxy"),
-            all: Self::read_pair(&lookup, "ALL_PROXY", "all_proxy"),
-            no_proxy: Self::read_pair(&lookup, "NO_PROXY", "no_proxy"),
-        }
-    }
-
-    fn read_pair<F>(lookup: &F, upper: &str, lower: &str) -> Option<String>
-    where
-        F: Fn(&str) -> Option<String>,
-    {
-        [upper, lower].into_iter().find_map(|key| {
-            lookup(key)
-                .map(|value| value.trim().to_string())
-                .filter(|value| !value.is_empty())
-        })
-    }
-
-    fn has_proxy(&self) -> bool {
-        self.http.is_some() || self.https.is_some() || self.all.is_some()
-    }
-}
-
-#[derive(Clone, PartialEq, Eq)]
-struct ProxyState {
-    fingerprint: u64,
-    has_proxy: bool,
-    environment: ProxyEnvironment,
-    desktop_proxy: Option<discord_cdp_launch_core::LinuxDesktopProxySettings>,
-}
-
-impl ProxyState {
-    #[cfg(windows)]
-    fn hash_setting(hasher: &mut DefaultHasher, key: &str, value: &str) {
-        key.hash(hasher);
-        value.trim().hash(hasher);
-    }
-
-    fn current() -> Self {
-        let mut hasher = DefaultHasher::new();
-        let environment = ProxyEnvironment::current();
-        environment.hash(&mut hasher);
-
-        #[cfg(target_os = "linux")]
-        let desktop_proxy = discord_cdp_launch_core::linux_desktop_proxy_settings();
-        #[cfg(not(target_os = "linux"))]
-        let desktop_proxy: Option<discord_cdp_launch_core::LinuxDesktopProxySettings> = None;
-        desktop_proxy.hash(&mut hasher);
-
-        // Only the Windows branch below augments this from the registry.
-        #[cfg_attr(not(windows), allow(unused_mut))]
-        let mut has_proxy = environment.has_proxy();
-
-        has_proxy |= desktop_proxy.is_some();
-
-        #[cfg(windows)]
-        {
-            let maybe_settings = windows_registry::CURRENT_USER
-                .open("Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings");
-
-            match maybe_settings {
-                Ok(settings) => {
-                    let proxy_enable = settings.get_u32("ProxyEnable").unwrap_or(0);
-                    let proxy_server = settings.get_string("ProxyServer").unwrap_or_default();
-                    let proxy_override = settings.get_string("ProxyOverride").unwrap_or_default();
-                    let auto_config_url = settings.get_string("AutoConfigURL").unwrap_or_default();
-                    let auto_detect = settings.get_u32("AutoDetect").unwrap_or(0);
-
-                    "ProxyEnable".hash(&mut hasher);
-                    proxy_enable.hash(&mut hasher);
-                    Self::hash_setting(&mut hasher, "ProxyServer", &proxy_server);
-                    Self::hash_setting(&mut hasher, "ProxyOverride", &proxy_override);
-                    Self::hash_setting(&mut hasher, "AutoConfigURL", &auto_config_url);
-                    "AutoDetect".hash(&mut hasher);
-                    auto_detect.hash(&mut hasher);
-
-                    has_proxy = has_proxy
-                        || (proxy_enable == 1 && !proxy_server.trim().is_empty())
-                        || !auto_config_url.trim().is_empty()
-                        || auto_detect == 1;
-                }
-                Err(_) => {
-                    "registry_unavailable".hash(&mut hasher);
-                }
-            }
-        }
-
-        Self {
-            fingerprint: hasher.finish(),
-            has_proxy,
-            environment,
-            desktop_proxy,
-        }
-    }
-
-    /// Return a human-readable description of the active system/environment proxy state.
-    fn description(&self) -> &'static str {
-        #[cfg(target_os = "linux")]
-        {
-            match (self.environment.has_proxy(), self.desktop_proxy.is_some()) {
-                (true, true) => "environment and GNOME system proxy detected",
-                (true, false) => "environment proxy detected",
-                (false, true) => "GNOME system proxy detected",
-                (false, false) => "no system proxy detected",
-            }
-        }
-
-        #[cfg(not(target_os = "linux"))]
-        if self.has_proxy {
-            "system proxy detected"
-        } else {
-            "no system proxy detected"
-        }
-    }
-}
-
 /// Whether a request failed before Discord answered, so its connection is suspect.
 fn is_connection_error(error: &reqwest::Error) -> bool {
     error.is_connect() || error.is_timeout() || error.is_request()
@@ -184,13 +47,14 @@ fn is_connection_error(error: &reqwest::Error) -> bool {
 /// Execute `request`; after a connection error, ask `reconnect` for a fresh
 /// client and retry GET requests once. Other methods are not retried, since
 /// Discord may already have processed them.
-async fn execute_reconnecting<F>(
+async fn execute_reconnecting<F, Fut>(
     client: reqwest::Client,
     request: reqwest::Request,
     reconnect: F,
 ) -> reqwest::Result<reqwest::Response>
 where
-    F: FnOnce(&reqwest::Error) -> reqwest::Client,
+    F: FnOnce(&reqwest::Error) -> Fut,
+    Fut: std::future::Future<Output = Option<reqwest::Client>>,
 {
     let retry = if request.method() == Method::GET {
         request.try_clone()
@@ -200,10 +64,10 @@ where
 
     match client.execute(request).await {
         Err(error) if is_connection_error(&error) => {
-            let client = reconnect(&error);
-            match retry {
-                Some(request) => client.execute(request).await,
-                None => Err(error),
+            let client = reconnect(&error).await;
+            match (client, retry) {
+                (Some(client), Some(request)) => client.execute(request).await,
+                _ => Err(error),
             }
         }
         result => result,
@@ -218,7 +82,12 @@ trait SendReconnecting {
 impl SendReconnecting for RequestBuilder {
     async fn send_reconnecting(self, api: &DiscordApiClient) -> reqwest::Result<reqwest::Response> {
         let (client, request) = self.build_split();
-        execute_reconnecting(client, request?, |error| api.reset_connections(error)).await
+        let request = request?;
+        let destination = request.url().clone();
+        execute_reconnecting(client, request, |error| {
+            api.reset_connections(destination, DiscordApiClient::error_chain(error))
+        })
+        .await
     }
 }
 
@@ -235,11 +104,9 @@ type CachedAppCatalogEntry = (
 /// HTTP API client for Discord quest and user endpoints.
 #[derive(Clone)]
 pub struct DiscordApiClient {
-    client: Arc<ArcSwap<reqwest::Client>>,
-    proxy_fingerprint: Arc<AtomicU64>,
-    proxy_has_proxy: Arc<AtomicBool>,
+    client: Arc<HttpClient>,
+    headers: HeaderMap,
     created_at: Arc<Instant>,
-    last_proxy_check_elapsed_ms: Arc<AtomicU64>,
     token: String,
     identity: Arc<std::sync::Mutex<crate::super_properties::XSuperPropertiesManager>>,
     identity_key: String,
@@ -309,73 +176,24 @@ impl DiscordApiClient {
         Ok(headers)
     }
 
-    fn build_http_client(token: &str, proxy_state: &ProxyState) -> Result<reqwest::Client> {
-        let headers = Self::build_default_headers(token)?;
-
-        // Keep-alive pings close connections whose network route disappeared,
-        // such as a VPN being switched, before a request waits on them.
-        let builder = reqwest::Client::builder()
+    fn configure_http(
+        headers: HeaderMap,
+        builder: reqwest::ClientBuilder,
+    ) -> reqwest::ClientBuilder {
+        // Keep-alive pings retire connections whose network route disappeared.
+        builder
             .default_headers(headers)
             .connect_timeout(Duration::from_secs(8))
             .timeout(Duration::from_secs(20))
             .pool_idle_timeout(Duration::from_secs(30))
             .http2_keep_alive_interval(Duration::from_secs(10))
             .http2_keep_alive_timeout(Duration::from_secs(5))
-            .http2_keep_alive_while_idle(true);
-
-        let builder = Self::apply_desktop_proxy(builder, proxy_state)?;
-
-        builder.build().context("Could not create HTTP client")
-    }
-
-    fn apply_desktop_proxy(
-        mut builder: reqwest::ClientBuilder,
-        proxy_state: &ProxyState,
-    ) -> Result<reqwest::ClientBuilder> {
-        let Some(desktop) = proxy_state.desktop_proxy.as_ref() else {
-            return Ok(builder);
-        };
-
-        let no_proxy = proxy_state
-            .environment
-            .no_proxy
-            .as_deref()
-            .or(desktop.no_proxy.as_deref())
-            .and_then(reqwest::NoProxy::from_string);
-
-        // Explicit environment values retain precedence. The desktop SOCKS
-        // endpoint is only a per-scheme fallback, preventing a broad `all`
-        // proxy from shadowing an explicit HTTP_PROXY or HTTPS_PROXY.
-        if proxy_state.environment.all.is_none() && proxy_state.environment.http.is_none() {
-            if let Some(url) = desktop.http.as_ref().or(desktop.all.as_ref()) {
-                let proxy = reqwest::Proxy::http(url)?.no_proxy(no_proxy.clone());
-                builder = builder.proxy(proxy);
-            }
-        }
-        if proxy_state.environment.all.is_none() && proxy_state.environment.https.is_none() {
-            if let Some(url) = desktop.https.as_ref().or(desktop.all.as_ref()) {
-                let proxy = reqwest::Proxy::https(url)?.no_proxy(no_proxy);
-                builder = builder.proxy(proxy);
-            }
-        }
-
-        Ok(builder)
+            .http2_keep_alive_while_idle(true)
     }
 
     /// Create a new API client
     pub fn new(token: String) -> Result<Self> {
-        use crate::logger::{log, LogCategory, LogLevel};
-
-        let proxy_state = ProxyState::current();
-        let client = Self::build_http_client(&token, &proxy_state)?;
-
-        log(
-            LogLevel::Info,
-            LogCategory::Api,
-            "HTTP client initialized",
-            Some(proxy_state.description()),
-        );
-
+        let headers = Self::build_default_headers(&token)?;
         let created_at = Arc::new(Instant::now());
         let initial_user_id = Self::extract_user_id_from_token(&token);
 
@@ -390,11 +208,9 @@ impl DiscordApiClient {
             identity: Arc::new(std::sync::Mutex::new(identity)),
             identity_key,
             identity_committed: Arc::new(AtomicBool::new(false)),
-            client: Arc::new(ArcSwap::from_pointee(client)),
-            proxy_fingerprint: Arc::new(AtomicU64::new(proxy_state.fingerprint)),
-            proxy_has_proxy: Arc::new(AtomicBool::new(proxy_state.has_proxy)),
+            client: Arc::new(HttpClient::default()),
+            headers,
             created_at,
-            last_proxy_check_elapsed_ms: Arc::new(AtomicU64::new(0)),
             token,
             cached_user_id: Arc::new(ArcSwap::from_pointee(initial_user_id)),
             last_user_id_lookup_failure_ms: Arc::new(AtomicU64::new(0)),
@@ -410,90 +226,6 @@ impl DiscordApiClient {
         } else {
             millis as u64
         }
-    }
-
-    fn apply_proxy_state_if_changed(&self, latest_proxy_state: ProxyState) -> bool {
-        use crate::logger::{log, LogCategory, LogLevel};
-
-        let previous_fingerprint = self.proxy_fingerprint.load(Ordering::Acquire);
-        let previous_has_proxy = self.proxy_has_proxy.load(Ordering::Acquire);
-
-        if latest_proxy_state.fingerprint == previous_fingerprint
-            && latest_proxy_state.has_proxy == previous_has_proxy
-        {
-            return false;
-        }
-
-        let details = format!(
-            "fingerprint={} -> {}, has_proxy={} -> {}",
-            previous_fingerprint,
-            latest_proxy_state.fingerprint,
-            previous_has_proxy,
-            latest_proxy_state.has_proxy
-        );
-
-        log(
-            LogLevel::Info,
-            LogCategory::Api,
-            "System proxy state changed, rebuilding HTTP client",
-            Some(&details),
-        );
-
-        match Self::build_http_client(&self.token, &latest_proxy_state) {
-            Ok(client) => {
-                self.client.store(Arc::new(client));
-                self.proxy_fingerprint
-                    .store(latest_proxy_state.fingerprint, Ordering::Release);
-                self.proxy_has_proxy
-                    .store(latest_proxy_state.has_proxy, Ordering::Release);
-                true
-            }
-            Err(err) => {
-                log(
-                    LogLevel::Warn,
-                    LogCategory::Api,
-                    "Failed to rebuild HTTP client after proxy change; using previous client",
-                    Some(&err.to_string()),
-                );
-                false
-            }
-        }
-    }
-
-    fn maybe_refresh_client_for_proxy_state_with<F>(&self, now_elapsed_ms: u64, probe: F) -> bool
-    where
-        F: FnOnce() -> ProxyState,
-    {
-        let last_check_ms = self.last_proxy_check_elapsed_ms.load(Ordering::Acquire);
-
-        if now_elapsed_ms.saturating_sub(last_check_ms) < PROXY_STATE_CHECK_INTERVAL_MS {
-            return false;
-        }
-
-        if self
-            .last_proxy_check_elapsed_ms
-            .compare_exchange(
-                last_check_ms,
-                now_elapsed_ms,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            )
-            .is_err()
-        {
-            return false;
-        }
-
-        self.apply_proxy_state_if_changed(probe())
-    }
-
-    fn maybe_refresh_client_for_proxy_state(&self) {
-        let now_elapsed_ms = self.elapsed_millis_since_creation();
-        let _ = self.maybe_refresh_client_for_proxy_state_with(now_elapsed_ms, ProxyState::current);
-    }
-
-    fn current_client(&self) -> reqwest::Client {
-        self.maybe_refresh_client_for_proxy_state();
-        self.client.load_full().as_ref().clone()
     }
 
     fn header_value(value: &str, name: &str) -> Option<HeaderValue> {
@@ -568,22 +300,26 @@ impl DiscordApiClient {
     /// Resolve dynamic state once, then use the same snapshot throughout a request.
     async fn request(&self, method: Method, url: &str) -> Result<RequestBuilder> {
         let identity = self.prepare_identity().await?;
-        Ok(self.request_with_identity(method, url, &identity))
+        self.request_with_identity(method, url, &identity).await
     }
 
-    fn request_with_identity(
+    async fn request_with_identity(
         &self,
         method: Method,
         url: &str,
         identity: &crate::super_properties::RequestIdentity,
-    ) -> RequestBuilder {
+    ) -> Result<RequestBuilder> {
         debug_assert!(identity.properties["browser_user_agent"]
             .as_str()
             .is_none_or(|ua| ua == identity.user_agent));
         let user_agent = &identity.user_agent;
         let header_profile = &identity.header_profile;
+        let headers = self.headers.clone();
         let mut request = self
-            .current_client()
+            .client
+            .get(url, move |builder| Self::configure_http(headers, builder))
+            .await
+            .map_err(|code| anyhow::anyhow!("Could not create Discord HTTP client ({code})"))?
             .request(method, url)
             .header("x-super-properties", &identity.base64);
 
@@ -609,40 +345,32 @@ impl DiscordApiClient {
             request = request.header(REFERER, HeaderValue::from_static(referer));
         }
 
-        request
+        Ok(request)
     }
 
     /// Replace the HTTP client so no pooled connection from a previous network
     /// route is reused, returning the client to use from now on.
-    fn reset_connections(&self, reason: &reqwest::Error) -> reqwest::Client {
+    async fn reset_connections(
+        &self,
+        destination: reqwest::Url,
+        reason: String,
+    ) -> Option<reqwest::Client> {
         use crate::logger::{log, LogCategory, LogLevel};
 
-        let proxy_state = ProxyState::current();
-        match Self::build_http_client(&self.token, &proxy_state) {
-            Ok(client) => {
-                self.client.store(Arc::new(client.clone()));
-                self.proxy_fingerprint
-                    .store(proxy_state.fingerprint, Ordering::Release);
-                self.proxy_has_proxy
-                    .store(proxy_state.has_proxy, Ordering::Release);
-                log(
-                    LogLevel::Warn,
-                    LogCategory::Api,
-                    "Connection error, reconnecting with a new HTTP client",
-                    Some(&Self::error_chain(reason)),
-                );
-                client
-            }
-            Err(err) => {
-                log(
-                    LogLevel::Warn,
-                    LogCategory::Api,
-                    "Failed to rebuild HTTP client after connection error",
-                    Some(&format!("{err:#}")),
-                );
-                self.client.load_full().as_ref().clone()
-            }
-        }
+        let headers = self.headers.clone();
+        let result = self
+            .client
+            .reconnect(destination.as_str(), move |builder| {
+                Self::configure_http(headers, builder)
+            })
+            .await;
+        let message = if result.is_ok() {
+            "Connection error, replaced Discord HTTP client"
+        } else {
+            "Connection error, could not replace Discord HTTP client"
+        };
+        log(LogLevel::Warn, LogCategory::Api, message, Some(&reason));
+        result.ok()
     }
 
     /// Join an error with its sources, like anyhow's `{:#}`.
@@ -1045,7 +773,7 @@ impl DiscordApiClient {
         Ok(data)
     }
 
-    fn decision_request(
+    async fn decision_request(
         &self,
         endpoint: &str,
         placement: u64,
@@ -1065,14 +793,16 @@ impl DiscordApiClient {
             url.query_pairs_mut()
                 .append_pair("client_heartbeat_session_id", id);
         }
-        Ok(self.request_with_identity(Method::GET, url.as_str(), identity))
+        self.request_with_identity(Method::GET, url.as_str(), identity)
+            .await
     }
 
     pub async fn get_quest_decision_debug(&self, placement: u64) -> Result<serde_json::Value> {
         let identity = self.prepare_identity().await?;
 
         let response = self
-            .decision_request("decision", placement, None, &identity)?
+            .decision_request("decision", placement, None, &identity)
+            .await?
             .send_reconnecting(self)
             .await
             .context("Request for quest placement decision failed")?;
@@ -1098,7 +828,8 @@ impl DiscordApiClient {
         let identity = self.prepare_identity().await?;
 
         let response = self
-            .decision_request("get-decisions", placement, Some(num), &identity)?
+            .decision_request("get-decisions", placement, Some(num), &identity)
+            .await?
             .send_reconnecting(self)
             .await
             .context("Request for quest placement decisions failed")?;
@@ -1673,7 +1404,7 @@ mod tests {
 
         let response = execute_reconnecting(client, request, |_| {
             reconnects += 1;
-            replacement_client()
+            std::future::ready(Some(replacement_client()))
         })
         .await;
         server.abort();
@@ -1697,7 +1428,7 @@ mod tests {
 
         let error = execute_reconnecting(client, request, |_| {
             reconnects += 1;
-            replacement_client()
+            std::future::ready(Some(replacement_client()))
         })
         .await
         .unwrap_err();
@@ -1719,7 +1450,7 @@ mod tests {
 
         let response = execute_reconnecting(client, request, |_| {
             reconnects += 1;
-            replacement_client()
+            std::future::ready(Some(replacement_client()))
         })
         .await;
         server.abort();
@@ -1897,141 +1628,6 @@ mod tests {
         assert!(nested_status.completed);
     }
 
-    static ENV_TEST_LOCK: Mutex<()> = Mutex::new(());
-
-    const PROXY_ENV_KEYS: [&str; 8] = [
-        "HTTP_PROXY",
-        "HTTPS_PROXY",
-        "ALL_PROXY",
-        "NO_PROXY",
-        "http_proxy",
-        "https_proxy",
-        "all_proxy",
-        "no_proxy",
-    ];
-
-    fn env_snapshot() -> Vec<(String, Option<String>)> {
-        PROXY_ENV_KEYS
-            .iter()
-            .map(|key| ((*key).to_string(), std::env::var(key).ok()))
-            .collect()
-    }
-
-    fn restore_env(snapshot: &[(String, Option<String>)]) {
-        for (key, value) in snapshot {
-            match value {
-                Some(v) => {
-                    unsafe { std::env::set_var(key, v) };
-                }
-                None => {
-                    unsafe { std::env::remove_var(key) };
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn proxy_state_fingerprint_changes_when_env_changes() {
-        let _guard = ENV_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let snapshot = env_snapshot();
-
-        unsafe { std::env::set_var("HTTP_PROXY", "http://127.0.0.1:7890") };
-        let state_a = ProxyState::current();
-
-        unsafe { std::env::set_var("HTTP_PROXY", "http://127.0.0.1:7891") };
-        let state_b = ProxyState::current();
-
-        restore_env(&snapshot);
-
-        assert_ne!(state_a.fingerprint, state_b.fingerprint);
-    }
-
-    #[test]
-    fn proxy_environment_prefers_uppercase_and_ignores_empty_values() {
-        let values = std::collections::HashMap::from([
-            ("HTTP_PROXY", "   "),
-            ("http_proxy", "http://127.0.0.1:10808"),
-            ("HTTPS_PROXY", "http://127.0.0.1:10809"),
-            ("https_proxy", "http://127.0.0.1:10810"),
-        ]);
-        let environment =
-            ProxyEnvironment::from_lookup(|key| values.get(key).map(|value| value.to_string()));
-
-        assert_eq!(environment.http.as_deref(), Some("http://127.0.0.1:10808"));
-        assert_eq!(environment.https.as_deref(), Some("http://127.0.0.1:10809"));
-    }
-
-    #[test]
-    fn linux_desktop_proxy_builds_client_without_environment_proxy() {
-        let state = ProxyState {
-            fingerprint: 1,
-            has_proxy: true,
-            environment: ProxyEnvironment::default(),
-            desktop_proxy: Some(discord_cdp_launch_core::LinuxDesktopProxySettings {
-                http: Some("http://127.0.0.1:10808".into()),
-                https: Some("http://127.0.0.1:10808".into()),
-                all: Some("socks5://127.0.0.1:10808".into()),
-                no_proxy: Some("localhost,127.0.0.0/8,::1".into()),
-            }),
-        };
-
-        DiscordApiClient::build_http_client("test-token", &state).unwrap();
-    }
-
-    #[test]
-    fn linux_environment_proxy_takes_precedence_over_desktop_proxy() {
-        let state = ProxyState {
-            fingerprint: 1,
-            has_proxy: true,
-            environment: ProxyEnvironment {
-                https: Some("http://127.0.0.1:10808".into()),
-                ..ProxyEnvironment::default()
-            },
-            desktop_proxy: Some(discord_cdp_launch_core::LinuxDesktopProxySettings {
-                https: Some("http://[invalid".into()),
-                ..discord_cdp_launch_core::LinuxDesktopProxySettings::default()
-            }),
-        };
-
-        DiscordApiClient::build_http_client("test-token", &state).unwrap();
-    }
-
-    #[test]
-    fn proxy_refresh_respects_interval_and_rebuilds_on_change() {
-        let client = DiscordApiClient::new("test-token".to_string()).unwrap();
-
-        client
-            .last_proxy_check_elapsed_ms
-            .store(0, Ordering::Release);
-
-        let original_fingerprint = client.proxy_fingerprint.load(Ordering::Acquire);
-        let mut changed_state = ProxyState::current();
-        changed_state.fingerprint = original_fingerprint.wrapping_add(1);
-        changed_state.has_proxy = !client.proxy_has_proxy.load(Ordering::Acquire);
-
-        let before_interval_refresh = client.maybe_refresh_client_for_proxy_state_with(
-            PROXY_STATE_CHECK_INTERVAL_MS.saturating_sub(1),
-            || changed_state.clone(),
-        );
-        assert!(!before_interval_refresh);
-        assert_eq!(
-            client.proxy_fingerprint.load(Ordering::Acquire),
-            original_fingerprint
-        );
-
-        let after_interval_refresh = client
-            .maybe_refresh_client_for_proxy_state_with(PROXY_STATE_CHECK_INTERVAL_MS, || {
-                changed_state.clone()
-            });
-        assert!(after_interval_refresh);
-        assert_eq!(
-            client.proxy_fingerprint.load(Ordering::Acquire),
-            changed_state.fingerprint
-        );
-    }
-
     #[test]
     fn video_timestamp_is_normalized_to_integer_seconds() {
         assert_eq!(DiscordApiClient::normalize_video_timestamp(12.49), 12);
@@ -2125,6 +1721,7 @@ mod tests {
         for (endpoint, num) in [("decision", None), ("get-decisions", Some(2))] {
             let request = client
                 .decision_request(endpoint, 1, num, &snapshot)
+                .await
                 .unwrap()
                 .build()
                 .unwrap();
@@ -2154,6 +1751,7 @@ mod tests {
             .unwrap();
         let request = client
             .decision_request("decision", 1, None, &anonymous)
+            .await
             .unwrap()
             .build()
             .unwrap();

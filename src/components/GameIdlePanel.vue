@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { networkMediaUrl } from '@/utils/networkMedia'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
@@ -112,7 +113,7 @@ function formatCountdown(seconds: number) {
 }
 
 function iconUrl(item: GameIdleItem) {
-  return item.icon ? `https://cdn.discordapp.com/app-icons/${item.id}/${item.icon}.png?size=128` : ''
+  return item.icon ? networkMediaUrl(`https://cdn.discordapp.com/app-icons/${item.id}/${item.icon}.png?size=128`) : ''
 }
 
 async function startIdle() {

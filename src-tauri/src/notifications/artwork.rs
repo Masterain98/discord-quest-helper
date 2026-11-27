@@ -87,7 +87,7 @@ fn png(bytes: Vec<u8>) -> Option<Vec<u8>> {
 }
 
 async fn download(source: String) -> Option<Vec<u8>> {
-    let client = super::http::client().ok()?;
+    let client = super::http::client(&source).await.ok()?;
     let mut response = client
         .get(source)
         .send()

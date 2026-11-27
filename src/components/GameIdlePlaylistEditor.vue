@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { networkMediaUrl } from '@/utils/networkMedia'
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowDown, ArrowUp, Check, Gamepad2, Loader2, Plus, RefreshCw, Search, Trash2 } from 'lucide-vue-next'
@@ -59,7 +60,7 @@ onMounted(() => load())
         <button v-for="game in displayed" :key="game.id" type="button" class="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left transition-colors hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50" :disabled="locked || selectedIds.has(game.id)" :aria-label="t(selectedIds.has(game.id) ? 'game_idle.already_added' : 'game_idle.add_item', { name: game.name })" @click="idle.addToPlaylist(game)">
           <div class="relative h-9 w-9 shrink-0 overflow-hidden rounded-md bg-muted">
             <Gamepad2 class="absolute inset-2 h-5 w-5 text-muted-foreground" aria-hidden="true" />
-            <img v-if="game.icon" :src="`https://cdn.discordapp.com/app-icons/${game.id}/${game.icon}.png?size=64`" class="relative h-full w-full object-cover" alt="" loading="lazy" @error="(event) => (event.target as HTMLImageElement).style.display = 'none'" />
+            <img v-if="game.icon" :src="networkMediaUrl(`https://cdn.discordapp.com/app-icons/${game.id}/${game.icon}.png?size=64`)" class="relative h-full w-full object-cover" alt="" loading="lazy" @error="(event) => (event.target as HTMLImageElement).style.display = 'none'" />
           </div>
           <span class="min-w-0 flex-1">
             <span class="block truncate text-sm font-medium">{{ game.name }}</span>
